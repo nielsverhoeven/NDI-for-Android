@@ -31,7 +31,17 @@
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-[Gates determined based on constitution file]
+- MVVM gate: UI logic placement is confined to ViewModels.
+- Navigation gate: Single-activity + Navigation Component approach is preserved.
+- Data gate: Repository boundary is defined for each new/changed data flow.
+- TDD gate: Test-first strategy (JUnit/Espresso as applicable) is explicit.
+- UX gate: Material Design 3 compliance checks are defined for UI changes.
+- Battery gate: Any background work includes explicit necessity and impact.
+- Offline gate: Room-backed offline behavior is designed for user-critical flows.
+- Permission gate: Any permission change includes feature-level justification.
+- Modularity gate: Feature module boundaries and Gradle dependencies are clear.
+- Release gate: R8/ProGuard release validation is planned.
+- Platform gate: API 24+ compatibility and target SDK 34+ compliance are covered.
 
 ## Project Structure
 

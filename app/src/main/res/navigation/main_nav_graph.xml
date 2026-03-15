@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<navigation xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/main_nav_graph"
+    app:startDestination="@id/sourceListHostFragment">
+
+    <fragment
+        android:id="@+id/sourceListHostFragment"
+        android:name="com.ndi.app.navigation.SourceListHostFragment"
+        android:label="@string/source_list_title">
+        <action
+            android:id="@+id/action_sourceListHostFragment_to_viewerHostFragment"
+            app:destination="@id/viewerHostFragment" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/viewerHostFragment"
+        android:name="com.ndi.app.navigation.ViewerHostFragment"
+        android:label="@string/viewer_title">
+        <argument
+            android:name="sourceId"
+            app:argType="string"
+            android:defaultValue="" />
+    </fragment>
+</navigation>

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">NDI for Android</string>
+    <string name="source_list_title">Sources</string>
+    <string name="viewer_title">Viewer</string>
+    <string name="source_list_placeholder">NDI source list host is ready for feature wiring.</string>
+    <string name="viewer_placeholder">NDI viewer host is ready for playback wiring.</string>
+</resources>

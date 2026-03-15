@@ -95,6 +95,19 @@
 - **FR-006**: System MUST authenticate users via [NEEDS CLARIFICATION: auth method not specified - email/password, SSO, OAuth?]
 - **FR-007**: System MUST retain user data for [NEEDS CLARIFICATION: retention period not specified]
 
+### Constitutional Requirements *(mandatory)*
+
+- **CR-001 (Architecture)**: Define how the feature preserves MVVM, single-activity
+  navigation, and repository-mediated data access.
+- **CR-002 (Quality)**: Define the test-first approach and which JUnit/Espresso
+  coverage is required before implementation is complete.
+- **CR-003 (UX and Performance)**: Define Material Design 3 impact, battery impact,
+  and API compatibility constraints for API 24+ with target SDK 34+.
+- **CR-004 (Data and Security)**: Define offline-first/Room behavior and any
+  Android permission implications with explicit justification.
+- **CR-005 (Build and Modularity)**: Define feature module boundaries and release
+  build validation expectations, including R8/ProGuard.
+
 ### Key Entities *(include if feature involves data)*
 
 - **[Entity 1]**: [What it represents, key attributes without implementation]

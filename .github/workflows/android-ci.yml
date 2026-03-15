@@ -1,0 +1,30 @@
+name: Android CI
+
+on:
+  push:
+    branches:
+      - main
+      - 001-scan-ndi-sources
+  pull_request:
+
+jobs:
+  preflight:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Expose Android SDK root
+        shell: pwsh
+        run: |
+          "ANDROID_SDK_ROOT=$env:ANDROID_HOME" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Verify Android prerequisites
+        shell: pwsh
+        run: pwsh ./scripts/verify-android-prereqs.ps1 -CiMode -AllowMissingNdiSdk
