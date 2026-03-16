@@ -18,7 +18,7 @@ stable compatible Android baseline is validated with NDI SDK compatibility.
 **Language/Version**: Kotlin 1.9.24 (Android modules target Java 17); Gradle runtime on Android Studio stable JBR 21  
 **Primary Dependencies**: AndroidX/Jetpack (Lifecycle, Navigation, Room), Material 3, Kotlin Coroutines, NDI 6 Android SDK via `ndi/sdk-bridge`  
 **Storage**: Room for user-critical continuity state and discovery/session metadata  
-**Testing**: JUnit (unit and repository contract tests), Espresso (UI/integration flows), release validation with R8/ProGuard enabled  
+**Testing**: JUnit (unit and repository contract tests), Playwright for default end-to-end coverage, and release validation with R8/ProGuard enabled  
 **Target Platform**: Android API 24+ (phones and tablets)  
 **Android Toolchain Baseline**: compileSdk 34 / targetSdk 34, AGP 8.5.2, Gradle 8.7, Kotlin 1.9.24, Java 17 module targets, Android Studio stable JBR 21; uplift tracked by `TOOLCHAIN-001`  
 **Project Type**: Feature-modularized Android mobile app with native SDK bridge  
