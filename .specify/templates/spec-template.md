@@ -99,7 +99,7 @@
 
 - **CR-001 (Architecture)**: Define how the feature preserves MVVM, single-activity
   navigation, and repository-mediated data access.
-- **CR-002 (Quality)**: Define the test-first approach and which JUnit/Espresso
+- **CR-002 (Quality)**: Define the test-first approach and which JUnit/Playwright
   coverage is required before implementation is complete.
 - **CR-003 (UX and Performance)**: Define Material Design 3 impact, battery impact,
   and API compatibility constraints for API 24+ with the latest stable compatible

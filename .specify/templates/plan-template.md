@@ -35,7 +35,7 @@
 - MVVM gate: UI logic placement is confined to ViewModels.
 - Navigation gate: Single-activity + Navigation Component approach is preserved.
 - Data gate: Repository boundary is defined for each new/changed data flow.
-- TDD gate: Test-first strategy (JUnit/Espresso as applicable) is explicit.
+- TDD gate: Test-first strategy (JUnit + Playwright-by-default for end-to-end coverage) is explicit.
 - UX gate: Material Design 3 compliance checks are defined for UI changes.
 - Battery gate: Any background work includes explicit necessity and impact.
 - Offline gate: Room-backed offline behavior is designed for user-critical flows.
