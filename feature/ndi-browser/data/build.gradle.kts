@@ -21,10 +21,19 @@ android {
     }
 }
 
+kotlin {
+    jvmToolchain(21)
+}
+
+
 dependencies {
     implementation(project(":core:model"))
     implementation(project(":core:database"))
     implementation(project(":feature:ndi-browser:domain"))
     implementation(project(":ndi:sdk-bridge"))
     implementation(libs.kotlinx.coroutines.android)
+
+    testImplementation(project(":core:testing"))
+    testImplementation(libs.junit4)
+    testImplementation(libs.kotlinx.coroutines.test)
 }

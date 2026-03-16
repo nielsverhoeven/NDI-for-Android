@@ -8,7 +8,9 @@
         android:theme="@style/Theme.NdiApp">
         <activity
             android:name=".MainActivity"
-            android:exported="true">
+            android:exported="true"
+            android:label="@string/app_name"
+            android:theme="@style/Theme.NdiApp">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
 

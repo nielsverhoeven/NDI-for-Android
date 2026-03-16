@@ -3,15 +3,22 @@
 ## 1. Prerequisites (Required Before Coding)
 
 Current audit summary from this workspace session:
-- Android toolchain commands are missing from PATH (`java`, `adb`, `sdkmanager`, etc.).
-- `JAVA_HOME`, `ANDROID_SDK_ROOT`, and `ANDROID_HOME` are not set.
-- NDI Android SDK appears installed at `C:\Program Files\NDI\NDI 6 SDK (Android)`.
+
+- `pwsh ./scripts/verify-android-prereqs.ps1` passed on 2026-03-15.
+- The checked-in Gradle wrapper is available and Gradle 8.7 execution has been
+   verified with Android Studio stable JBR 21.
+- NDI Android SDK is available locally.
+- Repository Android modules still declare compile/target SDK 34 and Java 17
+   source/jvm targets; this remains tracked under blocker `TOOLCHAIN-001` until
+   the latest stable compatible Android baseline is validated.
 
 ### 1.1 Install core tooling
+
 1. Install Android Studio (latest stable) with SDK Manager and command-line tools.
-2. Install JDK 17.
+2. Use Android Studio stable JBR or install the latest stable JDK supported by
+   the repo's current AGP/Gradle pair.
 3. Configure environment variables:
-   - `JAVA_HOME=<path-to-jdk-17>`
+   - `JAVA_HOME=<path-to-supported-jdk-or-jbr>`
    - `ANDROID_SDK_ROOT=<path-to-android-sdk>`
    - Optional compatibility: `ANDROID_HOME=<path-to-android-sdk>`
 4. Add to PATH:
@@ -21,24 +28,40 @@ Current audit summary from this workspace session:
    - `%ANDROID_SDK_ROOT%\emulator`
 
 ### 1.2 Install SDK packages
+
 Install these components via SDK Manager:
-- Android SDK Platform 34
-- Android SDK Build-Tools 34.x
+
+- Android SDK Platform matching the repo's current compile/target SDK baseline
+- Android SDK Build-Tools compatible with the repo's current AGP/Gradle baseline
 - Android SDK Platform-Tools
 - Android SDK Command-line Tools (latest)
 - Android Emulator
 - NDK (side-by-side, latest stable supported by chosen AGP)
 - CMake
 
+Current repo-supported baseline before blocker resolution:
+
+- AGP 8.5.2
+- Gradle 8.7
+- Kotlin 1.9.24
+- compileSdk 34 / targetSdk 34
+- Java source/jvm target 17 in Android modules
+- Android Studio stable JBR 21 for Gradle execution
+
 ### 1.3 Verify toolchain
+
 Run and confirm success:
+
 - `java -version`
 - `adb version`
 - `sdkmanager --list`
 
 ## 2. Project Setup
 
-1. Create/scaffold Android project with minSdk 24 and targetSdk 34.
+1. Create/scaffold Android project with minSdk 24 and the latest stable
+   compatible Android baseline once blocker `TOOLCHAIN-001` is resolved. Until
+   then, preserve the checked-in baseline and document the blocker in planning
+   and release-readiness checks.
 2. Enable release shrinking/optimization (R8/ProGuard) in release build type.
 3. Create modules:
    - `app`
@@ -80,11 +103,17 @@ Run and confirm success:
 
 ## 6. Validation Commands (after scaffold)
 
+- `pwsh ./scripts/verify-android-prereqs.ps1`
+- `./gradlew --version`
+- `./gradlew verifyReleaseHardening`
 - `./gradlew test`
 - `./gradlew connectedAndroidTest`
 - `./gradlew :app:assembleRelease`
 
 Expected outcomes:
+
 - Unit and UI tests pass.
 - Release build succeeds with shrinking/optimization enabled.
 - No unauthorized permission additions in manifest.
+- Any deferred toolchain uplift remains documented under `TOOLCHAIN-001` with
+   owner, affected components, and target resolution cycle.

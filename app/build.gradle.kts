@@ -46,6 +46,21 @@ android {
     }
 }
 
+kotlin {
+    jvmToolchain(21)
+}
+
+tasks.register("verifyReleaseHardening") {
+    group = "verification"
+    description = "Ensures release minification and resource shrinking remain enabled."
+
+    doLast {
+        val release = project.extensions.getByType<com.android.build.api.dsl.ApplicationExtension>().buildTypes.getByName("release")
+        check(release.isMinifyEnabled) { "Release minification must stay enabled." }
+        check(release.isShrinkResources) { "Release resource shrinking must stay enabled." }
+    }
+}
+
 dependencies {
     implementation(project(":core:model"))
     implementation(project(":core:database"))

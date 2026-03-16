@@ -1,12 +1,16 @@
 .gradle/
 build/
 **/build/
+out/
 .idea/
 .vscode/
 *.iml
+*.class
+*.jar
 *.log
 *.tmp
 *.swp
+.env*
 .DS_Store
 Thumbs.db
 local.properties

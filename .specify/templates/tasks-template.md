@@ -9,7 +9,8 @@ description: "Task list template for feature implementation"
 **Prerequisites**: plan.md (required), spec.md (required for user stories), research.md, data-model.md, contracts/
 
 **Tests**: Test tasks are REQUIRED. Follow strict TDD: write failing tests first,
-then implement, then refactor.
+then implement, then refactor. When build files or SDK integrations change,
+include validation tasks for the repo-supported latest stable Android toolchain.
 
 **Organization**: Tasks are grouped by user story to enable independent implementation and testing of each story.
 
@@ -262,3 +263,6 @@ With multiple developers:
 - Include feature-module dependency tasks for new feature boundaries.
 - Include release validation tasks that exercise R8/ProGuard enabled builds.
 - Include compatibility verification tasks for API 24+ behavior.
+- Include toolchain currency tasks covering compileSdk/targetSdk, AGP, Gradle,
+  Kotlin, JDK/JBR, AndroidX/Jetpack, NDK/CMake, and proprietary SDK
+  compatibility or blocker tracking.

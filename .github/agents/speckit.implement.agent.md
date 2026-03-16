@@ -1,5 +1,10 @@
 ---
 description: Execute the implementation plan by processing and executing all tasks defined in tasks.md
+handoffs:
+  - label: Android Implementation Expert
+    agent: android.app-builder
+    prompt: Collaborate on Android feature implementation details, architecture, and testing strategy for the current task.
+    send: true
 ---
 
 ## User Input
@@ -86,6 +91,10 @@ You **MUST** consider the user input before proceeding (if not empty).
    - **IF EXISTS**: Read contracts/ for API specifications and test requirements
    - **IF EXISTS**: Read research.md for technical decisions and constraints
    - **IF EXISTS**: Read quickstart.md for integration scenarios
+
+  **Android collaboration requirement**:
+  - If a task impacts Android code (for example `app/`, `feature/`, `core/`, or `ndi/sdk-bridge/`), invoke the **Android Implementation Expert** handoff to refine implementation details before editing.
+  - Use the Android expert output to confirm architecture boundaries, lifecycle-safe behavior, threading/coroutine approach, and test coverage intent for each impacted task.
 
 4. **Project Setup Verification**:
    - **REQUIRED**: Create/verify ignore files based on actual project setup:

@@ -6,7 +6,7 @@
 
     <fragment
         android:id="@+id/sourceListHostFragment"
-        android:name="com.ndi.app.navigation.SourceListHostFragment"
+        android:name="com.ndi.feature.ndibrowser.source_list.SourceListFragment"
         android:label="@string/source_list_title">
         <action
             android:id="@+id/action_sourceListHostFragment_to_viewerHostFragment"
@@ -15,8 +15,9 @@
 
     <fragment
         android:id="@+id/viewerHostFragment"
-        android:name="com.ndi.app.navigation.ViewerHostFragment"
+        android:name="com.ndi.feature.ndibrowser.viewer.ViewerFragment"
         android:label="@string/viewer_title">
+        <deepLink app:uri="ndi://viewer/{sourceId}" />
         <argument
             android:name="sourceId"
             app:argType="string"

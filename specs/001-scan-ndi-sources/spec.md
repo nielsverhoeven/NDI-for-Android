@@ -2,7 +2,7 @@
 
 **Feature Branch**: `001-scan-ndi-sources`  
 **Created**: 2026-03-15  
-**Status**: Draft  
+**Status**: Draft (Aligned with Constitution 1.1.0)  
 **Input**: User description: "I want this android app to be able to scan the network for NDI sources. The user should be able to select an NDI source and this NDI source should den be showed on the screen of the phone or tablet."
 
 ## Clarifications
@@ -14,6 +14,8 @@
 - Q: What should interruption retry behavior be? -> A: Auto-retry for up to 15 seconds after interruption, then show recovery actions.
 - Q: Should this feature request location permission? -> A: Feature must work without requesting location permission.
 - Q: How should a source be uniquely identified? -> A: Identify source by stable endpoint identity; display name is label only.
+- Q: How should toolchain-blocker scheduling be tracked? -> A: Track both target resolution date and target resolution cycle.
+- Q: When must toolchain-blocker documentation exist? -> A: It must exist by planning completion and stay current through implementation.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -136,8 +138,9 @@ network access and verify that the app shows status and supports retry/reselect.
 - **FR-008**: The system MUST log non-sensitive operational events for discovery,
   source selection, playback start, and playback interruption.
 - **FR-009**: The system MUST remain usable on both phones and tablets.
-- **FR-010**: The system MUST support Android API 24+ behavior while targeting
-  SDK 34+ policies.
+- **FR-010**: The system MUST support Android API 24+ behavior while remaining
+  buildable and compliant on the latest stable compatible compileSdk/targetSdk
+  baseline.
 - **FR-011**: The system MUST provide discovery, selection, and viewing behavior
   without requesting location permission.
 
@@ -162,8 +165,22 @@ network access and verify that the app shows status and supports retry/reselect.
   rejected if not strictly necessary. Location permission is explicitly out of
   scope for this feature.
 - **CR-005 (Build and Modularity)**: Implementation MUST fit feature-based module
-  boundaries, and release readiness MUST include validation with code shrinking
-  and optimization enabled.
+  boundaries, and release readiness MUST include validation with code shrinking,
+  optimization, and the repo-supported latest stable compatible Android
+  toolchain enabled. Any repo-supported toolchain upgrade that affects this
+  feature MUST include release-mode validation of discovery, selection, and
+  viewing flows before release approval.
+- **CR-006 (Toolchain Currency)**: The feature MUST document the expected
+  compileSdk/targetSdk, AGP, Gradle, Kotlin, JDK/JBR, AndroidX/Jetpack,
+  NDK/CMake, and NDI SDK compatibility baseline, and MUST record any blocker to
+  adopting the latest stable compatible versions. If the NDI SDK or another
+  required dependency prevents adoption of a newer stable baseline, the blocker
+  MUST be tracked with an owner, affected component list, target resolution
+  date, and target resolution cycle before the feature can be considered
+  release-ready.
+- **CR-007 (Blocker Documentation State)**: For any open toolchain blocker,
+  blocker documentation MUST already exist at planning completion (not deferred
+  to implementation) and MUST remain synchronized with plan and task artifacts.
 
 ### Key Entities *(include if feature involves data)*
 
@@ -180,6 +197,11 @@ network access and verify that the app shows status and supports retry/reselect.
 - The app is focused on one source viewed at a time.
 - Audio requirements are out of scope for this feature unless needed to show
   basic source playback viability.
+- The repository's active Android toolchain baseline at release time follows the
+  latest stable compatible versions required by Constitution 1.1.0, unless a
+  documented blocker has been approved and tracked.
+- Toolchain blocker documentation for this feature is expected to be present in
+  feature validation artifacts before implementation work begins.
 
 ## Success Criteria *(mandatory)*
 
@@ -193,3 +215,6 @@ network access and verify that the app shows status and supports retry/reselect.
   path (retry or reselect) without requiring app restart.
 - **SC-004**: In usability testing, at least 90% of participants can complete the
   flow discover -> select -> view on first attempt without assistance.
+- **SC-005**: After any repo-supported platform maintenance update, the primary
+  discover -> select -> view flow continues to succeed on representative phone
+  and tablet validation devices in at least 95% of release-readiness runs.

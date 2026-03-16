@@ -1,0 +1,42 @@
+package com.ndi.feature.ndibrowser.viewer
+
+import com.ndi.core.model.TelemetryEvent
+import com.ndi.feature.ndibrowser.domain.repository.NdiViewerRepository
+import com.ndi.feature.ndibrowser.domain.repository.UserSelectionRepository
+
+fun interface ViewerTelemetryEmitter {
+    fun emit(event: TelemetryEvent)
+}
+
+object ViewerDependencies {
+    var viewerRepositoryProvider: (() -> NdiViewerRepository)? = null
+    var userSelectionRepositoryProvider: (() -> UserSelectionRepository)? = null
+    var telemetryEmitter: ViewerTelemetryEmitter = ViewerTelemetryEmitter {}
+
+    fun requireViewerRepository(): NdiViewerRepository {
+        return requireNotNull(viewerRepositoryProvider) { "Viewer repository dependency is not configured." }.invoke()
+    }
+
+    fun requireUserSelectionRepository(): UserSelectionRepository {
+        return requireNotNull(userSelectionRepositoryProvider) { "Viewer selection repository dependency is not configured." }.invoke()
+    }
+}
+
+object ViewerTelemetry {
+
+    fun playbackStarted(sourceId: String): TelemetryEvent {
+        return TelemetryEvent(
+            name = "playback_started",
+            timestampEpochMillis = System.currentTimeMillis(),
+            attributes = mapOf("sourceId" to sourceId),
+        )
+    }
+
+    fun playbackStopped(sourceId: String): TelemetryEvent {
+        return TelemetryEvent(
+            name = "playback_stopped",
+            timestampEpochMillis = System.currentTimeMillis(),
+            attributes = mapOf("sourceId" to sourceId),
+        )
+    }
+}

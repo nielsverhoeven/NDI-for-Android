@@ -102,11 +102,16 @@
 - **CR-002 (Quality)**: Define the test-first approach and which JUnit/Espresso
   coverage is required before implementation is complete.
 - **CR-003 (UX and Performance)**: Define Material Design 3 impact, battery impact,
-  and API compatibility constraints for API 24+ with target SDK 34+.
+  and API compatibility constraints for API 24+ with the latest stable compatible
+  compileSdk/targetSdk baseline.
 - **CR-004 (Data and Security)**: Define offline-first/Room behavior and any
   Android permission implications with explicit justification.
 - **CR-005 (Build and Modularity)**: Define feature module boundaries and release
   build validation expectations, including R8/ProGuard.
+- **CR-006 (Toolchain Currency)**: Define the expected compileSdk/targetSdk, AGP,
+  Gradle, Kotlin, JDK/JBR, AndroidX/Jetpack, NDK/CMake, and third-party SDK
+  compatibility baseline, plus any documented blocker to adopting the latest
+  stable compatible versions.
 
 ### Key Entities *(include if feature involves data)*
 

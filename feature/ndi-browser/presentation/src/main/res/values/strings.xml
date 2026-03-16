@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="ndi_source_list_title">Available NDI Sources</string>
+    <string name="ndi_source_list_refresh">Refresh</string>
+    <string name="ndi_discovery_empty">No NDI sources are currently reachable.</string>
+    <string name="ndi_discovery_error">Discovery failed. Try again.</string>
+    <string name="ndi_source_highlighted">Previously selected</string>
+    <string name="ndi_viewer_title">Viewing %1$s</string>
+    <string name="ndi_viewer_tablet_mode">Tablet layout active</string>
+    <string name="ndi_viewer_retry">Retry</string>
+    <string name="ndi_viewer_back_to_list">Back to list</string>
+</resources>

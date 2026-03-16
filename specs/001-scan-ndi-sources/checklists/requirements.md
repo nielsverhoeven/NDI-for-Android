@@ -32,4 +32,9 @@
 ## Notes
 
 - Validation pass 1: all checklist items passed.
+- Validation pass 2: spec updated for Constitution 1.1.0, including explicit
+  latest-stable toolchain blocker tracking and release-validation expectations.
+- Validation pass 3: analyzer high issues addressed by requiring both target
+  resolution date and cycle plus blocker-document presence at planning
+  completion.
 - No follow-up clarification questions required.

@@ -4,28 +4,27 @@ import com.ndi.core.database.UserSelectionDao
 import com.ndi.core.model.DiscoverySnapshot
 import com.ndi.core.model.DiscoveryStatus
 import com.ndi.core.model.DiscoveryTrigger
-import com.ndi.core.model.NdiSource
+import com.ndi.feature.ndibrowser.data.DiscoveryRefreshCoordinator
+import com.ndi.feature.ndibrowser.data.mapper.NdiSourceMapper
 import com.ndi.feature.ndibrowser.domain.repository.NdiDiscoveryRepository
 import com.ndi.sdkbridge.NdiDiscoveryBridge
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.launch
 import java.util.UUID
 
 class NdiDiscoveryRepositoryImpl(
     private val bridge: NdiDiscoveryBridge,
     private val userSelectionDao: UserSelectionDao,
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
+    private val sourceMapper: NdiSourceMapper = NdiSourceMapper(),
+    private val refreshCoordinator: DiscoveryRefreshCoordinator = DiscoveryRefreshCoordinator(scope),
 ) : NdiDiscoveryRepository {
 
     private val discoveryState = MutableStateFlow(emptySnapshot())
-    private var refreshJob: Job? = null
 
     override suspend fun discoverSources(trigger: DiscoveryTrigger): DiscoverySnapshot {
         val startedAt = System.currentTimeMillis()
@@ -35,8 +34,8 @@ class NdiDiscoveryRepositoryImpl(
         )
 
         return runCatching {
-            val persistedSelection = userSelectionDao.getSelection()?.lastSelectedSourceId
-            val sources = bridge.discoverSources().sortedByDescending { it.sourceId == persistedSelection }
+            userSelectionDao.getSelection()
+            val sources = sourceMapper.map(bridge.discoverSources())
             val completedAt = System.currentTimeMillis()
             val status = if (sources.isEmpty()) DiscoveryStatus.EMPTY else DiscoveryStatus.SUCCESS
             DiscoverySnapshot(
@@ -66,21 +65,13 @@ class NdiDiscoveryRepositoryImpl(
     override fun observeDiscoveryState(): Flow<DiscoverySnapshot> = discoveryState.asStateFlow()
 
     override fun startForegroundAutoRefresh(intervalSeconds: Int) {
-        if (refreshJob?.isActive == true) {
-            return
-        }
-
-        refreshJob = scope.launch {
-            while (true) {
-                discoverSources(DiscoveryTrigger.FOREGROUND_TICK)
-                delay(intervalSeconds * 1000L)
-            }
+        refreshCoordinator.start(intervalSeconds) {
+            discoverSources(DiscoveryTrigger.FOREGROUND_TICK)
         }
     }
 
     override fun stopForegroundAutoRefresh() {
-        refreshJob?.cancel()
-        refreshJob = null
+        refreshCoordinator.stop()
     }
 
     private fun emptySnapshot(): DiscoverySnapshot {

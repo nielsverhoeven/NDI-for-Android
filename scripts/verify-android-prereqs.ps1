@@ -34,6 +34,17 @@ foreach ($command in $requiredCommands) {
     $results += Add-Result -Name "command:$command" -Ok $available -Detail $detail
 }
 
+$gradleWrapperPath = Join-Path $PSScriptRoot "..\gradlew.bat"
+$gradleAvailable = (Test-Path $gradleWrapperPath) -or (Test-CommandAvailable -Name "gradle")
+$gradleDetail = if (Test-Path $gradleWrapperPath) {
+    $gradleWrapperPath
+} elseif (Test-CommandAvailable -Name "gradle") {
+    "Global gradle available on PATH"
+} else {
+    "Missing Gradle wrapper and no global gradle on PATH"
+}
+$results += Add-Result -Name "build:gradle" -Ok $gradleAvailable -Detail $gradleDetail
+
 $javaHome = $env:JAVA_HOME
 $androidSdkRoot = if ($env:ANDROID_SDK_ROOT) { $env:ANDROID_SDK_ROOT } elseif ($env:ANDROID_HOME) { $env:ANDROID_HOME } else { $null }
 

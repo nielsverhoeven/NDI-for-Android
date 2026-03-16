@@ -8,7 +8,13 @@ interface NdiDiscoveryBridge {
     suspend fun discoverSources(): List<NdiSource>
 }
 
-object NativeNdiBridge : NdiDiscoveryBridge {
+interface NdiViewerBridge {
+    fun startReceiver(sourceId: String)
+
+    fun stopReceiver()
+}
+
+object NativeNdiBridge : NdiDiscoveryBridge, NdiViewerBridge {
 
     init {
         runCatching { System.loadLibrary("ndi_bridge") }
@@ -27,11 +33,11 @@ object NativeNdiBridge : NdiDiscoveryBridge {
         }
     }
 
-    fun startReceiver(sourceId: String) {
+    override fun startReceiver(sourceId: String) {
         runCatching { nativeStartReceiver(sourceId) }
     }
 
-    fun stopReceiver() {
+    override fun stopReceiver() {
         runCatching { nativeStopReceiver() }
     }
 
