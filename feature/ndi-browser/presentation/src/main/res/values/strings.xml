@@ -5,8 +5,15 @@
     <string name="ndi_discovery_empty">No NDI sources are currently reachable.</string>
     <string name="ndi_discovery_error">Discovery failed. Try again.</string>
     <string name="ndi_source_highlighted">Previously selected</string>
+    <string name="ndi_source_start_output">Start Output</string>
     <string name="ndi_viewer_title">Viewing %1$s</string>
     <string name="ndi_viewer_tablet_mode">Tablet layout active</string>
     <string name="ndi_viewer_retry">Retry</string>
     <string name="ndi_viewer_back_to_list">Back to list</string>
+    <string name="ndi_output_title">Output for %1$s</string>
+    <string name="ndi_output_stream_name_label">Output Stream Name</string>
+    <string name="ndi_output_start">Start Output</string>
+    <string name="ndi_output_stop">Stop Output</string>
+    <string name="ndi_output_retry">Retry Output</string>
+    <string name="ndi_output_default_stream_name">NDI Output</string>
 </resources>

@@ -40,6 +40,9 @@ class SourceListViewModel(
     private val _navigationEvents = MutableSharedFlow<String>(extraBufferCapacity = 1)
     val navigationEvents: SharedFlow<String> = _navigationEvents.asSharedFlow()
 
+    private val _outputNavigationEvents = MutableSharedFlow<String>(extraBufferCapacity = 1)
+    val outputNavigationEvents: SharedFlow<String> = _outputNavigationEvents.asSharedFlow()
+
     init {
         viewModelScope.launch {
             discoveryRepository.observeDiscoveryState().collect(::onDiscoverySnapshot)
@@ -70,6 +73,14 @@ class SourceListViewModel(
             _uiState.update { current -> current.copy(highlightedSourceId = sourceId) }
             telemetryEmitter.emit(SourceListTelemetry.sourceSelected(sourceId))
             _navigationEvents.emit(sourceId)
+        }
+    }
+
+    fun onOutputRequested(sourceId: String) {
+        viewModelScope.launch {
+            preselectionController.rememberSelection(sourceId)
+            _uiState.update { current -> current.copy(highlightedSourceId = sourceId) }
+            _outputNavigationEvents.emit(sourceId)
         }
     }
 

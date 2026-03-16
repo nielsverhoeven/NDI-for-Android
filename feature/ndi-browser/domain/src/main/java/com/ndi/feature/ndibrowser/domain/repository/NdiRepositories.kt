@@ -2,6 +2,9 @@ package com.ndi.feature.ndibrowser.domain.repository
 
 import com.ndi.core.model.DiscoverySnapshot
 import com.ndi.core.model.DiscoveryTrigger
+import com.ndi.core.model.OutputConfiguration
+import com.ndi.core.model.OutputHealthSnapshot
+import com.ndi.core.model.OutputSession
 import com.ndi.core.model.ViewerSession
 import kotlinx.coroutines.flow.Flow
 
@@ -23,6 +26,30 @@ interface NdiViewerRepository {
     suspend fun retryReconnectWithinWindow(sourceId: String, windowSeconds: Int = 15): ViewerSession
 
     suspend fun stopViewing()
+}
+
+interface NdiOutputRepository {
+    suspend fun startOutput(inputSourceId: String, streamName: String): OutputSession
+
+    suspend fun stopOutput(): OutputSession
+
+    fun observeOutputSession(): Flow<OutputSession>
+
+    suspend fun retryInterruptedOutputWithinWindow(windowSeconds: Int = 15): OutputSession
+
+    fun observeOutputHealth(): Flow<OutputHealthSnapshot>
+}
+
+interface OutputConfigurationRepository {
+    suspend fun savePreferredStreamName(value: String)
+
+    suspend fun getPreferredStreamName(): String
+
+    suspend fun saveLastSelectedInputSource(sourceId: String)
+
+    suspend fun getLastSelectedInputSource(): String?
+
+    suspend fun getConfiguration(): OutputConfiguration
 }
 
 interface UserSelectionRepository {

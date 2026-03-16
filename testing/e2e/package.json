@@ -1,0 +1,17 @@
+{
+  "name": "ndi-android-e2e",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Playwright end-to-end tests for NDI-for-Android dual-emulator workflows",
+  "scripts": {
+    "test": "playwright test",
+    "test:dual-emulator": "playwright test tests/interop-dual-emulator.spec.ts",
+    "test:us1": "playwright test tests/us1-*.spec.ts",
+    "test:us2": "playwright test tests/us2-*.spec.ts",
+    "test:us3": "playwright test tests/us3-*.spec.ts"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.53.0",
+    "typescript": "^5.8.0"
+  }
+}

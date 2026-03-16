@@ -11,6 +11,9 @@
         <action
             android:id="@+id/action_sourceListHostFragment_to_viewerHostFragment"
             app:destination="@id/viewerHostFragment" />
+        <action
+            android:id="@+id/action_sourceListHostFragment_to_outputControlFragment"
+            app:destination="@id/outputControlFragment" />
     </fragment>
 
     <fragment
@@ -18,6 +21,17 @@
         android:name="com.ndi.feature.ndibrowser.viewer.ViewerFragment"
         android:label="@string/viewer_title">
         <deepLink app:uri="ndi://viewer/{sourceId}" />
+        <argument
+            android:name="sourceId"
+            app:argType="string"
+            android:defaultValue="" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/outputControlFragment"
+        android:name="com.ndi.feature.ndibrowser.output.OutputControlFragment"
+        android:label="Output">
+        <deepLink app:uri="ndi://output/{sourceId}" />
         <argument
             android:name="sourceId"
             app:argType="string"

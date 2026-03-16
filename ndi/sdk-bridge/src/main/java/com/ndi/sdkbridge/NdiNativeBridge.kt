@@ -14,7 +14,15 @@ interface NdiViewerBridge {
     fun stopReceiver()
 }
 
-object NativeNdiBridge : NdiDiscoveryBridge, NdiViewerBridge {
+interface NdiOutputBridge {
+    suspend fun isSourceReachable(sourceId: String): Boolean
+
+    fun startSender(sourceId: String, streamName: String)
+
+    fun stopSender()
+}
+
+object NativeNdiBridge : NdiDiscoveryBridge, NdiViewerBridge, NdiOutputBridge {
 
     init {
         runCatching { System.loadLibrary("ndi_bridge") }
@@ -41,6 +49,18 @@ object NativeNdiBridge : NdiDiscoveryBridge, NdiViewerBridge {
         runCatching { nativeStopReceiver() }
     }
 
+    override suspend fun isSourceReachable(sourceId: String): Boolean = withContext(Dispatchers.IO) {
+        discoverSources().any { it.sourceId == sourceId }
+    }
+
+    override fun startSender(sourceId: String, streamName: String) {
+        runCatching { nativeStartSender(sourceId, streamName) }
+    }
+
+    override fun stopSender() {
+        runCatching { nativeStopSender() }
+    }
+
     private external fun nativeDiscoverSourceIds(): Array<String>
 
     private external fun nativeDiscoverDisplayNames(): Array<String>
@@ -48,4 +68,8 @@ object NativeNdiBridge : NdiDiscoveryBridge, NdiViewerBridge {
     private external fun nativeStartReceiver(sourceId: String)
 
     private external fun nativeStopReceiver()
+
+    private external fun nativeStartSender(sourceId: String, streamName: String)
+
+    private external fun nativeStopSender()
 }

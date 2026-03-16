@@ -10,6 +10,8 @@ import com.ndi.feature.ndibrowser.domain.repository.UserSelectionRepository
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -47,6 +49,23 @@ class SourceListViewModelTest {
         advanceUntilIdle()
 
         assertEquals(listOf(DiscoveryTrigger.MANUAL), repository.discoveryRequests)
+    }
+
+    @Test
+    fun onOutputRequested_emitsOutputNavigation() = runTest(mainDispatcherRule.dispatcher.scheduler) {
+        val repository = FakeDiscoveryRepository()
+        val viewModel = SourceListViewModel(repository, InMemoryUserSelectionRepository(), SourceListTelemetryEmitter {})
+
+        var emitted: String? = null
+        val collector = launch {
+            emitted = viewModel.outputNavigationEvents.first()
+        }
+
+        viewModel.onOutputRequested("camera-output")
+        advanceUntilIdle()
+
+        assertEquals("camera-output", emitted)
+        collector.cancel()
     }
 }
 

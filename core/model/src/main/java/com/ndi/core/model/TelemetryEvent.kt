@@ -4,4 +4,17 @@ data class TelemetryEvent(
     val name: String,
     val timestampEpochMillis: Long,
     val attributes: Map<String, String> = emptyMap(),
-)
+) {
+    companion object {
+        const val OUTPUT_START_REQUESTED = "output_start_requested"
+        const val OUTPUT_STARTED = "output_started"
+        const val OUTPUT_STOPPED = "output_stopped"
+        const val OUTPUT_INTERRUPTED = "output_interrupted"
+        const val OUTPUT_RETRY_REQUESTED = "output_retry_requested"
+        const val OUTPUT_RETRY_SUCCEEDED = "output_retry_succeeded"
+        const val OUTPUT_RETRY_FAILED = "output_retry_failed"
+        const val DUAL_EMULATOR_E2E_STARTED = "dual_emulator_e2e_started"
+        const val DUAL_EMULATOR_E2E_PASSED = "dual_emulator_e2e_passed"
+        const val DUAL_EMULATOR_E2E_FAILED = "dual_emulator_e2e_failed"
+    }
+}

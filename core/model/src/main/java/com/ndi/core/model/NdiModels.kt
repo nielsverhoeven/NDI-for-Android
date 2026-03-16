@@ -55,3 +55,46 @@ data class UserSelectionState(
     val lastSelectedAtEpochMillis: Long? = null,
     val shouldAutoplayOnLaunch: Boolean = false,
 )
+
+enum class OutputState {
+    READY,
+    STARTING,
+    ACTIVE,
+    STOPPING,
+    STOPPED,
+    INTERRUPTED,
+}
+
+enum class OutputQualityLevel {
+    HEALTHY,
+    DEGRADED,
+    FAILED,
+}
+
+data class OutputSession(
+    val sessionId: String,
+    val inputSourceId: String,
+    val outboundStreamName: String,
+    val state: OutputState,
+    val startedAtEpochMillis: Long,
+    val stoppedAtEpochMillis: Long? = null,
+    val interruptionReason: String? = null,
+    val retryAttempts: Int = 0,
+    val hostInstanceId: String = "local",
+)
+
+data class OutputConfiguration(
+    val preferredStreamName: String,
+    val lastSelectedInputSourceId: String? = null,
+    val retryWindowSeconds: Int = 15,
+)
+
+data class OutputHealthSnapshot(
+    val snapshotId: String,
+    val sessionId: String,
+    val capturedAtEpochMillis: Long,
+    val networkReachable: Boolean,
+    val inputReachable: Boolean,
+    val qualityLevel: OutputQualityLevel,
+    val messageCode: String? = null,
+)

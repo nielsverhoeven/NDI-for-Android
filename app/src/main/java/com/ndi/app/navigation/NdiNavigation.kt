@@ -12,7 +12,17 @@ object NdiNavigation {
             .build()
     }
 
+    fun outputRequest(sourceId: String): NavDeepLinkRequest {
+        return NavDeepLinkRequest.Builder
+            .fromUri("ndi://output/$sourceId".toUri())
+            .build()
+    }
+
     fun sourceIdFrom(args: Bundle?): String {
+        return args?.getString("sourceId").orEmpty()
+    }
+
+    fun outputSourceIdFrom(args: Bundle?): String {
         return args?.getString("sourceId").orEmpty()
     }
 }
