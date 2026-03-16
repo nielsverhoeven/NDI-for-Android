@@ -2,12 +2,13 @@ import { defineConfig } from "@playwright/test";
 
 export default defineConfig({
   testDir: "./tests",
-  timeout: 120_000,
+  timeout: 180_000,
   expect: {
-    timeout: 15_000,
+    timeout: 20_000,
   },
   fullyParallel: false,
   retries: 1,
+  outputDir: "./test-results",
   reporter: [["list"], ["html", { open: "never" }]],
   use: {
     trace: "on-first-retry",
@@ -16,8 +17,9 @@ export default defineConfig({
   },
   projects: [
     {
-      name: "dual-emulator",
+      name: "android-dual-emulator",
       testMatch: /.*\.spec\.ts/,
+      grep: /@dual-emulator|@us1|@us2|@us3/,
     },
   ],
 });

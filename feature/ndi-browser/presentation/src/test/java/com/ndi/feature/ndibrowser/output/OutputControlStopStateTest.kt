@@ -7,6 +7,8 @@ import com.ndi.core.model.OutputSession
 import com.ndi.core.model.OutputState
 import com.ndi.feature.ndibrowser.domain.repository.NdiOutputRepository
 import com.ndi.feature.ndibrowser.domain.repository.OutputConfigurationRepository
+import com.ndi.feature.ndibrowser.domain.repository.ScreenCaptureConsentRepository
+import com.ndi.feature.ndibrowser.domain.repository.ScreenCaptureConsentState
 import com.ndi.feature.ndibrowser.testutil.MainDispatcherRule
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -29,7 +31,7 @@ class OutputControlStopStateTest {
     @Test
     fun onStopOutputPressed_transitionsToStopped() = runTest(mainDispatcherRule.dispatcher.scheduler) {
         val repository = StopAwareOutputRepository()
-        val viewModel = OutputControlViewModel(repository, StopStateOutputConfigurationRepository(), OutputTelemetryEmitter {})
+        val viewModel = OutputControlViewModel(repository, StopStateOutputConfigurationRepository(), StopStateConsentRepository(), OutputTelemetryEmitter {})
 
         repository.emitState(OutputState.ACTIVE, sourceId = "camera-1")
         advanceUntilIdle()
@@ -46,7 +48,7 @@ class OutputControlStopStateTest {
     @Test
     fun onStopOutputPressed_isGuardedWhenAlreadyStopped() = runTest(mainDispatcherRule.dispatcher.scheduler) {
         val repository = StopAwareOutputRepository()
-        val viewModel = OutputControlViewModel(repository, StopStateOutputConfigurationRepository(), OutputTelemetryEmitter {})
+        val viewModel = OutputControlViewModel(repository, StopStateOutputConfigurationRepository(), StopStateConsentRepository(), OutputTelemetryEmitter {})
 
         repository.emitState(OutputState.STOPPED, sourceId = "camera-2")
         advanceUntilIdle()
@@ -60,7 +62,7 @@ class OutputControlStopStateTest {
     @Test
     fun onStopOutputPressed_setsInterruptedOnFailure() = runTest(mainDispatcherRule.dispatcher.scheduler) {
         val repository = StopAwareOutputRepository(failStop = true)
-        val viewModel = OutputControlViewModel(repository, StopStateOutputConfigurationRepository(), OutputTelemetryEmitter {})
+        val viewModel = OutputControlViewModel(repository, StopStateOutputConfigurationRepository(), StopStateConsentRepository(), OutputTelemetryEmitter {})
 
         repository.emitState(OutputState.ACTIVE, sourceId = "camera-3")
         advanceUntilIdle()
@@ -75,7 +77,7 @@ class OutputControlStopStateTest {
     @Test
     fun stateMapping_reflectsControlAvailability() = runTest(mainDispatcherRule.dispatcher.scheduler) {
         val repository = StopAwareOutputRepository()
-        val viewModel = OutputControlViewModel(repository, StopStateOutputConfigurationRepository(), OutputTelemetryEmitter {})
+        val viewModel = OutputControlViewModel(repository, StopStateOutputConfigurationRepository(), StopStateConsentRepository(), OutputTelemetryEmitter {})
 
         repository.emitState(OutputState.READY, sourceId = "cam")
         advanceUntilIdle()
@@ -183,3 +185,20 @@ private class StopStateOutputConfigurationRepository : OutputConfigurationReposi
 
     override suspend fun getConfiguration(): OutputConfiguration = config
 }
+
+private class StopStateConsentRepository : ScreenCaptureConsentRepository {
+    override suspend fun beginConsentRequest(inputSourceId: String) = Unit
+
+    override suspend fun registerConsentResult(
+        inputSourceId: String,
+        granted: Boolean,
+        tokenRef: String?,
+    ): ScreenCaptureConsentState = ScreenCaptureConsentState(inputSourceId, granted, tokenRef)
+
+    override suspend fun getConsentState(inputSourceId: String): ScreenCaptureConsentState? {
+        return ScreenCaptureConsentState(inputSourceId, granted = true, tokenRef = "test")
+    }
+
+    override suspend fun clearConsent(inputSourceId: String) = Unit
+}
+

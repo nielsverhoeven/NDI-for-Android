@@ -1,9 +1,20 @@
 import { test, expect } from "@playwright/test";
+import {
+  getDualEmulatorContext,
+  verifyDeviceReady,
+  verifyPackageInstalled,
+} from "./support/android-device-fixtures";
 
-test("shows start output affordance in source list", async ({ page }) => {
-  test.fail(true, "US1 emulator automation wiring pending");
+test("publisher starts local screen-share output and receiver can discover stream", async () => {
+  const context = getDualEmulatorContext();
 
-  await page.goto("http://127.0.0.1:7777/source-list");
+  verifyDeviceReady(context.publisherSerial);
+  verifyDeviceReady(context.receiverSerial);
+  verifyPackageInstalled(context.publisherSerial, context.packageName);
+  verifyPackageInstalled(context.receiverSerial, context.packageName);
 
-  await expect(page.getByRole("button", { name: "Start Output" }).first()).toBeVisible();
+  test.fail(true, "US1 Android-device UI orchestration still pending fixture/device automation wiring");
+
+  // Sanity assertion so the test stays structured while app-driving steps are implemented next.
+  expect(context.publisherSerial).not.toEqual(context.receiverSerial);
 });

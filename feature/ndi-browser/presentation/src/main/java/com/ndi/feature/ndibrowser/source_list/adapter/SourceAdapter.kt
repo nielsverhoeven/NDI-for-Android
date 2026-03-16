@@ -5,6 +5,7 @@ import android.view.ViewGroup
 import androidx.core.view.isVisible
 import androidx.recyclerview.widget.RecyclerView
 import com.ndi.core.model.NdiSource
+import com.ndi.feature.ndibrowser.presentation.R
 import com.ndi.feature.ndibrowser.presentation.databinding.ItemNdiSourceBinding
 
 class SourceAdapter(
@@ -41,7 +42,11 @@ class SourceViewHolder(
 
     fun bind(source: NdiSource, isHighlighted: Boolean) {
         binding.sourceName.text = source.displayName
-        binding.sourceEndpoint.text = source.endpointAddress ?: source.sourceId
+        binding.sourceEndpoint.text = if (source.sourceId.startsWith("device-screen:")) {
+            binding.root.context.getString(R.string.ndi_source_local_screen_endpoint)
+        } else {
+            source.endpointAddress ?: source.sourceId
+        }
         binding.highlightBadge.isVisible = isHighlighted
         binding.root.setOnClickListener { onSourceClicked(source.sourceId) }
         binding.outputButton.setOnClickListener { onOutputClicked(source.sourceId) }

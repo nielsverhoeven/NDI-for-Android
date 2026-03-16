@@ -1,9 +1,13 @@
 package com.ndi.feature.ndibrowser.output
 
+import android.app.Activity
+import android.content.Context
+import android.media.projection.MediaProjectionManager
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.fragment.app.viewModels
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.Lifecycle
@@ -20,7 +24,16 @@ class OutputControlFragment : Fragment() {
         OutputControlViewModel.Factory(
             OutputDependencies.requireOutputRepository(),
             OutputDependencies.requireOutputConfigurationRepository(),
+            OutputDependencies.requireScreenCaptureConsentRepository(),
         )
+    }
+
+    private val screenCaptureLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        val granted = result.resultCode == Activity.RESULT_OK
+        val tokenRef = if (granted) "media-projection" else null
+        viewModel.onScreenCaptureConsentResult(granted = granted, tokenRef = tokenRef)
     }
 
     private lateinit var screen: OutputControlScreen
@@ -54,9 +67,17 @@ class OutputControlFragment : Fragment() {
 
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                viewModel.uiState.collect { state ->
-                    binding ?: return@collect
-                    screen.render(state)
+                launch {
+                    viewModel.uiState.collect { state ->
+                        binding ?: return@collect
+                        screen.render(state)
+                    }
+                }
+                launch {
+                    viewModel.consentPromptEvents.collect {
+                        val projectionManager = requireContext().getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+                        screenCaptureLauncher.launch(projectionManager.createScreenCaptureIntent())
+                    }
                 }
             }
         }

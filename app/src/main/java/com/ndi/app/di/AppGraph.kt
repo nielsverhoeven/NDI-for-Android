@@ -9,11 +9,13 @@ import com.ndi.feature.ndibrowser.data.repository.NdiDiscoveryRepositoryImpl
 import com.ndi.feature.ndibrowser.data.repository.NdiOutputRepositoryImpl
 import com.ndi.feature.ndibrowser.data.repository.NdiViewerRepositoryImpl
 import com.ndi.feature.ndibrowser.data.repository.OutputConfigurationRepositoryImpl
+import com.ndi.feature.ndibrowser.data.repository.ScreenCaptureConsentRepositoryImpl
 import com.ndi.feature.ndibrowser.data.repository.UserSelectionRepositoryImpl
 import com.ndi.feature.ndibrowser.domain.repository.NdiDiscoveryRepository
 import com.ndi.feature.ndibrowser.domain.repository.NdiOutputRepository
 import com.ndi.feature.ndibrowser.domain.repository.NdiViewerRepository
 import com.ndi.feature.ndibrowser.domain.repository.OutputConfigurationRepository
+import com.ndi.feature.ndibrowser.domain.repository.ScreenCaptureConsentRepository
 import com.ndi.feature.ndibrowser.domain.repository.UserSelectionRepository
 import com.ndi.app.navigation.NdiNavigation
 import com.ndi.feature.ndibrowser.output.OutputDependencies
@@ -39,9 +41,12 @@ class AppGraph private constructor(context: Context) {
         viewerSessionDao = database.viewerSessionDao(),
     )
 
+    val screenCaptureConsentRepository: ScreenCaptureConsentRepository = ScreenCaptureConsentRepositoryImpl()
+
     val outputRepository: NdiOutputRepository = NdiOutputRepositoryImpl(
         outputSessionDao = database.outputSessionDao(),
         outputBridge = NativeNdiBridge,
+        screenCaptureConsentRepository = screenCaptureConsentRepository,
         mapper = OutputSessionMapper(),
         coordinator = OutputSessionCoordinator(),
         recoveryCoordinator = OutputRecoveryCoordinator(),
@@ -50,6 +55,7 @@ class AppGraph private constructor(context: Context) {
     val outputConfigurationRepository: OutputConfigurationRepository = OutputConfigurationRepositoryImpl(
         outputConfigurationDao = database.outputConfigurationDao(),
     )
+
 
     init {
         SourceListDependencies.discoveryRepositoryProvider = { discoveryRepository }
@@ -60,6 +66,7 @@ class AppGraph private constructor(context: Context) {
         ViewerDependencies.userSelectionRepositoryProvider = { userSelectionRepository }
         OutputDependencies.outputRepositoryProvider = { outputRepository }
         OutputDependencies.outputConfigurationRepositoryProvider = { outputConfigurationRepository }
+        OutputDependencies.screenCaptureConsentRepositoryProvider = { screenCaptureConsentRepository }
     }
 
     companion object {

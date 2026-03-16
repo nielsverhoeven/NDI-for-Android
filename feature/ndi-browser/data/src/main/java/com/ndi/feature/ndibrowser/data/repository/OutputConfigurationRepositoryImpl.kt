@@ -3,6 +3,7 @@ package com.ndi.feature.ndibrowser.data.repository
 import com.ndi.core.database.OutputConfigurationDao
 import com.ndi.core.database.OutputConfigurationEntity
 import com.ndi.core.model.OutputConfiguration
+import com.ndi.core.model.OutputInputKind
 import com.ndi.feature.ndibrowser.domain.repository.OutputConfigurationRepository
 
 class OutputConfigurationRepositoryImpl(
@@ -32,6 +33,11 @@ class OutputConfigurationRepositoryImpl(
         outputConfigurationDao.upsert(
             current.copy(
                 lastSelectedInputSourceId = normalizedSourceId,
+                lastSelectedInputSourceKind = if (normalizedSourceId.startsWith("device-screen:")) {
+                    OutputInputKind.DEVICE_SCREEN.name
+                } else {
+                    OutputInputKind.DISCOVERED_NDI.name
+                },
                 updatedAtEpochMillis = System.currentTimeMillis(),
             ),
         )
@@ -49,6 +55,8 @@ class OutputConfigurationRepositoryImpl(
         return OutputConfigurationEntity(
             preferredStreamName = defaultStreamName,
             lastSelectedInputSourceId = null,
+            lastSelectedInputSourceKind = null,
+            autoRetryEnabled = true,
             retryWindowSeconds = 15,
             updatedAtEpochMillis = System.currentTimeMillis(),
         )
@@ -58,6 +66,8 @@ class OutputConfigurationRepositoryImpl(
         return OutputConfiguration(
             preferredStreamName = preferredStreamName,
             lastSelectedInputSourceId = lastSelectedInputSourceId,
+            lastSelectedInputSourceKind = lastSelectedInputSourceKind?.let(OutputInputKind::valueOf),
+            autoRetryEnabled = autoRetryEnabled,
             retryWindowSeconds = retryWindowSeconds,
         )
     }

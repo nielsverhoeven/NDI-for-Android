@@ -1,6 +1,8 @@
 package com.ndi.feature.ndibrowser.data.mapper
 
 import com.ndi.core.model.OutputSession
+import com.ndi.core.model.OutputConsentState
+import com.ndi.core.model.OutputInputKind
 import com.ndi.core.model.OutputState
 import java.util.UUID
 
@@ -10,6 +12,8 @@ class OutputSessionMapper {
         inputSourceId: String,
         preferredName: String,
         activeStreamNames: Set<String>,
+        inputSourceKind: OutputInputKind = OutputInputKind.DISCOVERED_NDI,
+        consentState: OutputConsentState = OutputConsentState.NOT_REQUIRED,
         hostInstanceId: String = "local",
     ): OutputSession {
         val normalizedName = normalizeName(preferredName, inputSourceId)
@@ -17,7 +21,9 @@ class OutputSessionMapper {
         return OutputSession(
             sessionId = UUID.randomUUID().toString(),
             inputSourceId = inputSourceId,
+            inputSourceKind = inputSourceKind,
             outboundStreamName = uniqueName,
+            consentState = consentState,
             state = OutputState.STARTING,
             startedAtEpochMillis = System.currentTimeMillis(),
             hostInstanceId = hostInstanceId,
@@ -25,9 +31,10 @@ class OutputSessionMapper {
     }
 
     fun resolveUniqueName(baseName: String, activeStreamNames: Set<String>): String {
-        if (baseName !in activeStreamNames) return baseName
+        val normalizedActiveNames = activeStreamNames.map { it.lowercase() }.toSet()
+        if (baseName.lowercase() !in normalizedActiveNames) return baseName
         var suffix = 2
-        while ("$baseName ($suffix)" in activeStreamNames) {
+        while ("$baseName ($suffix)".lowercase() in normalizedActiveNames) {
             suffix++
         }
         return "$baseName ($suffix)"

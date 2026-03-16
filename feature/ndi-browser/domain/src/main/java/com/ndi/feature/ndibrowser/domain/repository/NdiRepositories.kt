@@ -38,6 +38,26 @@ interface NdiOutputRepository {
     suspend fun retryInterruptedOutputWithinWindow(windowSeconds: Int = 15): OutputSession
 
     fun observeOutputHealth(): Flow<OutputHealthSnapshot>
+
+    fun isLocalScreenSource(inputSourceId: String): Boolean {
+        return inputSourceId.startsWith("device-screen:")
+    }
+}
+
+data class ScreenCaptureConsentState(
+    val sourceId: String,
+    val granted: Boolean,
+    val tokenRef: String? = null,
+)
+
+interface ScreenCaptureConsentRepository {
+    suspend fun beginConsentRequest(inputSourceId: String)
+
+    suspend fun registerConsentResult(inputSourceId: String, granted: Boolean, tokenRef: String? = null): ScreenCaptureConsentState
+
+    suspend fun getConsentState(inputSourceId: String): ScreenCaptureConsentState?
+
+    suspend fun clearConsent(inputSourceId: String)
 }
 
 interface OutputConfigurationRepository {

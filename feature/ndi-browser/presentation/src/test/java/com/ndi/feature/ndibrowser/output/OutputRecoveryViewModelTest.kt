@@ -7,6 +7,8 @@ import com.ndi.core.model.OutputSession
 import com.ndi.core.model.OutputState
 import com.ndi.feature.ndibrowser.domain.repository.NdiOutputRepository
 import com.ndi.feature.ndibrowser.domain.repository.OutputConfigurationRepository
+import com.ndi.feature.ndibrowser.domain.repository.ScreenCaptureConsentRepository
+import com.ndi.feature.ndibrowser.domain.repository.ScreenCaptureConsentState
 import com.ndi.feature.ndibrowser.testutil.MainDispatcherRule
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -28,7 +30,7 @@ class OutputRecoveryViewModelTest {
     @Test
     fun interruptedSession_showsRecoveryActions() = runTest(mainDispatcherRule.dispatcher.scheduler) {
         val repository = RecoveryOutputRepository()
-        val viewModel = OutputControlViewModel(repository, RecoveryOutputConfigurationRepository(), OutputTelemetryEmitter {})
+        val viewModel = OutputControlViewModel(repository, RecoveryOutputConfigurationRepository(), RecoveryConsentRepository(), OutputTelemetryEmitter {})
 
         repository.emitInterrupted("camera-1", "network_lost")
         advanceUntilIdle()
@@ -42,7 +44,7 @@ class OutputRecoveryViewModelTest {
     @Test
     fun onRetryOutputPressed_recoversToActiveWithinWindow() = runTest(mainDispatcherRule.dispatcher.scheduler) {
         val repository = RecoveryOutputRepository()
-        val viewModel = OutputControlViewModel(repository, RecoveryOutputConfigurationRepository(), OutputTelemetryEmitter {})
+        val viewModel = OutputControlViewModel(repository, RecoveryOutputConfigurationRepository(), RecoveryConsentRepository(), OutputTelemetryEmitter {})
 
         repository.emitInterrupted("camera-2", "transient")
         advanceUntilIdle()
@@ -125,3 +127,20 @@ private class RecoveryOutputConfigurationRepository : OutputConfigurationReposit
 
     override suspend fun getConfiguration(): OutputConfiguration = config
 }
+
+private class RecoveryConsentRepository : ScreenCaptureConsentRepository {
+    override suspend fun beginConsentRequest(inputSourceId: String) = Unit
+
+    override suspend fun registerConsentResult(
+        inputSourceId: String,
+        granted: Boolean,
+        tokenRef: String?,
+    ): ScreenCaptureConsentState = ScreenCaptureConsentState(inputSourceId, granted, tokenRef)
+
+    override suspend fun getConsentState(inputSourceId: String): ScreenCaptureConsentState? {
+        return ScreenCaptureConsentState(inputSourceId, granted = true, tokenRef = "test")
+    }
+
+    override suspend fun clearConsent(inputSourceId: String) = Unit
+}
+

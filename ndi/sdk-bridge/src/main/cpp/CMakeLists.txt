@@ -6,6 +6,14 @@ add_library(
     ndi_bridge
     SHARED
     ndi_bridge.cpp
+    ndi_screen_share.cpp
+)
+
+set_target_properties(
+    ndi_bridge
+    PROPERTIES
+    CXX_STANDARD 17
+    CXX_STANDARD_REQUIRED ON
 )
 
 find_library(

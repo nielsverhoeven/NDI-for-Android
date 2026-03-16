@@ -41,6 +41,8 @@ data class OutputConfigurationEntity(
     val id: Int = 1,
     val preferredStreamName: String,
     val lastSelectedInputSourceId: String?,
+    val lastSelectedInputSourceKind: String?,
+    val autoRetryEnabled: Boolean = true,
     val retryWindowSeconds: Int = 15,
     val updatedAtEpochMillis: Long,
 )
@@ -50,7 +52,9 @@ data class OutputSessionEntity(
     @PrimaryKey
     val sessionId: String,
     val inputSourceId: String,
+    val inputSourceKind: String,
     val outboundStreamName: String,
+    val consentState: String,
     val state: String,
     val startedAtEpochMillis: Long,
     val stoppedAtEpochMillis: Long?,
@@ -102,7 +106,7 @@ interface OutputSessionDao {
         OutputConfigurationEntity::class,
         OutputSessionEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = false,
 )
 abstract class NdiDatabase : RoomDatabase() {
@@ -124,6 +128,8 @@ abstract class NdiDatabase : RoomDatabase() {
                         id INTEGER NOT NULL,
                         preferredStreamName TEXT NOT NULL,
                         lastSelectedInputSourceId TEXT,
+                        lastSelectedInputSourceKind TEXT,
+                        autoRetryEnabled INTEGER NOT NULL,
                         retryWindowSeconds INTEGER NOT NULL,
                         updatedAtEpochMillis INTEGER NOT NULL,
                         PRIMARY KEY(id)
@@ -135,7 +141,9 @@ abstract class NdiDatabase : RoomDatabase() {
                     CREATE TABLE IF NOT EXISTS output_session (
                         sessionId TEXT NOT NULL,
                         inputSourceId TEXT NOT NULL,
+                        inputSourceKind TEXT NOT NULL,
                         outboundStreamName TEXT NOT NULL,
+                        consentState TEXT NOT NULL,
                         state TEXT NOT NULL,
                         startedAtEpochMillis INTEGER NOT NULL,
                         stoppedAtEpochMillis INTEGER,
@@ -149,6 +157,15 @@ abstract class NdiDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE output_configuration ADD COLUMN lastSelectedInputSourceKind TEXT")
+                database.execSQL("ALTER TABLE output_configuration ADD COLUMN autoRetryEnabled INTEGER NOT NULL DEFAULT 1")
+                database.execSQL("ALTER TABLE output_session ADD COLUMN inputSourceKind TEXT NOT NULL DEFAULT 'DISCOVERED_NDI'")
+                database.execSQL("ALTER TABLE output_session ADD COLUMN consentState TEXT NOT NULL DEFAULT 'NOT_REQUIRED'")
+            }
+        }
+
         @Volatile
         private var instance: NdiDatabase? = null
 
@@ -159,7 +176,7 @@ abstract class NdiDatabase : RoomDatabase() {
                     NdiDatabase::class.java,
                     "ndi_database",
                 )
-                    .addMigrations(MIGRATION_1_2)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                     .build()
                     .also { instance = it }
             }

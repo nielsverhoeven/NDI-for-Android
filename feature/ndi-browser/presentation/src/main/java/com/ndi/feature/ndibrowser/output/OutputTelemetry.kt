@@ -3,6 +3,7 @@ package com.ndi.feature.ndibrowser.output
 import com.ndi.core.model.TelemetryEvent
 import com.ndi.feature.ndibrowser.domain.repository.NdiOutputRepository
 import com.ndi.feature.ndibrowser.domain.repository.OutputConfigurationRepository
+import com.ndi.feature.ndibrowser.domain.repository.ScreenCaptureConsentRepository
 
 fun interface OutputTelemetryEmitter {
     fun emit(event: TelemetryEvent)
@@ -11,6 +12,7 @@ fun interface OutputTelemetryEmitter {
 object OutputDependencies {
     var outputRepositoryProvider: (() -> NdiOutputRepository)? = null
     var outputConfigurationRepositoryProvider: (() -> OutputConfigurationRepository)? = null
+    var screenCaptureConsentRepositoryProvider: (() -> ScreenCaptureConsentRepository)? = null
     var telemetryEmitter: OutputTelemetryEmitter = OutputTelemetryEmitter {}
 
     fun requireOutputRepository(): NdiOutputRepository {
@@ -20,9 +22,37 @@ object OutputDependencies {
     fun requireOutputConfigurationRepository(): OutputConfigurationRepository {
         return requireNotNull(outputConfigurationRepositoryProvider) { "Output configuration dependency is not configured." }.invoke()
     }
+
+    fun requireScreenCaptureConsentRepository(): ScreenCaptureConsentRepository {
+        return requireNotNull(screenCaptureConsentRepositoryProvider) { "Screen capture consent dependency is not configured." }.invoke()
+    }
 }
 
 object OutputTelemetry {
+    fun screenShareConsentRequested(sourceId: String): TelemetryEvent {
+        return TelemetryEvent(
+            name = TelemetryEvent.OUTPUT_SCREEN_SHARE_CONSENT_REQUESTED,
+            timestampEpochMillis = System.currentTimeMillis(),
+            attributes = mapOf("sourceId" to sourceId),
+        )
+    }
+
+    fun screenShareConsentGranted(sourceId: String): TelemetryEvent {
+        return TelemetryEvent(
+            name = TelemetryEvent.OUTPUT_SCREEN_SHARE_CONSENT_GRANTED,
+            timestampEpochMillis = System.currentTimeMillis(),
+            attributes = mapOf("sourceId" to sourceId),
+        )
+    }
+
+    fun screenShareConsentDenied(sourceId: String): TelemetryEvent {
+        return TelemetryEvent(
+            name = TelemetryEvent.OUTPUT_SCREEN_SHARE_CONSENT_DENIED,
+            timestampEpochMillis = System.currentTimeMillis(),
+            attributes = mapOf("sourceId" to sourceId),
+        )
+    }
+
     fun outputStartRequested(sourceId: String): TelemetryEvent {
         return TelemetryEvent(
             name = TelemetryEvent.OUTPUT_START_REQUESTED,
@@ -31,9 +61,33 @@ object OutputTelemetry {
         )
     }
 
+    fun outputStartIgnoredDuplicate(sourceId: String): TelemetryEvent {
+        return TelemetryEvent(
+            name = TelemetryEvent.OUTPUT_START_IGNORED_DUPLICATE,
+            timestampEpochMillis = System.currentTimeMillis(),
+            attributes = mapOf("sourceId" to sourceId),
+        )
+    }
+
+    fun outputStarted(sourceId: String): TelemetryEvent {
+        return TelemetryEvent(
+            name = TelemetryEvent.OUTPUT_STARTED,
+            timestampEpochMillis = System.currentTimeMillis(),
+            attributes = mapOf("sourceId" to sourceId),
+        )
+    }
+
     fun outputStopRequested(sourceId: String): TelemetryEvent {
         return TelemetryEvent(
             name = "output_stop_requested",
+            timestampEpochMillis = System.currentTimeMillis(),
+            attributes = mapOf("sourceId" to sourceId),
+        )
+    }
+
+    fun outputStopIgnoredDuplicate(sourceId: String): TelemetryEvent {
+        return TelemetryEvent(
+            name = TelemetryEvent.OUTPUT_STOP_IGNORED_DUPLICATE,
             timestampEpochMillis = System.currentTimeMillis(),
             attributes = mapOf("sourceId" to sourceId),
         )

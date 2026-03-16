@@ -67,6 +67,49 @@ class SourceListViewModelTest {
         assertEquals("camera-output", emitted)
         collector.cancel()
     }
+
+    @Test
+    fun onSourceSelected_supportsReservedDeviceScreenIdentity() = runTest(mainDispatcherRule.dispatcher.scheduler) {
+        val repository = FakeDiscoveryRepository()
+        val selectionRepository = InMemoryUserSelectionRepository()
+        val viewModel = SourceListViewModel(repository, selectionRepository, SourceListTelemetryEmitter {})
+
+        viewModel.onSourceSelected("device-screen:local")
+        advanceUntilIdle()
+
+        assertEquals("device-screen:local", viewModel.uiState.value.highlightedSourceId)
+        assertEquals("device-screen:local", selectionRepository.getLastSelectedSource())
+    }
+
+    @Test
+    fun onSourceSelected_persistsDiscoverableSourceIdentity() = runTest(mainDispatcherRule.dispatcher.scheduler) {
+        val repository = FakeDiscoveryRepository()
+        val selectionRepository = InMemoryUserSelectionRepository()
+        val viewModel = SourceListViewModel(repository, selectionRepository, SourceListTelemetryEmitter {})
+
+        viewModel.onSourceSelected("camera-discovered")
+        advanceUntilIdle()
+
+        assertEquals("camera-discovered", viewModel.uiState.value.highlightedSourceId)
+        assertEquals("camera-discovered", selectionRepository.getLastSelectedSource())
+    }
+
+    @Test
+    fun onOutputRequested_supportsReservedDeviceScreenIdentity() = runTest(mainDispatcherRule.dispatcher.scheduler) {
+        val repository = FakeDiscoveryRepository()
+        val viewModel = SourceListViewModel(repository, InMemoryUserSelectionRepository(), SourceListTelemetryEmitter {})
+
+        var emitted: String? = null
+        val collector = launch {
+            emitted = viewModel.outputNavigationEvents.first()
+        }
+
+        viewModel.onOutputRequested("device-screen:local")
+        advanceUntilIdle()
+
+        assertEquals("device-screen:local", emitted)
+        collector.cancel()
+    }
 }
 
 private class FakeDiscoveryRepository : NdiDiscoveryRepository {

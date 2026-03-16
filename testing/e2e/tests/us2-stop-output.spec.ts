@@ -1,9 +1,18 @@
 import { test, expect } from "@playwright/test";
+import {
+  getDualEmulatorContext,
+  verifyDeviceReady,
+  verifyPackageInstalled,
+} from "./support/android-device-fixtures";
 
-test("propagates stop output state", async ({ page }) => {
-  test.fail(true, "US2 emulator automation wiring pending");
+test("propagates stop output state", async () => {
+  const context = getDualEmulatorContext();
+  verifyDeviceReady(context.publisherSerial);
+  verifyDeviceReady(context.receiverSerial);
+  verifyPackageInstalled(context.publisherSerial, context.packageName);
+  verifyPackageInstalled(context.receiverSerial, context.packageName);
 
-  await page.goto("http://127.0.0.1:7777/output/camera-1");
-  await page.getByRole("button", { name: "Stop Output" }).click();
-  await expect(page.getByText("STOPPED")).toBeVisible();
+  test.fail(true, "US2 Android-device stop propagation orchestration still pending fixture/device automation wiring");
+
+  expect(context.publisherSerial).not.toEqual(context.receiverSerial);
 });

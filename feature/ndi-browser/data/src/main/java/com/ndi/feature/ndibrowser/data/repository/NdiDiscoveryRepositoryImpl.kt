@@ -24,6 +24,11 @@ class NdiDiscoveryRepositoryImpl(
     private val refreshCoordinator: DiscoveryRefreshCoordinator = DiscoveryRefreshCoordinator(scope),
 ) : NdiDiscoveryRepository {
 
+    private companion object {
+        const val LOCAL_SCREEN_SOURCE_ID = "device-screen:local"
+        const val LOCAL_SCREEN_DISPLAY_NAME = "This Device Screen"
+    }
+
     private val discoveryState = MutableStateFlow(emptySnapshot())
 
     override suspend fun discoverSources(trigger: DiscoveryTrigger): DiscoverySnapshot {
@@ -35,7 +40,18 @@ class NdiDiscoveryRepositoryImpl(
 
         return runCatching {
             userSelectionDao.getSelection()
-            val sources = sourceMapper.map(bridge.discoverSources())
+            val sources = sourceMapper.map(bridge.discoverSources()).toMutableList().apply {
+                add(
+                    0,
+                    com.ndi.core.model.NdiSource(
+                        sourceId = LOCAL_SCREEN_SOURCE_ID,
+                        displayName = LOCAL_SCREEN_DISPLAY_NAME,
+                        endpointAddress = null,
+                        isReachable = true,
+                        lastSeenAtEpochMillis = System.currentTimeMillis(),
+                    ),
+                )
+            }
             val completedAt = System.currentTimeMillis()
             val status = if (sources.isEmpty()) DiscoveryStatus.EMPTY else DiscoveryStatus.SUCCESS
             DiscoverySnapshot(

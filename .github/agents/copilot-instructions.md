@@ -9,6 +9,8 @@ Auto-generated from all feature plans. Last updated: 2026-03-16
 - Room for user-critical continuity state and discovery/session metadata (001-scan-ndi-sources)
 - Kotlin 1.9.24 (Android modules target Java 17); Gradle runtime on Android Studio stable JBR 21 + AndroidX/Jetpack (Lifecycle, Navigation, Room), Material 3, Kotlin Coroutines/Flow, NDI 6 Android SDK through `ndi/sdk-bridge` (002-stream-ndi-source)
 - Room for persisted output configuration, continuity state, and recent output session metadata (002-stream-ndi-source)
+- Kotlin 2.2.10 for Android modules with Java/Kotlin bytecode target 17, TypeScript 5.8.x for Playwright automation, PowerShell 5.1+ for Windows orchestration; Gradle wrapper verified on JDK 21.0.10 + AndroidX/Jetpack (Lifecycle, Navigation, Fragment, Activity, Room), Material components, Kotlin Coroutines/Flow, NDI 6 Android SDK via `ndi/sdk-bridge`, `@playwright/test` 1.53.x, Android `adb`/`emulator` CLI (002-stream-ndi-source)
+- Room for persisted output configuration and continuity metadata; file-based Playwright reports/logcat artifacts for validation evidence (002-stream-ndi-source)
 
 - Kotlin with the latest stable JDK/JBR supported by the current AGP/Gradle baseline + AndroidX Navigation, Lifecycle/ViewModel, Coroutines/Flow, Room, Material Design 3 UI components, NDI 6 Android SDK native libraries (001-scan-ndi-sources)
 
@@ -28,9 +30,9 @@ tests/
 Kotlin with the repo-supported latest stable Android toolchain baseline: Follow standard conventions
 
 ## Recent Changes
+- 002-stream-ndi-source: Added Kotlin 2.2.10 for Android modules with Java/Kotlin bytecode target 17, TypeScript 5.8.x for Playwright automation, PowerShell 5.1+ for Windows orchestration; Gradle wrapper verified on JDK 21.0.10 + AndroidX/Jetpack (Lifecycle, Navigation, Fragment, Activity, Room), Material components, Kotlin Coroutines/Flow, NDI 6 Android SDK via `ndi/sdk-bridge`, `@playwright/test` 1.53.x, Android `adb`/`emulator` CLI
 - 002-stream-ndi-source: Added Kotlin 1.9.24 (Android modules target Java 17); Gradle runtime on Android Studio stable JBR 21 + AndroidX/Jetpack (Lifecycle, Navigation, Room), Material 3, Kotlin Coroutines/Flow, NDI 6 Android SDK through `ndi/sdk-bridge`
 - 002-stream-ndi-source: Added Kotlin 1.9.24 (Android modules target Java 17); Gradle runtime on Android Studio stable JBR 21 + AndroidX/Jetpack (Lifecycle, Navigation, Room), Material 3, Kotlin Coroutines/Flow, NDI 6 Android SDK through `ndi/sdk-bridge`
-- 001-scan-ndi-sources: Added Kotlin 1.9.24 (Android modules target Java 17); Gradle runtime on Android Studio stable JBR 21 + AndroidX/Jetpack (Lifecycle, Navigation, Room), Material 3, Kotlin Coroutines, NDI 6 Android SDK via `ndi/sdk-bridge`
 
 
 <!-- MANUAL ADDITIONS START -->

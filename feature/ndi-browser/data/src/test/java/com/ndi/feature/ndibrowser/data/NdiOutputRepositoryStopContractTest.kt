@@ -97,6 +97,10 @@ private class FakeStopBridge : NdiOutputBridge {
     override fun stopSender() {
         stopCount += 1
     }
+
+    override fun startLocalScreenShareSender(streamName: String) = Unit
+
+    override fun stopLocalScreenShareSender() = Unit
 }
 
 private class StopContractOutputSessionDao : OutputSessionDao {

@@ -76,6 +76,10 @@ private class RecoveryBridge(
 
     override fun stopSender() = Unit
 
+    override fun startLocalScreenShareSender(streamName: String) = Unit
+
+    override fun stopLocalScreenShareSender() = Unit
+
     fun setUnreachableOnNextReachabilityCheck() {
         forceUnreachableNextCheck = true
     }

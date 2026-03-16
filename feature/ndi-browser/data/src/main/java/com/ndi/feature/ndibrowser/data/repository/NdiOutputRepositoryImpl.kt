@@ -3,6 +3,8 @@ package com.ndi.feature.ndibrowser.data.repository
 import com.ndi.core.database.OutputSessionDao
 import com.ndi.core.database.OutputSessionEntity
 import com.ndi.core.model.OutputHealthSnapshot
+import com.ndi.core.model.OutputConsentState
+import com.ndi.core.model.OutputInputKind
 import com.ndi.core.model.OutputQualityLevel
 import com.ndi.core.model.OutputSession
 import com.ndi.core.model.OutputState
@@ -10,6 +12,8 @@ import com.ndi.feature.ndibrowser.data.OutputRecoveryCoordinator
 import com.ndi.feature.ndibrowser.data.OutputSessionCoordinator
 import com.ndi.feature.ndibrowser.data.mapper.OutputSessionMapper
 import com.ndi.feature.ndibrowser.domain.repository.NdiOutputRepository
+import com.ndi.feature.ndibrowser.domain.repository.ScreenCaptureConsentRepository
+import com.ndi.feature.ndibrowser.domain.repository.ScreenCaptureConsentState
 import com.ndi.sdkbridge.NdiOutputBridge
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
@@ -23,6 +27,7 @@ import kotlinx.coroutines.withContext
 class NdiOutputRepositoryImpl(
     private val outputSessionDao: OutputSessionDao,
     private val outputBridge: NdiOutputBridge,
+    private val screenCaptureConsentRepository: ScreenCaptureConsentRepository = NoopScreenCaptureConsentRepository(),
     private val mapper: OutputSessionMapper = OutputSessionMapper(),
     private val coordinator: OutputSessionCoordinator = OutputSessionCoordinator(),
     private val recoveryCoordinator: OutputRecoveryCoordinator = OutputRecoveryCoordinator(),
@@ -60,11 +65,43 @@ class NdiOutputRepositoryImpl(
                 return@withLock current
             }
 
-            val isReachable = withContext(Dispatchers.IO) { outputBridge.isSourceReachable(inputSourceId) }
+            val inputKind = if (inputSourceId.startsWith("device-screen:")) {
+                OutputInputKind.DEVICE_SCREEN
+            } else {
+                OutputInputKind.DISCOVERED_NDI
+            }
+
+            val consentState = if (inputKind == OutputInputKind.DEVICE_SCREEN) {
+                val consent = screenCaptureConsentRepository.getConsentState(inputSourceId)
+                if (consent?.granted != true) {
+                    val interrupted = current.copy(
+                        inputSourceId = inputSourceId,
+                        inputSourceKind = inputKind,
+                        outboundStreamName = streamName.ifBlank { current.outboundStreamName },
+                        consentState = OutputConsentState.DENIED,
+                        state = OutputState.INTERRUPTED,
+                        interruptionReason = "Screen capture consent is required",
+                    )
+                    outputSessionState.value = interrupted
+                    outputHealthState.value = coordinator.nextHealthForState(interrupted)
+                    throw IllegalStateException("Screen capture consent is required")
+                }
+                OutputConsentState.GRANTED
+            } else {
+                OutputConsentState.NOT_REQUIRED
+            }
+
+            val isReachable = if (inputKind == OutputInputKind.DEVICE_SCREEN) {
+                true
+            } else {
+                withContext(Dispatchers.IO) { outputBridge.isSourceReachable(inputSourceId) }
+            }
             if (!isReachable) {
                 val interrupted = current.copy(
                     inputSourceId = inputSourceId,
+                    inputSourceKind = inputKind,
                     outboundStreamName = streamName.ifBlank { current.outboundStreamName },
+                    consentState = consentState,
                     state = OutputState.INTERRUPTED,
                     interruptionReason = "Selected source is unreachable",
                 )
@@ -77,12 +114,18 @@ class NdiOutputRepositoryImpl(
                 inputSourceId = inputSourceId,
                 preferredName = streamName,
                 activeStreamNames = setOf(current.outboundStreamName).filter { it.isNotBlank() }.toSet(),
+                inputSourceKind = inputKind,
+                consentState = consentState,
             )
             outputSessionState.value = starting
 
             runCatching {
                 withContext(Dispatchers.IO) {
-                    outputBridge.startSender(inputSourceId, starting.outboundStreamName)
+                    if (inputKind == OutputInputKind.DEVICE_SCREEN) {
+                        outputBridge.startLocalScreenShareSender(starting.outboundStreamName)
+                    } else {
+                        outputBridge.startSender(inputSourceId, starting.outboundStreamName)
+                    }
                 }
             }.onFailure { error ->
                 val interrupted = starting.copy(
@@ -184,7 +227,9 @@ class NdiOutputRepositoryImpl(
         return OutputSessionEntity(
             sessionId = sessionId,
             inputSourceId = inputSourceId,
+            inputSourceKind = inputSourceKind.name,
             outboundStreamName = outboundStreamName,
+            consentState = consentState.name,
             state = state.name,
             startedAtEpochMillis = startedAtEpochMillis,
             stoppedAtEpochMillis = stoppedAtEpochMillis,
@@ -194,3 +239,20 @@ class NdiOutputRepositoryImpl(
         )
     }
 }
+
+private class NoopScreenCaptureConsentRepository : ScreenCaptureConsentRepository {
+    override suspend fun beginConsentRequest(inputSourceId: String) = Unit
+
+    override suspend fun registerConsentResult(
+        inputSourceId: String,
+        granted: Boolean,
+        tokenRef: String?,
+    ): ScreenCaptureConsentState {
+        return ScreenCaptureConsentState(inputSourceId, granted, tokenRef)
+    }
+
+    override suspend fun getConsentState(inputSourceId: String): ScreenCaptureConsentState? = null
+
+    override suspend fun clearConsent(inputSourceId: String) = Unit
+}
+

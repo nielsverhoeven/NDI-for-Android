@@ -38,6 +38,7 @@ class OutputControlScreen(
         binding.stopButton.isEnabled = state.canStop
         binding.retryButton.isVisible = state.showRecoveryActions
         binding.retryButton.isEnabled = state.canRetry && !state.recoveryInProgress
+        binding.consentMessage.isVisible = state.isLocalScreenSource && state.consentRequired
         binding.streamNameInput.isEnabled = state.outputState != OutputState.STOPPING && !state.recoveryInProgress
         binding.errorMessage.isVisible = !state.errorMessage.isNullOrBlank()
         binding.errorMessage.text = state.errorMessage.orEmpty()

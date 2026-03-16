@@ -7,10 +7,14 @@ import com.ndi.core.model.OutputSession
 import com.ndi.core.model.OutputState
 import com.ndi.feature.ndibrowser.domain.repository.NdiOutputRepository
 import com.ndi.feature.ndibrowser.domain.repository.OutputConfigurationRepository
+import com.ndi.feature.ndibrowser.domain.repository.ScreenCaptureConsentRepository
+import com.ndi.feature.ndibrowser.domain.repository.ScreenCaptureConsentState
 import com.ndi.feature.ndibrowser.testutil.MainDispatcherRule
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -28,7 +32,12 @@ class OutputControlViewModelTest {
     @Test
     fun onStartOutputPressed_movesToActiveState() = runTest(mainDispatcherRule.dispatcher.scheduler) {
         val repository = FakeOutputRepository()
-        val viewModel = OutputControlViewModel(repository, InMemoryOutputConfigurationRepository(), OutputTelemetryEmitter {})
+        val viewModel = OutputControlViewModel(
+            repository,
+            InMemoryOutputConfigurationRepository(),
+            InMemoryScreenCaptureConsentRepository(),
+            OutputTelemetryEmitter {},
+        )
 
         viewModel.onOutputScreenVisible("camera-1")
         advanceUntilIdle()
@@ -43,7 +52,12 @@ class OutputControlViewModelTest {
     @Test
     fun onStartOutputPressed_isGuardedWhenAlreadyActive() = runTest(mainDispatcherRule.dispatcher.scheduler) {
         val repository = FakeOutputRepository()
-        val viewModel = OutputControlViewModel(repository, InMemoryOutputConfigurationRepository(), OutputTelemetryEmitter {})
+        val viewModel = OutputControlViewModel(
+            repository,
+            InMemoryOutputConfigurationRepository(),
+            InMemoryScreenCaptureConsentRepository(),
+            OutputTelemetryEmitter {},
+        )
 
         viewModel.onOutputScreenVisible("camera-2")
         advanceUntilIdle()
@@ -58,7 +72,12 @@ class OutputControlViewModelTest {
     @Test
     fun onStartOutputPressed_setsInterruptedStateOnFailure() = runTest(mainDispatcherRule.dispatcher.scheduler) {
         val repository = FakeOutputRepository(failStart = true)
-        val viewModel = OutputControlViewModel(repository, InMemoryOutputConfigurationRepository(), OutputTelemetryEmitter {})
+        val viewModel = OutputControlViewModel(
+            repository,
+            InMemoryOutputConfigurationRepository(),
+            InMemoryScreenCaptureConsentRepository(),
+            OutputTelemetryEmitter {},
+        )
 
         viewModel.onOutputScreenVisible("camera-3")
         advanceUntilIdle()
@@ -67,6 +86,73 @@ class OutputControlViewModelTest {
 
         assertEquals(OutputState.INTERRUPTED, viewModel.uiState.value.outputState)
         assertTrue(viewModel.uiState.value.errorMessage?.isNotBlank() == true)
+    }
+
+    @Test
+    fun onStartOutputPressed_forDeviceScreen_emitsConsentPromptWhenConsentMissing() = runTest(mainDispatcherRule.dispatcher.scheduler) {
+        val repository = FakeOutputRepository()
+        val consentRepository = InMemoryScreenCaptureConsentRepository(granted = false)
+        val viewModel = OutputControlViewModel(
+            repository,
+            InMemoryOutputConfigurationRepository(),
+            consentRepository,
+            OutputTelemetryEmitter {},
+        )
+
+        var promptSourceId: String? = null
+        val collector = launch {
+            promptSourceId = viewModel.consentPromptEvents.first()
+        }
+
+        viewModel.onOutputScreenVisible("device-screen:local")
+        advanceUntilIdle()
+        viewModel.onStartOutputPressed()
+        advanceUntilIdle()
+
+        assertEquals("device-screen:local", promptSourceId)
+        assertEquals(0, repository.startCalls)
+        collector.cancel()
+    }
+
+    @Test
+    fun onScreenCaptureConsentResult_granted_startsOutput() = runTest(mainDispatcherRule.dispatcher.scheduler) {
+        val repository = FakeOutputRepository()
+        val consentRepository = InMemoryScreenCaptureConsentRepository(granted = false)
+        val viewModel = OutputControlViewModel(
+            repository,
+            InMemoryOutputConfigurationRepository(),
+            consentRepository,
+            OutputTelemetryEmitter {},
+        )
+
+        viewModel.onOutputScreenVisible("device-screen:local")
+        advanceUntilIdle()
+        viewModel.onScreenCaptureConsentResult(granted = true, tokenRef = "token")
+        advanceUntilIdle()
+
+        assertEquals(1, repository.startCalls)
+        assertEquals(OutputState.ACTIVE, viewModel.uiState.value.outputState)
+    }
+
+    @Test
+    fun onStartOutputPressed_forDeviceScreen_startsImmediatelyWhenConsentAlreadyGranted() = runTest(mainDispatcherRule.dispatcher.scheduler) {
+        val repository = FakeOutputRepository()
+        val consentRepository = InMemoryScreenCaptureConsentRepository(granted = true)
+        consentRepository.registerConsentResult("device-screen:local", granted = true, tokenRef = "token")
+        val viewModel = OutputControlViewModel(
+            repository,
+            InMemoryOutputConfigurationRepository(),
+            consentRepository,
+            OutputTelemetryEmitter {},
+        )
+
+        viewModel.onOutputScreenVisible("device-screen:local")
+        advanceUntilIdle()
+        viewModel.onStartOutputPressed()
+        advanceUntilIdle()
+
+        assertEquals(1, repository.startCalls)
+        assertEquals(OutputState.ACTIVE, viewModel.uiState.value.outputState)
     }
 }
 
@@ -143,3 +229,36 @@ private class InMemoryOutputConfigurationRepository : OutputConfigurationReposit
 
     override suspend fun getConfiguration(): OutputConfiguration = config
 }
+
+private class InMemoryScreenCaptureConsentRepository(
+    granted: Boolean = true,
+) : ScreenCaptureConsentRepository {
+    private var state = ScreenCaptureConsentState(
+        sourceId = "",
+        granted = granted,
+    )
+
+    override suspend fun beginConsentRequest(inputSourceId: String) {
+        state = state.copy(sourceId = inputSourceId)
+    }
+
+    override suspend fun registerConsentResult(
+        inputSourceId: String,
+        granted: Boolean,
+        tokenRef: String?,
+    ): ScreenCaptureConsentState {
+        state = ScreenCaptureConsentState(inputSourceId, granted, tokenRef)
+        return state
+    }
+
+    override suspend fun getConsentState(inputSourceId: String): ScreenCaptureConsentState? {
+        return if (state.sourceId == inputSourceId) state else null
+    }
+
+    override suspend fun clearConsent(inputSourceId: String) {
+        if (state.sourceId == inputSourceId) {
+            state = state.copy(granted = false, tokenRef = null)
+        }
+    }
+}
+

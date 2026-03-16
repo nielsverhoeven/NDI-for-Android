@@ -1,103 +1,137 @@
-# Phase 0 Research: NDI Source Network Output with Dual-Emulator End-to-End Validation
+# Phase 0 Research: Dual-Emulator NDI Output Validation with Publisher Screen Share
 
-## Decision 1: Outbound NDI publishing architecture
+## Decision 1: Real Android-device automation replaces the browser placeholder
 
-- Decision: Implement outbound NDI streaming through a dedicated output repository
-  in `feature/ndi-browser/domain` and `feature/ndi-browser/data`, with native
-  send/start/stop calls isolated in `ndi/sdk-bridge`.
-- Rationale: Keeps MVVM/repository boundaries intact and avoids direct JNI/native
-  dependencies in UI or ViewModels.
-- Alternatives considered: Driving native sender directly from ViewModel
-  (rejected for architecture/testability violations), placing sender logic in
-  `app` module (rejected due to feature-boundary leakage).
+- Decision: Implement the end-to-end suite with Playwright's Android device API,
+  coordinated by `testing/e2e/scripts/run-dual-emulator-e2e.ps1` and `adb`, and
+  retire the current placeholder pattern in
+  `testing/e2e/tests/interop-dual-emulator.spec.ts` that only opens a browser
+  page and marks itself `test.fail(...)`.
+- Rationale: The user-requested workflow must drive two Android app instances,
+  not a simulated web surface. Playwright already exists in the repo and can be
+  used as the constitution-default E2E framework while targeting Android devices.
+- Alternatives considered: Keeping the browser scaffold (rejected because it
+  does not validate the app), switching to Espresso-only automation (rejected by
+  the Playwright-first constitution), relying on manual adb scripts only
+  (rejected because they provide poor assertions and weak regression coverage).
 
-## Decision 2: Input-to-output source model
+## Decision 2: Model emulator A screen share as a reserved local source identity
 
-- Decision: Use existing source identity semantics (`sourceId` as canonical key)
-  and map selected input source to one outbound output session.
-- Rationale: Prevents ambiguity across duplicate display names and aligns with
-  prior feature contracts.
-- Alternatives considered: Display-name-only linkage (rejected for collisions),
-  index-based linkage (rejected for instability across refreshes).
+- Decision: Represent the publisher's own screen as a reserved local source ID in
+  the output flow, using a namespace such as `device-screen:<hostInstanceId>`
+  rather than introducing a separate screen-share-only navigation stack.
+- Rationale: This preserves the existing output route shape (`sourceId`), keeps
+  selection semantics canonical, and lets output/viewer logic continue to reason
+  in terms of source identity instead of branching on an entirely different UI.
+- Alternatives considered: Adding a parallel "screen share" feature flow
+  unrelated to source selection (rejected because it duplicates UX and routing),
+  using display-name-only matching (rejected due to collisions and ambiguity).
 
-## Decision 3: Output lifecycle state machine
+## Decision 3: Screen capture uses explicit `MediaProjection` consent only
 
-- Decision: Standardize output states as READY -> STARTING -> ACTIVE -> STOPPING
-  -> STOPPED, with INTERRUPTED as fault state and bounded retry entry.
-- Rationale: Explicit state machine supports reliable UX, deterministic tests,
-  and prevention of duplicate start/stop actions.
-- Alternatives considered: Boolean active/inactive only (rejected due to missing
-  transitional/error observability), unbounded retry loops (rejected for battery
-  and operational predictability concerns).
+- Decision: Use Android's `MediaProjection` consent flow for publisher screen
+  capture, triggered only from an explicit operator action on emulator A, with no
+  new dangerous manifest permission additions.
+- Rationale: This satisfies the least-permission gate while matching Android's
+  platform-approved mechanism for screen sharing. It also makes privacy intent
+  explicit and testable.
+- Alternatives considered: Adding speculative capture permissions (rejected by
+  least-permission policy), bypassing consent (rejected as unsupported and
+  unsafe), limiting validation to pre-existing inbound NDI sources (rejected
+  because the user explicitly requested screen sharing from emulator A).
 
-## Decision 4: Idempotent start/stop behavior
+## Decision 4: Output lifecycle includes consent readiness as a pre-start guard
 
-- Decision: Treat rapid repeated start/stop taps as idempotent intent; only one
-  active output session may exist at a time for an app instance.
-- Rationale: Prevents duplicate sender sessions and unstable UI status.
-- Alternatives considered: Queueing all actions (rejected because it can produce
-  outdated or unsafe state transitions), ignoring extra taps silently (rejected
-  due to poor user feedback).
+- Decision: Keep the core output state machine `READY -> STARTING -> ACTIVE ->
+  STOPPING -> STOPPED` with `INTERRUPTED` fault handling, and add consent as a
+  prerequisite for `device-screen:*` sources rather than a separate output state.
+- Rationale: This avoids exploding the public state model while still making
+  publisher readiness deterministic: start cannot proceed until consent is
+  granted for screen-share sources.
+- Alternatives considered: Adding extra public states such as
+  `CONSENT_REQUESTING`/`CONSENT_DENIED` (rejected because they are better modeled
+  as UI events and error details), reducing lifecycle to a boolean flag
+  (rejected due to weak observability).
 
-## Decision 5: Persistence strategy
+## Decision 5: Start/stop remains idempotent and single-session per instance
 
-- Decision: Persist operator defaults (outbound stream name preference, last
-  selected source identity, last known output state summary) in Room.
-- Rationale: Satisfies offline-first policy while keeping continuity state
-  recoverable after process death or restart.
-- Alternatives considered: Volatile memory only (rejected for poor resilience),
-  SharedPreferences-only storage (rejected for inconsistency with Room-first
-  offline reliability policy).
+- Decision: Preserve one active output session per app instance and treat rapid
+  repeated start/stop taps as idempotent intent, even when consent or transport
+  setup is in flight.
+- Rationale: The publisher automation must remain stable under repeated user or
+  automation actions, and duplicate NDI sender sessions would produce flaky E2E
+  behavior and incorrect status.
+- Alternatives considered: Queueing every action (rejected because it may replay
+  stale requests), ignoring duplicates without state feedback (rejected because
+  it obscures operator intent).
 
-## Decision 6: Telemetry scope
+## Decision 6: Persist only continuity data needed to resume operator intent
 
-- Decision: Emit non-sensitive telemetry for output_start_requested,
-  output_started, output_stopped, output_interrupted, output_retry_requested,
-  output_retry_succeeded, output_retry_failed.
-- Rationale: Supports reliability diagnostics without capturing sensitive payload.
-- Alternatives considered: No telemetry (rejected due to reduced observability),
-  full payload capture (rejected for privacy/security constraints).
+- Decision: Continue storing operator defaults and continuity metadata in Room:
+  preferred stream name, last selected output source ID, and last known output
+  summary. Store validation artifacts as files under `testing/e2e` outputs rather
+  than in-app persistence.
+- Rationale: This satisfies offline-first continuity without polluting app data
+  with transient host-side automation evidence.
+- Alternatives considered: In-memory-only continuity (rejected for poor restart
+  resilience), storing automation evidence in Room (rejected because it couples
+  app state with external test harness concerns).
 
-## Decision 7: Dual-emulator E2E topology
+## Decision 7: Dual-emulator run topology is mandatory app-to-app interoperability
 
-- Decision: Make a mandatory cross-feature E2E scenario where emulator A runs
-  this app in publisher role and streams its screen as an NDI source, while
-  emulator B runs this app in receiver role using the previously implemented
-  discovery/viewer flow to capture and render emulator A's stream.
-- Rationale: This directly validates interoperability between the new output
-  feature and the previous capture feature in the exact workflow requested.
-- Alternatives considered: Testing publisher with a third-party receiver only
-  (rejected because it does not verify app-to-app interoperability), single
-  emulator loopback validation (rejected because it does not represent
-  independent sender/receiver instances).
+- Decision: Require one canonical automated scenario where emulator A publishes
+  its screen via this app, emulator B discovers that outbound stream using this
+  app's source list, opens it in the viewer, and then observes the stop/
+  interruption behavior when emulator A stops publishing.
+- Rationale: This is the precise regression path requested by the user and the
+  highest-value proof that both implemented features interoperate in practice.
+- Alternatives considered: Third-party receiver validation only (rejected
+  because it does not confirm app-to-app compatibility), single-emulator loopback
+  (rejected because it cannot prove cross-instance discovery and playback).
 
-## Decision 8: Emulator network assumptions and safeguards
+## Decision 8: Preflight must validate emulator identity, installation, and network
 
-- Decision: Define the E2E test precondition as both emulators being on the same
-  multicast-capable network segment, with explicit preflight checks before
-  running publish->discover->play assertions.
-- Rationale: NDI discovery/transport behavior depends on network topology and
-  multicast reachability; preflight avoids false negatives.
-- Alternatives considered: Ignoring network preflight (rejected due to flaky
-  validation), requiring only physical devices (rejected because emulator-based
-  validation is a stated requirement).
+- Decision: Make preflight checks mandatory for emulator serial uniqueness,
+  device reachability, app installation state, and same-segment multicast-capable
+  networking before the Playwright test begins assertions.
+- Rationale: NDI discovery failures are often topology-related; explicit preflight
+  eliminates avoidable false negatives and makes failure reports actionable.
+- Alternatives considered: Allowing the test to fail deep in playback assertions
+  without preflight (rejected because it masks environment failures), requiring
+  physical devices only (rejected because the user requested emulators).
 
-## Decision 9: Test strategy under constitution TDD gate
+## Decision 9: Validation evidence must include artifacts from both roles
 
-- Decision: Use Red-Green-Refactor with layered coverage: unit tests for output
-  state transitions/retry, repository contract tests for sender lifecycle, and
-  instrumentation tests for dual-emulator publish->discover->play->stop flow.
-- Rationale: Provides deterministic coverage of logic and validates real app-to-
-  app behavior.
-- Alternatives considered: Manual test-only approach (rejected for regression
-  risk), unit tests only (rejected because networked app-to-app behavior is core).
+- Decision: Capture per-run evidence including publisher/receiver serials,
+  timestamps, discovery and playback latencies, screenshots/video on failure,
+  and logcat exports for both emulators.
+- Rationale: Dual-device failures are otherwise difficult to diagnose, and the
+  release gate requires reproducible evidence, not just a pass/fail bit.
+- Alternatives considered: Retaining only Playwright console output (rejected
+  because it is insufficient for transport/debug analysis), storing no metrics
+  (rejected because success criteria cannot be aggregated reliably).
 
-## Decision 10: Toolchain governance continuity
+## Decision 10: Test strategy stays Red-Green-Refactor with Playwright at the top
 
-- Decision: Reuse existing blocker `TOOLCHAIN-001` for baseline lag tracking and
-  require release-mode validation (R8/ProGuard + E2E flow) after any toolchain-
-  affecting change.
-- Rationale: Maintains constitutional compliance and avoids fragmented tracking.
-- Alternatives considered: Creating a second blocker for the same baseline lag
-  (rejected as duplicate governance overhead), skipping blocker references in
-  this feature (rejected for policy noncompliance).
+- Decision: Preserve strict TDD with three layers: JUnit tests for ViewModel and
+  repository logic, Android compatibility/instrumentation tests for platform
+  regressions, and Playwright Android dual-emulator tests for publish ->
+  discover -> play -> stop interoperability.
+- Rationale: Logic coverage alone cannot prove network interoperability, while
+  E2E-only coverage would be too slow and brittle for all behavior changes.
+- Alternatives considered: Manual validation only (rejected for regression risk),
+  unit tests only (rejected because cross-device behavior is core), Espresso as
+  the primary E2E driver (rejected because Playwright is constitution-default).
+
+## Decision 11: Toolchain baseline is taken from the active branch, not stale docs
+
+- Decision: Use the branch's actual checked-in configuration as authoritative for
+  planning: Gradle wrapper 9.2.1, AGP 9.0.0, Kotlin plugin 2.2.10, compileSdk /
+  targetSdk 34, Java toolchain 21 with Java 17 bytecode targets, while keeping
+  `TOOLCHAIN-001` open until validation artifacts are synchronized.
+- Rationale: The repository's build files and verified wrapper output are more
+  trustworthy than older guidance text when they disagree.
+- Alternatives considered: Planning against older documented versions (rejected
+  because it would make the plan immediately inconsistent with the codebase),
+  closing `TOOLCHAIN-001` early (rejected because dual-emulator and release
+  validation evidence are still incomplete).

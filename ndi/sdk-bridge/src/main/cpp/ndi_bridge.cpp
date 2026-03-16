@@ -30,3 +30,35 @@ Java_com_ndi_sdkbridge_NativeNdiBridge_nativeStopReceiver(
     jobject /* this */
 ) {
 }
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_ndi_sdkbridge_NativeNdiBridge_nativeStartSender(
+    JNIEnv* /* env */,
+    jobject /* this */,
+    jstring /* sourceId */,
+    jstring /* streamName */
+) {
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_ndi_sdkbridge_NativeNdiBridge_nativeStopSender(
+    JNIEnv* /* env */,
+    jobject /* this */
+) {
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_ndi_sdkbridge_NativeNdiBridge_nativeStartLocalScreenShareSender(
+    JNIEnv* /* env */,
+    jobject /* this */,
+    jstring /* streamName */
+) {
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_ndi_sdkbridge_NativeNdiBridge_nativeStopLocalScreenShareSender(
+    JNIEnv* /* env */,
+    jobject /* this */
+) {
+}
+

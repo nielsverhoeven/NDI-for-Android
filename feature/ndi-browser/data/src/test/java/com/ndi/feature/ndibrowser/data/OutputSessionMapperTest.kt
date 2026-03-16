@@ -34,4 +34,17 @@ class OutputSessionMapperTest {
 
         assertEquals("NDI Output", session.outboundStreamName)
     }
+
+    @Test
+    fun createStartingSession_resolvesCaseInsensitiveNameConflict() {
+        val mapper = OutputSessionMapper()
+
+        val session = mapper.createStartingSession(
+            inputSourceId = "camera-3",
+            preferredName = "Live Feed",
+            activeStreamNames = setOf("live feed"),
+        )
+
+        assertEquals("Live Feed (2)", session.outboundStreamName)
+    }
 }

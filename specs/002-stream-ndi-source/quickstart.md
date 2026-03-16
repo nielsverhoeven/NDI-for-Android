@@ -1,91 +1,135 @@
-# Quickstart: NDI Output Feature with Dual-Emulator End-to-End Validation
+# Quickstart: Dual-Emulator Validation for NDI Output Screen Share
 
 ## 1. Prerequisites
 
-1. Run prerequisite gate:
-   - `pwsh ./scripts/verify-android-prereqs.ps1`
-2. Verify Gradle/toolchain baseline:
-   - `./gradlew --version`
-3. Confirm NDI SDK is available to `ndi/sdk-bridge` via local SDK path config.
-4. Ensure two Android emulators can run concurrently on the same host.
+Run the repo and automation prerequisites from the repository root:
 
-## 2. Build and Install
+```powershell
+pwsh ./scripts/verify-android-prereqs.ps1
+.\gradlew.bat --version
+npm --prefix testing/e2e ci
+```
 
-1. Build debug app:
-   - `./gradlew :app:assembleDebug`
-2. Start two emulators (example names):
-   - Emulator A: publisher role
-   - Emulator B: receiver role
-3. Install debug APK on both emulator instances:
-   - `adb -s <emulatorA-serial> install -r app/build/outputs/apk/debug/app-debug.apk`
-   - `adb -s <emulatorB-serial> install -r app/build/outputs/apk/debug/app-debug.apk`
+Required machine state:
 
-## 3. Two-Emulator End-to-End Flow (Mandatory)
+- NDI Android SDK configured for `ndi/sdk-bridge`.
+- Two Android emulators can run concurrently on the same Windows host.
+- `adb`, `emulator`, and `sdkmanager` are on `PATH`.
+- The emulators are attached to the same multicast-capable host network segment.
+- Node/npm are available for the Playwright workspace in `testing/e2e`.
 
-Goal: Validate cross-feature interoperability where this feature publishes and
-previous feature captures.
+## 2. Build and Install the App on Both Emulators
 
-1. On Emulator A (publisher role):
-   - Launch app.
-   - Open source list and select source representing Emulator A screen feed.
-   - Open output control and start outbound NDI output.
-   - Confirm output state becomes ACTIVE and outbound stream identity is visible.
+Build the debug APK:
 
-2. On Emulator B (receiver role):
-   - Launch app.
-   - Open source list and trigger discovery.
-   - Confirm stream published by Emulator A appears in list.
-   - Select discovered stream and open viewer.
-   - Confirm viewer reaches PLAYING state.
+```powershell
+.\gradlew.bat :app:assembleDebug
+```
 
-3. Stop propagation validation:
-   - On Emulator A, stop outbound output.
-   - On Emulator B, confirm viewer transitions to interrupted/stopped behavior
-     with recoverable UX (retry or back to list).
+Start two emulators and install the debug build on each:
+
+```powershell
+adb devices
+adb -s <publisher-serial> install -r app/build/outputs/apk/debug/app-debug.apk
+adb -s <receiver-serial> install -r app/build/outputs/apk/debug/app-debug.apk
+```
+
+Role assignment:
+
+- Emulator A / `<publisher-serial>`: publisher, starts sharing its own screen as
+  the outbound NDI source.
+- Emulator B / `<receiver-serial>`: receiver, discovers and opens the publisher
+  stream in the viewer.
+
+## 3. Planned Automated End-to-End Flow
+
+The mandatory automated scenario is:
+
+1. Preflight
+   - Verify publisher and receiver serials are different.
+   - Verify both devices respond to `adb -s <serial> get-state`.
+   - Verify the app is installed on both devices.
+   - Abort early if multicast/network preflight fails.
+2. Publisher workflow on emulator A
+   - Launch the app.
+   - Select the reserved local screen-share source (`device-screen:*`).
+   - Navigate to output control.
+   - Start output and accept the Android screen-capture consent prompt.
+   - Assert output state becomes ACTIVE and the outbound stream name is visible.
+3. Receiver workflow on emulator B
+   - Launch the app.
+   - Trigger discovery refresh.
+   - Assert the publisher stream appears in the source list within timeout.
+   - Open the discovered stream in the viewer.
+   - Assert the viewer reaches PLAYING.
+4. Stop propagation workflow
+   - Stop output on emulator A.
+   - Assert emulator B leaves active playback and shows recoverable UX.
 
 Pass criteria:
 
-- Publisher ACTIVE observed on Emulator A.
-- Receiver DISCOVERED and PLAYING observed on Emulator B.
-- Publisher stop reflected on receiver state transition.
+- Publisher reaches ACTIVE after explicit consent.
+- Receiver discovers publisher stream.
+- Receiver reaches PLAYING.
+- Publisher stop propagates to receiver interruption/stopped behavior.
 
-## 4. Automated Test-First Workflow
+## 4. PowerShell Launcher for the Automated Run
 
-1. Write failing unit tests first for:
+The host-side entry point is the dual-emulator launcher script:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\testing\e2e\scripts\run-dual-emulator-e2e.ps1 `
+  -EmulatorASerial <publisher-serial> `
+  -EmulatorBSerial <receiver-serial>
+```
+
+Expected launcher responsibilities after implementation:
+
+- Run emulator/install preflight.
+- Invoke the Playwright Android suite in `testing/e2e/tests/interop-dual-emulator.spec.ts`.
+- Export Playwright report artifacts and role-specific diagnostics.
+
+## 5. Test-First Workflow
+
+1. Write/update failing JUnit tests first for:
    - output state transitions
-   - duplicate start/stop guarding
+   - start/stop idempotency
    - interruption and retry-window behavior
-2. Write failing Playwright end-to-end tests first for:
+   - screen-share consent gating for `device-screen:*`
+2. Write/update failing Playwright Android tests first for:
    - source list -> output control navigation
-   - dual-emulator publish -> discover -> play scenario
-   - publisher stop -> receiver interruption/stopped scenario
-3. Implement minimal code to pass tests.
-4. Refactor with tests green.
+   - publisher screen share consent + ACTIVE state
+   - receiver discover -> play flow
+   - publisher stop -> receiver interruption/stopped flow
+3. Implement the minimal code to satisfy the failing tests.
+4. Refactor with all layers green.
 
-## 5. Validation Commands
+## 6. Validation Commands
 
-Run after implementation:
+Run these after implementation:
 
-- `pwsh ./scripts/verify-android-prereqs.ps1`
-- `./gradlew test`
-- `npm --prefix testing/e2e ci`
-- `npm --prefix testing/e2e run test:dual-emulator`
-- `./gradlew connectedAndroidTest`
-- `./gradlew verifyReleaseHardening`
-- `./gradlew :app:assembleRelease`
+```powershell
+pwsh ./scripts/verify-android-prereqs.ps1
+.\gradlew.bat test
+.\gradlew.bat connectedAndroidTest
+.\gradlew.bat verifyReleaseHardening
+.\gradlew.bat :app:assembleRelease
+npm --prefix testing/e2e run test:dual-emulator
+powershell -ExecutionPolicy Bypass -File .\testing\e2e\scripts\run-dual-emulator-e2e.ps1 -EmulatorASerial <publisher-serial> -EmulatorBSerial <receiver-serial>
+```
 
 Expected outcomes:
 
-- Unit and Playwright dual-emulator tests pass.
-- Connected Android tests pass for compatibility regressions.
-- Dual-emulator E2E scenario is reproducible and passes.
-- Release build passes with shrinking/optimization enabled.
-- No unauthorized permission additions.
+- Unit/repository tests pass.
+- Platform compatibility tests pass.
+- Playwright Android dual-emulator flow passes with real app/device assertions.
+- Release build passes with shrinking and optimization enabled.
+- Validation artifacts are recorded for both publisher and receiver roles.
 
-## 6. Network Preconditions for Reliable E2E
+## 7. Network and Environment Preconditions
 
+- Both emulators must be online simultaneously and visible in `adb devices`.
 - Both emulators must be on the same multicast-capable network segment.
-- Discovery timeout and playback timeout must be configured consistently with
-  success criteria in the feature spec.
-- If network preflight fails, E2E run is invalid and should be rerun after
-  topology correction.
+- Discovery/playback timeouts must align with feature success criteria.
+- If preflight fails, the E2E run is invalid and should be rerun after
+  environment correction rather than treated as a product regression.
