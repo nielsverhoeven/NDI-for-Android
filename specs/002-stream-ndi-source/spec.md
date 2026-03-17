@@ -18,7 +18,10 @@ starting a network output, the feature does not exist in a usable form.
 
 **Independent Test**: In a dual-emulator run on the same network, emulator A
 selects a local screen-share source, starts output after explicit consent, and
-emulator B discovers and opens the published stream in viewer playback.
+emulator B discovers and opens the published stream in viewer playback. The
+run MUST produce synchronized emulator screenshots (publisher + receiver) for
+pre-play, active-playback, and post-stop checkpoints so visual evidence can be
+reviewed outside Playwright reports.
 
 **Acceptance Scenarios**:
 
@@ -32,6 +35,10 @@ emulator B discovers and opens the published stream in viewer playback.
 3. **Given** output is active, **When** an external receiver browses network NDI
    streams, **Then** the receiver can discover and open the stream produced by
    this app.
+4. **Given** emulator B opens the published stream and reports playback,
+   **When** automated validation captures active-playback screenshots,
+   **Then** receiver viewer-surface evidence MUST show non-black visible content
+   and visual similarity to publisher active output evidence.
 
 ---
 
@@ -130,6 +137,13 @@ the app surfaces interruption status and supports retry or stop actions.
   layouts.
 - **FR-014**: The system MUST support Android API 24+ and remain compliant with
   the repo-supported latest stable compatible compileSdk/targetSdk baseline.
+- **FR-015**: The dual-emulator E2E launcher MUST collect emulator screenshots
+  for publisher and receiver at minimum checkpoints: preflight, active playback,
+  and post-run, and store them in run-scoped artifacts.
+- **FR-016**: Dual-emulator interop tests MUST emit screenshot-based validation
+  evidence that the receiver viewer surface displays visible content (not black)
+  and is visually similar to publisher active output when playback is marked
+  active.
 
 ### Constitutional Requirements *(mandatory)*
 
@@ -200,3 +214,9 @@ the app surfaces interruption status and supports retry or stop actions.
   primary output flow succeeds in at least 95% of release-readiness runs.
 - **SC-006**: In controlled dual-emulator validation runs, publish -> discover
   -> play -> stop completes successfully in at least 95% of attempts.
+- **SC-007**: In controlled dual-emulator validation runs, 100% of attempts
+  produce publisher/receiver screenshot artifacts for preflight, playback, and
+  post-run checkpoints.
+- **SC-008**: In controlled dual-emulator validation runs where playback reaches
+  `PLAYING`, at least 95% of receiver active-playback screenshots pass
+  non-black visibility and publisher-similarity checks.

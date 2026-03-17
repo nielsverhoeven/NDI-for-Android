@@ -135,6 +135,16 @@ export function getBoundsByResourceIdSuffix(serial: string, resourceIdSuffix: st
   return parseBounds(match.bounds);
 }
 
+export function getTextByResourceIdSuffix(serial: string, resourceIdSuffix: string): string {
+  const nodes = dumpUi(serial);
+  const match = nodes.find((node) => node.resourceId.endsWith(resourceIdSuffix));
+  if (!match) {
+    throw new Error(`Could not find UI node with resource id suffix '${resourceIdSuffix}' on ${serial}`);
+  }
+
+  return match.text.trim();
+}
+
 export function writeUiSnapshot(serial: string, destinationPath: string): void {
   const nodes = dumpUi(serial);
   const lines = nodes
@@ -161,7 +171,7 @@ export async function waitForText(serial: string, text: string, timeoutMs: numbe
     if (findFirstByText(nodes, text)) {
       return;
     }
-    await delay(750);
+    await delay(300);
   }
   throw new Error(`Timed out waiting for text '${text}' on ${serial}`);
 }
@@ -174,10 +184,10 @@ export async function tapText(serial: string, text: string, timeoutMs = 15_000):
     if (node && node.bounds) {
       const { x, y } = boundsCenter(node.bounds);
       runAdb(serial, ["shell", "input", "tap", `${x}`, `${y}`]);
-      await delay(350);
+      await delay(150);
       return;
     }
-    await delay(500);
+    await delay(250);
   }
 
   throw new Error(`Timed out tapping text '${text}' on ${serial}`);
@@ -192,11 +202,11 @@ export async function tapFirstAvailableText(serial: string, candidates: string[]
       if (node && node.bounds) {
         const { x, y } = boundsCenter(node.bounds);
         runAdb(serial, ["shell", "input", "tap", `${x}`, `${y}`]);
-        await delay(350);
+        await delay(150);
         return text;
       }
     }
-    await delay(400);
+    await delay(200);
   }
 
   throw new Error(`Timed out finding any candidate text on ${serial}: ${candidates.join(", ")}`);
@@ -210,7 +220,7 @@ export async function waitForTextContaining(serial: string, fragment: string, ti
     if (match) {
       return match.text;
     }
-    await delay(750);
+    await delay(300);
   }
   throw new Error(`Timed out waiting for text containing '${fragment}' on ${serial}`);
 }
@@ -223,10 +233,10 @@ export async function tapTextContaining(serial: string, fragment: string, timeou
     if (match) {
       const { x, y } = boundsCenter(match.bounds);
       runAdb(serial, ["shell", "input", "tap", `${x}`, `${y}`]);
-      await delay(350);
+      await delay(150);
       return match.text;
     }
-    await delay(500);
+    await delay(250);
   }
   throw new Error(`Timed out tapping text containing '${fragment}' on ${serial}`);
 }
@@ -244,7 +254,7 @@ export async function replaceTextByResourceIdSuffix(
     if (match) {
       const { x, y } = boundsCenter(match.bounds);
       runAdb(serial, ["shell", "input", "tap", `${x}`, `${y}`]);
-      await delay(200);
+      await delay(100);
       runAdb(serial, ["shell", "input", "keyevent", "123"]); // move cursor to end
       for (let i = 0; i < 96; i++) {
         runAdb(serial, ["shell", "input", "keyevent", "67"]); // DEL
@@ -252,10 +262,10 @@ export async function replaceTextByResourceIdSuffix(
 
       const encoded = value.replace(/ /g, "%s");
       runAdb(serial, ["shell", "input", "text", encoded]);
-      await delay(300);
+      await delay(150);
       return;
     }
-    await delay(400);
+    await delay(200);
   }
 
   throw new Error(`Timed out replacing text for resource id suffix '${resourceIdSuffix}' on ${serial}`);
@@ -269,7 +279,7 @@ export async function waitForTextAbsent(serial: string, text: string, timeoutMs:
     if (!found) {
       return;
     }
-    await delay(700);
+    await delay(300);
   }
 
   throw new Error(`Timed out waiting for text '${text}' to disappear on ${serial}`);
@@ -289,7 +299,7 @@ export async function editTextTailByResourceIdSuffix(
     if (match) {
       const { x, y } = boundsCenter(match.bounds);
       runAdb(serial, ["shell", "input", "tap", `${x}`, `${y}`]);
-      await delay(200);
+      await delay(100);
       runAdb(serial, ["shell", "input", "keyevent", "123"]); // end of line
       for (let i = 0; i < deleteCharsFromEnd; i++) {
         runAdb(serial, ["shell", "input", "keyevent", "67"]);
@@ -297,10 +307,10 @@ export async function editTextTailByResourceIdSuffix(
       if (appendText.length > 0) {
         runAdb(serial, ["shell", "input", "text", appendText.replace(/ /g, "%s")]);
       }
-      await delay(300);
+      await delay(150);
       return;
     }
-    await delay(350);
+    await delay(150);
   }
 
   throw new Error(`Timed out editing text tail for resource id suffix '${resourceIdSuffix}' on ${serial}`);
@@ -308,7 +318,7 @@ export async function editTextTailByResourceIdSuffix(
 
 export async function pressBack(serial: string): Promise<void> {
   runAdb(serial, ["shell", "input", "keyevent", "4"]);
-  await delay(300);
+  await delay(150);
 }
 
 

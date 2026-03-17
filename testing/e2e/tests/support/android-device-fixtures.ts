@@ -6,9 +6,17 @@ export type DualEmulatorContext = {
   packageName: string;
 };
 
+export type AndroidVersionInfo = {
+  sdkInt: number;
+  release: string;
+  codename: string;
+  incremental: string;
+};
+
 const DEFAULT_PACKAGE = "com.ndi.app.debug";
 const STOP_PROPAGATION_TIMEOUT_MS = 3000;
 const DISCOVERY_POLL_INTERVAL_MS = 500;
+const SUPPORTED_ANDROID_SDKS = [32, 33, 34, 35, 36] as const;
 
 function runAdb(serial: string, args: string[]): string {
   return execFileSync("adb", ["-s", serial, ...args], {
@@ -41,6 +49,39 @@ export function verifyPackageInstalled(serial: string, packageName: string): voi
   if (!result.startsWith("package:")) {
     throw new Error(`Package ${packageName} is not installed on ${serial}.`);
   }
+}
+
+export function getAndroidVersionInfo(serial: string): AndroidVersionInfo {
+  const sdkRaw = runAdb(serial, ["shell", "getprop", "ro.build.version.sdk"]);
+  const release = runAdb(serial, ["shell", "getprop", "ro.build.version.release"]);
+  const codename = runAdb(serial, ["shell", "getprop", "ro.build.version.codename"]);
+  const incremental = runAdb(serial, ["shell", "getprop", "ro.build.version.incremental"]);
+
+  const sdkInt = Number.parseInt(sdkRaw.trim(), 10);
+  if (!Number.isFinite(sdkInt)) {
+    throw new Error(`Unable to parse Android SDK version for ${serial}: '${sdkRaw}'`);
+  }
+
+  return {
+    sdkInt,
+    release: release.trim(),
+    codename: codename.trim(),
+    incremental: incremental.trim(),
+  };
+}
+
+export function verifySupportedAndroidVersion(serial: string): AndroidVersionInfo {
+  const info = getAndroidVersionInfo(serial);
+  const supported = SUPPORTED_ANDROID_SDKS.includes(info.sdkInt as (typeof SUPPORTED_ANDROID_SDKS)[number]);
+
+  if (!supported) {
+    throw new Error(
+      `Unsupported Android version on ${serial}: SDK ${info.sdkInt} (release ${info.release}). ` +
+      `Supported SDKs: ${SUPPORTED_ANDROID_SDKS.join(", ")}.`,
+    );
+  }
+
+  return info;
 }
 
 export function collectLogcat(serial: string, outputPath: string): void {

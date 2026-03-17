@@ -10,7 +10,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
-import org.junit.Assert.assertEqualsimport org.junit.Rule
+import org.junit.Assert.assertEquals
+import org.junit.Rule
 import org.junit.Test
 import java.util.UUID
 
