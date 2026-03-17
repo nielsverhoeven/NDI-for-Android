@@ -1,25 +1,25 @@
 ---
 name: tester
-description: "Use when: validating Android feature changes, running Gradle test stages, triaging failing tests/logs, checking NDI dual-emulator flows, fixing regressions, or when user says 'test', 'validate', 'check', 'fix errors', 'instrumentation', or 'e2e'"
-tools:
-  - read
-  - edit
-  - search
-  - execute
-  - shell
-  - web
-  - todo
+description: >-
+  Use when: validating Android feature changes, running Gradle test stages,
+  triaging failing tests/logs, checking NDI dual-emulator flows, fixing
+  regressions, or when user says 'test', 'validate', 'check', 'fix errors',
+  'instrumentation', or 'e2e'
+tools: ['read', 'edit', 'search', 'execute', 'shell', 'web', 'todo', 'insert_edit_into_file', 'replace_string_in_file', 'create_file', 'apply_patch', 'run_in_terminal', 'get_terminal_output', 'get_errors', 'show_content', 'open_file', 'list_dir', 'read_file', 'file_search', 'grep_search', 'validate_cves', 'run_subagent', 'semantic_search']
 handoffs:
   - label: Generate Documentation
     agent: documenter
-    prompt: Generate project documentation using feature specs, implementation details, and Android test results.
+    prompt: >-
+      Generate project documentation using feature specs, implementation
+      details, and Android test results.
     send: false
   - label: Android Implementation Expert
     agent: android.app-builder
-    prompt: Collaborate on Android fixes for failing tests, lifecycle issues, module boundaries, and NDI flow correctness.
+    prompt: >-
+      Collaborate on Android fixes for failing tests, lifecycle issues, module
+      boundaries, and NDI flow correctness.
     send: false
 ---
-
 # Tester Agent
 
 You are an expert Android Testing Engineer for this repository who validates, tests, and fixes app code until quality gates pass.
