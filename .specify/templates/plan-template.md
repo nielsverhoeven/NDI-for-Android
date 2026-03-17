@@ -22,7 +22,6 @@
 **Storage**: [if applicable, e.g., PostgreSQL, CoreData, files or N/A]  
 **Testing**: [e.g., pytest, XCTest, cargo test or NEEDS CLARIFICATION]  
 **Target Platform**: [e.g., Linux server, iOS 15+, WASM or NEEDS CLARIFICATION]
-**Android Toolchain Baseline**: [e.g., latest stable compileSdk/targetSdk, AGP, Gradle, Kotlin, JDK/JBR, NDK/CMake or N/A]
 **Project Type**: [e.g., library/cli/web-service/mobile-app/compiler/desktop-app or NEEDS CLARIFICATION]  
 **Performance Goals**: [domain-specific, e.g., 1000 req/s, 10k lines/sec, 60 fps or NEEDS CLARIFICATION]  
 **Constraints**: [domain-specific, e.g., <200ms p95, <100MB memory, offline-capable or NEEDS CLARIFICATION]  
@@ -32,18 +31,7 @@
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-- MVVM gate: UI logic placement is confined to ViewModels.
-- Navigation gate: Single-activity + Navigation Component approach is preserved.
-- Data gate: Repository boundary is defined for each new/changed data flow.
-- TDD gate: Test-first strategy (JUnit + Playwright-by-default for end-to-end coverage) is explicit.
-- UX gate: Material Design 3 compliance checks are defined for UI changes.
-- Battery gate: Any background work includes explicit necessity and impact.
-- Offline gate: Room-backed offline behavior is designed for user-critical flows.
-- Permission gate: Any permission change includes feature-level justification.
-- Modularity gate: Feature module boundaries and Gradle dependencies are clear.
-- Release gate: R8/ProGuard release validation is planned.
-- Platform gate: API 24+ compatibility and the latest stable compatible Android toolchain baseline are covered.
-- Toolchain gate: compileSdk/targetSdk, AGP, Gradle, Kotlin, JDK/JBR, AndroidX/Jetpack, NDK/CMake, and third-party SDK compatibility are explicitly reviewed.
+[Gates determined based on constitution file]
 
 ## Project Structure
 
@@ -111,6 +99,6 @@ directories captured above]
 > **Fill ONLY if Constitution Check has violations that must be justified**
 
 | Violation | Why Needed | Simpler Alternative Rejected Because |
-| --------- | ---------- | ----------------------------------- |
+|-----------|------------|-------------------------------------|
 | [e.g., 4th project] | [current need] | [why 3 projects insufficient] |
 | [e.g., Repository pattern] | [specific problem] | [why direct DB access insufficient] |

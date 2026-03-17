@@ -1,10 +1,5 @@
 ---
 description: Execute the implementation plan by processing and executing all tasks defined in tasks.md
-handoffs:
-  - label: Android Implementation Expert
-    agent: android.app-builder
-    prompt: Collaborate on Android feature implementation details, architecture, and testing strategy for the current task.
-    send: true
 ---
 
 ## User Input
@@ -92,10 +87,6 @@ You **MUST** consider the user input before proceeding (if not empty).
    - **IF EXISTS**: Read research.md for technical decisions and constraints
    - **IF EXISTS**: Read quickstart.md for integration scenarios
 
-  **Android collaboration requirement**:
-  - If a task impacts Android code (for example `app/`, `feature/`, `core/`, or `ndi/sdk-bridge/`), invoke the **Android Implementation Expert** handoff to refine implementation details before editing.
-  - Use the Android expert output to confirm architecture boundaries, lifecycle-safe behavior, threading/coroutine approach, and test coverage intent for each impacted task.
-
 4. **Project Setup Verification**:
    - **REQUIRED**: Create/verify ignore files based on actual project setup:
 
@@ -145,20 +136,64 @@ You **MUST** consider the user input before proceeding (if not empty).
    - **Task dependencies**: Sequential vs parallel execution rules
    - **Task details**: ID, description, file paths, parallel markers [P]
    - **Execution flow**: Order and dependency requirements
+   - **Issue references per user story**: For each `[USN]` phase, scan all task lines in that phase for `[#NNN]` tokens and build a deduplicated list of GitHub issue numbers associated with that story. Store this as the story's **issue list** — it will be used in the commit message after the story is implemented and tested. If no `[#NNN]` tokens are present in tasks.md, the commit is still created but without issue-closing keywords.
 
-6. Execute implementation following the task plan:
+6. Execute implementation following the task plan, **delegating to specialized agents** based on task type:
+
    - **Phase-by-phase execution**: Complete each phase before moving to the next
-   - **Respect dependencies**: Run sequential tasks in order, parallel tasks [P] can run together  
+   - **Respect dependencies**: Run sequential tasks in order, parallel tasks [P] can run together
    - **Follow TDD approach**: Execute test tasks before their corresponding implementation tasks
    - **File-based coordination**: Tasks affecting the same files must run sequentially
    - **Validation checkpoints**: Verify each phase completion before proceeding
 
+   **Agent Delegation Rules (Android project)**:
+
+   | Task Type | Delegate To | When |
+   |-----------|-------------|------|
+   | Core Android implementation (models, repositories, ViewModels, DI wiring, architecture) | `android.app-builder` | Any task touching `core/*`, `feature/*/data`, `feature/*/domain`, `ndi/sdk-bridge`, or `app/di` |
+   | UI screens, layouts, Compose, navigation, accessibility | `frontend-dev` | Any task touching `feature/*/presentation`, layouts, navigation graphs, or screen-level UX |
+   | Test writing/validation, build verification, instrumentation, e2e | `tester` | After every implementation phase and before marking a phase complete |
+   | Architecture review, quality gates, security/design gaps | `reviewer` | After core implementation phases and before final completion sign-off |
+   | Documentation (guides, README, module reference, feature docs) | `documenter` | After all user stories are committed and final gates pass |
+
+   **Collaboration Workflow Per Phase**:
+
+   1. **Implement** — Delegate code tasks to `android.app-builder` (core/data/domain) and `frontend-dev` (UI/presentation) as appropriate for the tasks in that phase.
+   2. **Review** — After implementation tasks in a phase are done, invoke `reviewer` to assess architecture compliance, module boundary correctness, and quality gaps.
+   3. **Test** — Invoke `tester` to run the applicable test stages (unit, instrumentation, e2e) and validate the phase output. Do not advance to the next phase until the tester signals a pass.
+   4. **Fix loop** — If `reviewer` or `tester` surface issues, hand back to `android.app-builder` or `frontend-dev` to apply targeted fixes, then re-run review and test.
+   5. **Commit** — Once the phase passes review and test, create a git commit for the completed user story. See **User Story Commit Rules** below.
+
+   **User Story Commit Rules**:
+
+   After `tester` and `reviewer` both pass for a `[USN]` phase, stage all files changed during that phase and create a commit using this exact format:
+
+   ```
+   feat(usN): <concise description of what the user story delivers>
+
+   <optional 1–3 sentence summary of the key changes made in this story>
+
+   <for each issue number in the story's issue list, one line per issue:>
+   Closes #NNN
+
+   Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
+   ```
+
+   Rules:
+   - The subject line uses conventional commit format: `feat(usN):` where `N` is the user story number (e.g. `feat(us1):`, `feat(us2):`).
+   - Include one `Closes #NNN` line per issue number collected from the story's issue list in step 5. This links the commit to its GitHub issue and closes it on merge.
+   - If the story's issue list is empty (no `[#NNN]` tokens were found in tasks.md), omit the `Closes` lines entirely — do not fabricate issue numbers.
+   - Always include the `Co-authored-by` trailer as the last line.
+   - Do **not** create a commit for Setup or Polish phases — only for named user story phases (`[USN]`).
+   - Do **not** commit if the tester or reviewer gate has not yet passed for that phase.
+
 7. Implementation execution rules:
-   - **Setup first**: Initialize project structure, dependencies, configuration
-   - **Tests before code**: If you need to write tests for contracts, entities, and integration scenarios
-   - **Core development**: Implement models, services, CLI commands, endpoints
-   - **Integration work**: Database connections, middleware, logging, external services
-   - **Polish and validation**: Unit tests, performance optimization, documentation
+   - **Setup first**: Initialize project structure, dependencies, configuration — handle directly or via `android.app-builder`
+   - **Tests before code**: Write contract/entity/integration tests first — delegate to `tester` for test scaffolding guidance
+   - **Core development**: Implement models, services, repositories, ViewModels — delegate to `android.app-builder`
+   - **UI development**: Implement screens, navigation, accessibility — delegate to `frontend-dev`
+   - **Integration work**: Database connections, DI wiring, NDI bridge integration — delegate to `android.app-builder`
+   - **Polish and validation**: Final test run, performance checks, release hardening — delegate to `tester`, then `reviewer` for final sign-off
 
 8. Progress tracking and error handling:
    - Report progress after each completed task
@@ -174,6 +209,26 @@ You **MUST** consider the user input before proceeding (if not empty).
    - Validate that tests pass and coverage meets requirements
    - Confirm the implementation follows the technical plan
    - Report final status with summary of completed work
+
+   **Final Collaboration Gates (Android project)**:
+
+   **Gate A — Final Test Run (delegate to `tester`)**:
+   - Invoke `tester` to run all applicable stages (unit, instrumentation, e2e dual-emulator, release hardening).
+   - Do not declare completion until `tester` confirms all release gates pass.
+   - Route any failures back to `android.app-builder` or `frontend-dev` for fixes, then re-run `tester`.
+
+   **Gate B — Architecture and Quality Sign-Off (delegate to `reviewer`)**:
+   - Invoke `reviewer` to validate the completed implementation against architecture rules, module boundaries, lifecycle correctness, telemetry/retry semantics, and release hardening.
+   - Address all critical/high findings; document any accepted lower-priority findings in the final report.
+
+   **Gate C — Documentation (delegate to `documenter`)**:
+   - Invoke `documenter` to produce or update the full Android documentation set: README, architecture guide, module reference, feature guides, NDI integration guide, testing guide, and developer setup guide.
+   - `documenter` will read the live codebase directly and may invoke `android.app-builder` and `frontend-dev` handoffs to fill any gaps.
+   - Do not declare full completion until `documenter` confirms all in-scope documentation is written and accurate.
+
+   **Gate D — Final Summary**:
+   - Report completed tasks, agent collaborations performed, test results, reviewer dispositions, and documentation produced.
+   - Document any remaining open risks or follow-up recommendations.
 
 Note: This command assumes a complete task breakdown exists in tasks.md. If tasks are incomplete or missing, suggest running `/speckit.tasks` first to regenerate the task list.
 

@@ -1,0 +1,95 @@
+package com.ndi.app.navigation
+
+import com.ndi.core.model.navigation.LaunchContext
+import com.ndi.core.model.navigation.NavigationLayoutProfile
+import com.ndi.core.model.navigation.NavigationTrigger
+import com.ndi.core.model.navigation.TopLevelDestination
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class TopLevelNavigationCoordinatorTest {
+
+    private val coordinator = TopLevelNavigationCoordinator()
+
+    @Test
+    fun launcherContext_alwaysResolvesToHome() {
+        assertEquals(
+            TopLevelDestination.HOME,
+            coordinator.resolveInitialDestination(LaunchContext.LAUNCHER, TopLevelDestination.STREAM),
+        )
+    }
+
+    @Test
+    fun recentsRestore_withSavedStream_restoresStream() {
+        assertEquals(
+            TopLevelDestination.STREAM,
+            coordinator.resolveInitialDestination(LaunchContext.RECENTS_RESTORE, TopLevelDestination.STREAM),
+        )
+    }
+
+    @Test
+    fun recentsRestore_withNoSaved_defaultsToHome() {
+        assertEquals(
+            TopLevelDestination.HOME,
+            coordinator.resolveInitialDestination(LaunchContext.RECENTS_RESTORE, null),
+        )
+    }
+
+    @Test
+    fun isNoOp_returnsTrueForSameDestination() {
+        assertTrue(coordinator.isNoOp(TopLevelDestination.HOME, TopLevelDestination.HOME))
+        assertTrue(coordinator.isNoOp(TopLevelDestination.STREAM, TopLevelDestination.STREAM))
+        assertTrue(coordinator.isNoOp(TopLevelDestination.VIEW, TopLevelDestination.VIEW))
+    }
+
+    @Test
+    fun isNoOp_returnsFalseForDifferentDestination() {
+        assertFalse(coordinator.isNoOp(TopLevelDestination.HOME, TopLevelDestination.STREAM))
+        assertFalse(coordinator.isNoOp(TopLevelDestination.STREAM, TopLevelDestination.VIEW))
+    }
+
+    @Test
+    fun resolveLayoutProfile_compactWidth_returnsBottomNav() {
+        assertEquals(
+            NavigationLayoutProfile.PHONE_BOTTOM_NAV,
+            coordinator.resolveLayoutProfile(360),
+        )
+        assertEquals(
+            NavigationLayoutProfile.PHONE_BOTTOM_NAV,
+            coordinator.resolveLayoutProfile(599),
+        )
+    }
+
+    @Test
+    fun resolveLayoutProfile_expandedWidth_returnsNavRail() {
+        assertEquals(
+            NavigationLayoutProfile.TABLET_NAV_RAIL,
+            coordinator.resolveLayoutProfile(600),
+        )
+        assertEquals(
+            NavigationLayoutProfile.TABLET_NAV_RAIL,
+            coordinator.resolveLayoutProfile(900),
+        )
+    }
+
+    @Test
+    fun navOptions_launchSingleTopIsAlwaysTrue() {
+        val opts = coordinator.navOptions(1, NavigationTrigger.BOTTOM_NAV)
+        assertTrue(opts.launchSingleTop)
+    }
+
+    @Test
+    fun navOptions_restoreState_falseForSystemRestore() {
+        val opts = coordinator.navOptions(1, NavigationTrigger.SYSTEM_RESTORE)
+        assertFalse(opts.restoreState)
+    }
+
+    @Test
+    fun navOptions_restoreState_trueForBottomNav() {
+        val opts = coordinator.navOptions(1, NavigationTrigger.BOTTOM_NAV)
+        assertTrue(opts.restoreState)
+    }
+}
+

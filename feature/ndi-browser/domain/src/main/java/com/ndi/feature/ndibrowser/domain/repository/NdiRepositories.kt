@@ -6,6 +6,13 @@ import com.ndi.core.model.OutputConfiguration
 import com.ndi.core.model.OutputHealthSnapshot
 import com.ndi.core.model.OutputSession
 import com.ndi.core.model.ViewerSession
+import com.ndi.core.model.navigation.HomeDashboardSnapshot
+import com.ndi.core.model.navigation.NavigationTransitionRecord
+import com.ndi.core.model.navigation.NavigationTrigger
+import com.ndi.core.model.navigation.StreamContinuityState
+import com.ndi.core.model.navigation.TopLevelDestination
+import com.ndi.core.model.navigation.TopLevelDestinationState
+import com.ndi.core.model.navigation.ViewContinuityState
 import kotlinx.coroutines.flow.Flow
 
 interface NdiDiscoveryRepository {
@@ -77,3 +84,55 @@ interface UserSelectionRepository {
 
     suspend fun getLastSelectedSource(): String?
 }
+
+// ---- Spec 003: Three-Screen Navigation repositories ----
+
+/**
+ * Manages top-level destination selection state and persist/restore semantics.
+ */
+interface TopLevelNavigationRepository {
+    fun observeTopLevelDestination(): Flow<TopLevelDestinationState>
+
+    suspend fun selectTopLevelDestination(
+        destination: TopLevelDestination,
+        trigger: NavigationTrigger,
+    ): NavigationTransitionRecord
+
+    suspend fun getLastTopLevelDestination(): TopLevelDestination?
+
+    suspend fun saveLastTopLevelDestination(destination: TopLevelDestination)
+}
+
+/**
+ * Aggregates non-sensitive status summaries for the Home dashboard.
+ */
+interface HomeDashboardRepository {
+    fun observeDashboardSnapshot(): Flow<HomeDashboardSnapshot>
+
+    suspend fun refreshDashboardSnapshot(): HomeDashboardSnapshot
+}
+
+/**
+ * Tracks Stream/output continuity when navigating between top-level destinations.
+ * Active output must NOT be stopped by top-level navigation.
+ */
+interface StreamContinuityRepository {
+    fun observeContinuityState(): Flow<StreamContinuityState>
+
+    suspend fun captureLastKnownState()
+
+    suspend fun clearTransientStateOnExplicitStop()
+}
+
+/**
+ * Tracks View/playback continuity when navigating between top-level destinations.
+ * Playback MUST be stopped when leaving the View destination.
+ */
+interface ViewContinuityRepository {
+    fun observeContinuityState(): Flow<ViewContinuityState>
+
+    suspend fun stopForTopLevelNavigation()
+
+    suspend fun getLastSelectedSourceId(): String?
+}
+

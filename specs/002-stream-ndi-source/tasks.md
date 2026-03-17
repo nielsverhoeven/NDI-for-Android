@@ -97,14 +97,14 @@
 
 ### Implementation for User Story 2
 
-- [ ] T040 [US2] Persist input kind and continuity metadata in feature/ndi-browser/data/src/main/java/com/ndi/feature/ndibrowser/data/repository/OutputConfigurationRepositoryImpl.kt
-- [ ] T041 [US2] Publish active/stopping/stopped health transitions in feature/ndi-browser/data/src/main/java/com/ndi/feature/ndibrowser/data/OutputSessionCoordinator.kt
-- [ ] T042 [US2] Implement idempotent rapid-stop guard behavior in feature/ndi-browser/data/src/main/java/com/ndi/feature/ndibrowser/data/repository/NdiOutputRepositoryImpl.kt
-- [ ] T043 [US2] Implement stop-state and active metadata handling in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/output/OutputControlViewModel.kt
-- [ ] T044 [P] [US2] Render active/stop status affordances in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/output/OutputControlScreen.kt
-- [ ] T045 [US2] Stop local screen-share sender and clear capture state in ndi/sdk-bridge/src/main/java/com/ndi/sdkbridge/NdiNativeBridge.kt
-- [ ] T046 [P] [US2] Add receiver playback stop assertions and helpers in testing/e2e/tests/support/android-device-fixtures.ts
-- [ ] T047 [US2] Emit output-stop and active-session telemetry milestones in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/output/OutputTelemetry.kt
+- [X] T040 [US2] Persist input kind and continuity metadata in feature/ndi-browser/data/src/main/java/com/ndi/feature/ndibrowser/data/repository/OutputConfigurationRepositoryImpl.kt
+- [X] T041 [US2] Publish active/stopping/stopped health transitions in feature/ndi-browser/data/src/main/java/com/ndi/feature/ndibrowser/data/OutputSessionCoordinator.kt
+- [X] T042 [US2] Implement idempotent rapid-stop guard behavior in feature/ndi-browser/data/src/main/java/com/ndi/feature/ndibrowser/data/repository/NdiOutputRepositoryImpl.kt
+- [X] T043 [US2] Implement stop-state and active metadata handling in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/output/OutputControlViewModel.kt
+- [X] T044 [P] [US2] Render active/stop status affordances in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/output/OutputControlScreen.kt
+- [X] T045 [US2] Stop local screen-share sender and clear capture state in ndi/sdk-bridge/src/main/java/com/ndi/sdkbridge/NdiNativeBridge.kt
+- [X] T046 [P] [US2] Add receiver playback stop assertions and helpers in testing/e2e/tests/support/android-device-fixtures.ts
+- [X] T047 [US2] Emit output-stop and active-session telemetry milestones in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/output/OutputTelemetry.kt
 
 **Checkpoint**: User Stories 1 and 2 are independently functional.
 
@@ -118,18 +118,18 @@
 
 ### Tests for User Story 3 (REQUIRED)
 
-- [ ] T048 [P] [US3] Add failing interruption/retry tests for capture and network loss in feature/ndi-browser/presentation/src/test/java/com/ndi/feature/ndibrowser/output/OutputRecoveryViewModelTest.kt
-- [ ] T049 [P] [US3] Add failing repository retry-window tests for interrupted sessions in feature/ndi-browser/data/src/test/java/com/ndi/feature/ndibrowser/data/NdiOutputRecoveryRepositoryContractTest.kt
-- [ ] T050 [P] [US3] Add failing Android-device interruption recovery coverage in testing/e2e/tests/us3-recovery-actions.spec.ts
-- [ ] T051 [P] [US3] Add failing receiver interruption propagation coverage in testing/e2e/tests/us3-source-loss.spec.ts
+- [X] T048 [P] [US3] Add failing interruption/retry tests for capture and network loss in feature/ndi-browser/presentation/src/test/java/com/ndi/feature/ndibrowser/output/OutputRecoveryViewModelTest.kt
+- [X] T049 [P] [US3] Add failing repository retry-window tests for interrupted sessions in feature/ndi-browser/data/src/test/java/com/ndi/feature/ndibrowser/data/NdiOutputRecoveryRepositoryContractTest.kt
+- [X] T050 [P] [US3] Add failing Android-device interruption recovery coverage in testing/e2e/tests/us3-recovery-actions.spec.ts
+- [X] T051 [P] [US3] Add failing receiver interruption propagation coverage in testing/e2e/tests/us3-source-loss.spec.ts
 
 ### Implementation for User Story 3
 
-- [ ] T052 [US3] Implement interruption detection and retry coordination in feature/ndi-browser/data/src/main/java/com/ndi/feature/ndibrowser/data/OutputRecoveryCoordinator.kt
-- [ ] T053 [US3] Implement retry and failure mapping in feature/ndi-browser/data/src/main/java/com/ndi/feature/ndibrowser/data/repository/NdiOutputRepositoryImpl.kt
-- [ ] T054 [US3] Surface interruption/retry/terminal stop state transitions in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/output/OutputControlViewModel.kt
-- [ ] T055 [P] [US3] Render interruption and recovery actions in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/output/OutputControlScreen.kt
-- [ ] T056 [US3] Emit interruption and retry telemetry for recovery outcomes in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/output/OutputTelemetry.kt
+- [X] T052 [US3] Implement interruption detection and retry coordination in feature/ndi-browser/data/src/main/java/com/ndi/feature/ndibrowser/data/OutputRecoveryCoordinator.kt
+- [X] T053 [US3] Implement retry and failure mapping in feature/ndi-browser/data/src/main/java/com/ndi/feature/ndibrowser/data/repository/NdiOutputRepositoryImpl.kt
+- [X] T054 [US3] Surface interruption/retry/terminal stop state transitions in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/output/OutputControlViewModel.kt
+- [X] T055 [P] [US3] Render interruption and recovery actions in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/output/OutputControlScreen.kt
+- [X] T056 [US3] Emit interruption and retry telemetry for recovery outcomes in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/output/OutputTelemetry.kt
 
 **Checkpoint**: All user stories are independently functional.
 
@@ -140,16 +140,16 @@
 **Purpose**: Finalize Android-device interop automation, compliance evidence, and release success criteria reporting.
 
 - [X] T057 [P] Replace placeholder interop scenario with Android-device orchestration in testing/e2e/tests/interop-dual-emulator.spec.ts
-- [ ] T058 [P] Extend run metrics and artifact helpers for SC-001 through SC-006 evidence in testing/e2e/tests/support/metrics-fixtures.ts
-- [ ] T059 Run full quickstart validation flow and capture outcomes in specs/002-stream-ndi-source/validation/quickstart-validation-report.md
-- [ ] T060 Record dual-emulator evidence, latencies, and artifact links in specs/002-stream-ndi-source/validation/dual-emulator-e2e-report.md
-- [ ] T061 Update release validation gate outcomes in specs/002-stream-ndi-source/validation/release-validation-matrix.md
-- [ ] T062 Execute phone/tablet validation matrix and document FR-013 results in specs/002-stream-ndi-source/validation/device-layout-validation-report.md
-- [ ] T063 Capture Material 3 compliance verification for modified UI states in specs/002-stream-ndi-source/validation/material3-compliance-report.md
-- [ ] T064 Aggregate SC-001 through SC-006 outcomes (including SC-004 sample size and SC-006 pass rate) in specs/002-stream-ndi-source/validation/success-criteria-report.md
-- [ ] T065 Update TOOLCHAIN-001 status after Android-device and release validation in specs/002-stream-ndi-source/validation/toolchain-currency-review.md
-- [ ] T066 [P] Add API 24+ regression coverage for output flow in feature/ndi-browser/presentation/src/androidTest/java/com/ndi/feature/ndibrowser/Api24CompatibilityTest.kt
-- [ ] T067 Verify release-hardening coverage for the completed flow in app/build.gradle.kts
+- [X] T058 [P] Extend run metrics and artifact helpers for SC-001 through SC-006 evidence in testing/e2e/tests/support/metrics-fixtures.ts
+- [X] T059 Run full quickstart validation flow and capture outcomes in specs/002-stream-ndi-source/validation/quickstart-validation-report.md
+- [X] T060 Record dual-emulator evidence, latencies, and artifact links in specs/002-stream-ndi-source/validation/dual-emulator-e2e-report.md
+- [X] T061 Update release validation gate outcomes in specs/002-stream-ndi-source/validation/release-validation-matrix.md
+- [X] T062 Execute phone/tablet validation matrix and document FR-013 results in specs/002-stream-ndi-source/validation/device-layout-validation-report.md
+- [X] T063 Capture Material 3 compliance verification for modified UI states in specs/002-stream-ndi-source/validation/material3-compliance-report.md
+- [X] T064 Aggregate SC-001 through SC-006 outcomes (including SC-004 sample size and SC-006 pass rate) in specs/002-stream-ndi-source/validation/success-criteria-report.md
+- [X] T065 Update TOOLCHAIN-001 status after Android-device and release validation in specs/002-stream-ndi-source/validation/toolchain-currency-review.md
+- [X] T066 [P] Add API 24+ regression coverage for output flow in feature/ndi-browser/presentation/src/androidTest/java/com/ndi/feature/ndibrowser/Api24CompatibilityTest.kt
+- [X] T067 Verify release-hardening coverage for the completed flow in app/build.gradle.kts
 
 ---
 

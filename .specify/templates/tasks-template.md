@@ -8,10 +8,7 @@ description: "Task list template for feature implementation"
 **Input**: Design documents from `/specs/[###-feature-name]/`
 **Prerequisites**: plan.md (required), spec.md (required for user stories), research.md, data-model.md, contracts/
 
-**Tests**: Test tasks are REQUIRED. Follow strict TDD: write failing tests first,
-then implement, then refactor. When build files or SDK integrations change,
-include validation tasks for the repo-supported latest stable Android toolchain.
-End-to-end tasks MUST default to Playwright unless a documented exception exists.
+**Tests**: The examples below include test tasks. Tests are OPTIONAL - only include them if explicitly requested in the feature specification.
 
 **Organization**: Tasks are grouped by user story to enable independent implementation and testing of each story.
 
@@ -82,7 +79,7 @@ Examples of foundational tasks (adjust based on your project):
 
 **Independent Test**: [How to verify this story works on its own]
 
-### Tests for User Story 1 (REQUIRED) ⚠️
+### Tests for User Story 1 (OPTIONAL - only if tests requested) ⚠️
 
 > **NOTE: Write these tests FIRST, ensure they FAIL before implementation**
 
@@ -108,7 +105,7 @@ Examples of foundational tasks (adjust based on your project):
 
 **Independent Test**: [How to verify this story works on its own]
 
-### Tests for User Story 2 (REQUIRED) ⚠️
+### Tests for User Story 2 (OPTIONAL - only if tests requested) ⚠️
 
 - [ ] T018 [P] [US2] Contract test for [endpoint] in tests/contract/test_[name].py
 - [ ] T019 [P] [US2] Integration test for [user journey] in tests/integration/test_[name].py
@@ -130,7 +127,7 @@ Examples of foundational tasks (adjust based on your project):
 
 **Independent Test**: [How to verify this story works on its own]
 
-### Tests for User Story 3 (REQUIRED) ⚠️
+### Tests for User Story 3 (OPTIONAL - only if tests requested) ⚠️
 
 - [ ] T024 [P] [US3] Contract test for [endpoint] in tests/contract/test_[name].py
 - [ ] T025 [P] [US3] Integration test for [user journey] in tests/integration/test_[name].py
@@ -201,7 +198,7 @@ Examples of foundational tasks (adjust based on your project):
 ## Parallel Example: User Story 1
 
 ```bash
-# Launch all required tests for User Story 1 together:
+# Launch all tests for User Story 1 together (if tests requested):
 Task: "Contract test for [endpoint] in tests/contract/test_[name].py"
 Task: "Integration test for [user journey] in tests/integration/test_[name].py"
 
@@ -248,22 +245,7 @@ With multiple developers:
 - [P] tasks = different files, no dependencies
 - [Story] label maps task to specific user story for traceability
 - Each user story should be independently completable and testable
-- Verify tests fail before implementing (strict Red-Green-Refactor)
+- Verify tests fail before implementing
 - Commit after each task or logical group
 - Stop at any checkpoint to validate story independently
 - Avoid: vague tasks, same file conflicts, cross-story dependencies that break independence
-
-## Constitution-Driven Task Coverage (Android)
-
-- Include explicit tasks for ViewModel/UI separation (MVVM) and Navigation
-  Component updates when relevant.
-- Include repository-layer tasks for all new data interactions.
-- Include Room/offline behavior tasks for user-critical flows.
-- Include permission-justification tasks when any manifest permission changes.
-- Include battery-impact review tasks for background processing changes.
-- Include feature-module dependency tasks for new feature boundaries.
-- Include release validation tasks that exercise R8/ProGuard enabled builds.
-- Include compatibility verification tasks for API 24+ behavior.
-- Include toolchain currency tasks covering compileSdk/targetSdk, AGP, Gradle,
-  Kotlin, JDK/JBR, AndroidX/Jetpack, NDK/CMake, and proprietary SDK
-  compatibility or blocker tracking.
