@@ -184,16 +184,14 @@ async function waitForReceiverPreviewEvidence(
   const minSimilarity = options?.minSimilarity ?? 0.52;
   const deadline = Date.now() + timeoutMs;
 
+  // Capture the initial screenshot before any reads so the file always exists.
+  captureScreenshot(serial, screenshotPath);
+
   let latestVisibility = analyzeRegionVisibility(screenshotPath, bounds);
   let latestChanged = compareRegionToBaseline(screenshotPath, baselineScreenshotPath, bounds);
   let latestSimilarity = compareRegionToReference(screenshotPath, bounds, publisherScreenshotPath);
 
   while (Date.now() < deadline) {
-    captureScreenshot(serial, screenshotPath);
-    latestVisibility = analyzeRegionVisibility(screenshotPath, bounds);
-    latestChanged = compareRegionToBaseline(screenshotPath, baselineScreenshotPath, bounds);
-    latestSimilarity = compareRegionToReference(screenshotPath, bounds, publisherScreenshotPath);
-
     if (
       latestVisibility.nonBlackRatio >= minNonBlackRatio &&
       latestChanged.meanAbsoluteDelta >= minMeanAbsoluteDelta &&
@@ -207,6 +205,10 @@ async function waitForReceiverPreviewEvidence(
     }
 
     await new Promise((resolve) => setTimeout(resolve, 300));
+    captureScreenshot(serial, screenshotPath);
+    latestVisibility = analyzeRegionVisibility(screenshotPath, bounds);
+    latestChanged = compareRegionToBaseline(screenshotPath, baselineScreenshotPath, bounds);
+    latestSimilarity = compareRegionToReference(screenshotPath, bounds, publisherScreenshotPath);
   }
 
   assertRegionShowsVisibleContent(screenshotPath, bounds, minNonBlackRatio);
