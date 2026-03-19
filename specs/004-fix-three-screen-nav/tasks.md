@@ -17,9 +17,9 @@
 
 **Purpose**: Prepare validation and operator scaffolding for feature delivery.
 
-- [ ] T001 Create feature validation directory and seed checkpoint doc in `specs/004-fix-three-screen-nav/validation/foundation-checkpoint.md`
-- [ ] T002 [P] Capture pre-change dual-emulator runtime baseline in `specs/004-fix-three-screen-nav/validation/e2e-baseline.md`
-- [ ] T003 [P] Add feature-specific execution checklist section in `specs/004-fix-three-screen-nav/quickstart.md`
+- [X] T001 Create feature validation directory and seed checkpoint doc in `specs/004-fix-three-screen-nav/validation/foundation-checkpoint.md`
+- [X] T002 [P] Capture pre-change dual-emulator runtime baseline in `specs/004-fix-three-screen-nav/validation/e2e-baseline.md`
+- [X] T003 [P] Add feature-specific execution checklist section in `specs/004-fix-three-screen-nav/quickstart.md`
 
 ---
 
@@ -29,13 +29,13 @@
 
 **CRITICAL**: No user story work starts before this phase is complete.
 
-- [ ] T004 Extend canonical navigation state/back-policy models in `core/model/src/main/java/com/ndi/core/model/navigation/TopLevelNavigationModels.kt`
-- [ ] T005 [P] Add/extend top-level navigation telemetry event builders in `app/src/main/java/com/ndi/app/navigation/TopLevelNavigationTelemetry.kt`
-- [ ] T006 [P] Add rolling latest-five support-window helpers in `testing/e2e/tests/support/android-device-fixtures.ts`
-- [ ] T007 [P] Add reusable consent-flow branch helpers in `testing/e2e/tests/support/android-ui-driver.ts`
-- [ ] T008 Wire View-root and Viewer route/back policy in `app/src/main/java/com/ndi/app/navigation/NdiNavigation.kt`
-- [ ] T009 Update top-level/deep-link route actions for View flow in `app/src/main/res/navigation/main_nav_graph.xml`
-- [ ] T010 Record foundational readiness evidence in `specs/004-fix-three-screen-nav/validation/foundation-checkpoint.md`
+- [X] T004 Extend canonical navigation state/back-policy models in `core/model/src/main/java/com/ndi/core/model/navigation/TopLevelNavigationModels.kt`
+- [X] T005 [P] Add/extend top-level navigation telemetry event builders in `app/src/main/java/com/ndi/app/navigation/TopLevelNavigationTelemetry.kt`
+- [X] T006 [P] Add rolling latest-five support-window helpers in `testing/e2e/tests/support/android-device-fixtures.ts`
+- [X] T007 [P] Add reusable consent-flow branch helpers in `testing/e2e/tests/support/android-ui-driver.ts`
+- [X] T008 Wire View-root and Viewer route/back policy in `app/src/main/java/com/ndi/app/navigation/NdiNavigation.kt`
+- [X] T009 Update top-level/deep-link route actions for View flow in `app/src/main/res/navigation/main_nav_graph.xml`
+- [X] T010 Record foundational readiness evidence in `specs/004-fix-three-screen-nav/validation/foundation-checkpoint.md`
 
 **Checkpoint**: Foundation complete; user story phases can proceed.
 
@@ -49,17 +49,17 @@
 
 ### Tests for User Story 1 (REQUIRED)
 
-- [ ] T011 [P] [US1] Add failing View-source-to-Viewer routing unit tests in `app/src/test/java/com/ndi/app/navigation/TopLevelNavigationCoordinatorTest.kt`
-- [ ] T012 [P] [US1] Add failing back-policy unit tests for Viewer -> View root -> Home in `app/src/test/java/com/ndi/app/navigation/TopLevelNavViewModelTest.kt`
-- [ ] T013 [P] [US1] Add failing View-to-Viewer/back-stack instrumentation tests in `app/src/androidTest/java/com/ndi/app/navigation/ViewToViewerNavigationUiTest.kt`
+- [X] T011 [P] [US1] Add failing View-source-to-Viewer routing unit tests in `app/src/test/java/com/ndi/app/navigation/TopLevelNavigationCoordinatorTest.kt`
+- [X] T012 [P] [US1] Add failing back-policy unit tests for Viewer -> View root -> Home in `app/src/test/java/com/ndi/app/navigation/TopLevelNavViewModelTest.kt`
+- [X] T013 [P] [US1] Add failing View-to-Viewer/back-stack instrumentation tests in `app/src/androidTest/java/com/ndi/app/navigation/ViewToViewerNavigationUiTest.kt`
 
 ### Implementation for User Story 1
 
-- [ ] T014 [US1] Correct View source selection route builder to Viewer destination in `app/src/main/java/com/ndi/app/navigation/NdiNavigation.kt`
-- [ ] T015 [US1] Update View source selection handler to emit Viewer navigation only in `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/source_list/SourceListScreen.kt`
-- [ ] T016 [US1] Enforce deterministic back transitions for Viewer/View root in `app/src/main/res/navigation/main_nav_graph.xml`
-- [ ] T017 [US1] Align coordinator/viewmodel back policy with View flow contract in `app/src/main/java/com/ndi/app/navigation/TopLevelNavigationCoordinator.kt` and `app/src/main/java/com/ndi/app/navigation/TopLevelNavViewModel.kt`
-- [ ] T018 [US1] Record US1 routing/back validation evidence in `specs/004-fix-three-screen-nav/validation/us1-view-routing-validation.md`
+- [X] T014 [US1] Correct View source selection route builder to Viewer destination in `app/src/main/java/com/ndi/app/navigation/NdiNavigation.kt`
+- [X] T015 [US1] Update View source selection handler to emit Viewer navigation only in `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/source_list/SourceListScreen.kt`
+- [X] T016 [US1] Enforce deterministic back transitions for Viewer/View root in `app/src/main/res/navigation/main_nav_graph.xml`
+- [X] T017 [US1] Align coordinator/viewmodel back policy with View flow contract in `app/src/main/java/com/ndi/app/navigation/TopLevelNavigationCoordinator.kt` and `app/src/main/java/com/ndi/app/navigation/TopLevelNavViewModel.kt`
+- [X] T018 [US1] Record US1 routing/back validation evidence in `specs/004-fix-three-screen-nav/validation/us1-view-routing-validation.md`
 
 **Checkpoint**: US1 delivers correct View routing and deterministic back behavior independently.
 
@@ -73,17 +73,17 @@
 
 ### Tests for User Story 2 (REQUIRED)
 
-- [ ] T019 [P] [US2] Add failing icon mapping tests for Home/Stream/View in `app/src/test/java/com/ndi/app/navigation/TopLevelNavViewModelTest.kt`
-- [ ] T020 [P] [US2] Add failing Stream-highlight tests for setup/control screens in `feature/ndi-browser/presentation/src/test/java/com/ndi/feature/ndibrowser/output/OutputControlViewModelTopLevelNavTest.kt`
-- [ ] T021 [P] [US2] Add failing destination-highlight instrumentation tests (tap + deep link) in `app/src/androidTest/java/com/ndi/app/navigation/TopLevelDestinationHighlightUiTest.kt`
+- [X] T019 [P] [US2] Add failing icon mapping tests for Home/Stream/View in `app/src/test/java/com/ndi/app/navigation/TopLevelNavViewModelTest.kt`
+- [X] T020 [P] [US2] Add failing Stream-highlight tests for setup/control screens in `feature/ndi-browser/presentation/src/test/java/com/ndi/feature/ndibrowser/output/OutputControlViewModelTopLevelNavTest.kt`
+- [X] T021 [P] [US2] Add failing destination-highlight instrumentation tests (tap + deep link) in `app/src/androidTest/java/com/ndi/app/navigation/TopLevelDestinationHighlightUiTest.kt`
 
 ### Implementation for User Story 2
 
-- [ ] T022 [US2] Correct top-level icon mapping in `app/src/main/res/menu/top_level_navigation_menu.xml`
-- [ ] T023 [US2] Ensure selected destination derives from canonical nav state in `app/src/main/java/com/ndi/app/navigation/TopLevelNavViewModel.kt`
-- [ ] T024 [US2] Render singular active highlight state in `app/src/main/java/com/ndi/app/navigation/TopLevelNavigationHost.kt`
-- [ ] T025 [US2] Keep Stream active on stream setup/control surfaces in `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/output/OutputControlScreen.kt` and `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/output/OutputControlViewModel.kt`
-- [ ] T026 [US2] Record US2 icon/highlight validation evidence in `specs/004-fix-three-screen-nav/validation/us2-icon-highlight-validation.md`
+- [X] T022 [US2] Correct top-level icon mapping in `app/src/main/res/menu/top_level_navigation_menu.xml`
+- [X] T023 [US2] Ensure selected destination derives from canonical nav state in `app/src/main/java/com/ndi/app/navigation/TopLevelNavViewModel.kt`
+- [X] T024 [US2] Render singular active highlight state in `app/src/main/java/com/ndi/app/navigation/TopLevelNavigationHost.kt`
+- [X] T025 [US2] Keep Stream active on stream setup/control surfaces in `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/output/OutputControlScreen.kt` and `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/output/OutputControlViewModel.kt`
+- [X] T026 [US2] Record US2 icon/highlight validation evidence in `specs/004-fix-three-screen-nav/validation/us2-icon-highlight-validation.md`
 
 **Checkpoint**: US2 delivers consistent iconography and destination highlighting independently.
 
@@ -97,19 +97,19 @@
 
 ### Tests for User Story 3 (REQUIRED)
 
-- [ ] T027 [P] [US3] Add failing support-window and fail-fast helper tests in `testing/e2e/tests/support/android-device-fixtures.spec.ts`
-- [ ] T028 [P] [US3] Add failing unified-suite version-branch assertions in `testing/e2e/tests/interop-dual-emulator.spec.ts`
-- [ ] T029 [P] [US3] Add failing timing-policy tests for <=1000ms static delays in `testing/e2e/tests/support/android-ui-driver.spec.ts`
+- [X] T027 [P] [US3] Add failing support-window and fail-fast helper tests in `testing/e2e/tests/support/android-device-fixtures.spec.ts`
+- [X] T028 [P] [US3] Add failing unified-suite version-branch assertions in `testing/e2e/tests/interop-dual-emulator.spec.ts`
+- [X] T029 [P] [US3] Add failing timing-policy tests for <=1000ms static delays in `testing/e2e/tests/support/android-ui-driver.spec.ts`
 
 ### Implementation for User Story 3
 
-- [ ] T030 [US3] Implement runtime rolling latest-five support-window evaluation in `testing/e2e/tests/support/android-device-fixtures.ts`
-- [ ] T031 [US3] Implement unsupported-version fail-fast diagnostics with non-zero outcome in `testing/e2e/tests/support/android-device-fixtures.ts`
-- [ ] T032 [US3] Implement per-device consent-flow branching helpers in `testing/e2e/tests/support/android-ui-driver.ts`
-- [ ] T033 [US3] Refactor unified dual-emulator suite to use per-role runtime branching in `testing/e2e/tests/interop-dual-emulator.spec.ts`
-- [ ] T034 [US3] Enforce <=1000ms intentional static waits in `testing/e2e/tests/support/android-ui-driver.ts` and `testing/e2e/tests/interop-dual-emulator.spec.ts`
-- [ ] T035 [US3] Surface version diagnostics and fail-fast context in runner output at `testing/e2e/scripts/run-dual-emulator-e2e.ps1`
-- [ ] T036 [US3] Record US3 version-aware e2e validation evidence in `specs/004-fix-three-screen-nav/validation/us3-version-aware-e2e-validation.md`
+- [X] T030 [US3] Implement runtime rolling latest-five support-window evaluation in `testing/e2e/tests/support/android-device-fixtures.ts`
+- [X] T031 [US3] Implement unsupported-version fail-fast diagnostics with non-zero outcome in `testing/e2e/tests/support/android-device-fixtures.ts`
+- [X] T032 [US3] Implement per-device consent-flow branching helpers in `testing/e2e/tests/support/android-ui-driver.ts`
+- [X] T033 [US3] Refactor unified dual-emulator suite to use per-role runtime branching in `testing/e2e/tests/interop-dual-emulator.spec.ts`
+- [X] T034 [US3] Enforce <=1000ms intentional static waits in `testing/e2e/tests/support/android-ui-driver.ts` and `testing/e2e/tests/interop-dual-emulator.spec.ts`
+- [X] T035 [US3] Surface version diagnostics and fail-fast context in runner output at `testing/e2e/scripts/run-dual-emulator-e2e.ps1`
+- [X] T036 [US3] Record US3 version-aware e2e validation evidence in `specs/004-fix-three-screen-nav/validation/us3-version-aware-e2e-validation.md`
 
 **Checkpoint**: US3 delivers deterministic and faster version-aware dual-emulator validation independently.
 
@@ -119,13 +119,13 @@
 
 **Purpose**: Final compliance checks, runtime evidence, and release-gate verification.
 
-- [ ] T037 [P] Update dual-emulator operator guidance for version diagnostics and visible windows in `testing/e2e/README.md`
-- [ ] T038 [P] Update quickstart command matrix and expected diagnostics in `specs/004-fix-three-screen-nav/quickstart.md`
-- [ ] T042 [P] Validate Material Design 3 compliance for updated top-level navigation surfaces and capture evidence in `specs/004-fix-three-screen-nav/validation/material3-compliance-report.md`
-- [ ] T039 Run full feature validation sequence and capture outputs in `specs/004-fix-three-screen-nav/validation/quickstart-validation-report.md`
-- [ ] T040 Run release hardening checks and capture outputs in `specs/004-fix-three-screen-nav/validation/release-validation-matrix.md`
-- [ ] T041 Update measurable success criteria evidence (SC-001..SC-006) in `specs/004-fix-three-screen-nav/validation/success-criteria-report.md`
-- [ ] T043 Execute repeated-run viewer-back reliability matrix and confirm >=98% pass rate for SC-002 in `specs/004-fix-three-screen-nav/validation/us1-back-reliability-matrix.md`
+- [X] T037 [P] Update dual-emulator operator guidance for version diagnostics and visible windows in `testing/e2e/README.md`
+- [X] T038 [P] Update quickstart command matrix and expected diagnostics in `specs/004-fix-three-screen-nav/quickstart.md`
+- [X] T042 [P] Validate Material Design 3 compliance for updated top-level navigation surfaces and capture evidence in `specs/004-fix-three-screen-nav/validation/material3-compliance-report.md`
+- [X] T039 Run full feature validation sequence and capture outputs in `specs/004-fix-three-screen-nav/validation/quickstart-validation-report.md`
+- [X] T040 Run release hardening checks and capture outputs in `specs/004-fix-three-screen-nav/validation/release-validation-matrix.md`
+- [X] T041 Update measurable success criteria evidence (SC-001..SC-006) in `specs/004-fix-three-screen-nav/validation/success-criteria-report.md`
+- [X] T043 Execute repeated-run viewer-back reliability matrix and confirm >=98% pass rate for SC-002 in `specs/004-fix-three-screen-nav/validation/us1-back-reliability-matrix.md`
 - [ ] T044 Execute post-change dual-emulator benchmark with baseline-parity methodology and confirm >=25% median improvement for SC-006 in `specs/004-fix-three-screen-nav/validation/e2e-runtime-improvement-report.md`
 
 ---

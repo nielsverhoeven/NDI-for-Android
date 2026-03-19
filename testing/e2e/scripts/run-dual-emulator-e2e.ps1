@@ -154,6 +154,86 @@ function Ensure-VisibleEmulatorWindows {
     throw "Emulators relaunched but visible GUI windows were not detected."
 }
 
+function Resolve-MajorFromSdk {
+    param(
+        [Parameter(Mandatory = $true)]
+        [int]$SdkInt,
+        [Parameter(Mandatory = $true)]
+        [string]$Release
+    )
+
+    $sdkToMajor = @{
+        32 = 12
+        33 = 13
+        34 = 14
+        35 = 15
+        36 = 16
+    }
+
+    $releaseMajor = 0
+    [void][int]::TryParse(($Release -split '\.')[0], [ref]$releaseMajor)
+    if ($releaseMajor -gt 0) {
+        return $releaseMajor
+    }
+
+    if ($sdkToMajor.ContainsKey($SdkInt)) {
+        return $sdkToMajor[$SdkInt]
+    }
+
+    return $SdkInt
+}
+
+function Get-AndroidVersionProfile {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Serial,
+        [Parameter(Mandatory = $true)]
+        [string]$Role
+    )
+
+    $sdkInt = [int](adb -s $Serial shell getprop ro.build.version.sdk).Trim()
+    $release = (adb -s $Serial shell getprop ro.build.version.release).Trim()
+    $codename = (adb -s $Serial shell getprop ro.build.version.codename).Trim()
+    $majorVersion = Resolve-MajorFromSdk -SdkInt $sdkInt -Release $release
+
+    return [PSCustomObject]@{
+        role = $Role
+        serial = $Serial
+        sdkInt = $sdkInt
+        release = $release
+        codename = $codename
+        majorVersion = $majorVersion
+    }
+}
+
+function Get-SupportedVersionWindow {
+    $highestMajor = 16
+    $windowSize = 5
+    $lowestMajor = $highestMajor - ($windowSize - 1)
+
+    return [PSCustomObject]@{
+        highestSupportedMajor = $highestMajor
+        lowestSupportedMajor = $lowestMajor
+        windowSize = $windowSize
+    }
+}
+
+function Assert-SupportedVersionOrFailFast {
+    param(
+        [Parameter(Mandatory = $true)]
+        [object]$Profile,
+        [Parameter(Mandatory = $true)]
+        [object]$Window
+    )
+
+    $supported = $Profile.majorVersion -ge $Window.lowestSupportedMajor -and $Profile.majorVersion -le $Window.highestSupportedMajor
+    if ($supported) {
+        return
+    }
+
+    throw "Unsupported Android version for $($Profile.role) ($($Profile.serial)): SDK=$($Profile.sdkInt), major=$($Profile.majorVersion), release=$($Profile.release). Supported major range: $($Window.lowestSupportedMajor)-$($Window.highestSupportedMajor)."
+}
+
 Write-Host "Running dual-emulator preflight..."
 if ($EmulatorASerial -eq $EmulatorBSerial) {
     throw "Publisher and receiver emulator serials must be different."
@@ -201,6 +281,20 @@ $artifactDir = Join-Path $PSScriptRoot "..\artifacts\dual-emulator-$timestamp"
 New-Item -Path $artifactDir -ItemType Directory -Force | Out-Null
 $screenshotDir = Join-Path $artifactDir "screenshots"
 New-Item -Path $screenshotDir -ItemType Directory -Force | Out-Null
+
+$publisherProfile = Get-AndroidVersionProfile -Serial $EmulatorASerial -Role "publisher"
+$receiverProfile = Get-AndroidVersionProfile -Serial $EmulatorBSerial -Role "receiver"
+$supportedWindow = Get-SupportedVersionWindow
+
+$versionDiagnostics = [PSCustomObject]@{
+    supportWindow = $supportedWindow
+    publisher = $publisherProfile
+    receiver = $receiverProfile
+}
+$versionDiagnostics | ConvertTo-Json -Depth 6 | Out-File -FilePath (Join-Path $artifactDir "android-version-diagnostics.json") -Encoding utf8
+
+Assert-SupportedVersionOrFailFast -Profile $publisherProfile -Window $supportedWindow
+Assert-SupportedVersionOrFailFast -Profile $receiverProfile -Window $supportedWindow
 
 adb -s $EmulatorASerial logcat -d -v time | Out-File -FilePath (Join-Path $artifactDir "publisher-preflight.log") -Encoding utf8
 adb -s $EmulatorBSerial logcat -d -v time | Out-File -FilePath (Join-Path $artifactDir "receiver-preflight.log") -Encoding utf8

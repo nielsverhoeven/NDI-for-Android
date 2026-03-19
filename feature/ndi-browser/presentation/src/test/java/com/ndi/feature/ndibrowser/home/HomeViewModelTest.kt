@@ -42,7 +42,7 @@ class HomeViewModelTest {
             val repo = FakeHomeDashboardRepository()
             val vm = HomeViewModel(repo, HomeTelemetryEmitter {})
             val events = mutableListOf<HomeNavigationEvent>()
-            val job = kotlinx.coroutines.launch { vm.navigationEvents.collect { events.add(it) } }
+            val job = launch { vm.navigationEvents.collect { events.add(it) } }
 
             vm.onOpenStreamActionPressed()
             advanceUntilIdle()
@@ -57,7 +57,7 @@ class HomeViewModelTest {
             val repo = FakeHomeDashboardRepository()
             val vm = HomeViewModel(repo, HomeTelemetryEmitter {})
             val events = mutableListOf<HomeNavigationEvent>()
-            val job = kotlinx.coroutines.launch { vm.navigationEvents.collect { events.add(it) } }
+            val job = launch { vm.navigationEvents.collect { events.add(it) } }
 
             vm.onOpenViewActionPressed()
             advanceUntilIdle()

@@ -1,6 +1,7 @@
 package com.ndi.app
 
 import android.os.Bundle
+import androidx.activity.addCallback
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.isVisible
 import androidx.lifecycle.Lifecycle
@@ -74,6 +75,24 @@ class MainActivity : AppCompatActivity(), HomeNavigationCallback {
             },
         )
 
+        navHostFragment.navController.addOnDestinationChangedListener { _, destination, _ ->
+            val selectedTopLevel = when (destination.id) {
+                R.id.homeDashboardFragment -> TopLevelDestination.HOME
+                R.id.streamFragment,
+                R.id.outputControlFragment,
+                -> TopLevelDestination.STREAM
+                R.id.viewFragment,
+                R.id.viewerHostFragment,
+                -> TopLevelDestination.VIEW
+                else -> null
+            }
+
+            selectedTopLevel?.let {
+                navViewModel.onNavDestinationObserved(it)
+                navHost.syncSelectedItem(it)
+            }
+        }
+
         bottomNav?.setOnItemSelectedListener { item ->
             navHost.resolveDestination(item.itemId)?.let { dest ->
                 navViewModel.onDestinationSelected(dest, NavigationTrigger.BOTTOM_NAV)
@@ -111,6 +130,27 @@ class MainActivity : AppCompatActivity(), HomeNavigationCallback {
         if (savedInstanceState == null) {
             val launchContext = LaunchContextResolver.resolve(intent)
             navViewModel.onAppLaunch(launchContext)
+        }
+
+        onBackPressedDispatcher.addCallback(this) {
+            val currentDestinationId = navHostFragment.navController.currentDestination?.id
+            val consumed = when (currentDestinationId) {
+                R.id.viewerHostFragment -> navViewModel.onBackPressed(
+                    currentTopLevelDestination = TopLevelDestination.VIEW,
+                    isViewerVisible = true,
+                )
+                R.id.viewFragment -> navViewModel.onBackPressed(
+                    currentTopLevelDestination = TopLevelDestination.VIEW,
+                    isViewerVisible = false,
+                )
+                else -> false
+            }
+
+            if (!consumed) {
+                isEnabled = false
+                onBackPressedDispatcher.onBackPressed()
+                isEnabled = true
+            }
         }
     }
 

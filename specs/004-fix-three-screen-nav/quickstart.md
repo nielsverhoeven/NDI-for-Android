@@ -34,6 +34,17 @@ Expected environment:
 3. Implement minimum changes to pass tests.
 4. Refactor with all tests green.
 
+## 2.1 Feature-Specific Execution Checklist
+
+- [ ] Run prerequisite validation (`scripts/verify-android-prereqs.ps1`) and confirm both emulator serials are online.
+- [ ] Confirm View source selection opens `ndi://viewer/{sourceId}` only.
+- [ ] Confirm back sequence: Viewer -> View root -> Home.
+- [ ] Confirm top-level icon mapping is Home=house, Stream=camera, View=screen.
+- [ ] Confirm exactly one top-level destination is highlighted after taps and deep links.
+- [ ] Confirm runtime support-window diagnostics are emitted before suite steps.
+- [ ] Confirm unsupported Android versions fail fast with non-zero runner outcome.
+- [ ] Confirm intentional static waits in helper code are <= 1000ms.
+
 ## 3. Build and Validation Commands
 
 ```powershell
@@ -53,6 +64,23 @@ Optional preflight-only check:
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\testing\e2e\scripts\run-dual-emulator-e2e.ps1 -EmulatorASerial emulator-5554 -EmulatorBSerial emulator-5556 -PreflightOnly
 ```
+
+### 3.1 Command Matrix and Expected Diagnostics
+
+| Command | Purpose | Expected Diagnostics |
+|---------|---------|----------------------|
+| `pwsh ./scripts/verify-android-prereqs.ps1` | Local environment readiness | SDK/JDK/emulator readiness output with pass/fail gates |
+| `./gradlew.bat test` | Unit test regression gate | `BUILD SUCCESSFUL` and module test reports |
+| `./gradlew.bat connectedAndroidTest` | Instrumentation/device gate | Android test result summary and report paths |
+| `powershell -ExecutionPolicy Bypass -File .\testing\e2e\scripts\run-dual-emulator-e2e.ps1 ...` | Full dual-emulator e2e run | `android-version-diagnostics.json`, pre/post screenshots/logcat, Playwright report |
+| `... -PreflightOnly` | Fast e2e environment + version gate | Device/package checks and version-window diagnostics only |
+
+Expected version-aware diagnostics:
+
+- Artifact file: `testing/e2e/artifacts/dual-emulator-<timestamp>/android-version-diagnostics.json`
+- Includes support-window payload: `lowestSupportedMajor`, `highestSupportedMajor`, `windowSize`
+- Includes per-role payload: `publisher` and `receiver` version profiles
+- Unsupported versions terminate run early with non-zero outcome and explicit error context
 
 ## 4. Functional Validation Checklist
 

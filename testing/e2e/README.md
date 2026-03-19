@@ -66,6 +66,13 @@ The launcher stores preflight and post-run logcat files under:
 
 - `testing/e2e/artifacts/dual-emulator-<timestamp>/`
 
+Version-aware diagnostics are written to:
+
+- `testing/e2e/artifacts/dual-emulator-<timestamp>/android-version-diagnostics.json`
+  - Includes per-device SDK/release/major version profiles.
+  - Includes computed rolling latest-five support window.
+  - Used to explain fail-fast unsupported-version exits.
+
 The launcher also stores emulator screenshots under:
 
 - `testing/e2e/artifacts/dual-emulator-<timestamp>/screenshots/`
@@ -79,6 +86,15 @@ The launcher also stores emulator screenshots under:
 
 Additional restart-flow screenshots are written with `restart-*` prefixes when
 the restart interop scenario runs.
+
+## Version-Aware Fail-Fast Behavior
+
+The runner evaluates device Android versions before executing stream/view steps.
+
+- If both device major versions are inside the rolling latest-five support window,
+  tests proceed normally.
+- If either device major version is unsupported, the run terminates immediately with
+  non-zero exit code and diagnostics are preserved in the artifact directory.
 
 Use these logs together with Playwright HTML output in:
 

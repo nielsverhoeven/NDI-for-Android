@@ -36,6 +36,18 @@ object NdiNavigation {
 
     fun viewDestinationId(): Int = R.id.viewFragment
 
+    fun viewerDestinationId(): Int = R.id.viewerHostFragment
+
+    fun viewToViewerActionId(): Int = R.id.action_viewFragment_to_viewerHostFragment
+
+    fun viewerToViewRootActionId(): Int = R.id.action_viewerHostFragment_to_viewFragment
+
+    fun shouldViewerBackNavigateToViewRoot(currentDestinationId: Int): Boolean =
+        currentDestinationId == R.id.viewerHostFragment
+
+    fun shouldViewRootBackNavigateHome(currentDestinationId: Int): Boolean =
+        currentDestinationId == R.id.viewFragment
+
     fun topLevelDestinationId(destination: TopLevelDestination): Int = when (destination) {
         TopLevelDestination.HOME -> R.id.homeDashboardFragment
         TopLevelDestination.STREAM -> R.id.streamFragment

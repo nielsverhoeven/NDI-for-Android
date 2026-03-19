@@ -19,7 +19,11 @@
     <fragment
         android:id="@+id/viewFragment"
         android:name="com.ndi.feature.ndibrowser.source_list.SourceListFragment"
-        android:label="@string/nav_view" />
+        android:label="@string/nav_view">
+        <action
+            android:id="@+id/action_viewFragment_to_viewerHostFragment"
+            app:destination="@id/viewerHostFragment" />
+    </fragment>
 
     <!-- ====== Detail destinations (retain existing deep links) ====== -->
 
@@ -28,6 +32,12 @@
         android:name="com.ndi.feature.ndibrowser.viewer.ViewerFragment"
         android:label="@string/viewer_title">
         <deepLink app:uri="ndi://viewer/{sourceId}" />
+        <action
+            android:id="@+id/action_viewerHostFragment_to_viewFragment"
+            app:destination="@id/viewFragment"
+            app:popUpTo="@id/viewFragment"
+            app:popUpToInclusive="false"
+            app:launchSingleTop="true" />
         <argument
             android:name="sourceId"
             app:argType="string"

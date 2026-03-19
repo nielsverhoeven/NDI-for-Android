@@ -8,21 +8,64 @@ export type DualEmulatorContext = {
 
 export type AndroidVersionInfo = {
   sdkInt: number;
+  majorVersion: number;
   release: string;
   codename: string;
   incremental: string;
+};
+
+export type SupportedVersionWindow = {
+  highestSupportedMajor: number;
+  lowestSupportedMajor: number;
+  windowSize: number;
 };
 
 const DEFAULT_PACKAGE = "com.ndi.app.debug";
 const STOP_PROPAGATION_TIMEOUT_MS = 3000;
 const DISCOVERY_POLL_INTERVAL_MS = 500;
 const SUPPORTED_ANDROID_SDKS = [32, 33, 34, 35, 36] as const;
+const SUPPORT_WINDOW_SIZE = 5;
+const SDK_TO_MAJOR_VERSION: Record<number, number> = {
+  32: 12,
+  33: 13,
+  34: 14,
+  35: 15,
+  36: 16,
+};
+
+function isTransientAdbFailure(error: unknown): boolean {
+  const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+  return (
+    message.includes("can't find service") ||
+    message.includes("device offline") ||
+    message.includes("device not found") ||
+    message.includes("adb server") ||
+    message.includes("closed")
+  );
+}
 
 function runAdb(serial: string, args: string[]): string {
-  return execFileSync("adb", ["-s", serial, ...args], {
-    encoding: "utf-8",
-    stdio: ["ignore", "pipe", "pipe"],
-  }).trim();
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      return execFileSync("adb", ["-s", serial, ...args], {
+        encoding: "utf-8",
+        stdio: ["ignore", "pipe", "pipe"],
+      }).trim();
+    } catch (error) {
+      lastError = error;
+      if (attempt >= 2 || !isTransientAdbFailure(error)) {
+        throw error;
+      }
+
+      // Recover from transient emulator service hiccups before retrying.
+      execFileSync("adb", ["start-server"], { stdio: ["ignore", "ignore", "ignore"] });
+      execFileSync("adb", ["-s", serial, "wait-for-device"], { stdio: ["ignore", "ignore", "ignore"] });
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error("Unknown ADB failure");
 }
 
 export function getDualEmulatorContext(): DualEmulatorContext {
@@ -62,24 +105,58 @@ export function getAndroidVersionInfo(serial: string): AndroidVersionInfo {
     throw new Error(`Unable to parse Android SDK version for ${serial}: '${sdkRaw}'`);
   }
 
+  const releaseValue = release.trim();
+  const majorFromRelease = Number.parseInt(releaseValue.split(".")[0], 10);
+  const majorVersion = Number.isFinite(majorFromRelease)
+    ? majorFromRelease
+    : (SDK_TO_MAJOR_VERSION[sdkInt] ?? sdkInt);
+
   return {
     sdkInt,
-    release: release.trim(),
+    majorVersion,
+    release: releaseValue,
     codename: codename.trim(),
     incremental: incremental.trim(),
   };
 }
 
-export function verifySupportedAndroidVersion(serial: string): AndroidVersionInfo {
-  const info = getAndroidVersionInfo(serial);
-  const supported = SUPPORTED_ANDROID_SDKS.includes(info.sdkInt as (typeof SUPPORTED_ANDROID_SDKS)[number]);
+export function computeSupportedVersionWindow(): SupportedVersionWindow {
+  const knownMajors = Object.values(SDK_TO_MAJOR_VERSION);
+  const highestSupportedMajor = Math.max(...knownMajors);
+  return {
+    highestSupportedMajor,
+    lowestSupportedMajor: highestSupportedMajor - (SUPPORT_WINDOW_SIZE - 1),
+    windowSize: SUPPORT_WINDOW_SIZE,
+  };
+}
 
-  if (!supported) {
-    throw new Error(
-      `Unsupported Android version on ${serial}: SDK ${info.sdkInt} (release ${info.release}). ` +
-      `Supported SDKs: ${SUPPORTED_ANDROID_SDKS.join(", ")}.`,
-    );
+export function isMajorVersionSupported(majorVersion: number, window: SupportedVersionWindow): boolean {
+  return majorVersion >= window.lowestSupportedMajor && majorVersion <= window.highestSupportedMajor;
+}
+
+export function assertDeviceVersionSupported(
+  role: "publisher" | "receiver",
+  serial: string,
+  info: AndroidVersionInfo,
+  window: SupportedVersionWindow = computeSupportedVersionWindow(),
+): void {
+  if (isMajorVersionSupported(info.majorVersion, window)) {
+    return;
   }
+
+  throw new Error(
+    `Unsupported Android version for ${role} (${serial}): ` +
+      `SDK ${info.sdkInt}, major ${info.majorVersion}, release ${info.release}. ` +
+      `Supported majors: ${window.lowestSupportedMajor}-${window.highestSupportedMajor} (latest ${window.windowSize}).`,
+  );
+}
+
+export function verifySupportedAndroidVersion(
+  serial: string,
+  role: "publisher" | "receiver" = "publisher",
+): AndroidVersionInfo {
+  const info = getAndroidVersionInfo(serial);
+  assertDeviceVersionSupported(role, serial, info);
 
   return info;
 }

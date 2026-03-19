@@ -4,6 +4,7 @@ import com.ndi.core.model.DiscoverySnapshot
 import com.ndi.core.model.DiscoveryStatus
 import com.ndi.core.model.DiscoveryTrigger
 import com.ndi.core.model.NdiSource
+import com.ndi.core.model.TelemetryEvent
 import com.ndi.feature.ndibrowser.testutil.MainDispatcherRule
 import com.ndi.feature.ndibrowser.domain.repository.NdiDiscoveryRepository
 import com.ndi.feature.ndibrowser.domain.repository.UserSelectionRepository
@@ -92,6 +93,27 @@ class SourceListViewModelTest {
 
         assertEquals("camera-discovered", viewModel.uiState.value.highlightedSourceId)
         assertEquals("camera-discovered", selectionRepository.getLastSelectedSource())
+    }
+
+    @Test
+    fun onSourceSelected_emitsViewSelectionOpenedViewerTelemetry() = runTest(mainDispatcherRule.dispatcher.scheduler) {
+        val repository = FakeDiscoveryRepository()
+        val emitted = mutableListOf<TelemetryEvent>()
+        val viewModel = SourceListViewModel(
+            repository,
+            InMemoryUserSelectionRepository(),
+            SourceListTelemetryEmitter { event -> emitted += event },
+        )
+
+        viewModel.onSourceSelected("camera-telemetry")
+        advanceUntilIdle()
+
+        assertTrue(
+            emitted.any { event ->
+                event.name == TelemetryEvent.VIEW_SELECTION_OPENED_VIEWER &&
+                    event.attributes["sourceId"] == "camera-telemetry"
+            },
+        )
     }
 
     @Test
