@@ -110,6 +110,7 @@ async function configureDiscoverableName(
 async function ensureOutputScreen(
   serial: string,
   packageName: string,
+  majorVersion: number,
 ): Promise<void> {
   await tapFirstAvailableText(serial, ["Open Stream"], 8_000).catch(() => undefined);
 
@@ -117,8 +118,19 @@ async function ensureOutputScreen(
     await waitForText(serial, "Start Output", 20_000);
     return;
   } catch {
+    // Consent prompts can appear slightly after navigation; clear them before retrying.
+    await handleMediaProjectionConsent(serial, majorVersion, true).catch(() => undefined);
+    await tapFirstAvailableText(serial, ["Open Stream"], 8_000).catch(() => undefined);
+    try {
+      await waitForText(serial, "Start Output", 15_000);
+      return;
+    } catch {
+      // Continue to deep-link relaunch fallback below.
+    }
+
     // If navigation drifted, relaunch output deep-link and try once more.
     launchDeepLink(serial, packageName, "ndi://output/device-screen:local");
+    await handleMediaProjectionConsent(serial, majorVersion, true).catch(() => undefined);
     await tapFirstAvailableText(serial, ["Open Stream"], 8_000).catch(() => undefined);
     await waitForText(serial, "Start Output", 20_000);
   }
@@ -258,7 +270,7 @@ test("@dual-emulator publish discover play stop interop", async ({}, testInfo) =
       contentType: "application/json",
     });
 
-    await ensureOutputScreen(context.publisherSerial, context.packageName);
+    await ensureOutputScreen(context.publisherSerial, context.packageName, publisherAndroid.majorVersion);
     const firstConfig = await configureDiscoverableName(context.publisherSerial, baselineName);
     await tapText(context.publisherSerial, "Start Output", 20_000);
 
@@ -405,7 +417,7 @@ test("@dual-emulator restart output with new stream name remains discoverable", 
       contentType: "application/json",
     });
 
-    await ensureOutputScreen(context.publisherSerial, context.packageName);
+    await ensureOutputScreen(context.publisherSerial, context.packageName, publisherAndroid.majorVersion);
     const firstConfig = await configureDiscoverableName(context.publisherSerial, firstName);
     await tapText(context.publisherSerial, "Start Output", 20_000);
     await handleMediaProjectionConsent(context.publisherSerial, publisherAndroid.majorVersion, false);
@@ -482,11 +494,11 @@ test("@dual-emulator restart output with new stream name remains discoverable", 
     }
 
     await tapText(context.publisherSerial, "Start Output", 20_000);
-  await handleMediaProjectionConsent(context.publisherSerial, publisherAndroid.majorVersion, false);
+    await handleMediaProjectionConsent(context.publisherSerial, publisherAndroid.majorVersion, false);
     await waitForText(context.publisherSerial, "ACTIVE", 45_000);
     captureScreenshot(context.publisherSerial, publisherSecondPath);
     mirrorScreenshotIfConfigured("restart-publisher-second-active.png", publisherSecondPath);
-  await uploadPublisherFrameToRelay(expectedSecondDiscoverName, publisherSecondPath, testInfo);
+    await uploadPublisherFrameToRelay(expectedSecondDiscoverName, publisherSecondPath, testInfo);
 
     await tapText(context.receiverSerial, "Refresh", 20_000);
     if (firstConfig.streamNameEditable) {
