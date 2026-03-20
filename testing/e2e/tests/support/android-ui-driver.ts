@@ -254,6 +254,65 @@ export async function waitForTextContaining(serial: string, fragment: string, ti
   throw new Error(`Timed out waiting for text containing '${fragment}' on ${serial}`);
 }
 
+export async function waitForResourceIdSuffix(serial: string, resourceIdSuffix: string, timeoutMs: number): Promise<string> {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const nodes = dumpUi(serial);
+    const match = nodes.find((node) => node.resourceId.endsWith(resourceIdSuffix));
+    if (match) {
+      return match.text;
+    }
+    await delay(300);
+  }
+
+  throw new Error(`Timed out waiting for resource id suffix '${resourceIdSuffix}' on ${serial}`);
+}
+
+export async function waitForAnyResourceIdSuffix(
+  serial: string,
+  resourceIdSuffixes: string[],
+  timeoutMs: number,
+): Promise<{ suffix: string; text: string }> {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const nodes = dumpUi(serial);
+    for (const suffix of resourceIdSuffixes) {
+      const match = nodes.find((node) => node.resourceId.endsWith(suffix));
+      if (match) {
+        return { suffix, text: match.text };
+      }
+    }
+    await delay(300);
+  }
+
+  throw new Error(
+    `Timed out waiting for any resource id suffix on ${serial}: ${resourceIdSuffixes.join(", ")}`,
+  );
+}
+
+export async function waitForResourceIdTextContaining(
+  serial: string,
+  resourceIdSuffix: string,
+  fragment: string,
+  timeoutMs: number,
+): Promise<string> {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const nodes = dumpUi(serial);
+    const match = nodes.find(
+      (node) => node.resourceId.endsWith(resourceIdSuffix) && node.text.toLowerCase().includes(fragment.toLowerCase()),
+    );
+    if (match) {
+      return match.text;
+    }
+    await delay(300);
+  }
+
+  throw new Error(
+    `Timed out waiting for resource id suffix '${resourceIdSuffix}' text containing '${fragment}' on ${serial}`,
+  );
+}
+
 export async function tapTextContaining(serial: string, fragment: string, timeoutMs = 15_000): Promise<string> {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
@@ -542,5 +601,20 @@ export async function completeScreenShareConsent(
   return { selectionLabel: "skipped (dialog not found)", confirmLabel: null };
 }
 
+/** Maximum milliseconds any single arbitrary sleep is allowed to be (US3 policy guard). */
+export const STATIC_DELAY_MAX_MS = 2_000;
+
+/**
+ * Assert that a proposed static delay is within the allowed policy maximum.
+ * Throwing here keeps static delays bounded and searchable at test time.
+ */
+export function assertAllowedStaticDelay(ms: number): void {
+  if (ms > STATIC_DELAY_MAX_MS) {
+    throw new Error(
+      `Static delay ${ms}ms exceeds policy maximum of ${STATIC_DELAY_MAX_MS}ms. ` +
+        `Use a proper polling wait instead.`,
+    );
+  }
+}
 
 

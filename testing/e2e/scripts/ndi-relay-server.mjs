@@ -1,7 +1,7 @@
 import http from "node:http";
 
 const PORT = 17455;
-const TTL_MS = 5000;
+const TTL_MS = 120000;
 const MAX_BODY_BYTES = 16 * 1024 * 1024;
 
 /** @type {Map<string, { sourceId: string, displayName: string, updatedAt: number }>} */

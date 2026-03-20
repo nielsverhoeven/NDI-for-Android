@@ -69,18 +69,18 @@
 
 ### Tests for User Story 2 (write first, must fail first)
 
-- [ ] T021 [P] [US2] Add failing Chrome-visibility scenario assertion in testing/e2e/tests/interop-dual-emulator.spec.ts
-- [ ] T022 [US2] Add failing nos.nl-visibility scenario assertion in testing/e2e/tests/interop-dual-emulator.spec.ts
-- [ ] T023 [P] [US2] Add failing browser-checkpoint visual assertion tests in testing/e2e/tests/support/visual-assertions.spec.ts
+- [X] T021 [P] [US2] Add failing Chrome-visibility scenario assertion in testing/e2e/tests/interop-dual-emulator.spec.ts
+- [X] T022 [US2] Add failing nos.nl-visibility scenario assertion in testing/e2e/tests/interop-dual-emulator.spec.ts
+- [X] T023 [P] [US2] Add failing browser-checkpoint visual assertion tests in testing/e2e/tests/support/visual-assertions.spec.ts
 
 ### Implementation for User Story 2
 
-- [ ] T024 [US2] Implement broadcaster transition helpers for Home and Chrome app launch in testing/e2e/tests/support/android-ui-driver.ts
-- [ ] T025 [US2] Implement Chrome URL navigation helper for https://nos.nl in testing/e2e/tests/support/android-ui-driver.ts
-- [ ] T026 [US2] Implement step-4 Chrome-visible receiver validation in testing/e2e/tests/interop-dual-emulator.spec.ts
-- [ ] T027 [US2] Implement step-6 nos.nl-visible receiver validation in testing/e2e/tests/interop-dual-emulator.spec.ts
-- [ ] T028 [US2] Attach per-checkpoint screenshots and diagnostics for browser visibility in testing/e2e/tests/interop-dual-emulator.spec.ts
-- [ ] T029 [US2] Capture US2 cross-app propagation evidence in specs/005-background-stream-persistence/validation/us2-cross-app-propagation-validation.md
+- [X] T024 [US2] Implement broadcaster transition helpers for Home and Chrome app launch in testing/e2e/tests/support/android-ui-driver.ts
+- [X] T025 [US2] Implement Chrome URL navigation helper for https://nos.nl in testing/e2e/tests/support/android-ui-driver.ts
+- [X] T026 [US2] Implement step-4 Chrome-visible receiver validation in testing/e2e/tests/interop-dual-emulator.spec.ts
+- [X] T027 [US2] Implement step-6 nos.nl-visible receiver validation in testing/e2e/tests/interop-dual-emulator.spec.ts
+- [X] T028 [US2] Attach per-checkpoint screenshots and diagnostics for browser visibility in testing/e2e/tests/interop-dual-emulator.spec.ts
+- [X] T029 [US2] Capture US2 cross-app propagation evidence in specs/005-background-stream-persistence/validation/us2-cross-app-propagation-validation.md
 
 **Checkpoint**: US2 independently validates cross-app browser content propagation to viewer.
 
@@ -94,18 +94,18 @@
 
 ### Tests for User Story 3 (write first, must fail first)
 
-- [ ] T030 [P] [US3] Add failing ordered-step enforcement tests in testing/e2e/tests/support/scenario-checkpoints.spec.ts
-- [ ] T031 [P] [US3] Add failing step-level failure reporting assertions in testing/e2e/tests/interop-dual-emulator.spec.ts
-- [ ] T032 [US3] Add failing checkpoint artifact-shape tests in testing/e2e/tests/support/scenario-checkpoints.spec.ts
+- [X] T030 [P] [US3] Add failing ordered-step enforcement tests in testing/e2e/tests/support/scenario-checkpoints.spec.ts
+- [X] T031 [P] [US3] Add failing step-level failure reporting assertions in testing/e2e/tests/interop-dual-emulator.spec.ts
+- [X] T032 [US3] Add failing checkpoint artifact-shape tests in testing/e2e/tests/support/scenario-checkpoints.spec.ts
 
 ### Implementation for User Story 3
 
-- [ ] T033 [US3] Enforce strict six-step execution sequence in testing/e2e/tests/interop-dual-emulator.spec.ts
-- [ ] T034 [US3] Integrate fail-fast checkpoint tracking helper in testing/e2e/tests/interop-dual-emulator.spec.ts
-- [ ] T035 [US3] Persist checkpoint timeline artifact for each run in testing/e2e/tests/interop-dual-emulator.spec.ts
-- [ ] T036 [US3] Surface failed-step diagnostics in runner output in testing/e2e/scripts/run-dual-emulator-e2e.ps1
-- [ ] T037 [US3] Update deterministic flow instructions in specs/005-background-stream-persistence/quickstart.md
-- [ ] T038 [US3] Capture US3 deterministic-flow evidence in specs/005-background-stream-persistence/validation/us3-deterministic-six-step-validation.md
+- [X] T033 [US3] Enforce strict six-step execution sequence in testing/e2e/tests/interop-dual-emulator.spec.ts
+- [X] T034 [US3] Integrate fail-fast checkpoint tracking helper in testing/e2e/tests/interop-dual-emulator.spec.ts
+- [X] T035 [US3] Persist checkpoint timeline artifact for each run in testing/e2e/tests/interop-dual-emulator.spec.ts
+- [X] T036 [US3] Surface failed-step diagnostics in runner output in testing/e2e/scripts/run-dual-emulator-e2e.ps1
+- [X] T037 [US3] Update deterministic flow instructions in specs/005-background-stream-persistence/quickstart.md
+- [X] T038 [US3] Capture US3 deterministic-flow evidence in specs/005-background-stream-persistence/validation/us3-deterministic-six-step-validation.md
 
 **Checkpoint**: US3 independently validates deterministic orchestration and diagnostics.
 

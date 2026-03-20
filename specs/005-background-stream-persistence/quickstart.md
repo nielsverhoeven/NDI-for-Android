@@ -98,6 +98,51 @@ At minimum capture:
 
 - Preflight and post-run screenshots for both emulator roles.
 - Receiver viewer-surface evidence around Chrome and nos.nl checkpoints.
+
+## 7. Deterministic-Flow Instructions (US3)
+
+The dual-emulator scenario is deterministic and fails fast on the first step that does not complete successfully.
+
+### Step enforcement
+
+- The six checkpoint steps are enforced in strict sequential order by `createScenarioCheckpointRecorder()` in `testing/e2e/tests/support/scenario-checkpoints.ts`.
+- Starting a step out of sequence throws a `Scenario step order violation` error immediately.
+- Any step failure marks all subsequent steps `SKIPPED` in the checkpoint timeline.
+
+### Fail-fast semantics
+
+- On any step error, the scenario catches the exception, calls `checkpoints.fail(activeStep, reason)`, and re-throws so Playwright marks the test as failed.
+- The checkpoint artifact is always written in the `finally` block regardless of pass/fail.
+- The runner script reads the checkpoint artifact after Playwright exits and prints the failed step name and reason to the console before the script exits.
+
+### Reading checkpoint diagnostics
+
+After a run (passed or failed), the checkpoint timeline is at:
+
+```
+testing/e2e/artifacts/dual-emulator-<timestamp>/scenario-checkpoints.json
+```
+
+Fields to note:
+- `failedStepName` — name of the first step that failed, or `null` on full pass.
+- `failedStepIndex` — ordinal index (1–6) of the failed step.
+- `checkpoints[N].failureReason` — exact error message from the failing assertion or timeout.
+
+The runner also prints a summary to `stdout` when a step fails:
+
+```
+==========================================
+FAILED STEP: <step-name> (step <N>)
+REASON: <error detail>
+Checkpoint artifact: <path>
+==========================================
+```
+
+### Extending or modifying steps
+
+- All step names are declared as the `SixStepCheckpointName` union type in `scenario-checkpoints.ts`.
+- Add new steps by extending the type union and appending to `ORDERED_STEPS`.
+- The recorder enforces the order array is exhausted in sequence — no step can be skipped.
 - Step-level failure context (if any) with UI snapshot and logcat attachments.
 
 ## 7. Release-Grade Validation

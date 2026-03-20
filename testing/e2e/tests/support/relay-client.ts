@@ -8,6 +8,20 @@ type RelaySource = {
 
 const RELAY_HOST = "127.0.0.1";
 const RELAY_PORT = 17455;
+const RETRY_CODES = new Set(["ECONNRESET", "ECONNREFUSED", "EPIPE", "ETIMEDOUT"]);
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isRetryableRelayError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  const code = (error as NodeJS.ErrnoException).code;
+  return typeof code === "string" && RETRY_CODES.has(code);
+}
 
 function requestJson(method: string, path: string, body?: unknown): Promise<unknown> {
   return new Promise((resolve, reject) => {
@@ -59,8 +73,25 @@ function requestJson(method: string, path: string, body?: unknown): Promise<unkn
   });
 }
 
+async function requestJsonWithRetry(method: string, path: string, body?: unknown): Promise<unknown> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    try {
+      return await requestJson(method, path, body);
+    } catch (error) {
+      lastError = error;
+      if (!isRetryableRelayError(error) || attempt >= 3) {
+        throw error;
+      }
+      await delay(250 * (attempt + 1));
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error("Relay request failed.");
+}
+
 export async function fetchRelaySources(): Promise<RelaySource[]> {
-  const json = (await requestJson("GET", "/sources")) as unknown;
+  const json = (await requestJsonWithRetry("GET", "/sources")) as unknown;
   if (!Array.isArray(json)) {
     return [];
   }
@@ -75,7 +106,7 @@ export async function fetchRelaySources(): Promise<RelaySource[]> {
 
 export async function uploadRelayFrame(sourceId: string, screenshotPath: string): Promise<void> {
   const bytes = readFileSync(screenshotPath);
-  await requestJson("POST", "/frame", {
+  await requestJsonWithRetry("POST", "/frame", {
     sourceId,
     pngBase64: bytes.toString("base64"),
   });

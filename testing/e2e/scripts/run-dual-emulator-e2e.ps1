@@ -347,6 +347,9 @@ try {
     $env:DUAL_EMULATOR_SCREENSHOT_DIR = $screenshotDir
     $env:DUAL_EMULATOR_CHECKPOINT_PATH = $checkpointArtifactPath
     npm run test:dual-emulator -- --grep "@dual-emulator" --reporter=list
+    if ($LASTEXITCODE -ne 0) {
+        throw "Playwright dual-emulator suite failed with exit code $LASTEXITCODE"
+    }
 }
 finally {
     if ($relayProcess -and -not $relayProcess.HasExited) {
@@ -356,5 +359,27 @@ finally {
     adb -s $EmulatorBSerial logcat -d -v time | Out-File -FilePath (Join-Path $artifactDir "receiver-postrun.log") -Encoding utf8
     Capture-EmulatorScreenshot -Serial $EmulatorASerial -DestinationPath (Join-Path $screenshotDir "publisher-postrun.png")
     Capture-EmulatorScreenshot -Serial $EmulatorBSerial -DestinationPath (Join-Path $screenshotDir "receiver-postrun.png")
+
+    # Surface failed-step diagnostics from the checkpoint artifact (T036).
+    if (Test-Path $checkpointArtifactPath) {
+        try {
+            $cpJson = Get-Content $checkpointArtifactPath -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+            if ($cpJson.failedStepName) {
+                Write-Host ""
+                Write-Host "=========================================="
+                Write-Host "FAILED STEP: $($cpJson.failedStepName) (step $($cpJson.failedStepIndex))"
+                $failedCheckpoint = $cpJson.checkpoints | Where-Object { $_.status -eq "FAILED" } | Select-Object -First 1
+                if ($failedCheckpoint -and $failedCheckpoint.failureReason) {
+                    Write-Host "REASON: $($failedCheckpoint.failureReason)"
+                }
+                Write-Host "Checkpoint artifact: $checkpointArtifactPath"
+                Write-Host "=========================================="
+            }
+        }
+        catch {
+            # Checkpoint file may be partial on early failure; skip silently.
+        }
+    }
+
     Pop-Location
 }
