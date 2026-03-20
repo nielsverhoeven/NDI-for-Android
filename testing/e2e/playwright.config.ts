@@ -17,9 +17,19 @@ export default defineConfig({
   },
   projects: [
     {
-      name: "android-dual-emulator",
+      name: "android-primary",
       testMatch: /.*\.spec\.ts/,
-      grep: /@dual-emulator|@us1|@us2|@us3/,
+      grep: /@dual-emulator|@us1|@us2|@us3|@settings/,
+    },
+    {
+      name: "android-matrix-api34",
+      testMatch: /.*\.spec\.ts/,
+      grep: /@dual-emulator|@us1|@us2|@us3|@settings/,
+    },
+    {
+      name: "android-matrix-api35",
+      testMatch: /.*\.spec\.ts/,
+      grep: /@dual-emulator|@us1|@us2|@us3|@settings/,
     },
   ],
 });

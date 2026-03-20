@@ -336,6 +336,10 @@ Write-Host ""
 Write-Host "Executing Playwright dual-emulator suite..."
 Push-Location "$PSScriptRoot/.."
 $relayProcess = $null
+$suiteCompleted = $false
+$suiteFailure = $null
+$suiteStartedAtUtc = (Get-Date).ToUniversalTime().ToString("o")
+$summaryPath = Join-Path $artifactDir "run-summary.json"
 try {
     $relayScript = Join-Path $PSScriptRoot "ndi-relay-server.mjs"
     $relayProcess = Start-Process -FilePath "node" -ArgumentList "`"$relayScript`"" -PassThru -WindowStyle Hidden
@@ -350,6 +354,10 @@ try {
     if ($LASTEXITCODE -ne 0) {
         throw "Playwright dual-emulator suite failed with exit code $LASTEXITCODE"
     }
+    $suiteCompleted = $true
+}
+catch {
+    $suiteFailure = $_.Exception.Message
 }
 finally {
     if ($relayProcess -and -not $relayProcess.HasExited) {
@@ -381,5 +389,20 @@ finally {
         }
     }
 
+    $summary = [PSCustomObject]@{
+        startedAtUtc = $suiteStartedAtUtc
+        finishedAtUtc = (Get-Date).ToUniversalTime().ToString("o")
+        completed = $suiteCompleted
+        failure = $suiteFailure
+        checkpointArtifactPath = $checkpointArtifactPath
+        screenshotDirectory = $screenshotDir
+    }
+    $summary | ConvertTo-Json -Depth 4 | Out-File -FilePath $summaryPath -Encoding utf8
+
     Pop-Location
+}
+
+if (-not $suiteCompleted) {
+    $message = if ($suiteFailure) { $suiteFailure } else { "Playwright suite did not complete." }
+    throw "Dual-emulator run failed or was partial: $message. Summary: $summaryPath"
 }

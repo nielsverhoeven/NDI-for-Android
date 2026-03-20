@@ -5,8 +5,11 @@
   "description": "Playwright end-to-end tests for NDI-for-Android dual-emulator workflows",
   "scripts": {
     "test": "playwright test",
-    "test:dual-emulator": "playwright test tests/interop-dual-emulator.spec.ts --project=android-dual-emulator",
-    "test:dual-emulator:all": "playwright test --project=android-dual-emulator",
+    "test:dual-emulator": "playwright test tests/interop-dual-emulator.spec.ts --project=android-primary",
+    "test:dual-emulator:all": "playwright test --project=android-primary",
+    "test:pr:primary": "powershell -ExecutionPolicy Bypass -File ./scripts/run-primary-pr-e2e.ps1",
+    "test:matrix": "powershell -ExecutionPolicy Bypass -File ./scripts/run-matrix-e2e.ps1",
+    "test:summary": "powershell -ExecutionPolicy Bypass -File ./scripts/summarize-e2e-results.ps1",
     "test:us1": "playwright test tests/us1-*.spec.ts",
     "test:us2": "playwright test tests/us2-*.spec.ts",
     "test:us3": "playwright test tests/us3-*.spec.ts",

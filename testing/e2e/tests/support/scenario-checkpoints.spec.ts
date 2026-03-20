@@ -1,6 +1,8 @@
 import { expect, test } from "@playwright/test";
 import {
+  assertRoundTripNavigationPath,
   createScenarioCheckpointRecorder,
+  normalizeRouteForAssertion,
   type ScenarioCheckpointTimeline,
 } from "./scenario-checkpoints";
 
@@ -136,4 +138,18 @@ test("@us3 passed step has timestamps populated", () => {
   expect(step.startedAtEpochMillis).toBeGreaterThanOrEqual(before);
   expect(step.completedAtEpochMillis).toBeGreaterThanOrEqual(before);
   expect(step.completedAtEpochMillis).toBeLessThanOrEqual(after);
+});
+
+test("@settings @us1 normalizeRouteForAssertion strips query and fragments", () => {
+  const normalized = normalizeRouteForAssertion("/Viewer/Source-1?foo=bar#section");
+
+  expect(normalized).toBe("/viewer/source-1");
+});
+
+test("@settings @us1 assertRoundTripNavigationPath accepts normalized equivalent routes", () => {
+  expect(() => assertRoundTripNavigationPath("/output/source-a", "/output/source-a/?r=1")).not.toThrow();
+});
+
+test("@settings @us1 assertRoundTripNavigationPath rejects route drift", () => {
+  expect(() => assertRoundTripNavigationPath("/source-list", "/viewer/source-a")).toThrow(/round-trip mismatch/);
 });
