@@ -1,5 +1,99 @@
 # 006-Settings-Menu Feature - Final Test Run & Release Hardening Gate (2026-03-20)
 
+# 008-Settings-E2E-Validation Evidence Template
+
+## Required Evidence (Per Validation Cycle)
+
+- Profile: `<primary|api34|api35|...>`
+- Validation timestamp (UTC): `<ISO-8601>`
+- Completion status: `<complete|partial|aborted>`
+- Waiver used: `<yes|no>`
+- Waiver approvers (if used):
+  - mobile-maintainer: `<name>`
+  - architecture-quality-reviewer: `<name>`
+
+| Suite | Expected | Unexpected | Flaky | Skipped | DurationMs | Status |
+|---|---:|---:|---:|---:|---:|---|
+| New Settings | 0 | 0 | 0 | 0 | 0 | PASS |
+| Existing Regression | 0 | 0 | 0 | 0 | 0 | PASS |
+
+Artifacts:
+
+- Summary markdown: `<path>`
+- Playwright raw JSON (new settings): `<path>`
+- Playwright raw JSON (existing regression): `<path>`
+- Run logs / screenshots: `<path>`
+
+## US1 Evidence (Settings Access Paths)
+
+- Source List -> Settings -> Back: `<pass|fail>`
+- Viewer -> Settings -> Back: `<pass|fail>`
+- Output -> Settings -> Back: `<pass|fail>`
+- Evidence links: `<artifact-paths>`
+
+## US2 Evidence (Settings Functional Behavior)
+
+- Valid discovery persistence across relaunch: `<pass|fail>`
+- Invalid discovery rejected + feedback shown: `<pass|fail>`
+- Fallback warning <= 3000ms: `<pass|fail>`
+- Evidence links: `<artifact-paths>`
+
+## US3 Evidence (Regression Preservation)
+
+- Regression manifest consistency test: `<pass|fail>`
+- Regression gate completeness test: `<pass|fail>`
+- Existing-suite execution summary: `<artifact-path>`
+
+## Exception / Waiver Record Template
+
+Use only when required gates are not passing:
+
+- reason: `<required>`
+- expiresOn: `<YYYY-MM-DD>`
+- approvers:
+  - role: `mobile-maintainer`, name: `<required>`
+  - role: `architecture-quality-reviewer`, name: `<required>`
+- impactedScenarios: `<list>`
+- mitigationPlan: `<required>`
+
+## 008 Implementation Evidence Run - 2026-03-20
+
+- Primary gate command: `npm --prefix testing/e2e run test:pr:primary`
+- Primary evidence root: `testing/e2e/artifacts/primary-pr-20260320-183428/`
+- Primary run disposition: **FAIL** (existing-regression blocked merge gate)
+
+Primary suite metrics:
+
+| Suite | Expected | Unexpected | Flaky | Skipped | DurationMs | Status |
+|---|---:|---:|---:|---:|---:|---|
+| New Settings | 8 | 0 | 0 | 0 | 11777.255 | PASS |
+| Existing Regression | 0 | 2 | 0 | 0 | 15302.583 | FAIL |
+
+First-cycle regression detections (SC-004 evidence):
+
+- `@dual-emulator publish discover play stop interop`
+- `@dual-emulator restart output with new stream name remains discoverable`
+- Detection source: `testing/e2e/artifacts/primary-pr-20260320-183428/existing-regression.json`
+- Detection timestamp: `2026-03-20T18:34:28Z` (artifact folder timestamp and command completion window)
+
+Matrix dry-run command:
+
+- `npm --prefix testing/e2e run test:matrix`
+- Matrix evidence root: `testing/e2e/artifacts/matrix-20260320-183524/`
+- Matrix disposition: **FAIL** (profiles incomplete/failing)
+
+Matrix profile status:
+
+| Profile | Project | Status |
+|---|---|---|
+| api34 | android-matrix-api34 | FAILED |
+| api35 | android-matrix-api35 | FAILED |
+
+Failing-test-first PR-flow evidence (T044):
+
+- The first required automated PR gate run failed on existing-regression scenarios before any waiver was applied.
+- This preserves regression visibility and blocks sign-off as required by FR-007 and FR-011.
+
 **Test Execution Summary**: ✅ RELEASED - All stages passed (100% test success rate)
 **Branch**: `006-settings-menu` at commit `6e08c97`
 **Total Build/Test Time**: ~3m 55s for all stages

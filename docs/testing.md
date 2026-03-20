@@ -82,6 +82,25 @@ Full dual-emulator run:
 powershell -ExecutionPolicy Bypass -File .\testing\e2e\scripts\run-dual-emulator-e2e.ps1 -EmulatorASerial emulator-5554 -EmulatorBSerial emulator-5556
 ```
 
+Primary PR gate run (required for settings e2e feature scope):
+
+```powershell
+npm --prefix testing/e2e run test:pr:primary
+```
+
+Scheduled/nightly matrix run:
+
+```powershell
+$env:E2E_MATRIX_PROFILES = "api34,api35"
+npm --prefix testing/e2e run test:matrix
+```
+
+Gate policy:
+
+- Both `new settings` and `existing regression` suites must pass.
+- Skipped or partial runs are treated as failures.
+- Waivers require both approver roles and are validated from waiver metadata.
+
 Artifacts:
 
 - `testing/e2e/artifacts/dual-emulator-<timestamp>/`

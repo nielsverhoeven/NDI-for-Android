@@ -17,10 +17,10 @@
 
 **Purpose**: Prepare Playwright harness and reporting scaffolding for emulator-gated validation.
 
-- [ ] T001 Define primary and matrix emulator project profiles in `testing/e2e/playwright.config.ts`
-- [ ] T002 [P] Add PR and scheduled matrix npm scripts in `testing/e2e/package.json`
-- [ ] T003 [P] Document required environment variables and run modes in `testing/e2e/README.md`
-- [ ] T004 Create e2e run classification helper in `testing/e2e/tests/support/e2e-suite-classification.spec.ts`
+- [X] T001 Define primary and matrix emulator project profiles in `testing/e2e/playwright.config.ts`
+- [X] T002 [P] Add PR and scheduled matrix npm scripts in `testing/e2e/package.json`
+- [X] T003 [P] Document required environment variables and run modes in `testing/e2e/README.md`
+- [X] T004 Create e2e run classification helper in `testing/e2e/tests/support/e2e-suite-classification.spec.ts`
 
 ---
 
@@ -30,13 +30,13 @@
 
 **⚠️ CRITICAL**: No user story implementation begins until this phase is complete.
 
-- [ ] T005 Implement fail-fast/partial-run detection in `testing/e2e/scripts/run-dual-emulator-e2e.ps1`
-- [ ] T006 [P] Create primary PR gate runner in `testing/e2e/scripts/run-primary-pr-e2e.ps1`
-- [ ] T007 [P] Create scheduled matrix runner in `testing/e2e/scripts/run-matrix-e2e.ps1`
-- [ ] T008 [P] Create e2e summary evidence script in `testing/e2e/scripts/summarize-e2e-results.ps1`
-- [ ] T009 Wire PR primary-profile gate and artifact upload in `.github/workflows/android-ci.yml`
-- [ ] T010 Create scheduled matrix workflow in `.github/workflows/e2e-matrix-nightly.yml`
-- [ ] T011 Add required evidence section template in `test-results/android-test-results.md`
+- [X] T005 Implement fail-fast/partial-run detection in `testing/e2e/scripts/run-dual-emulator-e2e.ps1`
+- [X] T006 [P] Create primary PR gate runner in `testing/e2e/scripts/run-primary-pr-e2e.ps1`
+- [X] T007 [P] Create scheduled matrix runner in `testing/e2e/scripts/run-matrix-e2e.ps1`
+- [X] T008 [P] Create e2e summary evidence script in `testing/e2e/scripts/summarize-e2e-results.ps1`
+- [X] T009 Wire PR primary-profile gate and artifact upload in `.github/workflows/android-ci.yml`
+- [X] T010 Create scheduled matrix workflow in `.github/workflows/e2e-matrix-nightly.yml`
+- [X] T011 Add required evidence section template in `test-results/android-test-results.md`
 
 Dependency note: Complete `T006`, `T007`, and `T008` before wiring `T009` and `T010`.
 
@@ -52,17 +52,17 @@ Dependency note: Complete `T006`, `T007`, and `T008` before wiring `T009` and `T
 
 ### Tests for User Story 1 (REQUIRED) ⚠️
 
-- [ ] T012 [P] [US1] Add Source List -> Settings -> Back e2e scenario in `testing/e2e/tests/settings-navigation-source-list.spec.ts`
-- [ ] T013 [P] [US1] Add Viewer -> Settings -> Back e2e scenario in `testing/e2e/tests/settings-navigation-viewer.spec.ts`
-- [ ] T014 [P] [US1] Add Output -> Settings -> Back e2e scenario in `testing/e2e/tests/settings-navigation-output.spec.ts`
-- [ ] T015 [P] [US1] Add stable navigation assertion helpers in `testing/e2e/tests/support/scenario-checkpoints.spec.ts`
+- [X] T012 [P] [US1] Add Source List -> Settings -> Back e2e scenario in `testing/e2e/tests/settings-navigation-source-list.spec.ts`
+- [X] T013 [P] [US1] Add Viewer -> Settings -> Back e2e scenario in `testing/e2e/tests/settings-navigation-viewer.spec.ts`
+- [X] T014 [P] [US1] Add Output -> Settings -> Back e2e scenario in `testing/e2e/tests/settings-navigation-output.spec.ts`
+- [X] T015 [P] [US1] Add stable navigation assertion helpers in `testing/e2e/tests/support/scenario-checkpoints.spec.ts`
 
 ### Implementation for User Story 1
 
-- [ ] T016 [US1] Add shared open-settings action helpers in `testing/e2e/tests/support/android-ui-driver.spec.ts`
-- [ ] T017 [US1] Classify US1 scenarios as new-settings suite in `testing/e2e/tests/support/e2e-suite-classification.spec.ts`
-- [ ] T018 [US1] Include US1 specs in PR runner selection in `testing/e2e/scripts/run-primary-pr-e2e.ps1`
-- [ ] T019 [US1] Record US1 validation evidence format in `test-results/android-test-results.md`
+- [X] T016 [US1] Add shared open-settings action helpers in `testing/e2e/tests/support/android-ui-driver.spec.ts`
+- [X] T017 [US1] Classify US1 scenarios as new-settings suite in `testing/e2e/tests/support/e2e-suite-classification.spec.ts`
+- [X] T018 [US1] Include US1 specs in PR runner selection in `testing/e2e/scripts/run-primary-pr-e2e.ps1`
+- [X] T019 [US1] Record US1 validation evidence format in `test-results/android-test-results.md`
 
 **Checkpoint**: US1 is independently functional and testable.
 
@@ -76,18 +76,18 @@ Dependency note: Complete `T006`, `T007`, and `T008` before wiring `T009` and `T
 
 ### Tests for User Story 2 (REQUIRED) ⚠️
 
-- [ ] T020 [P] [US2] Add valid discovery persistence e2e scenario in `testing/e2e/tests/settings-valid-discovery-persistence.spec.ts`
-- [ ] T021 [P] [US2] Add invalid discovery validation e2e scenario in `testing/e2e/tests/settings-invalid-discovery-validation.spec.ts`
-- [ ] T022 [P] [US2] Strengthen fallback warning scenario assertions in `testing/e2e/tests/settings-discovery-fallback.spec.ts`
-- [ ] T023 [P] [US2] Add app relaunch fixture utilities for persistence checks in `testing/e2e/tests/support/android-device-fixtures.spec.ts`
+- [X] T020 [P] [US2] Add valid discovery persistence e2e scenario in `testing/e2e/tests/settings-valid-discovery-persistence.spec.ts`
+- [X] T021 [P] [US2] Add invalid discovery validation e2e scenario in `testing/e2e/tests/settings-invalid-discovery-validation.spec.ts`
+- [X] T022 [P] [US2] Strengthen fallback warning scenario assertions in `testing/e2e/tests/settings-discovery-fallback.spec.ts`
+- [X] T023 [P] [US2] Add app relaunch fixture utilities for persistence checks in `testing/e2e/tests/support/android-device-fixtures.spec.ts`
 
 ### Implementation for User Story 2
 
-- [ ] T024 [US2] Extend existing settings apply scenario assertions in `testing/e2e/tests/settings-discovery-config.spec.ts`
-- [ ] T025 [US2] Update timing threshold use for US2 checks in `testing/e2e/tests/support/timingAssertions.ts`
-- [ ] T026 [US2] Classify US2 scenarios as new-settings suite in `testing/e2e/tests/support/e2e-suite-classification.spec.ts`
-- [ ] T027 [US2] Include US2 specs in PR runner selection in `testing/e2e/scripts/run-primary-pr-e2e.ps1`
-- [ ] T028 [US2] Capture US2 suite evidence output in `test-results/android-test-results.md`
+- [X] T024 [US2] Extend existing settings apply scenario assertions in `testing/e2e/tests/settings-discovery-config.spec.ts`
+- [X] T025 [US2] Update timing threshold use for US2 checks in `testing/e2e/tests/support/timingAssertions.ts`
+- [X] T026 [US2] Classify US2 scenarios as new-settings suite in `testing/e2e/tests/support/e2e-suite-classification.spec.ts`
+- [X] T027 [US2] Include US2 specs in PR runner selection in `testing/e2e/scripts/run-primary-pr-e2e.ps1`
+- [X] T028 [US2] Capture US2 suite evidence output in `test-results/android-test-results.md`
 
 **Checkpoint**: US2 is independently functional and testable.
 
@@ -101,19 +101,19 @@ Dependency note: Complete `T006`, `T007`, and `T008` before wiring `T009` and `T
 
 ### Tests for User Story 3 (REQUIRED) ⚠️
 
-- [ ] T029 [P] [US3] Define existing-regression suite manifest in `testing/e2e/tests/support/regression-suite-manifest.json`
-- [ ] T030 [P] [US3] Add manifest consistency meta-test in `testing/e2e/tests/support/regression-manifest-consistency.spec.ts`
-- [ ] T031 [P] [US3] Add regression gate completeness test in `testing/e2e/tests/support/regression-gate.spec.ts`
+- [X] T029 [P] [US3] Define existing-regression suite manifest in `testing/e2e/tests/support/regression-suite-manifest.json`
+- [X] T030 [P] [US3] Add manifest consistency meta-test in `testing/e2e/tests/support/regression-manifest-consistency.spec.ts`
+- [X] T031 [P] [US3] Add regression gate completeness test in `testing/e2e/tests/support/regression-gate.spec.ts`
 
 ### Implementation for User Story 3
 
-- [ ] T032 [US3] Execute manifest-defined existing suite in PR runner in `testing/e2e/scripts/run-primary-pr-e2e.ps1`
-- [ ] T033 [US3] Aggregate matrix profile outcomes and fail on incomplete runs in `testing/e2e/scripts/run-matrix-e2e.ps1`
-- [ ] T034 [US3] Publish separate new-settings and existing-regression artifacts in `.github/workflows/android-ci.yml`
-- [ ] T035 [US3] Add scheduled matrix workflow trigger and profile matrix in `.github/workflows/e2e-matrix-nightly.yml`
-- [ ] T036 [US3] Document mandatory regression-pass gate policy in `testing/e2e/README.md`
-- [ ] T037 [US3] Capture US3 regression evidence and exception handling log format in `test-results/android-test-results.md`
-- [ ] T038 [US3] Enforce waiver metadata validation for both required approver roles in `testing/e2e/scripts/summarize-e2e-results.ps1`
+- [X] T032 [US3] Execute manifest-defined existing suite in PR runner in `testing/e2e/scripts/run-primary-pr-e2e.ps1`
+- [X] T033 [US3] Aggregate matrix profile outcomes and fail on incomplete runs in `testing/e2e/scripts/run-matrix-e2e.ps1`
+- [X] T034 [US3] Publish separate new-settings and existing-regression artifacts in `.github/workflows/android-ci.yml`
+- [X] T035 [US3] Add scheduled matrix workflow trigger and profile matrix in `.github/workflows/e2e-matrix-nightly.yml`
+- [X] T036 [US3] Document mandatory regression-pass gate policy in `testing/e2e/README.md`
+- [X] T037 [US3] Capture US3 regression evidence and exception handling log format in `test-results/android-test-results.md`
+- [X] T038 [US3] Enforce waiver metadata validation for both required approver roles in `testing/e2e/scripts/summarize-e2e-results.ps1`
 
 **Checkpoint**: US3 is independently functional and testable.
 
@@ -123,13 +123,13 @@ Dependency note: Complete `T006`, `T007`, and `T008` before wiring `T009` and `T
 
 **Purpose**: Final hardening, runbook alignment, and validation evidence.
 
-- [ ] T039 [P] Update feature quickstart with final executed commands in `specs/008-settings-e2e-validation/quickstart.md`
-- [ ] T040 [P] Update testing guidance for PR vs matrix gates in `docs/testing.md`
-- [ ] T041 Run full primary-profile e2e gate and record evidence in `test-results/android-test-results.md`
-- [ ] T042 Run scheduled-matrix-equivalent dry run locally (or CI replay) and record evidence in `test-results/android-test-results.md`
-- [ ] T043 Validate release hardening + quality gate references in `docs/ndi-feature.md`
-- [ ] T044 Capture and publish failing-test-first evidence for this feature PR flow in `test-results/android-test-results.md`
-- [ ] T045 Capture SC-004 timestamped first-cycle regression-detection evidence in `test-results/android-test-results.md`
+- [X] T039 [P] Update feature quickstart with final executed commands in `specs/008-settings-e2e-validation/quickstart.md`
+- [X] T040 [P] Update testing guidance for PR vs matrix gates in `docs/testing.md`
+- [X] T041 Run full primary-profile e2e gate and record evidence in `test-results/android-test-results.md`
+- [X] T042 Run scheduled-matrix-equivalent dry run locally (or CI replay) and record evidence in `test-results/android-test-results.md`
+- [X] T043 Validate release hardening + quality gate references in `docs/ndi-feature.md`
+- [X] T044 Capture and publish failing-test-first evidence for this feature PR flow in `test-results/android-test-results.md`
+- [X] T045 Capture SC-004 timestamped first-cycle regression-detection evidence in `test-results/android-test-results.md`
 
 ---
 
@@ -211,3 +211,4 @@ Task: "T031 [US3] regression gate completeness test"
    - Developer B leads US2 behavior e2e coverage.
    - Developer C leads US3 regression gate and matrix workflow.
 3. Merge and stabilize through Phase 6 evidence collection.
+

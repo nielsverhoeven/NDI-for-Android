@@ -22,8 +22,9 @@ Run full required e2e set on the primary emulator profile.
 
 ```powershell
 $env:EMULATOR_A_SERIAL="emulator-5554"
+$env:EMULATOR_B_SERIAL="emulator-5556"
 $env:APP_PACKAGE="com.ndi.app.debug"
-npm --prefix testing/e2e run test:dual-emulator
+npm --prefix testing/e2e run test:pr:primary
 ```
 
 Minimum PR evidence to capture:
@@ -36,11 +37,11 @@ Minimum PR evidence to capture:
 Run full required e2e set across scheduled matrix profiles.
 
 ```powershell
-# Example scheduled command shape; CI may fan this out per profile
+$env:E2E_MATRIX_PROFILES="api34,api35"
 $env:EMULATOR_A_SERIAL="emulator-5554"
 $env:EMULATOR_B_SERIAL="emulator-5556"
 $env:APP_PACKAGE="com.ndi.app.debug"
-npm --prefix testing/e2e run test:dual-emulator
+npm --prefix testing/e2e run test:matrix
 ```
 
 Matrix run expectations:
@@ -74,3 +75,4 @@ Collect and retain artifacts under:
 - If emulator fails to boot, fail the run with explicit diagnostics and rerun.
 - If suite aborts midway, treat as failed gate and rerun to completion.
 - If locale/device profile differences affect fragile selectors, prefer stable user-outcome assertions.
+- If waiver is necessary, provide `E2E_WAIVER_FILE` JSON with both required approver roles.

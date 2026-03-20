@@ -39,6 +39,17 @@ Recommended validation commands:
 2. `./gradlew verifyReleaseHardening`
 3. `./gradlew test connectedAndroidTest :app:assembleRelease`
 
+Settings e2e gate references:
+
+4. `npm --prefix testing/e2e run test:pr:primary`
+5. `npm --prefix testing/e2e run test:matrix`
+
+Release hardening policy remains mandatory:
+
+- `:app:verifyReleaseHardening` must pass for release sign-off.
+- E2E PR primary profile must complete with both new-settings and existing-regression suites passing.
+- Scheduled matrix profiles must report complete results across configured profile set.
+
 ## 3. Settings Menu, Discovery Configuration, and Developer Mode Overlay
 
 ### 3.1 UI and Navigation Integration
