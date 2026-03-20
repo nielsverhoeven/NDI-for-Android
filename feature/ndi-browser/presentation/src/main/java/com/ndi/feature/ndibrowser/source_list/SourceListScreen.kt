@@ -42,6 +42,7 @@ class SourceListFragment : Fragment() {
             binding = fragmentBinding,
             onManualRefresh = viewModel::onManualRefresh,
             onSourceClicked = viewModel::onSourceSelected,
+            onOutputClicked = viewModel::onOutputRequested,
         )
         return fragmentBinding.root
     }
@@ -57,6 +58,13 @@ class SourceListFragment : Fragment() {
                     viewModel.navigationEvents.collect { sourceId ->
                         runCatching {
                             findNavController().navigate(SourceListDependencies.viewerNavigationRequest(sourceId))
+                        }
+                    }
+                }
+                launch {
+                    viewModel.outputNavigationEvents.collect { sourceId ->
+                        runCatching {
+                            findNavController().navigate(SourceListDependencies.outputNavigationRequest(sourceId))
                         }
                     }
                 }
@@ -84,9 +92,10 @@ class SourceListScreen(
     private val binding: FragmentSourceListBinding,
     onManualRefresh: () -> Unit,
     onSourceClicked: (String) -> Unit,
+    onOutputClicked: (String) -> Unit,
 ) {
 
-    private val adapter = SourceAdapter(onSourceClicked)
+    private val adapter = SourceAdapter(onSourceClicked, onOutputClicked)
 
     init {
         binding.sourceRecyclerView.adapter = adapter
@@ -100,7 +109,8 @@ class SourceListScreen(
             binding.sourceRecyclerView.layoutManager = GridLayoutManager(binding.root.context, spanCount)
         }
 
-        adapter.submitList(state.sources, state.highlightedSourceId)
+        val orderedSources = state.sources.sortedByDescending { it.sourceId.startsWith("device-screen:") }
+        adapter.submitList(orderedSources, state.highlightedSourceId)
         binding.progressIndicator.isVisible = state.discoveryStatus == com.ndi.core.model.DiscoveryStatus.IN_PROGRESS
         binding.sourceRecyclerView.isVisible = state.sources.isNotEmpty()
         binding.emptyStateText.isVisible = state.discoveryStatus == com.ndi.core.model.DiscoveryStatus.EMPTY

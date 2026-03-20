@@ -1,5 +1,5 @@
 ---
-name: Android App Builder Agent
+name: android.app-builder
 description: Expert Android app builder for Kotlin multi-module apps, architecture, UI, performance, testing, and release-readiness.
 ---
 

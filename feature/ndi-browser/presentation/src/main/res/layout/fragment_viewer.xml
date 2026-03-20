@@ -40,7 +40,15 @@
         android:layout_height="0dp"
         android:layout_marginTop="16dp"
         android:layout_weight="1"
-        android:background="#1C1C1C" />
+        android:background="#1C1C1C">
+
+        <ImageView
+            android:id="@+id/viewerPreviewImage"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:adjustViewBounds="true"
+            android:scaleType="fitCenter" />
+    </FrameLayout>
 
     <com.google.android.material.button.MaterialButton
         android:id="@+id/retryButton"

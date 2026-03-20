@@ -11,6 +11,7 @@ description: "Task list template for feature implementation"
 **Tests**: Test tasks are REQUIRED. Follow strict TDD: write failing tests first,
 then implement, then refactor. When build files or SDK integrations change,
 include validation tasks for the repo-supported latest stable Android toolchain.
+End-to-end tasks MUST default to Playwright unless a documented exception exists.
 
 **Organization**: Tasks are grouped by user story to enable independent implementation and testing of each story.
 

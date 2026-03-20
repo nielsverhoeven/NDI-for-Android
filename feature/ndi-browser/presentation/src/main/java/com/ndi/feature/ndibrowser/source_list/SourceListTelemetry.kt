@@ -15,6 +15,7 @@ object SourceListDependencies {
     var discoveryRepositoryProvider: (() -> NdiDiscoveryRepository)? = null
     var userSelectionRepositoryProvider: (() -> UserSelectionRepository)? = null
     var viewerNavigationRequestProvider: ((String) -> NavDeepLinkRequest)? = null
+    var outputNavigationRequestProvider: ((String) -> NavDeepLinkRequest)? = null
     var telemetryEmitter: SourceListTelemetryEmitter = SourceListTelemetryEmitter {}
 
     fun requireDiscoveryRepository(): NdiDiscoveryRepository {
@@ -27,6 +28,10 @@ object SourceListDependencies {
 
     fun viewerNavigationRequest(sourceId: String): NavDeepLinkRequest {
         return requireNotNull(viewerNavigationRequestProvider) { "Source list viewer navigation is not configured." }.invoke(sourceId)
+    }
+
+    fun outputNavigationRequest(sourceId: String): NavDeepLinkRequest {
+        return requireNotNull(outputNavigationRequestProvider) { "Source list output navigation is not configured." }.invoke(sourceId)
     }
 }
 

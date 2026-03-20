@@ -49,7 +49,7 @@
 
 ## Decision 7: Testing approach under strict TDD
 
-- Decision: Implement Red-Green-Refactor with JUnit unit tests for ViewModel/repository behavior and Espresso tests for list-to-viewer user flows.
+- Decision: Implement Red-Green-Refactor with JUnit unit tests for ViewModel/repository behavior and Playwright as the default end-to-end tool for list-to-viewer user flows.
 - Rationale: Required by constitution and best aligns with feature risk areas (state transitions, interruption flows).
 - Alternatives considered: Unit-only testing (rejected because UI navigation and interaction outcomes are core requirements).
 

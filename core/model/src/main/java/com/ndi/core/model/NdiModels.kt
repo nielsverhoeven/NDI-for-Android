@@ -55,3 +55,70 @@ data class UserSelectionState(
     val lastSelectedAtEpochMillis: Long? = null,
     val shouldAutoplayOnLaunch: Boolean = false,
 )
+
+enum class OutputState {
+    READY,
+    STARTING,
+    ACTIVE,
+    STOPPING,
+    STOPPED,
+    INTERRUPTED,
+}
+
+enum class OutputInputKind {
+    DISCOVERED_NDI,
+    DEVICE_SCREEN,
+}
+
+enum class OutputConsentState {
+    NOT_REQUIRED,
+    PENDING,
+    GRANTED,
+    DENIED,
+}
+
+enum class OutputQualityLevel {
+    HEALTHY,
+    DEGRADED,
+    FAILED,
+}
+
+data class OutputSession(
+    val sessionId: String,
+    val inputSourceId: String,
+    val inputSourceKind: OutputInputKind = OutputInputKind.DISCOVERED_NDI,
+    val outboundStreamName: String,
+    val consentState: OutputConsentState = OutputConsentState.NOT_REQUIRED,
+    val state: OutputState,
+    val startedAtEpochMillis: Long,
+    val stoppedAtEpochMillis: Long? = null,
+    val interruptionReason: String? = null,
+    val retryAttempts: Int = 0,
+    val hostInstanceId: String = "local",
+)
+
+data class OutputConfiguration(
+    val preferredStreamName: String,
+    val lastSelectedInputSourceId: String? = null,
+    val lastSelectedInputSourceKind: OutputInputKind? = null,
+    val autoRetryEnabled: Boolean = true,
+    val retryWindowSeconds: Int = 15,
+)
+
+data class OutputInputIdentity(
+    val sourceId: String,
+    val kind: OutputInputKind,
+    val displayName: String,
+    val hostInstanceId: String? = null,
+    val requiresCaptureConsent: Boolean = kind == OutputInputKind.DEVICE_SCREEN,
+)
+
+data class OutputHealthSnapshot(
+    val snapshotId: String,
+    val sessionId: String,
+    val capturedAtEpochMillis: Long,
+    val networkReachable: Boolean,
+    val inputReachable: Boolean,
+    val qualityLevel: OutputQualityLevel,
+    val messageCode: String? = null,
+)

@@ -5,10 +5,12 @@ import android.view.ViewGroup
 import androidx.core.view.isVisible
 import androidx.recyclerview.widget.RecyclerView
 import com.ndi.core.model.NdiSource
+import com.ndi.feature.ndibrowser.presentation.R
 import com.ndi.feature.ndibrowser.presentation.databinding.ItemNdiSourceBinding
 
 class SourceAdapter(
     private val onSourceClicked: (String) -> Unit,
+    private val onOutputClicked: (String) -> Unit,
 ) : RecyclerView.Adapter<SourceViewHolder>() {
 
     private var items: List<NdiSource> = emptyList()
@@ -16,7 +18,7 @@ class SourceAdapter(
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): SourceViewHolder {
         val binding = ItemNdiSourceBinding.inflate(LayoutInflater.from(parent.context), parent, false)
-        return SourceViewHolder(binding, onSourceClicked)
+        return SourceViewHolder(binding, onSourceClicked, onOutputClicked)
     }
 
     override fun onBindViewHolder(holder: SourceViewHolder, position: Int) {
@@ -35,12 +37,18 @@ class SourceAdapter(
 class SourceViewHolder(
     private val binding: ItemNdiSourceBinding,
     private val onSourceClicked: (String) -> Unit,
+    private val onOutputClicked: (String) -> Unit,
 ) : RecyclerView.ViewHolder(binding.root) {
 
     fun bind(source: NdiSource, isHighlighted: Boolean) {
         binding.sourceName.text = source.displayName
-        binding.sourceEndpoint.text = source.endpointAddress ?: source.sourceId
+        binding.sourceEndpoint.text = if (source.sourceId.startsWith("device-screen:")) {
+            binding.root.context.getString(R.string.ndi_source_local_screen_endpoint)
+        } else {
+            source.endpointAddress ?: source.sourceId
+        }
         binding.highlightBadge.isVisible = isHighlighted
         binding.root.setOnClickListener { onSourceClicked(source.sourceId) }
+        binding.outputButton.setOnClickListener { onOutputClicked(source.sourceId) }
     }
 }

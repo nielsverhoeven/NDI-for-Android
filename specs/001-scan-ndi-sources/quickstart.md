@@ -85,7 +85,7 @@ Run and confirm success:
    - source identity handling
    - selection persistence
    - interruption retry window behavior
-2. Write failing Espresso tests for:
+2. Write failing Playwright end-to-end tests for:
    - source list -> viewer navigation
    - no-autoplay on launch with highlighted previous source
    - recovery actions after unresolved interruption

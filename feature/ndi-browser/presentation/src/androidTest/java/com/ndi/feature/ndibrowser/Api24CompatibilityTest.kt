@@ -1,6 +1,7 @@
 package com.ndi.feature.ndibrowser
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.ndi.core.model.OutputState
 import com.ndi.feature.ndibrowser.source_list.SourceListAdaptiveLayout
 import com.ndi.feature.ndibrowser.source_list.SourceListLayoutMode
 import org.junit.Assert.assertEquals
@@ -13,5 +14,11 @@ class Api24CompatibilityTest {
     @Test
     fun compactPhoneWidth_remainsSupported() {
         assertEquals(SourceListLayoutMode.COMPACT, SourceListAdaptiveLayout.resolve(360))
+    }
+
+    @Test
+    fun outputRecoveryStates_remainStable() {
+        assertEquals("INTERRUPTED", OutputState.INTERRUPTED.name)
+        assertEquals("STOPPED", OutputState.STOPPED.name)
     }
 }

@@ -1,9 +1,8 @@
 <!--
 Sync Impact Report
-Version change: 1.0.0 -> 1.1.0
+Version change: 1.1.0 -> 2.0.0
 Modified principles:
-- X. Release-Grade Optimization by Default -> X. Release-Grade Optimization & Compatibility Validation
-- New principle -> XI. Latest-Stable Android Toolchain
+- IV. Strict Test-Driven Development (NON-NEGOTIABLE) -> IV. Strict Test-Driven Development (NON-NEGOTIABLE)
 Added sections:
 - None
 Removed sections:
@@ -13,16 +12,10 @@ Templates requiring updates:
 - ✅ .specify/templates/spec-template.md
 - ✅ .specify/templates/tasks-template.md
 - ⚠ pending: .specify/templates/commands/*.md (directory not present)
-- ✅ docs/android-prerequisites.md
-- ✅ docs/ndi-feature.md
-- ✅ .github/agents/android.app-builder.agent.md
-- ✅ .github/agents/copilot-instructions.md
-- ✅ .github/workflows/android-ci.yml
-- ✅ specs/001-scan-ndi-sources/research.md
 - ✅ specs/001-scan-ndi-sources/plan.md
-- ✅ specs/001-scan-ndi-sources/spec.md
+- ✅ specs/001-scan-ndi-sources/research.md
 - ✅ specs/001-scan-ndi-sources/quickstart.md
-- ✅ specs/001-scan-ndi-sources/tasks.md
+- ✅ specs/002-stream-ndi-source/plan.md
 Follow-up TODOs:
 - None
 -->
@@ -61,8 +54,10 @@ support maintainable offline/online synchronization strategies.
 
 Every feature and bug fix MUST follow Red-Green-Refactor. Developers MUST write
 or update failing tests first, then implement minimal code to pass, then
-refactor safely. Unit tests MUST use JUnit; UI/integration flows MUST use
-Espresso where UI behavior is affected.
+refactor safely. Unit tests MUST use JUnit. End-to-end flows MUST default to
+Playwright. If Playwright is not feasible for a required end-to-end scenario, an
+alternative must be proposed with justification and approval. 
+If existing Espresso tests are found when working on a feature, they must be converted to Playwright tests as part of the implementation.
 
 Rationale: Enforced TDD keeps scope controlled, prevents regressions, and
 creates executable documentation of expected behavior.
@@ -165,7 +160,8 @@ deployable on current Android standards.
 4. Pull requests that add permissions, background work, or new modules MUST
   include explicit justification and reviewer sign-off from code owners.
 5. Release branches MUST pass unit, instrumentation/UI, and release build
-  validation with R8/ProGuard enabled before merge.
+  validation with R8/ProGuard enabled before merge, and MUST include
+  Playwright end-to-end results unless a documented exception applies.
 6. Each release cycle MUST include a toolchain currency review covering
   compileSdk, targetSdk, AGP, Gradle, Kotlin, JDK/JBR, AndroidX/Jetpack, NDK,
   CMake, and required proprietary SDK compatibility.
@@ -198,4 +194,4 @@ Compliance review expectations:
 3. Periodic audits MUST be performed each release cycle to verify ongoing
   adherence and remove drift.
 
-**Version**: 1.1.0 | **Ratified**: 2026-03-15 | **Last Amended**: 2026-03-15
+**Version**: 2.0.0 | **Ratified**: 2026-03-15 | **Last Amended**: 2026-03-16
