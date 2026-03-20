@@ -27,8 +27,10 @@ import com.ndi.feature.ndibrowser.domain.repository.UserSelectionRepository
 import com.ndi.feature.ndibrowser.domain.repository.ViewContinuityRepository
 import com.ndi.app.navigation.NdiNavigation
 import com.ndi.feature.ndibrowser.data.repository.DeveloperDiagnosticsRepositoryImpl
+import com.ndi.feature.ndibrowser.data.repository.NdiDiscoveryConfigRepositoryImpl
 import com.ndi.feature.ndibrowser.data.repository.NdiSettingsRepositoryImpl
 import com.ndi.feature.ndibrowser.domain.repository.DeveloperDiagnosticsRepository
+import com.ndi.feature.ndibrowser.domain.repository.NdiDiscoveryConfigRepository
 import com.ndi.feature.ndibrowser.domain.repository.NdiSettingsRepository
 import com.ndi.feature.ndibrowser.home.HomeDependencies
 import com.ndi.feature.ndibrowser.output.OutputDependencies
@@ -93,6 +95,10 @@ class AppGraph private constructor(context: Context) {
 
     val settingsRepository: NdiSettingsRepository = NdiSettingsRepositoryImpl(
         settingsDao = database.settingsPreferenceDao(),
+    )
+
+    val discoveryConfigRepository: NdiDiscoveryConfigRepository = NdiDiscoveryConfigRepositoryImpl(
+        settingsRepository = settingsRepository,
     )
 
     val developerDiagnosticsRepository: DeveloperDiagnosticsRepository = DeveloperDiagnosticsRepositoryImpl()

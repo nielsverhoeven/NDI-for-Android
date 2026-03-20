@@ -79,21 +79,21 @@
 
 ### Tests for User Story 2
 
-- [ ] T025 [P] [US2] Add repository tests for discovery endpoint parsing, trimming, port validation, and default-port behavior in `feature/ndi-browser/data/src/test/java/com/ndi/feature/ndibrowser/data/repository/NdiSettingsRepositoryImplTest.kt`
-- [ ] T026 [P] [US2] Add ViewModel tests for inline validation and immediate apply/interruption behavior in `feature/ndi-browser/presentation/src/test/java/com/ndi/feature/ndibrowser/settings/SettingsViewModelTest.kt`
-- [ ] T027 [P] [US2] Add instrumentation test for unreachable-endpoint fallback warning visibility in `feature/ndi-browser/presentation/src/androidTest/java/com/ndi/feature/ndibrowser/source_list/SourceListFallbackWarningTest.kt`
-- [ ] T028 [P] [US2] Add e2e test for active-stream discovery change with <=1s apply assertion in `testing/e2e/tests/settings-discovery-config.spec.ts`
-- [ ] T029 [P] [US2] Add e2e test for unreachable discovery fallback warning with <=3s assertion in `testing/e2e/tests/settings-discovery-fallback.spec.ts`
+- [X] T025 [P] [US2] Add repository tests for discovery endpoint parsing, trimming, port validation, and default-port behavior in `feature/ndi-browser/data/src/test/java/com/ndi/feature/ndibrowser/data/repository/NdiSettingsRepositoryImplTest.kt`
+- [X] T026 [P] [US2] Add ViewModel tests for inline validation and immediate apply/interruption behavior in `feature/ndi-browser/presentation/src/test/java/com/ndi/feature/ndibrowser/settings/SettingsViewModelTest.kt`
+- [X] T027 [P] [US2] Add instrumentation test for unreachable-endpoint fallback warning visibility in `feature/ndi-browser/presentation/src/androidTest/java/com/ndi/feature/ndibrowser/source_list/SourceListFallbackWarningTest.kt`
+- [X] T028 [P] [US2] Add e2e test for active-stream discovery change with <=1s apply assertion in `testing/e2e/tests/settings-discovery-config.spec.ts`
+- [X] T029 [P] [US2] Add e2e test for unreachable discovery fallback warning with <=3s assertion in `testing/e2e/tests/settings-discovery-fallback.spec.ts`
 
 ### Implementation for User Story 2
 
-- [ ] T030 [US2] Implement settings form state, validation, and save/apply flow in `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/SettingsViewModel.kt`
-- [ ] T031 [US2] Bind discovery input validation and save actions in `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/SettingsFragment.kt`
-- [ ] T032 [US2] Implement endpoint parse/normalize/persist behavior in `feature/ndi-browser/data/src/main/java/com/ndi/feature/ndibrowser/data/repository/NdiSettingsRepositoryImpl.kt`
-- [ ] T033 [US2] Implement immediate discovery apply with active-session interruption support in `feature/ndi-browser/data/src/main/java/com/ndi/feature/ndibrowser/data/repository/NdiDiscoveryRepositoryImpl.kt`
-- [ ] T034 [US2] Surface fallback warning state and apply timestamps in `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/source_list/SourceListViewModel.kt`
-- [ ] T035 [US2] Render fallback warning banner in source list screen in `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/source_list/SourceListScreen.kt`
-- [ ] T036 [US2] Emit telemetry for discovery save/apply/interruption/fallback timing in `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/SettingsTelemetry.kt`
+- [X] T030 [US2] Implement settings form state, validation, and save/apply flow in `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/SettingsViewModel.kt`
+- [X] T031 [US2] Bind discovery input validation and save actions in `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/SettingsFragment.kt`
+- [X] T032 [US2] Implement endpoint parse/normalize/persist behavior in `feature/ndi-browser/data/src/main/java/com/ndi/feature/ndibrowser/data/repository/NdiSettingsRepositoryImpl.kt`
+- [X] T033 [US2] Implement immediate discovery apply with active-session interruption support in `feature/ndi-browser/data/src/main/java/com/ndi/feature/ndibrowser/data/repository/NdiDiscoveryRepositoryImpl.kt`
+- [X] T034 [US2] Surface fallback warning state and apply timestamps in `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/source_list/SourceListViewModel.kt`
+- [X] T035 [US2] Render fallback warning banner in source list screen in `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/source_list/SourceListScreen.kt`
+- [X] T036 [US2] Emit telemetry for discovery save/apply/interruption/fallback timing in `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/SettingsTelemetry.kt`
 
 **Checkpoint**: US2 is independently functional and testable.
 

@@ -30,8 +30,11 @@ class NdiSettingsRepositoryImpl(
     }
 
     override suspend fun saveSettings(snapshot: NdiSettingsSnapshot) {
-        settingsDao.upsert(snapshot.toEntity())
-        _settings.value = snapshot
+        val normalized = snapshot.copy(
+            discoveryServerInput = snapshot.discoveryServerInput?.trim()?.takeIf { it.isNotBlank() },
+        )
+        settingsDao.upsert(normalized.toEntity())
+        _settings.value = normalized
     }
 
     override fun observeSettings(): Flow<NdiSettingsSnapshot> = _settings.filterNotNull()

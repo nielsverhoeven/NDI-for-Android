@@ -23,6 +23,7 @@ data class SourceListUiState(
     val sources: List<NdiSource> = emptyList(),
     val highlightedSourceId: String? = null,
     val errorMessage: String? = null,
+    val fallbackWarning: String? = null,
     val layoutMode: SourceListLayoutMode = SourceListLayoutMode.COMPACT,
 )
 
@@ -89,6 +90,10 @@ class SourceListViewModel(
         _uiState.update { current ->
             current.copy(layoutMode = SourceListAdaptiveLayout.resolve(widthDp))
         }
+    }
+
+    fun onFallbackWarningChanged(message: String?) {
+        _uiState.update { current -> current.copy(fallbackWarning = message) }
     }
 
     private fun refresh(trigger: DiscoveryTrigger) {

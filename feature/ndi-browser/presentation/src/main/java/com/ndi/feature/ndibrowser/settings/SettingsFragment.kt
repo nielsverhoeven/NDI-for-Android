@@ -4,10 +4,16 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import androidx.core.widget.addTextChangedListener
+import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
-import androidx.navigation.fragment.findNavController
+import androidx.fragment.app.viewModels
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import com.ndi.core.model.TelemetryEvent
 import com.ndi.feature.ndibrowser.presentation.databinding.FragmentSettingsBinding
+import kotlinx.coroutines.launch
 
 data class SettingsUiState(
     val discoveryServerInput: String = "",
@@ -19,6 +25,9 @@ data class SettingsUiState(
 class SettingsFragment : Fragment() {
 
     private var binding: FragmentSettingsBinding? = null
+    private val viewModel: SettingsViewModel by viewModels {
+        SettingsViewModel.Factory(SettingsDependencies.requireSettingsRepository())
+    }
     private lateinit var screen: SettingsScreen
 
     override fun onCreateView(
@@ -30,9 +39,22 @@ class SettingsFragment : Fragment() {
         binding = fragmentBinding
         screen = SettingsScreen(
             binding = fragmentBinding,
-            onSave = { /* US2: implement save logic */ },
+            onSave = viewModel::onSaveSettings,
+            onDiscoveryChanged = viewModel::onDiscoveryServerChanged,
+            onDeveloperModeToggled = viewModel::onDeveloperModeToggled,
         )
         return fragmentBinding.root
+    }
+
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(view, savedInstanceState)
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                launch {
+                    viewModel.uiState.collect { screen.render(it) }
+                }
+            }
+        }
     }
 
     override fun onResume() {
@@ -64,12 +86,30 @@ class SettingsFragment : Fragment() {
 class SettingsScreen(
     private val binding: FragmentSettingsBinding,
     onSave: () -> Unit,
+    onDiscoveryChanged: (String) -> Unit,
+    onDeveloperModeToggled: (Boolean) -> Unit,
 ) {
     init {
         binding.saveSettingsButton.setOnClickListener { onSave() }
+        binding.developerModeSwitch.setOnCheckedChangeListener { _, isChecked ->
+            onDeveloperModeToggled(isChecked)
+        }
+        binding.discoveryServerEditText.addTextChangedListener {
+            onDiscoveryChanged(it?.toString().orEmpty())
+        }
     }
 
     fun render(state: SettingsUiState) {
-        // US2: bind state to views (discoveryServerInput, developerModeSwitch, etc.)
+        binding.validationMessage.isVisible = state.validationError != null
+        binding.validationMessage.text = state.validationError.orEmpty()
+        binding.fallbackWarningMessage.isVisible = state.fallbackWarning != null
+        binding.fallbackWarningMessage.text = state.fallbackWarning.orEmpty()
+        if (binding.developerModeSwitch.isChecked != state.developerModeEnabled) {
+            binding.developerModeSwitch.isChecked = state.developerModeEnabled
+        }
+        val currentInput = binding.discoveryServerInput.editText?.text?.toString().orEmpty()
+        if (currentInput != state.discoveryServerInput) {
+            binding.discoveryServerInput.editText?.setText(state.discoveryServerInput)
+        }
     }
 }

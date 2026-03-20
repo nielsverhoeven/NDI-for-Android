@@ -74,6 +74,11 @@ class SourceListFragment : Fragment() {
                         }
                     }
                 }
+                SourceListDependencies.fallbackWarningFlowOrNull()?.let { fallbackWarningFlow ->
+                    launch {
+                        fallbackWarningFlow.collect(viewModel::onFallbackWarningChanged)
+                    }
+                }
             }
         }
     }
@@ -139,6 +144,8 @@ class SourceListScreen(
         binding.emptyStateText.isVisible = state.discoveryStatus == com.ndi.core.model.DiscoveryStatus.EMPTY
         binding.errorStateText.isVisible = state.discoveryStatus == com.ndi.core.model.DiscoveryStatus.FAILURE
         binding.errorStateText.text = state.errorMessage ?: binding.root.context.getString(R.string.ndi_discovery_error)
+        binding.discoveryFallbackWarning.isVisible = state.fallbackWarning != null
+        binding.discoveryFallbackWarning.text = state.fallbackWarning.orEmpty()
     }
 
     fun recyclerView(): RecyclerView = binding.sourceRecyclerView
