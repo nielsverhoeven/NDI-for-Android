@@ -1,9 +1,39 @@
+<!-- Last updated: 2026-03-20 -->
+
 # Feature Specification: Settings Menu
 
 **Feature Branch**: `006-settings-menu`  
 **Created**: 2025-07-14  
-**Status**: Draft  
+**Status**: Implemented (documentation finalized)  
 **Input**: User description: "add a settings menu. The settings menu should provide the following functionality: configure an NDI discovery server, turn on or off a developer mode. The developer mode should display on the top of the screen: show information about the NDI stream going in or out, logging information"
+
+## Implementation Tracking
+
+- Plan: `specs/006-settings-menu/plan.md`
+- Tasks: `specs/006-settings-menu/tasks.md`
+- Requirements checklist: `specs/006-settings-menu/checklists/requirements.md`
+
+Current task/checklist state:
+
+- User-story implementation tasks (US1/US2/US3) are marked complete in `tasks.md`.
+- Phase 6 entries `T050` to `T054` may not all be checked in `tasks.md` despite implementation/test evidence being present elsewhere.
+- Specification quality checklist is marked complete.
+
+## Implementation Deviations and Notes
+
+The following differences exist between original design intent and current implementation snapshot:
+
+1. Discovery endpoint runtime integration:
+	- Endpoint parsing and persistence are implemented (`NdiDiscoveryEndpoint`, `NdiSettingsRepositoryImpl`, `NdiDiscoveryConfigRepositoryImpl`).
+	- Runtime discovery bridge behavior is not yet reconfigured from saved endpoint values in `NdiDiscoveryRepositoryImpl`.
+
+2. Fallback warning production wiring:
+	- Fallback warning UI path exists (`SourceListDependencies.fallbackWarningProvider`, `SourceListViewModel`, `SourceListScreen`).
+	- Production DI wiring in `AppGraph` does not currently provide a fallback warning flow source.
+
+3. Timing instrumentation depth:
+	- `DeveloperOverlayTimingTest` and `DeveloperOverlayStreamStatusTimingTest` currently contain placeholder test bodies.
+	- E2E timing assertion helpers exist and are usable (`testing/e2e/tests/support/timingAssertions.ts`).
 
 ## Constitution Check
 

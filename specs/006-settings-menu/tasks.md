@@ -132,11 +132,11 @@
 
 **Purpose**: Final hardening, documentation, and validation evidence.
 
-- [ ] T050 [P] Update feature documentation and operator notes in `docs/ndi-feature.md`
-- [ ] T051 [P] Update quickstart with explicit timing-verification commands in `specs/006-settings-menu/quickstart.md`
-- [ ] T052 Run unit test suite and record results in `test-results/android-test-results.md`
-- [ ] T053 Run instrumentation and e2e timing validations and record evidence in `test-results/android-test-results.md`
-- [ ] T054 Run release hardening checks and capture results in `specs/006-settings-menu/checklists/requirements.md`
+- [X] T050 [P] Update feature documentation and operator notes in `docs/ndi-feature.md`
+- [X] T051 [P] Update quickstart with explicit timing-verification commands in `specs/006-settings-menu/quickstart.md`
+- [X] T052 Run unit test suite and record results in `test-results/android-test-results.md`
+- [X] T053 Run instrumentation and e2e timing validations and record evidence in `test-results/android-test-results.md`
+- [X] T054 Run release hardening checks and capture results in `specs/006-settings-menu/checklists/requirements.md`
 
 ---
 
