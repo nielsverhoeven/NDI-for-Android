@@ -94,6 +94,26 @@ export function verifyPackageInstalled(serial: string, packageName: string): voi
   }
 }
 
+export function restartApplication(serial: string, packageName: string): void {
+  runAdb(serial, ["shell", "am", "force-stop", packageName]);
+  runAdb(serial, [
+    "shell",
+    "monkey",
+    "-p",
+    packageName,
+    "-c",
+    "android.intent.category.LAUNCHER",
+    "1",
+  ]);
+}
+
+export function buildSettingsDeepLink(packageName: string = DEFAULT_PACKAGE): { packageName: string; uri: string } {
+  return {
+    packageName,
+    uri: "ndi://settings",
+  };
+}
+
 export function getAndroidVersionInfo(serial: string): AndroidVersionInfo {
   const sdkRaw = runAdb(serial, ["shell", "getprop", "ro.build.version.sdk"]);
   const release = runAdb(serial, ["shell", "getprop", "ro.build.version.release"]);

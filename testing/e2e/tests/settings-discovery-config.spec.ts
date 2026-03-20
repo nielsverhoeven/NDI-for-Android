@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 import { assertWithinThreshold, TIMING_THRESHOLDS } from "./support/timingAssertions";
 
 test.describe("Settings Discovery Configuration", () => {
-  test("saves and applies discovery server endpoint within 1s", async ({ page }) => {
+  test("@settings @us2 saves and applies discovery server endpoint within 1s", async ({ page }) => {
     test.fail(
       true,
       "Emulator UI wiring is pending; this spec documents the expected <=1s apply behavior.",
@@ -14,10 +14,11 @@ test.describe("Settings Discovery Configuration", () => {
       await page.locator("#discoveryServerEditText").fill("ndi-server.local");
       await page.getByRole("button", { name: /save/i }).click();
       await expect(page.getByText(/settings saved|applied/i)).toBeVisible();
+      await expect(page.locator("#discoveryServerEditText")).toHaveValue(/ndi-server\.local/);
     }, TIMING_THRESHOLDS.discoveryApply, "discovery endpoint apply latency");
   });
 
-  test("validates invalid discovery input and shows inline error", async ({ page }) => {
+  test("@settings @us2 validates invalid discovery input and shows inline error", async ({ page }) => {
     test.fail(
       true,
       "Emulator UI wiring is pending; this spec documents expected inline validation.",
@@ -28,5 +29,6 @@ test.describe("Settings Discovery Configuration", () => {
     await page.getByRole("button", { name: /save/i }).click();
 
     await expect(page.locator("#validationMessage")).toBeVisible();
+    await expect(page.locator("#validationMessage")).toContainText(/invalid|host|format/i);
   });
 });

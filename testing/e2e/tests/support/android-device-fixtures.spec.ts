@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 import {
   assertDeviceVersionSupported,
+  buildSettingsDeepLink,
   computeSupportedVersionWindow,
   isMajorVersionSupported,
   type AndroidVersionInfo,
@@ -39,4 +40,11 @@ test("@us3 assertDeviceVersionSupported throws for unsupported major", () => {
   expect(() =>
     assertDeviceVersionSupported("publisher", "emulator-5554", unsupportedInfo, window),
   ).toThrow(/Unsupported Android version/);
+});
+
+test("@settings @us2 buildSettingsDeepLink returns settings uri", () => {
+  const deeplink = buildSettingsDeepLink("com.ndi.app.debug");
+
+  expect(deeplink.packageName).toBe("com.ndi.app.debug");
+  expect(deeplink.uri).toBe("ndi://settings");
 });
