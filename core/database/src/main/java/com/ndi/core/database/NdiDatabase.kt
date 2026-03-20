@@ -141,6 +141,23 @@ abstract class NdiDatabase : RoomDatabase() {
     abstract fun settingsPreferenceDao(): SettingsPreferenceDao
 
     companion object {
+        private fun hasColumn(database: SupportSQLiteDatabase, tableName: String, columnName: String): Boolean {
+            database.query("PRAGMA table_info($tableName)").use { cursor ->
+                val nameColumnIndex = cursor.getColumnIndex("name")
+                if (nameColumnIndex == -1) {
+                    return false
+                }
+
+                while (cursor.moveToNext()) {
+                    if (cursor.getString(nameColumnIndex) == columnName) {
+                        return true
+                    }
+                }
+            }
+
+            return false
+        }
+
         val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(database: SupportSQLiteDatabase) {
                 database.execSQL(
@@ -180,10 +197,21 @@ abstract class NdiDatabase : RoomDatabase() {
 
         val MIGRATION_2_3 = object : Migration(2, 3) {
             override fun migrate(database: SupportSQLiteDatabase) {
-                database.execSQL("ALTER TABLE output_configuration ADD COLUMN lastSelectedInputSourceKind TEXT")
-                database.execSQL("ALTER TABLE output_configuration ADD COLUMN autoRetryEnabled INTEGER NOT NULL DEFAULT 1")
-                database.execSQL("ALTER TABLE output_session ADD COLUMN inputSourceKind TEXT NOT NULL DEFAULT 'DISCOVERED_NDI'")
-                database.execSQL("ALTER TABLE output_session ADD COLUMN consentState TEXT NOT NULL DEFAULT 'NOT_REQUIRED'")
+                if (!hasColumn(database, "output_configuration", "lastSelectedInputSourceKind")) {
+                    database.execSQL("ALTER TABLE output_configuration ADD COLUMN lastSelectedInputSourceKind TEXT")
+                }
+
+                if (!hasColumn(database, "output_configuration", "autoRetryEnabled")) {
+                    database.execSQL("ALTER TABLE output_configuration ADD COLUMN autoRetryEnabled INTEGER NOT NULL DEFAULT 1")
+                }
+
+                if (!hasColumn(database, "output_session", "inputSourceKind")) {
+                    database.execSQL("ALTER TABLE output_session ADD COLUMN inputSourceKind TEXT NOT NULL DEFAULT 'DISCOVERED_NDI'")
+                }
+
+                if (!hasColumn(database, "output_session", "consentState")) {
+                    database.execSQL("ALTER TABLE output_session ADD COLUMN consentState TEXT NOT NULL DEFAULT 'NOT_REQUIRED'")
+                }
             }
         }
 

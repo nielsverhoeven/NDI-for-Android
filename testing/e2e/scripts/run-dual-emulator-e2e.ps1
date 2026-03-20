@@ -28,6 +28,33 @@ function Capture-EmulatorScreenshot {
     adb -s $Serial shell rm $remotePath | Out-Null
 }
 
+function Resolve-LatencyArtifactPath {
+    param(
+        [string]$ExplicitPath,
+        [string[]]$Candidates
+    )
+
+    if ($ExplicitPath) {
+        $fullPath = [System.IO.Path]::GetFullPath($ExplicitPath)
+        if (Test-Path $fullPath) {
+            return $fullPath
+        }
+    }
+
+    foreach ($candidate in $Candidates) {
+        if (-not $candidate) {
+            continue
+        }
+
+        $fullCandidate = [System.IO.Path]::GetFullPath($candidate)
+        if (Test-Path $fullCandidate) {
+            return $fullCandidate
+        }
+    }
+
+    return $null
+}
+
 function Get-EmulatorPortFromSerial {
     param(
         [Parameter(Mandatory = $true)]
@@ -82,6 +109,84 @@ function Wait-ForEmulatorOnline {
     }
 
     throw "Timed out waiting for $Serial to come online."
+}
+
+function Test-PackageManagerReady {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Serial
+    )
+
+    try {
+        $androidPackage = (adb -s $Serial shell pm path android).Trim()
+        return $androidPackage -and $androidPackage.StartsWith("package:")
+    }
+    catch {
+        return $false
+    }
+}
+
+function Wait-ForEmulatorBootComplete {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Serial,
+        [int]$TimeoutSeconds = 240,
+        [int]$StableSeconds = 6
+    )
+
+    $started = Get-Date
+    $stableSince = $null
+
+    while (((Get-Date) - $started).TotalSeconds -lt $TimeoutSeconds) {
+        $state = ""
+        try {
+            $state = (adb -s $Serial get-state).Trim()
+        }
+        catch {
+            $state = ""
+        }
+
+        if ($state -ne "device") {
+            $stableSince = $null
+            Start-Sleep -Seconds 2
+            continue
+        }
+
+        $sysBootComplete = ""
+        $devBootComplete = ""
+        $bootAnimState = ""
+        try {
+            $sysBootComplete = (adb -s $Serial shell getprop sys.boot_completed).Trim()
+            $devBootComplete = (adb -s $Serial shell getprop dev.bootcomplete).Trim()
+            $bootAnimState = (adb -s $Serial shell getprop init.svc.bootanim).Trim().ToLowerInvariant()
+        }
+        catch {
+            $stableSince = $null
+            Start-Sleep -Seconds 2
+            continue
+        }
+
+        $bootFlagReady = ($sysBootComplete -eq "1" -or $devBootComplete -eq "1")
+        $bootAnimationStopped = [string]::IsNullOrWhiteSpace($bootAnimState) -or $bootAnimState -eq "stopped"
+        $packageManagerReady = Test-PackageManagerReady -Serial $Serial
+
+        if ($bootFlagReady -and $bootAnimationStopped -and $packageManagerReady) {
+            if (-not $stableSince) {
+                $stableSince = Get-Date
+            }
+
+            if (((Get-Date) - $stableSince).TotalSeconds -ge $StableSeconds) {
+                return
+            }
+        }
+        else {
+            $stableSince = $null
+        }
+
+        Start-Sleep -Seconds 2
+    }
+
+    throw "Timed out waiting for $Serial to report boot-complete and package-manager readiness."
 }
 
 function Get-VisibleEmulatorWindowProcesses {
@@ -268,6 +373,10 @@ if ($stateA -ne "device" -or $stateB -ne "device") {
     throw "Emulators failed to remain online after visibility enforcement."
 }
 
+Write-Host "Waiting for emulator boot-complete and package-manager readiness..."
+Wait-ForEmulatorBootComplete -Serial $EmulatorASerial
+Wait-ForEmulatorBootComplete -Serial $EmulatorBSerial
+
 $publisherPackage = adb -s $EmulatorASerial shell pm path $AppPackage
 if (-not $publisherPackage -or -not $publisherPackage.StartsWith("package:")) {
     throw "Package $AppPackage is not installed on publisher $EmulatorASerial."
@@ -396,6 +505,19 @@ finally {
         failure = $suiteFailure
         checkpointArtifactPath = $checkpointArtifactPath
         screenshotDirectory = $screenshotDir
+        latencyArtifacts = [PSCustomObject]@{
+            sourceRecordingPath = (Resolve-LatencyArtifactPath -ExplicitPath $env:DUAL_EMULATOR_SOURCE_RECORDING_PATH -Candidates @(
+                (Join-Path $artifactDir "recordings/source-recording.mp4"),
+                (Join-Path $artifactDir "recordings/publisher-recording.mp4")
+            ))
+            receiverRecordingPath = (Resolve-LatencyArtifactPath -ExplicitPath $env:DUAL_EMULATOR_RECEIVER_RECORDING_PATH -Candidates @(
+                (Join-Path $artifactDir "recordings/receiver-recording.mp4")
+            ))
+            analysisArtifactPath = (Resolve-LatencyArtifactPath -ExplicitPath $env:DUAL_EMULATOR_LATENCY_ANALYSIS_PATH -Candidates @(
+                (Join-Path $artifactDir "latency-analysis.json"),
+                (Join-Path $artifactDir "analysis/latency-analysis.json")
+            ))
+        }
     }
     $summary | ConvertTo-Json -Depth 4 | Out-File -FilePath $summaryPath -Encoding utf8
 

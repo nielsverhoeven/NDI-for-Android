@@ -22,6 +22,10 @@ export const EXISTING_REGRESSION_SPECS = [
   "tests/settings-developer-overlay.spec.ts",
 ] as const;
 
+export const LATENCY_SCENARIO_SPECS = [
+  "tests/interop-dual-emulator.spec.ts",
+] as const;
+
 function hasDuplicates(values: readonly string[]): boolean {
   return new Set(values).size !== values.length;
 }
@@ -38,4 +42,21 @@ test("@settings @us3 suite classification: settings suite does not overlap regre
   const regression = new Set<string>(EXISTING_REGRESSION_SPECS);
   const overlap = NEW_SETTINGS_SPECS.filter((spec) => regression.has(spec));
   expect(overlap).toEqual([]);
+});
+
+test("@latency @us1 suite classification: latency specs are unique", () => {
+  expect(hasDuplicates(LATENCY_SCENARIO_SPECS)).toBeFalsy();
+});
+
+test("@latency @us1 suite classification: latency specs stay isolated from settings suite", () => {
+  const settings = new Set<string>(NEW_SETTINGS_SPECS);
+  const overlap = LATENCY_SCENARIO_SPECS.filter((spec) => settings.has(spec));
+  expect(overlap).toEqual([]);
+});
+
+test("@latency @us3 suite classification: latency specs are tracked by existing regression suite", () => {
+  const regression = new Set<string>(EXISTING_REGRESSION_SPECS);
+  for (const spec of LATENCY_SCENARIO_SPECS) {
+    expect(regression.has(spec)).toBeTruthy();
+  }
 });
