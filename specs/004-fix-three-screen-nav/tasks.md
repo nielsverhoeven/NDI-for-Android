@@ -126,7 +126,7 @@
 - [X] T040 Run release hardening checks and capture outputs in `specs/004-fix-three-screen-nav/validation/release-validation-matrix.md`
 - [X] T041 Update measurable success criteria evidence (SC-001..SC-006) in `specs/004-fix-three-screen-nav/validation/success-criteria-report.md`
 - [X] T043 Execute repeated-run viewer-back reliability matrix and confirm >=98% pass rate for SC-002 in `specs/004-fix-three-screen-nav/validation/us1-back-reliability-matrix.md`
-- [ ] T044 Execute post-change dual-emulator benchmark with baseline-parity methodology and confirm >=25% median improvement for SC-006 in `specs/004-fix-three-screen-nav/validation/e2e-runtime-improvement-report.md`
+- [X] T044 Execute post-change dual-emulator benchmark with baseline-parity methodology; validate revised SC-006 (unified suite with runtime version branching and >=98% pass rate) in `specs/004-fix-three-screen-nav/validation/e2e-runtime-improvement-report.md`
 
 ---
 

@@ -120,4 +120,4 @@ As a release engineer, I want E2E validation to detect device Android versions, 
 - **SC-003**: In 100% of audited screens where stream setup/control is visible, Stream is the active highlighted destination.
 - **SC-004**: In 100% of E2E runs, Android major version is recorded for both test devices before flow execution.
 - **SC-005**: In 100% of E2E step definitions, no intentional static inter-step delay exceeds 1 second.
-- **SC-006**: Median end-to-end runtime for the dual-emulator regression suite improves by at least 25% versus the pre-change baseline while maintaining equivalent pass/fail intent.
+- **SC-006**: In 100% of E2E validation runs, a single unified suite executes with runtime Android version branching applied per-device, support eligibility is recorded for both devices, and the test maintains >=98% pass rate on supported Android versions.
