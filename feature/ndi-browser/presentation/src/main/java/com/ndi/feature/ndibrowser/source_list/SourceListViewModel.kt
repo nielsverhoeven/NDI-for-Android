@@ -25,6 +25,7 @@ data class SourceListUiState(
     val errorMessage: String? = null,
     val fallbackWarning: String? = null,
     val layoutMode: SourceListLayoutMode = SourceListLayoutMode.COMPACT,
+    val overlayDisplayState: com.ndi.feature.ndibrowser.settings.OverlayDisplayState? = null,
 )
 
 class SourceListViewModel(

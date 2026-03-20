@@ -3,6 +3,7 @@ package com.ndi.feature.ndibrowser.settings
 import com.ndi.core.model.TelemetryEvent
 import com.ndi.feature.ndibrowser.domain.repository.DeveloperDiagnosticsRepository
 import com.ndi.feature.ndibrowser.domain.repository.NdiSettingsRepository
+import kotlinx.coroutines.flow.Flow
 
 fun interface SettingsTelemetryEmitter {
     fun emit(event: TelemetryEvent)
@@ -11,6 +12,7 @@ fun interface SettingsTelemetryEmitter {
 object SettingsDependencies {
     var settingsRepositoryProvider: (() -> NdiSettingsRepository)? = null
     var developerDiagnosticsRepositoryProvider: (() -> DeveloperDiagnosticsRepository)? = null
+    var overlayStateProvider: (() -> Flow<OverlayDisplayState?>)? = null
     var settingsNavigationBackProvider: (() -> Unit)? = null
     var telemetryEmitter: SettingsTelemetryEmitter = SettingsTelemetryEmitter {}
 
@@ -23,4 +25,6 @@ object SettingsDependencies {
         requireNotNull(developerDiagnosticsRepositoryProvider) {
             "Developer diagnostics repository dependency is not configured."
         }.invoke()
+
+    fun overlayStateFlowOrNull(): Flow<OverlayDisplayState?>? = overlayStateProvider?.invoke()
 }

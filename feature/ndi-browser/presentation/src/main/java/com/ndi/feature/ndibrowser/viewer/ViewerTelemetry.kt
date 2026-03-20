@@ -3,6 +3,8 @@ package com.ndi.feature.ndibrowser.viewer
 import com.ndi.core.model.TelemetryEvent
 import com.ndi.feature.ndibrowser.domain.repository.NdiViewerRepository
 import com.ndi.feature.ndibrowser.domain.repository.UserSelectionRepository
+import com.ndi.feature.ndibrowser.settings.OverlayDisplayState
+import kotlinx.coroutines.flow.Flow
 
 fun interface ViewerTelemetryEmitter {
     fun emit(event: TelemetryEvent)
@@ -11,6 +13,7 @@ fun interface ViewerTelemetryEmitter {
 object ViewerDependencies {
     var viewerRepositoryProvider: (() -> NdiViewerRepository)? = null
     var userSelectionRepositoryProvider: (() -> UserSelectionRepository)? = null
+    var overlayStateProvider: (() -> Flow<OverlayDisplayState?>)? = null
     var telemetryEmitter: ViewerTelemetryEmitter = ViewerTelemetryEmitter {}
 
     fun requireViewerRepository(): NdiViewerRepository {
@@ -20,6 +23,8 @@ object ViewerDependencies {
     fun requireUserSelectionRepository(): UserSelectionRepository {
         return requireNotNull(userSelectionRepositoryProvider) { "Viewer selection repository dependency is not configured." }.invoke()
     }
+
+    fun overlayStateFlowOrNull(): Flow<OverlayDisplayState?>? = overlayStateProvider?.invoke()
 }
 
 object ViewerTelemetry {

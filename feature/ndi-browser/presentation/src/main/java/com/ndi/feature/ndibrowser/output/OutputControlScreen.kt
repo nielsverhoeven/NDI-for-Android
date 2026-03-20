@@ -4,6 +4,7 @@ import androidx.core.view.isVisible
 import com.ndi.core.model.OutputState
 import com.ndi.feature.ndibrowser.presentation.R
 import com.ndi.feature.ndibrowser.presentation.databinding.FragmentOutputControlBinding
+import com.ndi.feature.ndibrowser.settings.DeveloperOverlayRenderer
 
 class OutputControlScreen(
     private val binding: FragmentOutputControlBinding,
@@ -54,5 +55,13 @@ class OutputControlScreen(
         } else {
             binding.streamNameInputLayout.error = null
         }
+
+        DeveloperOverlayRenderer.render(
+            container = binding.developerOverlay.developerOverlayContainer,
+            streamStatusView = binding.developerOverlay.overlayStreamStatus,
+            sessionIdView = binding.developerOverlay.overlaySessionId,
+            recentLogsView = binding.developerOverlay.overlayRecentLogs,
+            overlayDisplayState = state.overlayDisplayState,
+        )
     }
 }

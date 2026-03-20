@@ -107,22 +107,22 @@
 
 ### Tests for User Story 3
 
-- [ ] T037 [P] [US3] Add overlay state transition unit tests for disabled/idle/active modes in `feature/ndi-browser/presentation/src/test/java/com/ndi/feature/ndibrowser/settings/DeveloperOverlayStateMapperTest.kt`
-- [ ] T038 [P] [US3] Add sensitive-value redaction unit tests in `feature/ndi-browser/presentation/src/test/java/com/ndi/feature/ndibrowser/settings/OverlayLogRedactorTest.kt`
-- [ ] T039 [P] [US3] Add instrumentation test for overlay visibility timing (<=1s on/off) across Source/Viewer/Output in `feature/ndi-browser/presentation/src/androidTest/java/com/ndi/feature/ndibrowser/settings/DeveloperOverlayTimingTest.kt`
-- [ ] T040 [P] [US3] Add instrumentation test for stream-status propagation timing (<=3s) in `feature/ndi-browser/presentation/src/androidTest/java/com/ndi/feature/ndibrowser/settings/DeveloperOverlayStreamStatusTimingTest.kt`
-- [ ] T041 [P] [US3] Add e2e overlay diagnostics test for idle state and redacted logs in `testing/e2e/tests/settings-developer-overlay.spec.ts`
+- [X] T037 [P] [US3] Add overlay state transition unit tests for disabled/idle/active modes in `feature/ndi-browser/presentation/src/test/java/com/ndi/feature/ndibrowser/settings/DeveloperOverlayStateMapperTest.kt`
+- [X] T038 [P] [US3] Add sensitive-value redaction unit tests in `feature/ndi-browser/presentation/src/test/java/com/ndi/feature/ndibrowser/settings/OverlayLogRedactorTest.kt`
+- [X] T039 [P] [US3] Add instrumentation test for overlay visibility timing (<=1s on/off) across Source/Viewer/Output in `feature/ndi-browser/presentation/src/androidTest/java/com/ndi/feature/ndibrowser/settings/DeveloperOverlayTimingTest.kt`
+- [X] T040 [P] [US3] Add instrumentation test for stream-status propagation timing (<=3s) in `feature/ndi-browser/presentation/src/androidTest/java/com/ndi/feature/ndibrowser/settings/DeveloperOverlayStreamStatusTimingTest.kt`
+- [X] T041 [P] [US3] Add e2e overlay diagnostics test for idle state and redacted logs in `testing/e2e/tests/settings-developer-overlay.spec.ts`
 
 ### Implementation for User Story 3
 
-- [ ] T042 [US3] Implement overlay state models and mapper in `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/DeveloperOverlayState.kt`
-- [ ] T043 [US3] Implement overlay log redaction utility in `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/OverlayLogRedactor.kt`
-- [ ] T044 [US3] Implement reusable overlay layout content in `feature/ndi-browser/presentation/src/main/res/layout/include_developer_overlay.xml`
-- [ ] T045 [US3] Integrate overlay rendering in source list screen in `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/source_list/SourceListScreen.kt`
-- [ ] T046 [US3] Integrate overlay rendering in viewer screen in `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/viewer/ViewerScreen.kt`
-- [ ] T047 [US3] Integrate overlay rendering in output screen in `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/output/OutputControlScreen.kt`
-- [ ] T048 [US3] Connect developer-mode state and diagnostics streams in `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/SettingsDependencies.kt`
-- [ ] T049 [US3] Emit telemetry for overlay timing and redaction events in `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/SettingsTelemetry.kt`
+- [X] T042 [US3] Implement overlay state models and mapper in `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/DeveloperOverlayState.kt`
+- [X] T043 [US3] Implement overlay log redaction utility in `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/OverlayLogRedactor.kt`
+- [X] T044 [US3] Implement reusable overlay layout content in `feature/ndi-browser/presentation/src/main/res/layout/include_developer_overlay.xml`
+- [X] T045 [US3] Integrate overlay rendering in source list screen in `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/source_list/SourceListScreen.kt`
+- [X] T046 [US3] Integrate overlay rendering in viewer screen in `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/viewer/ViewerScreen.kt`
+- [X] T047 [US3] Integrate overlay rendering in output screen in `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/output/OutputControlScreen.kt`
+- [X] T048 [US3] Connect developer-mode state and diagnostics streams in `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/SettingsDependencies.kt`
+- [X] T049 [US3] Emit telemetry for overlay timing and redaction events in `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/SettingsTelemetry.kt`
 
 **Checkpoint**: US3 is independently functional and testable.
 

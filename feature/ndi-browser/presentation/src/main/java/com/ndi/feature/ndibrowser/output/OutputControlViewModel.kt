@@ -33,6 +33,7 @@ data class OutputControlUiState(
     val recoveryInProgress: Boolean = false,
     val errorMessage: String? = null,
     val topLevelDestination: TopLevelDestination = TopLevelDestination.STREAM,
+    val overlayDisplayState: com.ndi.feature.ndibrowser.settings.OverlayDisplayState? = null,
 )
 
 private class NoOpStreamContinuityRepository : StreamContinuityRepository {

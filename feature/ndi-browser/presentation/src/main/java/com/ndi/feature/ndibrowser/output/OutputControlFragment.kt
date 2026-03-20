@@ -18,6 +18,7 @@ import androidx.navigation.NavDeepLinkRequest
 import androidx.navigation.fragment.findNavController
 import com.ndi.feature.ndibrowser.presentation.R
 import com.ndi.feature.ndibrowser.presentation.databinding.FragmentOutputControlBinding
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 
 class OutputControlFragment : Fragment() {
@@ -62,21 +63,20 @@ class OutputControlFragment : Fragment() {
                 viewModel.onRetryOutputPressed()
             },
         )
-        return fragmentBinding.root
-            fragmentBinding.outputTopAppBar.inflateMenu(R.menu.output_menu)
-            fragmentBinding.outputTopAppBar.setOnMenuItemClickListener { item ->
-                if (item.itemId == R.id.action_settings) {
-                    runCatching {
-                        findNavController().navigate(
-                            NavDeepLinkRequest.Builder.fromUri("ndi://settings".toUri()).build(),
-                        )
-                    }
-                    true
-                } else {
-                    false
+        fragmentBinding.outputTopAppBar.inflateMenu(R.menu.output_menu)
+        fragmentBinding.outputTopAppBar.setOnMenuItemClickListener { item ->
+            if (item.itemId == R.id.action_settings) {
+                runCatching {
+                    findNavController().navigate(
+                        NavDeepLinkRequest.Builder.fromUri("ndi://settings".toUri()).build(),
+                    )
                 }
+                true
+            } else {
+                false
             }
-            return fragmentBinding.root
+        }
+        return fragmentBinding.root
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
@@ -86,7 +86,15 @@ class OutputControlFragment : Fragment() {
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 launch {
-                    viewModel.uiState.collect { state ->
+                    val overlayFlow = OutputDependencies.overlayStateFlowOrNull()
+                    val stateFlow = if (overlayFlow == null) {
+                        viewModel.uiState
+                    } else {
+                        viewModel.uiState.combine(overlayFlow) { state, overlayDisplayState ->
+                            state.copy(overlayDisplayState = overlayDisplayState)
+                        }
+                    }
+                    stateFlow.collect { state ->
                         binding ?: return@collect
                         screen.render(state)
                     }

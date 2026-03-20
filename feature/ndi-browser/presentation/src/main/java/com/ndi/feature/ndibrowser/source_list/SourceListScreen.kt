@@ -16,9 +16,11 @@ import androidx.recyclerview.widget.RecyclerView
 import androidx.core.net.toUri
 import androidx.navigation.NavDeepLinkRequest
 import androidx.navigation.fragment.findNavController
+import com.ndi.feature.ndibrowser.settings.DeveloperOverlayRenderer
 import com.ndi.feature.ndibrowser.presentation.R
 import com.ndi.feature.ndibrowser.presentation.databinding.FragmentSourceListBinding
 import com.ndi.feature.ndibrowser.source_list.adapter.SourceAdapter
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 
 class SourceListFragment : Fragment() {
@@ -63,7 +65,16 @@ class SourceListFragment : Fragment() {
 
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                launch { viewModel.uiState.collect(screen::render) }
+                launch {
+                    val overlayFlow = SourceListDependencies.overlayStateFlowOrNull()
+                    if (overlayFlow == null) {
+                        viewModel.uiState.collect(screen::render)
+                    } else {
+                        viewModel.uiState.combine(overlayFlow) { state, overlayDisplayState ->
+                            state.copy(overlayDisplayState = overlayDisplayState)
+                        }.collect(screen::render)
+                    }
+                }
                 launch {
                     viewModel.navigationEvents.collect(::navigateToViewerForSourceSelection)
                 }
@@ -146,6 +157,13 @@ class SourceListScreen(
         binding.errorStateText.text = state.errorMessage ?: binding.root.context.getString(R.string.ndi_discovery_error)
         binding.discoveryFallbackWarning.isVisible = state.fallbackWarning != null
         binding.discoveryFallbackWarning.text = state.fallbackWarning.orEmpty()
+        DeveloperOverlayRenderer.render(
+            container = binding.developerOverlay.developerOverlayContainer,
+            streamStatusView = binding.developerOverlay.overlayStreamStatus,
+            sessionIdView = binding.developerOverlay.overlaySessionId,
+            recentLogsView = binding.developerOverlay.overlayRecentLogs,
+            overlayDisplayState = state.overlayDisplayState,
+        )
     }
 
     fun recyclerView(): RecyclerView = binding.sourceRecyclerView

@@ -1,0 +1,42 @@
+package com.ndi.feature.ndibrowser.settings
+
+import android.view.View
+import android.widget.TextView
+import androidx.core.view.isVisible
+import com.ndi.core.model.NdiOverlayMode
+
+object DeveloperOverlayRenderer {
+
+    fun render(
+        container: View,
+        streamStatusView: TextView,
+        sessionIdView: TextView,
+        recentLogsView: TextView,
+        overlayDisplayState: OverlayDisplayState?,
+    ) {
+        val state = overlayDisplayState
+        val visible = state != null && state.mode != NdiOverlayMode.DISABLED
+        container.isVisible = visible
+        if (!visible) {
+            streamStatusView.text = ""
+            sessionIdView.text = ""
+            sessionIdView.isVisible = false
+            recentLogsView.text = ""
+            recentLogsView.isVisible = false
+            return
+        }
+
+        val statusLabel = when (state.mode) {
+            NdiOverlayMode.ACTIVE -> state.streamStatus ?: "ACTIVE"
+            NdiOverlayMode.IDLE -> "IDLE"
+            NdiOverlayMode.DISABLED -> ""
+        }
+        streamStatusView.text = "Status: $statusLabel"
+
+        sessionIdView.text = state.sessionId?.let { "Session: $it" }.orEmpty()
+        sessionIdView.isVisible = !state.sessionId.isNullOrBlank()
+
+        recentLogsView.text = state.recentLogs.joinToString(separator = "\n")
+        recentLogsView.isVisible = state.recentLogs.isNotEmpty()
+    }
+}

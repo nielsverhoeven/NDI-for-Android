@@ -18,6 +18,7 @@ object SourceListDependencies {
     var viewerNavigationRequestProvider: ((String) -> NavDeepLinkRequest)? = null
     var outputNavigationRequestProvider: ((String) -> NavDeepLinkRequest)? = null
     var fallbackWarningProvider: (() -> Flow<String?>)? = null
+    var overlayStateProvider: (() -> Flow<com.ndi.feature.ndibrowser.settings.OverlayDisplayState?>)? = null
     var telemetryEmitter: SourceListTelemetryEmitter = SourceListTelemetryEmitter {}
 
     fun requireDiscoveryRepository(): NdiDiscoveryRepository {
@@ -37,6 +38,8 @@ object SourceListDependencies {
     }
 
     fun fallbackWarningFlowOrNull(): Flow<String?>? = fallbackWarningProvider?.invoke()
+
+    fun overlayStateFlowOrNull(): Flow<com.ndi.feature.ndibrowser.settings.OverlayDisplayState?>? = overlayStateProvider?.invoke()
 }
 
 object SourceListTelemetry {

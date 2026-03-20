@@ -3,43 +3,36 @@
     android:id="@+id/developerOverlayContainer"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:background="?attr/colorSurfaceVariant"
+    android:layout_marginTop="12dp"
+    android:background="#CC000000"
     android:orientation="vertical"
     android:padding="12dp"
     android:visibility="gone">
 
     <TextView
-        android:id="@+id/overlayStreamDirection"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:textAppearance="@style/TextAppearance.Material3.BodySmall" />
-
-    <TextView
         android:id="@+id/overlayStreamStatus"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="2dp"
-        android:textAppearance="@style/TextAppearance.Material3.BodySmall" />
+        android:textAppearance="@style/TextAppearance.Material3.BodySmall"
+        android:textColor="@android:color/white" />
 
     <TextView
-        android:id="@+id/overlayStreamSource"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="2dp"
-        android:textAppearance="@style/TextAppearance.Material3.BodySmall" />
-
-    <TextView
-        android:id="@+id/overlayWarningMessage"
+        android:id="@+id/overlaySessionId"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="4dp"
         android:textAppearance="@style/TextAppearance.Material3.BodySmall"
+        android:textColor="@android:color/white"
         android:visibility="gone" />
 
-    <androidx.recyclerview.widget.RecyclerView
-        android:id="@+id/overlayLogList"
+    <TextView
+        android:id="@+id/overlayRecentLogs"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="4dp" />
+        android:layout_marginTop="6dp"
+        android:fontFamily="monospace"
+        android:textAppearance="@style/TextAppearance.Material3.BodySmall"
+        android:textColor="@android:color/white"
+        android:visibility="gone" />
 
 </LinearLayout>

@@ -18,6 +18,7 @@ data class ViewerUiState(
     val layoutMode: ViewerLayoutMode = ViewerLayoutMode.PHONE,
     val interruptionMessage: String? = null,
     val recoveryActionsVisible: Boolean = false,
+    val overlayDisplayState: com.ndi.feature.ndibrowser.settings.OverlayDisplayState? = null,
 )
 
 class ViewerViewModel(

@@ -1,5 +1,6 @@
 package com.ndi.feature.ndibrowser.settings
 
+import com.ndi.core.model.NdiOverlayMode
 import com.ndi.core.model.TelemetryEvent
 
 object SettingsTelemetry {
@@ -41,6 +42,25 @@ object SettingsTelemetry {
             name = TelemetryEvent.DEVELOPER_MODE_TOGGLED,
             timestampEpochMillis = System.currentTimeMillis(),
             attributes = mapOf("enabled" to enabled.toString()),
+        )
+    }
+
+    fun developerOverlayStateChanged(from: NdiOverlayMode, to: NdiOverlayMode): TelemetryEvent {
+        return TelemetryEvent(
+            name = TelemetryEvent.DEVELOPER_OVERLAY_STATE_CHANGED,
+            timestampEpochMillis = System.currentTimeMillis(),
+            attributes = mapOf(
+                "from" to from.name,
+                "to" to to.name,
+            ),
+        )
+    }
+
+    fun overlayLogRedactionApplied(linesRedacted: Int): TelemetryEvent {
+        return TelemetryEvent(
+            name = TelemetryEvent.OVERLAY_LOG_REDACTION_APPLIED,
+            timestampEpochMillis = System.currentTimeMillis(),
+            attributes = mapOf("linesRedacted" to linesRedacted.toString()),
         )
     }
 }

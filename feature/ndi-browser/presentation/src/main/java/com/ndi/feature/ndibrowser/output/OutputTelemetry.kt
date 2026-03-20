@@ -6,6 +6,8 @@ import com.ndi.feature.ndibrowser.domain.repository.OutputConfigurationRepositor
 import com.ndi.feature.ndibrowser.domain.repository.ScreenCaptureConsentRepository
 import com.ndi.feature.ndibrowser.domain.repository.StreamContinuityRepository
 import com.ndi.core.model.navigation.BackgroundContinuationReason
+import com.ndi.feature.ndibrowser.settings.OverlayDisplayState
+import kotlinx.coroutines.flow.Flow
 
 fun interface OutputTelemetryEmitter {
     fun emit(event: TelemetryEvent)
@@ -16,6 +18,7 @@ object OutputDependencies {
     var outputConfigurationRepositoryProvider: (() -> OutputConfigurationRepository)? = null
     var screenCaptureConsentRepositoryProvider: (() -> ScreenCaptureConsentRepository)? = null
     var streamContinuityRepositoryProvider: (() -> StreamContinuityRepository)? = null
+    var overlayStateProvider: (() -> Flow<OverlayDisplayState?>)? = null
     var telemetryEmitter: OutputTelemetryEmitter = OutputTelemetryEmitter {}
 
     fun requireOutputRepository(): NdiOutputRepository {
@@ -33,6 +36,8 @@ object OutputDependencies {
     fun requireStreamContinuityRepository(): StreamContinuityRepository {
         return requireNotNull(streamContinuityRepositoryProvider) { "Stream continuity dependency is not configured." }.invoke()
     }
+
+    fun overlayStateFlowOrNull(): Flow<OverlayDisplayState?>? = overlayStateProvider?.invoke()
 }
 
 object OutputTelemetry {

@@ -101,6 +101,7 @@ data class NdiDeveloperOverlayState(
     val mode: NdiOverlayMode,
     val streamDirectionLabel: String,
     val streamStatusLabel: String,
+    val sessionId: String? = null,
     val streamSourceLabel: String?,
     val warningMessage: String?,
     val recentLogs: List<NdiRedactedLogEntry>,

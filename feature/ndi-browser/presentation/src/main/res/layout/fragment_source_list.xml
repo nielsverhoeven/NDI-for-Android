@@ -11,6 +11,10 @@
         android:layout_height="wrap_content"
         android:title="@string/ndi_source_list_title" />
 
+    <include
+        android:id="@+id/developerOverlay"
+        layout="@layout/include_developer_overlay" />
+
     <com.google.android.material.button.MaterialButton
         android:id="@+id/refreshButton"
         android:layout_width="wrap_content"
