@@ -2,19 +2,26 @@
 <navigation xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/main_nav_graph"
-    app:startDestination="@id/sourceListHostFragment">
+    app:startDestination="@id/homeDashboardFragment">
+
+    <!-- ====== Top-level destinations ====== -->
 
     <fragment
-        android:id="@+id/sourceListHostFragment"
+        android:id="@+id/homeDashboardFragment"
+        android:name="com.ndi.feature.ndibrowser.home.HomeDashboardFragment"
+        android:label="@string/nav_home" />
+
+    <fragment
+        android:id="@+id/streamFragment"
         android:name="com.ndi.feature.ndibrowser.source_list.SourceListFragment"
-        android:label="@string/source_list_title">
-        <action
-            android:id="@+id/action_sourceListHostFragment_to_viewerHostFragment"
-            app:destination="@id/viewerHostFragment" />
-        <action
-            android:id="@+id/action_sourceListHostFragment_to_outputControlFragment"
-            app:destination="@id/outputControlFragment" />
-    </fragment>
+        android:label="@string/nav_stream" />
+
+    <fragment
+        android:id="@+id/viewFragment"
+        android:name="com.ndi.feature.ndibrowser.source_list.SourceListFragment"
+        android:label="@string/nav_view" />
+
+    <!-- ====== Detail destinations (retain existing deep links) ====== -->
 
     <fragment
         android:id="@+id/viewerHostFragment"
@@ -37,4 +44,5 @@
             app:argType="string"
             android:defaultValue="" />
     </fragment>
+
 </navigation>

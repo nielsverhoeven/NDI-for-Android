@@ -9,6 +9,10 @@ handoffs:
     agent: speckit.implement
     prompt: Start the implementation in phases
     send: true
+  - label: Create GitHub Issues
+    agent: speckit.taskstoissues
+    prompt: Convert the generated tasks into GitHub issues and write the issue IDs back into tasks.md.
+    send: false
 ---
 
 ## User Input
@@ -126,6 +130,67 @@ You **MUST** consider the user input before proceeding (if not empty).
 Context for task generation: $ARGUMENTS
 
 The tasks.md should be immediately executable - each task must be specific enough that an LLM can complete it without additional context.
+
+## GitHub Issue Linking Workflow
+
+**IMPORTANT**: This workflow is executed ONLY when the user explicitly requests issue linking/connection (e.g., "connect issues to tasks", "link tasks to GitHub", "make sure tasks have issues").
+
+### Single Source of Truth
+
+- **ONLY** the `speckit.taskstoissues` agent handles GitHub issue operations
+- Do **NOT** contact any other agent for issue information
+- Do **NOT** attempt to check GitHub issue status directly
+- Do **NOT** assume issue numbers or references without explicit confirmation from `speckit.taskstoissues`
+
+### Decision Flow
+
+1. **User requests issue linking** (explicitly states intent to connect tasks to issues):
+   - Parse the request and determine:
+     - Which task IDs need issue linking (if specified; otherwise all tasks)
+     - Whether existing issues should be checked or only new issues created
+   - Delegate **immediately and exclusively** to `speckit.taskstoissues` agent ONLY
+   - Provide the agent with:
+     - The complete list of task identifiers (T001..T048 and/or US1..US3)
+     - Clear instruction to:
+       - Check if issues already exist for each task
+       - Map existing valid issues to tasks
+       - **Offer user 2-5 available candidate options if uncertain** which issue matches a task
+       - Create new issues if none exist for a task
+       - Update the LOCAL `tasks.md` file with `[#NNN]` tokens immediately after each identifier
+
+2. **Uncertainty handling** (when `speckit.taskstoissues` agent is uncertain):
+   - The agent MUST return a list of candidate issues (minimum 2, maximum 5 options) for user selection
+   - For each candidate option, include:
+     - GitHub issue number and URL
+     - Issue title
+     - Brief explanation of why this issue might match the task
+   - Do **NOT** guess or make assumptions; always ask the user to choose
+   - Wait for user selection before proceeding with mapping
+
+3. **After issue linking completion**:
+   - Verify that `speckit.taskstoissues` agent reports successful local file update
+   - Confirm all task/user-story lines in `tasks.md` now have exactly one `[#NNN]` token
+   - Report completion summary with:
+     - Total task IDs processed
+     - New issues created (count and list of issue numbers)
+     - Existing issues linked (count and list of issue numbers)
+     - First and last updated lines as sample output
+
+4. **If issue creation or linking fails**:
+   - Do **NOT** retry with a different agent
+   - Do **NOT** attempt workarounds
+   - Report the exact error message from `speckit.taskstoissues`
+   - Ask the user whether to:
+     - Try again
+     - Skip issue linking for this pass
+     - Provide manual issue number mappings
+
+### No Side Channels or Workarounds
+
+- Do **NOT** use GitHub API calls directly
+- Do **NOT** ask other agents (speckit.analyze, speckit.implement, speckit.plan, tester, android.app-builder, etc.) for issue information or status
+- Do **NOT** use remote file-content retrieval for local files that already exist in the workspace
+- Do **NOT** assume a task has an issue unless the `speckit.taskstoissues` agent explicitly confirms it
 
 ## Task Generation Rules
 

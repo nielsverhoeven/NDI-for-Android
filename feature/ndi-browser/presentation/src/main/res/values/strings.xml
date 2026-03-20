@@ -18,4 +18,17 @@
     <string name="ndi_output_retry">Retry Output</string>
     <string name="ndi_output_default_stream_name">NDI Output</string>
     <string name="ndi_output_screen_share_consent_required">Screen capture consent is required before starting.</string>
+
+    <!-- Home dashboard strings (spec 003) -->
+    <string name="home_title">Home</string>
+    <string name="home_dashboard_subtitle">NDI Status Overview</string>
+    <string name="home_action_open_stream">Open Stream</string>
+    <string name="home_action_open_view">Open View</string>
+    <string name="home_stream_status_label">Output Status</string>
+    <string name="home_view_status_label">Viewer Status</string>
+    <string name="home_stream_status_idle">Idle</string>
+    <string name="home_stream_status_active">Active</string>
+    <string name="home_view_status_stopped">Stopped</string>
+    <string name="home_view_status_playing">Playing</string>
+    <string name="home_selected_source_label">Last selected source</string>
 </resources>
