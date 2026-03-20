@@ -1,7 +1,7 @@
 # Specification Quality Checklist: Settings Menu
 
 **Purpose**: Validate specification completeness and quality before proceeding to planning  
-**Created**: 2025-07-14  
+**Created**: 2026-03-20  
 **Feature**: [spec.md](../spec.md)
 
 ## Content Quality
@@ -34,4 +34,5 @@
 - All items pass. Spec is ready for `/speckit.clarify` or `/speckit.plan`.
 - US1 (settings navigation) is independently testable as P1 MVP slice.
 - US2 (discovery server config) and US3 (developer mode overlay) are independently testable P2/P3 slices.
-- One open design question documented in Edge Cases: overlay idle state when no stream is active — left as edge case for planning phase to resolve, not a blocker for spec quality.
+- Constitution Check section is now included directly in the specification and mapped to all governing principles.
+- Requirement language for discovery apply timing is normalized to immediate apply behavior and aligned across scenarios and functional requirements.

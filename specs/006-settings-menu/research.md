@@ -6,11 +6,11 @@
 - Rationale: This matches constitution rules for repository-mediated data access, offline-first behavior, and centralized Room persistence.
 - Alternatives considered: SharedPreferences/DataStore directly from UI (rejected: presentation-layer persistence access and architectural inconsistency), in-memory only settings (rejected: fails persistence requirements).
 
-## Decision 2: Discovery server value format is hostname/IP with optional port
+## Decision 2: Discovery server value format is hostname, IPv4, or bracketed IPv6 with optional port
 
-- Decision: Accept `hostname/IP` and `hostname/IP:port`; default NDI discovery port is used when port is omitted.
+- Decision: Accept `hostname`, `IPv4`, or bracketed `IPv6` with optional `:port` in range `1-65535`; trim surrounding whitespace before validation; use default NDI discovery port when port is omitted.
 - Rationale: Captures both simple and advanced user needs while keeping input UX concise.
-- Alternatives considered: Host-only format (rejected: insufficient for custom-port environments), mandatory port (rejected: unnecessary friction for common setup), split host/port fields (rejected: heavier UX with limited additional value).
+- Alternatives considered: Host-only format (rejected: insufficient for custom-port environments), mandatory port (rejected: unnecessary friction for common setup), split host/port fields (rejected: heavier UX with limited additional value), unbracketed IPv6 with port (rejected: ambiguous delimiter parsing).
 
 ## Decision 3: Apply discovery server changes immediately
 

@@ -8,11 +8,15 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.fragment.app.viewModels
+import androidx.core.net.toUri
 import androidx.fragment.app.Fragment
+import androidx.fragment.app.viewModels
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import androidx.navigation.NavDeepLinkRequest
+import androidx.navigation.fragment.findNavController
+import com.ndi.feature.ndibrowser.presentation.R
 import com.ndi.feature.ndibrowser.presentation.databinding.FragmentOutputControlBinding
 import kotlinx.coroutines.launch
 
@@ -59,6 +63,20 @@ class OutputControlFragment : Fragment() {
             },
         )
         return fragmentBinding.root
+            fragmentBinding.outputTopAppBar.inflateMenu(R.menu.output_menu)
+            fragmentBinding.outputTopAppBar.setOnMenuItemClickListener { item ->
+                if (item.itemId == R.id.action_settings) {
+                    runCatching {
+                        findNavController().navigate(
+                            NavDeepLinkRequest.Builder.fromUri("ndi://settings".toUri()).build(),
+                        )
+                    }
+                    true
+                } else {
+                    false
+                }
+            }
+            return fragmentBinding.root
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {

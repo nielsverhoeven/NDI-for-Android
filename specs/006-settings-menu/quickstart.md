@@ -20,7 +20,7 @@ Expected environment:
 ## 2. Test-First Development Sequence
 
 1. Add failing unit tests for:
-   - Discovery endpoint parsing (`hostname/IP`, `hostname/IP:port`, invalid formats).
+   - Discovery endpoint parsing (`hostname`, `hostname:port`, `IPv4`, `IPv4:port`, `[IPv6]`, `[IPv6]:port`, invalid formats).
    - Default-port resolution when port is omitted.
    - Redaction of sensitive values in overlay log entries.
 2. Add failing ViewModel tests for:
@@ -39,6 +39,16 @@ Expected environment:
 5. Implement minimum code to pass tests.
 6. Refactor with all tests green.
 
+## 2.1 Timing Measurement Convention
+
+Use this convention for SC-003, SC-004, SC-005, SC-006, SC-008, and SC-010 verification:
+
+- Measure elapsed time using a monotonic clock (do not use wall-clock time).
+- Start timing at user action dispatch (save/toggle/stream-state trigger).
+- Stop timing at first observable UI state satisfying the acceptance condition.
+- Run each timing test scenario at least 3 times and use the median elapsed value for pass/fail.
+- Thresholds: `<=1s` for overlay/toggle/immediate-apply checks and `<=3s` for stream-status/fallback checks.
+
 ## 3. Build and Validation Commands
 
 ```powershell
@@ -55,8 +65,8 @@ powershell -ExecutionPolicy Bypass -File .\testing\e2e\scripts\run-dual-emulator
 
 ## 4. Functional Validation Checklist
 
-- Settings destination opens within 2 taps from main flow.
-- Discovery field accepts host/IP with optional port and rejects invalid/whitespace-only values.
+- Settings destination opens within 2 taps from Source List, Viewer, and Output screens.
+- Discovery field accepts hostname, IPv4, or bracketed IPv6 with optional port and rejects invalid/whitespace-only values.
 - Saved settings persist after app restart.
 - Saving discovery setting applies immediately.
 - Active stream may be interrupted when immediate apply requires it.

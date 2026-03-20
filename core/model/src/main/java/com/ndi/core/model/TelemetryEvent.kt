@@ -37,5 +37,16 @@ data class TelemetryEvent(
         const val VIEW_ROOT_BACK_TO_HOME = "view_root_back_to_home"
         const val VERSION_SUPPORT_WINDOW_EVALUATED = "version_support_window_evaluated"
         const val UNSUPPORTED_VERSION_FAIL_FAST = "unsupported_version_fail_fast"
+
+        // Settings menu telemetry (spec 006)
+        const val SETTINGS_OPENED = "settings_opened"
+        const val SETTINGS_CLOSED = "settings_closed"
+        const val DISCOVERY_SERVER_SAVED = "discovery_server_saved"
+        const val DISCOVERY_SERVER_APPLY_IMMEDIATE = "discovery_server_apply_immediate"
+        const val DISCOVERY_SERVER_FALLBACK_TO_DEFAULT = "discovery_server_fallback_to_default"
+        const val ACTIVE_STREAM_INTERRUPTED_FOR_DISCOVERY = "active_stream_interrupted_for_discovery_apply"
+        const val DEVELOPER_MODE_TOGGLED = "developer_mode_toggled"
+        const val DEVELOPER_OVERLAY_STATE_CHANGED = "developer_overlay_state_changed"
+        const val OVERLAY_LOG_REDACTION_APPLIED = "overlay_log_redaction_applied"
     }
 }

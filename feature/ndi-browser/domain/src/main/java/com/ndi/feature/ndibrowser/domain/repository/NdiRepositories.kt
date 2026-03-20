@@ -2,6 +2,11 @@ package com.ndi.feature.ndibrowser.domain.repository
 
 import com.ndi.core.model.DiscoverySnapshot
 import com.ndi.core.model.DiscoveryTrigger
+import com.ndi.core.model.NdiDeveloperOverlayState
+import com.ndi.core.model.NdiDiscoveryApplyResult
+import com.ndi.core.model.NdiDiscoveryEndpoint
+import com.ndi.core.model.NdiRedactedLogEntry
+import com.ndi.core.model.NdiSettingsSnapshot
 import com.ndi.core.model.OutputConfiguration
 import com.ndi.core.model.OutputHealthSnapshot
 import com.ndi.core.model.OutputSession
@@ -140,5 +145,24 @@ interface ViewContinuityRepository {
     suspend fun stopForTopLevelNavigation()
 
     suspend fun getLastSelectedSourceId(): String?
+}
+
+// ---- Spec 006: Settings Menu repositories ----
+
+interface NdiSettingsRepository {
+    suspend fun getSettings(): NdiSettingsSnapshot
+    suspend fun saveSettings(snapshot: NdiSettingsSnapshot)
+    fun observeSettings(): Flow<NdiSettingsSnapshot>
+}
+
+interface NdiDiscoveryConfigRepository {
+    fun observeDiscoveryEndpoint(): Flow<NdiDiscoveryEndpoint?>
+    suspend fun applyDiscoveryEndpoint(endpoint: NdiDiscoveryEndpoint?): NdiDiscoveryApplyResult
+    suspend fun getCurrentEndpoint(): NdiDiscoveryEndpoint?
+}
+
+interface DeveloperDiagnosticsRepository {
+    fun observeOverlayState(): Flow<NdiDeveloperOverlayState>
+    fun observeRecentLogs(): Flow<List<NdiRedactedLogEntry>>
 }
 

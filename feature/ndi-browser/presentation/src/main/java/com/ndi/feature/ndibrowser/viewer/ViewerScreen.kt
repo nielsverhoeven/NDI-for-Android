@@ -5,12 +5,14 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import androidx.core.net.toUri
 import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import androidx.navigation.NavDeepLinkRequest
 import androidx.navigation.fragment.findNavController
 import com.ndi.core.model.PlaybackState
 import com.ndi.feature.ndibrowser.presentation.R
@@ -50,6 +52,20 @@ class ViewerFragment : Fragment() {
             runCatching { findNavController().popBackStack() }
         }
         return fragmentBinding.root
+            fragmentBinding.viewerTopAppBar.inflateMenu(R.menu.viewer_menu)
+            fragmentBinding.viewerTopAppBar.setOnMenuItemClickListener { item ->
+                if (item.itemId == R.id.action_settings) {
+                    runCatching {
+                        findNavController().navigate(
+                            NavDeepLinkRequest.Builder.fromUri("ndi://settings".toUri()).build(),
+                        )
+                    }
+                    true
+                } else {
+                    false
+                }
+            }
+            return fragmentBinding.root
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {

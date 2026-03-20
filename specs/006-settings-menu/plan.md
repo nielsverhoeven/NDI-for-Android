@@ -97,7 +97,7 @@ Research output is captured in `specs/006-settings-menu/research.md` and
 resolves technical decisions for:
 
 - Settings persistence approach and immediate discovery-apply behavior.
-- Discovery input format (`hostname/IP` + optional `:port`) and validation.
+- Discovery input format (`hostname`, `IPv4`, or bracketed `IPv6` with optional `:port` in range `1-65535`) and validation.
 - Unreachable-server fallback semantics with visible warning.
 - Developer overlay rendering model and lifecycle behavior.
 - Sensitive log redaction policy before UI display.

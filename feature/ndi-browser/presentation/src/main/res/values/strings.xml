@@ -31,4 +31,20 @@
     <string name="home_view_status_stopped">Stopped</string>
     <string name="home_view_status_playing">Playing</string>
     <string name="home_selected_source_label">Last selected source</string>
+
+    <!-- Settings menu strings (spec 006) -->
+    <string name="settings_title">Settings</string>
+    <string name="settings_discovery_server_label">Discovery Server</string>
+    <string name="settings_discovery_server_hint">hostname or hostname:port</string>
+    <string name="settings_save_button">Save</string>
+    <string name="settings_developer_mode_label">Developer Mode</string>
+    <string name="settings_validation_invalid_format">Invalid server format. Use hostname or hostname:port.</string>
+    <string name="settings_validation_saved">Settings saved.</string>
+    <string name="settings_fallback_warning">Discovery server unavailable. Falling back to default.</string>
+    <string name="settings_back_content_description">Back</string>
+    <string name="overlay_stream_direction">Direction: %1$s</string>
+    <string name="overlay_stream_status">Status: %1$s</string>
+    <string name="overlay_stream_source">Source: %1$s</string>
+    <string name="overlay_no_active_stream">No active stream</string>
+    <string name="overlay_log_entry_redacted">[redacted]</string>
 </resources>

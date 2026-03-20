@@ -26,8 +26,13 @@ import com.ndi.feature.ndibrowser.domain.repository.TopLevelNavigationRepository
 import com.ndi.feature.ndibrowser.domain.repository.UserSelectionRepository
 import com.ndi.feature.ndibrowser.domain.repository.ViewContinuityRepository
 import com.ndi.app.navigation.NdiNavigation
+import com.ndi.feature.ndibrowser.data.repository.DeveloperDiagnosticsRepositoryImpl
+import com.ndi.feature.ndibrowser.data.repository.NdiSettingsRepositoryImpl
+import com.ndi.feature.ndibrowser.domain.repository.DeveloperDiagnosticsRepository
+import com.ndi.feature.ndibrowser.domain.repository.NdiSettingsRepository
 import com.ndi.feature.ndibrowser.home.HomeDependencies
 import com.ndi.feature.ndibrowser.output.OutputDependencies
+import com.ndi.feature.ndibrowser.settings.SettingsDependencies
 import com.ndi.feature.ndibrowser.source_list.SourceListDependencies
 import com.ndi.feature.ndibrowser.viewer.ViewerDependencies
 import com.ndi.sdkbridge.NativeNdiBridge
@@ -84,6 +89,14 @@ class AppGraph private constructor(context: Context) {
         userSelectionRepository = userSelectionRepository,
     )
 
+    // ---- Spec 006: Settings Menu repositories ----
+
+    val settingsRepository: NdiSettingsRepository = NdiSettingsRepositoryImpl(
+        settingsDao = database.settingsPreferenceDao(),
+    )
+
+    val developerDiagnosticsRepository: DeveloperDiagnosticsRepository = DeveloperDiagnosticsRepositoryImpl()
+
     init {
         SourceListDependencies.discoveryRepositoryProvider = { discoveryRepository }
         SourceListDependencies.userSelectionRepositoryProvider = { userSelectionRepository }
@@ -100,6 +113,10 @@ class AppGraph private constructor(context: Context) {
         HomeDependencies.homeDashboardRepositoryProvider = { homeDashboardRepository }
         HomeDependencies.streamContinuityRepositoryProvider = { streamContinuityRepository }
         HomeDependencies.viewContinuityRepositoryProvider = { viewContinuityRepository }
+
+        // Spec 006: Settings dependencies
+        SettingsDependencies.settingsRepositoryProvider = { settingsRepository }
+        SettingsDependencies.developerDiagnosticsRepositoryProvider = { developerDiagnosticsRepository }
     }
 
     companion object {

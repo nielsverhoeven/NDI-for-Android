@@ -4,12 +4,12 @@
 
 - Purpose: Canonical persisted settings state consumed by UI and runtime services.
 - Fields:
-  - discoveryServerInput (string, optional): raw saved value in `hostname/IP` or `hostname/IP:port` format.
+  - discoveryServerInput (string, optional): raw saved value in one of these formats: `hostname`, `hostname:port`, `IPv4`, `IPv4:port`, `[IPv6]`, or `[IPv6]:port`.
   - developerModeEnabled (boolean, required).
   - updatedAtEpochMillis (long, required).
 - Validation rules:
   - `discoveryServerInput` may be null/empty only when user chooses default discovery mode.
-  - Non-empty value must pass discovery endpoint validation.
+  - Non-empty value is trimmed before validation and must pass discovery endpoint validation.
 
 ## Entity: DiscoveryEndpoint
 
@@ -21,8 +21,9 @@
   - usesDefaultPort (boolean, required).
   - isReachable (boolean, runtime-derived).
 - Validation rules:
-  - Host must be non-blank.
-  - Port, when provided, must be in valid TCP range.
+  - Host must be non-blank and valid as hostname, IPv4, or bracketed IPv6 source.
+  - Port, when provided, must be in valid TCP range `1-65535`.
+  - Unbracketed IPv6 with `:port` is invalid and must be rejected.
   - `resolvedPort` must always be populated for configured endpoint.
 
 ## Entity: DiscoveryApplyEvent

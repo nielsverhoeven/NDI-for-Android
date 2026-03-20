@@ -7,7 +7,7 @@
 Required routes and entry behavior:
 
 - App exposes a Settings destination within existing single-activity nav graph.
-- User can navigate to Settings from at least one main screen in <= 2 taps.
+- User can navigate to Settings from each main screen (Source List, Viewer, Output) in <= 2 taps.
 - Back from Settings returns to prior screen without side effects.
 
 Guarantees:
@@ -21,7 +21,9 @@ Guarantees:
 
 Input rules:
 
-- Discovery field accepts `hostname/IP` and `hostname/IP:port` formats.
+- Discovery field accepts `hostname`, `hostname:port`, `IPv4`, `IPv4:port`, `[IPv6]`, and `[IPv6]:port` formats.
+- Input is trimmed before validation; `port`, when present, must be in range `1-65535`.
+- Unbracketed IPv6 with `:port` is invalid.
 - Whitespace-only or invalid values are rejected with inline validation.
 - Empty field is allowed only as explicit revert-to-default discovery.
 

@@ -14,7 +14,11 @@
     <fragment
         android:id="@+id/streamFragment"
         android:name="com.ndi.feature.ndibrowser.source_list.SourceListFragment"
-        android:label="@string/nav_stream" />
+        android:label="@string/nav_stream">
+        <action
+            android:id="@+id/action_streamFragment_to_settingsFragment"
+            app:destination="@id/settingsFragment" />
+    </fragment>
 
     <fragment
         android:id="@+id/viewFragment"
@@ -23,6 +27,9 @@
         <action
             android:id="@+id/action_viewFragment_to_viewerHostFragment"
             app:destination="@id/viewerHostFragment" />
+        <action
+            android:id="@+id/action_viewFragment_to_settingsFragment"
+            app:destination="@id/settingsFragment" />
     </fragment>
 
     <!-- ====== Detail destinations (retain existing deep links) ====== -->
@@ -49,10 +56,26 @@
         android:name="com.ndi.feature.ndibrowser.output.OutputControlFragment"
         android:label="Output">
         <deepLink app:uri="ndi://output/{sourceId}" />
+        <action
+            android:id="@+id/action_outputControlFragment_to_settingsFragment"
+            app:destination="@id/settingsFragment" />
         <argument
             android:name="sourceId"
             app:argType="string"
             android:defaultValue="" />
+    </fragment>
+
+    <!-- ====== Settings destination (spec 006) ====== -->
+
+    <fragment
+        android:id="@+id/settingsFragment"
+        android:name="com.ndi.feature.ndibrowser.settings.SettingsFragment"
+        android:label="@string/settings_title">
+        <deepLink app:uri="ndi://settings" />
+        <action
+            android:id="@+id/action_settingsFragment_to_previous"
+            app:popUpTo="@id/main_nav_graph"
+            app:popUpToInclusive="false" />
     </fragment>
 
 </navigation>

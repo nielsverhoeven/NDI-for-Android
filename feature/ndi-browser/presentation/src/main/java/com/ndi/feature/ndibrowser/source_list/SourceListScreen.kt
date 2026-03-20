@@ -13,6 +13,9 @@ import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import androidx.core.net.toUri
+import androidx.navigation.NavDeepLinkRequest
+import androidx.navigation.fragment.findNavController
 import com.ndi.feature.ndibrowser.presentation.R
 import com.ndi.feature.ndibrowser.presentation.databinding.FragmentSourceListBinding
 import com.ndi.feature.ndibrowser.source_list.adapter.SourceAdapter
@@ -43,6 +46,13 @@ class SourceListFragment : Fragment() {
             onManualRefresh = viewModel::onManualRefresh,
             onSourceClicked = viewModel::onSourceSelected,
             onOutputClicked = viewModel::onOutputRequested,
+            onSettingsClicked = {
+                runCatching {
+                    findNavController().navigate(
+                        NavDeepLinkRequest.Builder.fromUri("ndi://settings".toUri()).build(),
+                    )
+                }
+            },
         )
         return fragmentBinding.root
     }
@@ -96,6 +106,7 @@ class SourceListScreen(
     onManualRefresh: () -> Unit,
     onSourceClicked: (String) -> Unit,
     onOutputClicked: (String) -> Unit,
+    onSettingsClicked: () -> Unit = {},
 ) {
 
     private val adapter = SourceAdapter(onSourceClicked, onOutputClicked)
@@ -103,6 +114,15 @@ class SourceListScreen(
     init {
         binding.sourceRecyclerView.adapter = adapter
         binding.refreshButton.setOnClickListener { onManualRefresh() }
+        binding.topAppBar.inflateMenu(R.menu.source_list_menu)
+        binding.topAppBar.setOnMenuItemClickListener { item ->
+            if (item.itemId == R.id.action_settings) {
+                onSettingsClicked()
+                true
+            } else {
+                false
+            }
+        }
     }
 
     fun render(state: SourceListUiState) {

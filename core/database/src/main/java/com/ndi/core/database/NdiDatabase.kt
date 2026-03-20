@@ -99,14 +99,33 @@ interface OutputSessionDao {
     suspend fun upsert(session: OutputSessionEntity)
 }
 
+@Entity(tableName = "settings_preference")
+data class SettingsPreferenceEntity(
+    @PrimaryKey
+    val id: Int = 1,
+    val discoveryServerInput: String?,
+    val developerModeEnabled: Boolean,
+    val updatedAtEpochMillis: Long,
+)
+
+@Dao
+interface SettingsPreferenceDao {
+    @Query("SELECT * FROM settings_preference WHERE id = 1")
+    suspend fun get(): SettingsPreferenceEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entity: SettingsPreferenceEntity)
+}
+
 @Database(
     entities = [
         UserSelectionEntity::class,
         ViewerSessionEntity::class,
         OutputConfigurationEntity::class,
         OutputSessionEntity::class,
+        SettingsPreferenceEntity::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = false,
 )
 abstract class NdiDatabase : RoomDatabase() {
@@ -118,6 +137,8 @@ abstract class NdiDatabase : RoomDatabase() {
     abstract fun outputConfigurationDao(): OutputConfigurationDao
 
     abstract fun outputSessionDao(): OutputSessionDao
+
+    abstract fun settingsPreferenceDao(): SettingsPreferenceDao
 
     companion object {
         val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -166,6 +187,22 @@ abstract class NdiDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS settings_preference (
+                        id INTEGER NOT NULL,
+                        discoveryServerInput TEXT,
+                        developerModeEnabled INTEGER NOT NULL DEFAULT 0,
+                        updatedAtEpochMillis INTEGER NOT NULL DEFAULT 0,
+                        PRIMARY KEY(id)
+                    )
+                    """.trimIndent(),
+                )
+            }
+        }
+
         @Volatile
         private var instance: NdiDatabase? = null
 
@@ -176,7 +213,7 @@ abstract class NdiDatabase : RoomDatabase() {
                     NdiDatabase::class.java,
                     "ndi_database",
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                     .build()
                     .also { instance = it }
             }

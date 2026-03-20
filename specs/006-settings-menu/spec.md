@@ -5,15 +5,30 @@
 **Status**: Draft  
 **Input**: User description: "add a settings menu. The settings menu should provide the following functionality: configure an NDI discovery server, turn on or off a developer mode. The developer mode should display on the top of the screen: show information about the NDI stream going in or out, logging information"
 
+## Constitution Check
+
+- **I. MVVM-Only Presentation Logic**: Settings and overlay behaviors are specified as state-driven outcomes suitable for ViewModel orchestration, with UI constrained to rendering and user intent dispatch.
+- **II. Single-Activity Navigation Architecture**: Settings remains an in-app destination reachable from main app screens and returns via standard back navigation.
+- **III. Repository-Mediated Data Access**: Discovery server configuration and developer mode state are defined as persisted configuration and runtime behavior, not direct UI-level data access.
+- **IV. Strict Test-Driven Development**: Each user story includes independent tests and acceptance scenarios that can be validated before implementation completion.
+- **V. Material Design 3 Compliance**: Settings and overlay are defined as user-facing UI controls and status surfaces intended to follow existing design-system patterns.
+- **VI. Battery-Conscious Execution**: Developer overlay behavior is toggle-gated and visible only when enabled; no new background execution requirement is introduced.
+- **VII. Offline-First Data Reliability**: Settings persistence and behavior across app restarts are explicitly required independent of network availability.
+- **VIII. Least-Permission Security**: Overlay logs must redact sensitive values, and no additional permission requirement is introduced by this feature.
+- **IX. Feature-First Gradle Modularization**: Requirements are scoped to existing app and feature flows without requiring architecture bypasses.
+- **X. Release-Grade Optimization & Compatibility Validation**: Success criteria include measurable latency and behavior outcomes suitable for release validation.
+- **XI. Latest-Stable Android Toolchain**: No toolchain divergence is introduced by this feature specification.
+
 ## Clarifications
 
 ### Session 2026-03-20
 
 - Q: When the configured NDI discovery server is unreachable, what should the app do? -> A: Fall back to default multicast discovery, show a visible warning, and keep the configured server value saved.
-- Q: How should the discovery server field format be defined for saved values? -> A: Hostname/IP with optional port; if omitted, use the default NDI discovery port.
+- Q: How should the discovery server field format be defined for saved values? -> A: Hostname, IPv4, or bracketed IPv6 with optional port; if omitted, use the default NDI discovery port.
 - Q: When Developer Mode is enabled but no stream is active, what should the overlay show? -> A: Show an explicit idle state (for example, "No active stream") and still show recent logs.
 - Q: What log-content policy should Developer Mode overlay follow for sensitive values? -> A: Redact sensitive values before display (mask secrets, tokens, credentials).
 - Q: When discovery server settings are changed while a stream session is active, when should the change take effect? -> A: Apply immediately, including interrupting current stream sessions if needed.
+- Q: What exact discovery server input format and validation rules should be enforced? -> A: Accept hostname, IPv4, or bracketed IPv6 with optional port (1-65535); trim surrounding whitespace before validation and reject malformed values.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -43,12 +58,12 @@ As a user, I want to enter a custom NDI discovery server address in Settings so 
 
 **Acceptance Scenarios**:
 
-1. **Given** the Settings screen is open, **When** the user enters a valid server address (hostname/IP with optional port) in the discovery server field and saves, **Then** the app immediately uses that address for NDI source discovery on the next refresh.
+1. **Given** the Settings screen is open, **When** the user enters a valid server address (hostname, IPv4, or bracketed IPv6 with optional port 1-65535) in the discovery server field and saves, **Then** the app applies the new discovery setting immediately and uses it for all subsequent discovery operations, including the next refresh.
 2. **Given** a discovery server address has been saved, **When** the app is restarted, **Then** the configured address is retained and still in use.
 3. **Given** the Settings screen is open with a previously entered address, **When** the user clears the field and saves, **Then** the app reverts to default multicast/local discovery.
 4. **Given** the user enters an address, **When** the address field contains only whitespace, **Then** the app shows an inline validation message and does not save the invalid value.
 5. **Given** a custom discovery server is configured, **When** that server is unreachable during discovery, **Then** the app falls back to default multicast/local discovery, shows a visible warning, and keeps the configured server value saved.
-6. **Given** the user saves a hostname/IP without an explicit port, **Then** discovery uses the default NDI discovery port.
+6. **Given** the user saves a hostname, IPv4, or bracketed IPv6 value without an explicit port, **Then** discovery uses the default NDI discovery port.
 7. **Given** an active stream session is running, **When** the user saves a different discovery server setting, **Then** the new setting applies immediately, and active stream sessions may be interrupted if required to apply the change.
 
 ---
@@ -76,20 +91,21 @@ As a developer or power user, I want to toggle Developer Mode in Settings so tha
 
 ### Edge Cases
 
-- What happens when the discovery server address field contains only whitespace?
+- If the discovery server field contains only whitespace, save is blocked with inline validation and the previous valid setting remains unchanged.
 - If the configured discovery server is unreachable at runtime, the app falls back to default multicast/local discovery, shows a visible warning, and keeps the configured server value saved.
-- Discovery server value format supports hostname/IP with optional port; if omitted, the default NDI discovery port is used.
+- Discovery server value format supports hostname, IPv4, or bracketed IPv6 with optional port; if omitted, the default NDI discovery port is used.
+- Input is trimmed before validation; malformed values (including unbracketed IPv6 with port, invalid port ranges, and invalid host/address forms) are rejected with inline validation.
 - When Developer Mode is enabled and no stream is active, the overlay stays visible and shows an explicit idle state while still showing recent logs.
 - Sensitive values in overlay logs (for example secrets/tokens/credentials) are redacted before display.
-- What if the app is rotated or the screen changes while the overlay is visible?
+- If the app rotates or the visible screen changes while Developer Mode is enabled, the overlay remains visible and continues reflecting the current stream state without requiring the user to re-enable Developer Mode.
 - When discovery server settings are changed while a stream is active, the new setting applies immediately, and active stream sessions may be interrupted if required.
 
 ## Requirements *(mandatory)*
 
 ### Functional Requirements
 
-- **FR-001**: The app MUST provide a navigable Settings screen accessible from at least one main screen (source list, viewer, or output screen).
-- **FR-002**: The Settings screen MUST display a text input for configuring a custom NDI discovery server address in `hostname/IP` or `hostname/IP:port` format.
+- **FR-001**: The app MUST provide a navigable Settings screen accessible from each main screen (source list, viewer, and output screen).
+- **FR-002**: The Settings screen MUST display a text input for configuring a custom NDI discovery server address in one of these formats: `hostname`, `hostname:port`, `IPv4`, `IPv4:port`, `[IPv6]`, or `[IPv6]:port`.
 - **FR-003**: The Settings screen MUST display a toggle control for enabling and disabling Developer Mode.
 - **FR-004**: A configured NDI discovery server address MUST be persisted across app restarts.
 - **FR-005**: Developer Mode state MUST be persisted across app restarts.
@@ -99,7 +115,7 @@ As a developer or power user, I want to toggle Developer Mode in Settings so tha
 - **FR-009**: The diagnostic overlay MUST display the direction of any active NDI stream (incoming or outgoing), the stream or source name, and the current stream status.
 - **FR-010**: The diagnostic overlay MUST display recent log entries relevant to NDI activity (minimum last 5 entries).
 - **FR-011**: When Developer Mode is disabled, the diagnostic overlay MUST be removed from all screens immediately without requiring an app restart.
-- **FR-012**: Discovery server address input MUST reject entries that are empty, contain only whitespace, or are not valid `hostname/IP` with optional `:port`; the user MUST see an inline validation message.
+- **FR-012**: Discovery server address input MUST trim surrounding whitespace before validation and MUST reject entries that are empty after trimming or are not a valid `hostname`, `IPv4`, or bracketed `IPv6` value with optional `:port` in range `1-65535`; the user MUST see an inline validation message.
 - **FR-013**: If the configured discovery server is unreachable during discovery, the app MUST fall back to default multicast/local discovery, show a visible warning to the user, and keep the configured server value persisted.
 - **FR-014**: If no port is provided in the saved discovery server value, the app MUST use the default NDI discovery port.
 - **FR-015**: When Developer Mode is enabled and no stream is active, the diagnostic overlay MUST remain visible, display an explicit idle state (for example, "No active stream"), and continue displaying recent logs.
@@ -109,7 +125,7 @@ As a developer or power user, I want to toggle Developer Mode in Settings so tha
 ### Key Entities
 
 - **Settings**: Persisted user configuration containing the NDI discovery server address (optional string) and the developer mode enabled state (boolean).
-- **NDI Discovery Configuration**: The active discovery address used by the NDI engine for source discovery, consisting of hostname/IP and optional port; sourced from Settings or defaulting to multicast/local if unset.
+- **NDI Discovery Configuration**: The active discovery address used by the NDI engine for source discovery, consisting of hostname, IPv4, or bracketed IPv6 and optional port (1-65535); sourced from Settings or defaulting to multicast/local if unset.
 - **Stream Diagnostic**: A live read of current NDI stream direction, name/source, and status used to populate the overlay.
 - **Log Entry**: A timestamped string of NDI-relevant log output, buffered and surfaced in redacted form in the overlay when Developer Mode is on.
 
@@ -132,7 +148,7 @@ As a developer or power user, I want to toggle Developer Mode in Settings so tha
 - **SC-004**: Disabling Developer Mode causes the overlay to disappear from all screens within 1 second of saving the setting, without restarting the app.
 - **SC-005**: The diagnostic overlay reflects stream direction, name, and status within 3 seconds of any change in the active stream state.
 - **SC-006**: If a configured discovery server is unreachable, fallback discovery continues and a visible warning is shown within 3 seconds while preserving the configured server value.
-- **SC-007**: Discovery accepts both `hostname/IP` and `hostname/IP:port` inputs; when port is omitted, the app uses the default NDI discovery port on the next refresh.
+- **SC-007**: Discovery accepts valid `hostname`, `IPv4`, or bracketed `IPv6` inputs with optional `:port` (1-65535), trims surrounding whitespace before validation, rejects malformed values with inline feedback, and when port is omitted uses the default NDI discovery port on the next refresh.
 - **SC-008**: With Developer Mode enabled and no active stream, the overlay shows an explicit idle state and recent logs within 1 second.
 - **SC-009**: In Developer Mode, sensitive values in overlay logs are redacted in all displayed entries.
 - **SC-010**: Changing discovery server settings during an active stream applies the new setting within 1 second, with stream interruption allowed when required.
