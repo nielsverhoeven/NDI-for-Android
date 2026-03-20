@@ -4,6 +4,7 @@ import com.ndi.core.model.navigation.LaunchContext
 import com.ndi.core.model.navigation.NavigationLayoutProfile
 import com.ndi.core.model.navigation.NavigationTrigger
 import com.ndi.core.model.navigation.TopLevelDestination
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -90,6 +91,45 @@ class TopLevelNavigationCoordinatorTest {
     fun navOptions_restoreState_trueForBottomNav() {
         val opts = coordinator.navOptions(1, NavigationTrigger.BOTTOM_NAV)
         assertTrue(opts.restoreState)
+    }
+
+    @Test
+    fun viewRouteActionIds_pointToViewerAndBackToViewRoot() {
+        assertEquals(
+            com.ndi.app.R.id.action_viewFragment_to_viewerHostFragment,
+            NdiNavigation.viewToViewerActionId(),
+        )
+        assertEquals(
+            com.ndi.app.R.id.action_viewerHostFragment_to_viewFragment,
+            NdiNavigation.viewerToViewRootActionId(),
+        )
+    }
+
+    @Test
+    fun resolveBackDestination_viewerBack_returnsViewRoot() {
+        val resolved = coordinator.resolveBackDestination(
+            currentTopLevelDestination = TopLevelDestination.VIEW,
+            isViewerVisible = true,
+        )
+        assertEquals(TopLevelDestination.VIEW, resolved)
+    }
+
+    @Test
+    fun resolveBackDestination_viewRootBack_returnsHome() {
+        val resolved = coordinator.resolveBackDestination(
+            currentTopLevelDestination = TopLevelDestination.VIEW,
+            isViewerVisible = false,
+        )
+        assertEquals(TopLevelDestination.HOME, resolved)
+    }
+
+    @Test
+    fun resolveBackDestination_nonView_returnsNull() {
+        val streamResolved = coordinator.resolveBackDestination(
+            currentTopLevelDestination = TopLevelDestination.STREAM,
+            isViewerVisible = false,
+        )
+        assertNull(streamResolved)
     }
 }
 

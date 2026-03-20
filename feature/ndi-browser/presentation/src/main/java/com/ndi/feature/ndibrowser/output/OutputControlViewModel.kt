@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.ndi.core.model.OutputState
+import com.ndi.core.model.navigation.TopLevelDestination
 import com.ndi.feature.ndibrowser.domain.repository.NdiOutputRepository
 import com.ndi.feature.ndibrowser.domain.repository.OutputConfigurationRepository
 import com.ndi.feature.ndibrowser.domain.repository.ScreenCaptureConsentRepository
@@ -28,6 +29,7 @@ data class OutputControlUiState(
     val showRecoveryActions: Boolean = false,
     val recoveryInProgress: Boolean = false,
     val errorMessage: String? = null,
+    val topLevelDestination: TopLevelDestination = TopLevelDestination.STREAM,
 )
 
 class OutputControlViewModel(

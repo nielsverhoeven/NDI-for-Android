@@ -75,6 +75,21 @@ class TopLevelNavigationCoordinator {
         popUpToId = graphStartDestinationId,
         popUpToInclusive = false,
     )
+
+    /**
+     * Deterministic back policy for the view flow:
+     * - Viewer back returns to View root.
+     * - View root back returns to Home.
+     * Returns null when default system back should handle the transition.
+     */
+    fun resolveBackDestination(
+        currentTopLevelDestination: TopLevelDestination,
+        isViewerVisible: Boolean,
+    ): TopLevelDestination? = when {
+        isViewerVisible && currentTopLevelDestination == TopLevelDestination.VIEW -> TopLevelDestination.VIEW
+        !isViewerVisible && currentTopLevelDestination == TopLevelDestination.VIEW -> TopLevelDestination.HOME
+        else -> null
+    }
 }
 
 data class TopLevelNavOptions(

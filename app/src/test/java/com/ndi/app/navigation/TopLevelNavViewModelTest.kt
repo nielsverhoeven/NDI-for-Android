@@ -1,5 +1,6 @@
 package com.ndi.app.navigation
 
+import com.ndi.app.R
 import com.ndi.app.testutil.MainDispatcherRule
 import com.ndi.core.model.navigation.LaunchContext
 import com.ndi.core.model.navigation.NavigationOutcome
@@ -97,6 +98,73 @@ class TopLevelNavViewModelTest {
             assert(events.any { it is TopLevelNavEvent.NavigateToView })
 
             job.cancel()
+        }
+
+    @Test
+    fun onBackPressed_fromViewerVisible_consumesAndNavigatesToViewRoot() =
+        runTest(mainDispatcherRule.dispatcher.scheduler) {
+            val emittedTelemetry = mutableListOf<String>()
+            val repo = FakeNavigationRepository(lastSaved = TopLevelDestination.VIEW)
+            val vm = TopLevelNavViewModel(
+                repo,
+                telemetryEmitter = NavigationTelemetryEmitter { emittedTelemetry.add(it.name) },
+            )
+
+            val consumed = vm.onBackPressed(
+                currentTopLevelDestination = TopLevelDestination.VIEW,
+                isViewerVisible = true,
+            )
+            advanceUntilIdle()
+
+            assertEquals(true, consumed)
+            assertEquals(TopLevelDestination.VIEW, vm.uiState.value.selectedDestination)
+            assert(emittedTelemetry.contains(com.ndi.core.model.TelemetryEvent.VIEW_BACK_TO_ROOT))
+        }
+
+    @Test
+    fun onBackPressed_fromViewRoot_consumesAndNavigatesHome() =
+        runTest(mainDispatcherRule.dispatcher.scheduler) {
+            val emittedTelemetry = mutableListOf<String>()
+            val repo = FakeNavigationRepository(lastSaved = TopLevelDestination.VIEW)
+            val vm = TopLevelNavViewModel(
+                repo,
+                telemetryEmitter = NavigationTelemetryEmitter { emittedTelemetry.add(it.name) },
+            )
+
+            val consumed = vm.onBackPressed(
+                currentTopLevelDestination = TopLevelDestination.VIEW,
+                isViewerVisible = false,
+            )
+            advanceUntilIdle()
+
+            assertEquals(true, consumed)
+            assertEquals(TopLevelDestination.HOME, vm.uiState.value.selectedDestination)
+            assert(emittedTelemetry.contains(com.ndi.core.model.TelemetryEvent.VIEW_ROOT_BACK_TO_HOME))
+        }
+
+    @Test
+    fun destinationItems_iconMapping_matchesHomeStreamViewContract() =
+        runTest(mainDispatcherRule.dispatcher.scheduler) {
+            val vm = TopLevelNavViewModel(FakeNavigationRepository())
+
+            val items = vm.uiState.value.destinationItems.associateBy { it.destination }
+
+            assertEquals(R.drawable.ic_nav_home, items[TopLevelDestination.HOME]?.iconResId)
+            assertEquals(R.drawable.ic_nav_stream, items[TopLevelDestination.STREAM]?.iconResId)
+            assertEquals(R.drawable.ic_nav_view, items[TopLevelDestination.VIEW]?.iconResId)
+        }
+
+    @Test
+    fun destinationItems_hasExactlyOneSelectedEntry_afterDestinationSwitches() =
+        runTest(mainDispatcherRule.dispatcher.scheduler) {
+            val vm = TopLevelNavViewModel(FakeNavigationRepository())
+
+            vm.onDestinationSelected(TopLevelDestination.STREAM, NavigationTrigger.BOTTOM_NAV)
+            advanceUntilIdle()
+
+            val selectedCount = vm.uiState.value.destinationItems.count { it.selected }
+            assertEquals(1, selectedCount)
+            assertEquals(TopLevelDestination.STREAM, vm.uiState.value.selectedDestination)
         }
 }
 

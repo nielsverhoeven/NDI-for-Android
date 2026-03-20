@@ -55,11 +55,7 @@ class SourceListFragment : Fragment() {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 launch { viewModel.uiState.collect(screen::render) }
                 launch {
-                    viewModel.navigationEvents.collect { sourceId ->
-                        runCatching {
-                            findNavController().navigate(SourceListDependencies.viewerNavigationRequest(sourceId))
-                        }
-                    }
+                    viewModel.navigationEvents.collect(::navigateToViewerForSourceSelection)
                 }
                 launch {
                     viewModel.outputNavigationEvents.collect { sourceId ->
@@ -75,6 +71,13 @@ class SourceListFragment : Fragment() {
     override fun onStart() {
         super.onStart()
         viewModel.onScreenVisible()
+    }
+
+    private fun navigateToViewerForSourceSelection(sourceId: String) {
+        // Source selection in the View flow always opens the Viewer destination.
+        runCatching {
+            findNavController().navigate(SourceListDependencies.viewerNavigationRequest(sourceId))
+        }
     }
 
     override fun onStop() {

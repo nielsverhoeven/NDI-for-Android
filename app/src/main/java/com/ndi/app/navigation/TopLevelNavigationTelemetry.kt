@@ -61,5 +61,52 @@ object TopLevelNavigationTelemetry {
             name = TelemetryEvent.HOME_ACTION_OPEN_VIEW,
             timestampEpochMillis = System.currentTimeMillis(),
         )
+
+    fun viewSelectionOpenedViewer(sourceId: String): TelemetryEvent =
+        TelemetryEvent(
+            name = TelemetryEvent.VIEW_SELECTION_OPENED_VIEWER,
+            timestampEpochMillis = System.currentTimeMillis(),
+            attributes = mapOf("sourceId" to sourceId),
+        )
+
+    fun viewBackToRoot(): TelemetryEvent =
+        TelemetryEvent(
+            name = TelemetryEvent.VIEW_BACK_TO_ROOT,
+            timestampEpochMillis = System.currentTimeMillis(),
+        )
+
+    fun viewRootBackToHome(): TelemetryEvent =
+        TelemetryEvent(
+            name = TelemetryEvent.VIEW_ROOT_BACK_TO_HOME,
+            timestampEpochMillis = System.currentTimeMillis(),
+        )
+
+    fun versionSupportWindowEvaluated(
+        lowestSupportedMajor: Int,
+        highestSupportedMajor: Int,
+    ): TelemetryEvent =
+        TelemetryEvent(
+            name = TelemetryEvent.VERSION_SUPPORT_WINDOW_EVALUATED,
+            timestampEpochMillis = System.currentTimeMillis(),
+            attributes = mapOf(
+                "lowestSupportedMajor" to lowestSupportedMajor.toString(),
+                "highestSupportedMajor" to highestSupportedMajor.toString(),
+            ),
+        )
+
+    fun unsupportedVersionFailFast(
+        role: String,
+        sdkInt: Int,
+        majorVersion: Int,
+    ): TelemetryEvent =
+        TelemetryEvent(
+            name = TelemetryEvent.UNSUPPORTED_VERSION_FAIL_FAST,
+            timestampEpochMillis = System.currentTimeMillis(),
+            attributes = mapOf(
+                "role" to role,
+                "sdkInt" to sdkInt.toString(),
+                "majorVersion" to majorVersion.toString(),
+            ),
+        )
 }
 

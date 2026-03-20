@@ -17,6 +17,8 @@ node_modules/
 testing/e2e/node_modules/
 testing/e2e/playwright-report/
 testing/e2e/test-results/
+testing/e2e/artifacts/
+test-results/_tmp_*.txt
 local.properties
 .cxx/
 **/.cxx/

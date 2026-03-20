@@ -40,7 +40,9 @@ class NdiDiscoveryRepositoryImpl(
 
         return runCatching {
             userSelectionDao.getSelection()
-            val sources = sourceMapper.map(bridge.discoverSources()).toMutableList().apply {
+            val sources = sourceMapper.map(bridge.discoverSources())
+                .distinctBy { it.sourceId }  // Deduplicate by canonical source ID
+                .toMutableList().apply {
                 add(
                     0,
                     com.ndi.core.model.NdiSource(

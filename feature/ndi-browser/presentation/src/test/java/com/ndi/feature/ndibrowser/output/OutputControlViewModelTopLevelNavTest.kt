@@ -5,6 +5,7 @@ import com.ndi.core.model.OutputHealthSnapshot
 import com.ndi.core.model.OutputQualityLevel
 import com.ndi.core.model.OutputSession
 import com.ndi.core.model.OutputState
+import com.ndi.core.model.navigation.TopLevelDestination
 import com.ndi.feature.ndibrowser.domain.repository.NdiOutputRepository
 import com.ndi.feature.ndibrowser.domain.repository.OutputConfigurationRepository
 import com.ndi.feature.ndibrowser.domain.repository.ScreenCaptureConsentRepository
@@ -87,6 +88,23 @@ class OutputControlViewModelTopLevelNavTest {
             advanceUntilIdle()
 
             assertEquals(0, repository.stopCalls)
+        }
+
+    @Test
+    fun streamSetupControl_surfacesMapToStreamTopLevelDestination() =
+        runTest(mainDispatcherRule.dispatcher.scheduler) {
+            val repository = NavAwareOutputRepository()
+            val vm = OutputControlViewModel(
+                repository,
+                NavAwareOutputConfigurationRepository(),
+                NavAwareConsentRepository(),
+                OutputTelemetryEmitter {},
+            )
+
+            repository.emitState(OutputState.READY, "camera-4")
+            advanceUntilIdle()
+
+            assertEquals(TopLevelDestination.STREAM, vm.uiState.value.topLevelDestination)
         }
 }
 

@@ -150,6 +150,9 @@
 - [X] T065 Update TOOLCHAIN-001 status after Android-device and release validation in specs/002-stream-ndi-source/validation/toolchain-currency-review.md
 - [X] T066 [P] Add API 24+ regression coverage for output flow in feature/ndi-browser/presentation/src/androidTest/java/com/ndi/feature/ndibrowser/Api24CompatibilityTest.kt
 - [X] T067 Verify release-hardening coverage for the completed flow in app/build.gradle.kts
+- [X] T068 [P] Add launcher-level publisher/receiver screenshot capture checkpoints (preflight + post-run) in testing/e2e/scripts/run-dual-emulator-e2e.ps1
+- [X] T069 [P] Persist Playwright active-playback screenshots into run-scoped dual-emulator artifact folders in testing/e2e/tests/interop-dual-emulator.spec.ts
+- [X] T070 Update dual-emulator E2E documentation with screenshot artifact locations and manual visual verification checklist in testing/e2e/README.md
 
 ---
 

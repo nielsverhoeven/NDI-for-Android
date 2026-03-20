@@ -35,7 +35,8 @@ class NdiDiscoveryRepositoryContractTest {
         val snapshot = repository.discoverSources(DiscoveryTrigger.MANUAL)
 
         assertEquals(DiscoveryStatus.SUCCESS, snapshot.status)
-        assertEquals(listOf("source-a", "source-b"), snapshot.sources.map { it.sourceId })
+        // Expected: LOCAL_SCREEN (device-screen:local) is added first, then deduped sources
+        assertEquals(listOf("device-screen:local", "source-a", "source-b"), snapshot.sources.map { it.sourceId })
     }
 
     @Test

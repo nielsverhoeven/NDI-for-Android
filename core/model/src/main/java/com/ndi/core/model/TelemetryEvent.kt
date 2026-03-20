@@ -30,5 +30,10 @@ data class TelemetryEvent(
         const val HOME_DASHBOARD_VIEWED = "home_dashboard_viewed"
         const val HOME_ACTION_OPEN_STREAM = "home_action_open_stream"
         const val HOME_ACTION_OPEN_VIEW = "home_action_open_view"
+        const val VIEW_SELECTION_OPENED_VIEWER = "view_selection_opened_viewer"
+        const val VIEW_BACK_TO_ROOT = "view_back_to_root"
+        const val VIEW_ROOT_BACK_TO_HOME = "view_root_back_to_home"
+        const val VERSION_SUPPORT_WINDOW_EVALUATED = "version_support_window_evaluated"
+        const val UNSUPPORTED_VERSION_FAIL_FAST = "unsupported_version_fail_fast"
     }
 }

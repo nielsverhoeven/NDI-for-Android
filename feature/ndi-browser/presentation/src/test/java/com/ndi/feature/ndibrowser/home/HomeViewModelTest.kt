@@ -23,93 +23,6 @@ class HomeViewModelTest {
     @get:Rule
     val mainDispatcherRule = MainDispatcherRule()
 
-    @Test
-    fun onHomeVisible_refreshesDashboard() = runTest(mainDispatcherRule.dispatcher.scheduler) {
-        val repo = FakeHomeDashboardRepository()
-        val vm = HomeViewModel(repo)
-
-        vm.onHomeVisible()
-        advanceUntilIdle()
-
-        assertNotNull(vm.uiState.value.snapshot)
-        assertEquals(1, repo.refreshCount)
-    }
-
-    @Test
-    fun onOpenStreamActionPressed_emitsOpenStreamEvent() =
-        runTest(mainDispatcherRule.dispatcher.scheduler) {
-            val repo = FakeHomeDashboardRepository()
-            val vm = HomeViewModel(repo)
-            val events = mutableListOf<HomeNavigationEvent>()
-            val job = launch { vm.navigationEvents.collect { events.add(it) } }
-
-            vm.onOpenStreamActionPressed()
-            advanceUntilIdle()
-
-            assertTrue(events.any { it is HomeNavigationEvent.OpenStream })
-            job.cancel()
-        }
-
-    @Test
-    fun onOpenViewActionPressed_emitsOpenViewEvent() =
-        runTest(mainDispatcherRule.dispatcher.scheduler) {
-            val repo = FakeHomeDashboardRepository()
-            val vm = HomeViewModel(repo)
-            val events = mutableListOf<HomeNavigationEvent>()
-            val job = launch { vm.navigationEvents.collect { events.add(it) } }
-
-            vm.onOpenViewActionPressed()
-            advanceUntilIdle()
-
-            assertTrue(events.any { it is HomeNavigationEvent.OpenView })
-            job.cancel()
-        }
-
-    @Test
-    fun snapshotStream_updatesUiState() = runTest(mainDispatcherRule.dispatcher.scheduler) {
-        val repo = FakeHomeDashboardRepository()
-        val vm = HomeViewModel(repo)
-        advanceUntilIdle()
-
-        val newSnapshot = HomeDashboardSnapshot(
-            generatedAtEpochMillis = System.currentTimeMillis(),
-            streamStatus = OutputState.ACTIVE,
-            viewPlaybackStatus = PlaybackState.PLAYING,
-        )
-        repo.emit(newSnapshot)
-        advanceUntilIdle()
-
-        assertEquals(OutputState.ACTIVE, vm.uiState.value.snapshot?.streamStatus)
-    }
-}
-
-private class FakeHomeDashboardRepository : HomeDashboardRepository {
-    private val _snapshots = MutableStateFlow(
-        HomeDashboardSnapshot(
-            generatedAtEpochMillis = 0L,
-            streamStatus = OutputState.READY,
-            viewPlaybackStatus = PlaybackState.STOPPED,
-        ),
-    )
-    var refreshCount = 0
-
-    override fun observeDashboardSnapshot(): Flow<HomeDashboardSnapshot> = _snapshots
-
-    override suspend fun refreshDashboardSnapshot(): HomeDashboardSnapshot {
-        refreshCount++
-        return _snapshots.value
-    }
-
-    fun emit(snapshot: HomeDashboardSnapshot) {
-        _snapshots.value = snapshot
-    }
-}
-
-@OptIn(ExperimentalCoroutinesApi::class)
-class HomeViewModelTest {
-
-    @get:Rule
-    val mainDispatcherRule = MainDispatcherRule()
 
     @Test
     fun onHomeVisible_refreshesDashboard() = runTest(mainDispatcherRule.dispatcher.scheduler) {
@@ -129,7 +42,7 @@ class HomeViewModelTest {
             val repo = FakeHomeDashboardRepository()
             val vm = HomeViewModel(repo, HomeTelemetryEmitter {})
             val events = mutableListOf<HomeNavigationEvent>()
-            val job = kotlinx.coroutines.launch { vm.navigationEvents.collect { events.add(it) } }
+            val job = launch { vm.navigationEvents.collect { events.add(it) } }
 
             vm.onOpenStreamActionPressed()
             advanceUntilIdle()
@@ -144,7 +57,7 @@ class HomeViewModelTest {
             val repo = FakeHomeDashboardRepository()
             val vm = HomeViewModel(repo, HomeTelemetryEmitter {})
             val events = mutableListOf<HomeNavigationEvent>()
-            val job = kotlinx.coroutines.launch { vm.navigationEvents.collect { events.add(it) } }
+            val job = launch { vm.navigationEvents.collect { events.add(it) } }
 
             vm.onOpenViewActionPressed()
             advanceUntilIdle()

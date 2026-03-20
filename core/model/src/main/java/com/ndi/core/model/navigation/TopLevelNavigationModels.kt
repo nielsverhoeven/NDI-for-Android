@@ -103,3 +103,32 @@ data class ViewContinuityState(
     val autoplayPermitted: Boolean = false,
 )
 
+/** Deterministic back policy for the View -> Viewer flow. */
+enum class ViewBackPolicy {
+    VIEWER_BACK_TO_VIEW_ROOT,
+    VIEW_ROOT_BACK_TO_HOME,
+}
+
+/** Canonical transition labels used for view-flow telemetry and assertions. */
+enum class ViewNavigationTransition {
+    VIEW_ROOT_TO_VIEWER,
+    VIEWER_TO_VIEW_ROOT,
+    VIEW_ROOT_TO_HOME,
+}
+
+/**
+ * Session-level navigation state for the View flow.
+ * Keeps deterministic transition and back-policy metadata in one canonical structure.
+ */
+data class ViewNavigationSessionState(
+    val enteredFromDestination: TopLevelDestination,
+    val selectedSourceId: String? = null,
+    val viewerOpen: Boolean = false,
+    val lastTransition: ViewNavigationTransition? = null,
+    val backPolicy: Set<ViewBackPolicy> = setOf(
+        ViewBackPolicy.VIEWER_BACK_TO_VIEW_ROOT,
+        ViewBackPolicy.VIEW_ROOT_BACK_TO_HOME,
+    ),
+    val updatedAtEpochMillis: Long = System.currentTimeMillis(),
+)
+

@@ -72,6 +72,7 @@ class SourceListViewModel(
             preselectionController.rememberSelection(sourceId)
             _uiState.update { current -> current.copy(highlightedSourceId = sourceId) }
             telemetryEmitter.emit(SourceListTelemetry.sourceSelected(sourceId))
+            telemetryEmitter.emit(SourceListTelemetry.viewSelectionOpenedViewer(sourceId))
             _navigationEvents.emit(sourceId)
         }
     }

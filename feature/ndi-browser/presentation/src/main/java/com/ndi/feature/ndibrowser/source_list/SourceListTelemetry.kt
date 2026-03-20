@@ -60,4 +60,12 @@ object SourceListTelemetry {
             attributes = mapOf("sourceId" to sourceId),
         )
     }
+
+    fun viewSelectionOpenedViewer(sourceId: String): TelemetryEvent {
+        return TelemetryEvent(
+            name = TelemetryEvent.VIEW_SELECTION_OPENED_VIEWER,
+            timestampEpochMillis = System.currentTimeMillis(),
+            attributes = mapOf("sourceId" to sourceId),
+        )
+    }
 }
