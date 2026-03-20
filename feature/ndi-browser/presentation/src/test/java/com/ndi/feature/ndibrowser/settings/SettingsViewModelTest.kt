@@ -122,9 +122,9 @@ class SettingsViewModelTest {
     @Test
     fun onDeveloperModeToggled_updatesState() = runTest(scheduler) {
         val viewModel = SettingsViewModel(FakeSettingsRepository())
+        advanceUntilIdle()  // Let init block run first
 
         viewModel.onDeveloperModeToggled(true)
-        advanceUntilIdle()
 
         assertTrue(viewModel.uiState.value.developerModeEnabled)
     }

@@ -20,12 +20,12 @@ class SettingsViewModel(
 
     init {
         viewModelScope.launch {
-            settingsRepository.observeSettings().collect { snapshot ->
-                _uiState.value = _uiState.value.copy(
-                    discoveryServerInput = snapshot.discoveryServerInput.orEmpty(),
-                    developerModeEnabled = snapshot.developerModeEnabled,
-                )
-            }
+            // Load initial settings once, but don't overwrite local state changes like validation errors
+            val initialSettings = settingsRepository.getSettings()
+            _uiState.value = _uiState.value.copy(
+                discoveryServerInput = initialSettings.discoveryServerInput.orEmpty(),
+                developerModeEnabled = initialSettings.developerModeEnabled,
+            )
         }
     }
 
