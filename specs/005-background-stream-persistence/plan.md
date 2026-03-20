@@ -74,13 +74,21 @@ core/model/src/main/java/com/ndi/core/model/
 └── navigation/TopLevelNavigationModels.kt
 
 testing/e2e/
-├── scripts/run-dual-emulator-e2e.ps1
+├── scripts/
+│   ├── run-dual-emulator-e2e.ps1
+│   └── ndi-relay-server.mjs
 └── tests/
     ├── interop-dual-emulator.spec.ts
     └── support/
         ├── android-device-fixtures.ts
+        ├── android-device-fixtures.spec.ts
         ├── android-ui-driver.ts
-        └── visual-assertions.ts
+        ├── android-ui-driver.spec.ts
+        ├── relay-client.ts
+        ├── scenario-checkpoints.ts         ← six-step ordered checkpoint recorder
+        ├── scenario-checkpoints.spec.ts    ← T030/T032 unit tests
+        ├── visual-assertions.ts
+        └── visual-assertions.spec.ts       ← T023 visual assertion helper tests
 ```
 
 **Structure Decision**: Reuse existing feature-first Android modular structure.

@@ -97,3 +97,21 @@
 - Six-step test flow:
   - START_STREAM_A -> START_VIEW_B -> OPEN_CHROME_A -> VERIFY_CHROME_ON_B -> OPEN_NOS_A -> VERIFY_NOS_ON_B
   - On first failed transition, scenario terminates and run report records failed step.
+
+## Runtime Artifacts (Implemented)
+
+The `DualEmulatorRunReport` entity is realized at runtime as:
+
+```
+testing/e2e/artifacts/dual-emulator-<timestamp>/scenario-checkpoints.json
+```
+
+Produced by `ScenarioCheckpointRecorder` in
+`testing/e2e/tests/support/scenario-checkpoints.ts`.
+
+Schema alignment:
+- `runStartedAtEpochMillis` / `runFinishedAtEpochMillis` → run timestamps
+- `failedStepIndex` / `failedStepName` → FAIL outcome fields
+- `checkpoints[N].status` (PENDING | PASSED | FAILED | SKIPPED) → per-step `BackgroundNavigationStep.status`
+- `checkpoints[N].failureReason` → `BackgroundNavigationStep.failureReason`
+

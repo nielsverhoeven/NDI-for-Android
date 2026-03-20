@@ -115,16 +115,16 @@
 
 **Purpose**: Final validation, release gates, and documentation sync.
 
-- [ ] T039 [P] Update dual-emulator operator guidance for background continuity scenario in testing/e2e/README.md
-- [ ] T040 [P] Add success-criteria evidence matrix for SC-001..SC-005 in specs/005-background-stream-persistence/validation/success-criteria-report.md
-- [ ] T041 Run feature quickstart validation sequence and capture evidence in specs/005-background-stream-persistence/validation/quickstart-validation-report.md
-- [ ] T042 Run dual-emulator scenario and capture runtime/artifact evidence in specs/005-background-stream-persistence/validation/e2e-runtime-report.md
-- [ ] T043 Run release hardening commands and capture matrix in specs/005-background-stream-persistence/validation/release-validation-matrix.md
-- [ ] T044 Remove temporary debug traces from e2e helpers/spec after validation in testing/e2e/tests/support/android-ui-driver.ts and testing/e2e/tests/interop-dual-emulator.spec.ts
-- [ ] T045 Update feature documentation index entry in DOCUMENTATION-INDEX.md
-- [ ] T046 [P] Add explicit Material 3 compliance verification evidence for touched output/view surfaces in specs/005-background-stream-persistence/validation/material3-compliance-report.md
-- [ ] T047 Add battery-conscious execution justification with lifecycle-bound cancellation and measurable energy-impact evidence in specs/005-background-stream-persistence/validation/battery-lifecycle-continuity-report.md
-- [ ] T048 Synchronize planning/design inventory to include scenario checkpoint helper artifacts in specs/005-background-stream-persistence/plan.md and specs/005-background-stream-persistence/data-model.md
+- [X] T039 [P] Update dual-emulator operator guidance for background continuity scenario in testing/e2e/README.md
+- [X] T040 [P] Add success-criteria evidence matrix for SC-001..SC-005 in specs/005-background-stream-persistence/validation/success-criteria-report.md
+- [X] T041 Run feature quickstart validation sequence and capture evidence in specs/005-background-stream-persistence/validation/quickstart-validation-report.md
+- [X] T042 Run dual-emulator scenario and capture runtime/artifact evidence in specs/005-background-stream-persistence/validation/e2e-runtime-report.md
+- [X] T043 Run release hardening commands and capture matrix in specs/005-background-stream-persistence/validation/release-validation-matrix.md
+- [X] T044 Remove temporary debug traces from e2e helpers/spec after validation in testing/e2e/tests/support/android-ui-driver.ts and testing/e2e/tests/interop-dual-emulator.spec.ts
+- [X] T045 Update feature documentation index entry in DOCUMENTATION-INDEX.md
+- [X] T046 [P] Add explicit Material 3 compliance verification evidence for touched output/view surfaces in specs/005-background-stream-persistence/validation/material3-compliance-report.md
+- [X] T047 Add battery-conscious execution justification with lifecycle-bound cancellation and measurable energy-impact evidence in specs/005-background-stream-persistence/validation/battery-lifecycle-continuity-report.md
+- [X] T048 Synchronize planning/design inventory to include scenario checkpoint helper artifacts in specs/005-background-stream-persistence/plan.md and specs/005-background-stream-persistence/data-model.md
 
 ---
 
