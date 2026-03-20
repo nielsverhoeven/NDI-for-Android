@@ -5,19 +5,25 @@ import com.ndi.core.model.OutputHealthSnapshot
 import com.ndi.core.model.OutputQualityLevel
 import com.ndi.core.model.OutputSession
 import com.ndi.core.model.OutputState
+import com.ndi.core.model.navigation.BackgroundContinuationReason
+import com.ndi.core.model.navigation.StreamContinuityState
 import com.ndi.core.model.navigation.TopLevelDestination
 import com.ndi.feature.ndibrowser.domain.repository.NdiOutputRepository
 import com.ndi.feature.ndibrowser.domain.repository.OutputConfigurationRepository
 import com.ndi.feature.ndibrowser.domain.repository.ScreenCaptureConsentRepository
 import com.ndi.feature.ndibrowser.domain.repository.ScreenCaptureConsentState
+import com.ndi.feature.ndibrowser.domain.repository.StreamContinuityRepository
 import com.ndi.feature.ndibrowser.testutil.MainDispatcherRule
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import java.util.UUID
@@ -106,6 +112,29 @@ class OutputControlViewModelTopLevelNavTest {
 
             assertEquals(TopLevelDestination.STREAM, vm.uiState.value.topLevelDestination)
         }
+
+    @Test
+    fun explicitStop_clearsContinuityTransientState() =
+        runTest(mainDispatcherRule.dispatcher.scheduler) {
+            val repository = NavAwareOutputRepository()
+            val continuityRepository = NavAwareStreamContinuityRepository()
+            val vm = OutputControlViewModel(
+                repository,
+                NavAwareOutputConfigurationRepository(),
+                NavAwareConsentRepository(),
+                OutputTelemetryEmitter {},
+                continuityRepository,
+            )
+
+            repository.emitState(OutputState.ACTIVE, "camera-5")
+            advanceUntilIdle()
+            vm.onStopOutputPressed()
+            advanceUntilIdle()
+
+            assertEquals(1, repository.stopCalls)
+            assertTrue(continuityRepository.clearInvoked)
+            assertEquals(OutputState.STOPPED, continuityRepository.observeContinuityState().value.outputState)
+        }
 }
 
 private class NavAwareOutputRepository : NdiOutputRepository {
@@ -170,5 +199,53 @@ private class NavAwareConsentRepository : ScreenCaptureConsentRepository {
     override suspend fun getConsentState(inputSourceId: String) =
         ScreenCaptureConsentState(inputSourceId, granted = true)
     override suspend fun clearConsent(inputSourceId: String) = Unit
+}
+
+private class NavAwareStreamContinuityRepository : StreamContinuityRepository {
+    private val state = MutableStateFlow(
+        StreamContinuityState(
+            hasActiveOutput = false,
+            outputState = OutputState.READY,
+        ),
+    )
+    var clearInvoked: Boolean = false
+
+    override fun observeContinuityState(): StateFlow<StreamContinuityState> = state.asStateFlow()
+
+    override suspend fun captureLastKnownState() {
+        state.value = state.value.copy(
+            hasActiveOutput = true,
+            outputState = OutputState.ACTIVE,
+        )
+    }
+
+    override suspend fun markAppBackgrounded(reason: BackgroundContinuationReason) {
+        state.value = state.value.copy(
+            hasActiveOutput = true,
+            outputState = OutputState.ACTIVE,
+            runningWhileBackgrounded = true,
+            backgroundReason = reason,
+            lastBackgroundedAtEpochMillis = System.currentTimeMillis(),
+        )
+    }
+
+    override suspend fun markAppForegrounded() {
+        state.value = state.value.copy(
+            runningWhileBackgrounded = false,
+            backgroundReason = BackgroundContinuationReason.NONE,
+            lastBackgroundedAtEpochMillis = null,
+        )
+    }
+
+    override suspend fun clearTransientStateOnExplicitStop() {
+        clearInvoked = true
+        state.value = state.value.copy(
+            hasActiveOutput = false,
+            outputState = OutputState.STOPPED,
+            runningWhileBackgrounded = false,
+            backgroundReason = BackgroundContinuationReason.NONE,
+            lastBackgroundedAtEpochMillis = null,
+        )
+    }
 }
 

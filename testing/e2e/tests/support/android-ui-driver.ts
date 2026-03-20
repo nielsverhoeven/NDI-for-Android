@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { writeFileSync } from "node:fs";
 
 const MAIN_ACTIVITY = "com.ndi.app.MainActivity";
+const CHROME_PACKAGE = "com.android.chrome";
 
 function isTransientAdbFailure(error: unknown): boolean {
   const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
@@ -347,6 +348,40 @@ export async function editTextTailByResourceIdSuffix(
 export async function pressBack(serial: string): Promise<void> {
   runAdb(serial, ["shell", "input", "keyevent", "4"]);
   await delay(150);
+}
+
+export async function pressHome(serial: string): Promise<void> {
+  runAdb(serial, ["shell", "input", "keyevent", "3"]);
+  await delay(200);
+}
+
+export function launchChrome(serial: string): void {
+  runAdb(serial, [
+    "shell",
+    "am",
+    "start",
+    "-W",
+    "-a",
+    "android.intent.action.MAIN",
+    "-c",
+    "android.intent.category.LAUNCHER",
+    "-p",
+    CHROME_PACKAGE,
+  ]);
+}
+
+export function launchChromeUrl(serial: string, url: string): void {
+  runAdb(serial, [
+    "shell",
+    "am",
+    "start",
+    "-W",
+    "-a",
+    "android.intent.action.VIEW",
+    "-d",
+    url,
+    CHROME_PACKAGE,
+  ]);
 }
 
 export type ConsentFlowVariant = {

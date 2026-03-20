@@ -79,11 +79,19 @@ data class NavigationTransitionRecord(
  * Models continuity behavior for the Stream destination when navigating away or restoring after
  * process death. Active output keeps running; auto-restart is prohibited.
  */
+enum class BackgroundContinuationReason {
+    NONE,
+    APP_BACKGROUND,
+}
+
 data class StreamContinuityState(
     val hasActiveOutput: Boolean,
     val outputState: OutputState,
     val lastKnownOutputSourceId: String? = null,
     val lastKnownStreamName: String? = null,
+    val runningWhileBackgrounded: Boolean = false,
+    val backgroundReason: BackgroundContinuationReason = BackgroundContinuationReason.NONE,
+    val lastBackgroundedAtEpochMillis: Long? = null,
     val restoredAfterProcessDeath: Boolean = false,
     /** Always false in this feature version. */
     val autoRestartPermitted: Boolean = false,

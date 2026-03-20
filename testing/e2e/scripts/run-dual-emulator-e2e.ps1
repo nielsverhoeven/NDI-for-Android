@@ -7,6 +7,8 @@ param(
 
     [string]$AppPackage = "com.ndi.app.debug",
 
+    [string]$ScenarioCheckpointArtifactPath,
+
     [switch]$PreflightOnly
 )
 
@@ -281,6 +283,24 @@ $artifactDir = Join-Path $PSScriptRoot "..\artifacts\dual-emulator-$timestamp"
 New-Item -Path $artifactDir -ItemType Directory -Force | Out-Null
 $screenshotDir = Join-Path $artifactDir "screenshots"
 New-Item -Path $screenshotDir -ItemType Directory -Force | Out-Null
+$checkpointArtifactPath = if ($ScenarioCheckpointArtifactPath) {
+    [System.IO.Path]::GetFullPath($ScenarioCheckpointArtifactPath)
+}
+else {
+    Join-Path $artifactDir "scenario-checkpoints.json"
+}
+$checkpointArtifactDir = Split-Path -Path $checkpointArtifactPath -Parent
+if (-not [string]::IsNullOrWhiteSpace($checkpointArtifactDir)) {
+    New-Item -Path $checkpointArtifactDir -ItemType Directory -Force | Out-Null
+}
+
+$checkpointStub = [PSCustomObject]@{
+    runStartedAtUtc = (Get-Date).ToUniversalTime().ToString("o")
+    publisherSerial = $EmulatorASerial
+    receiverSerial = $EmulatorBSerial
+    status = "PENDING"
+}
+$checkpointStub | ConvertTo-Json -Depth 4 | Out-File -FilePath $checkpointArtifactPath -Encoding utf8
 
 $publisherProfile = Get-AndroidVersionProfile -Serial $EmulatorASerial -Role "publisher"
 $receiverProfile = Get-AndroidVersionProfile -Serial $EmulatorBSerial -Role "receiver"
@@ -325,6 +345,7 @@ try {
     $env:EMULATOR_B_SERIAL = $EmulatorBSerial
     $env:APP_PACKAGE = $AppPackage
     $env:DUAL_EMULATOR_SCREENSHOT_DIR = $screenshotDir
+    $env:DUAL_EMULATOR_CHECKPOINT_PATH = $checkpointArtifactPath
     npm run test:dual-emulator -- --grep "@dual-emulator" --reporter=list
 }
 finally {
