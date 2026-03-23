@@ -27,6 +27,7 @@ jobs:
       - name: Verify Android prerequisites
         shell: pwsh
         run: pwsh ./scripts/verify-android-prereqs.ps1 -CiMode -AllowMissingNdiSdk
+        # This step automatically installs missing Android SDK packages if needed
 
   e2e-primary:
     runs-on: windows-latest
