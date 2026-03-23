@@ -159,6 +159,42 @@ function Install-AndroidPackage {
 $results = @()
 $installationResults = @()
 
+# First, try to set up Android SDK paths if ANDROID_SDK_ROOT is set
+$androidSdkRoot = if ($env:ANDROID_SDK_ROOT) { $env:ANDROID_SDK_ROOT } elseif ($env:ANDROID_HOME) { $env:ANDROID_HOME } else { $null }
+
+if ($androidSdkRoot -and (Test-Path $androidSdkRoot)) {
+    $pathsAdded = $false
+    $pathsToAdd = @()
+    
+    # Candidate paths where Android tools might be located
+    $candidates = @(
+        (Join-Path $androidSdkRoot "platform-tools"),
+        (Join-Path $androidSdkRoot "cmdline-tools\latest\bin"),
+        (Join-Path $androidSdkRoot "cmdline-tools\bin"),
+        (Join-Path $androidSdkRoot "tools\bin")
+    )
+    
+    # Add valid paths to PATH
+    foreach ($candidatePath in $candidates) {
+        if (Test-Path $candidatePath) {
+            # Normalize path
+            $candidatePath = (Get-Item $candidatePath).FullName
+            
+            # Check if already in PATH
+            if (-not ($env:PATH -split ";" | Where-Object { $_ -eq $candidatePath })) {
+                $env:PATH = "$candidatePath;$env:PATH"
+                $pathsAdded = $true
+            }
+        }
+    }
+    
+    # In CI mode, persist PATH changes to GitHub Actions environment
+    if ($pathsAdded -and $CiMode -and $env:GITHUB_ENV) {
+        Write-InstallationLog "Writing updated PATH to GITHUB_ENV for subsequent steps"
+        "PATH=$env:PATH" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+    }
+}
+
 $requiredCommands = @("java", "javac", "adb", "sdkmanager", "avdmanager", "emulator", "cmake", "ninja")
 foreach ($command in $requiredCommands) {
     $available = Test-CommandAvailable -Name $command
@@ -178,7 +214,6 @@ $gradleDetail = if (Test-Path $gradleWrapperPath) {
 $results += Add-Result -Name "build:gradle" -Ok $gradleAvailable -Detail $gradleDetail
 
 $javaHome = $env:JAVA_HOME
-$androidSdkRoot = if ($env:ANDROID_SDK_ROOT) { $env:ANDROID_SDK_ROOT } elseif ($env:ANDROID_HOME) { $env:ANDROID_HOME } else { $null }
 
 $results += Add-Result -Name "env:JAVA_HOME" -Ok (-not [string]::IsNullOrWhiteSpace($javaHome)) -Detail ($(if ($javaHome) { $javaHome } else { "Unset" }))
 $results += Add-Result -Name "env:ANDROID_SDK_ROOT" -Ok (-not [string]::IsNullOrWhiteSpace($androidSdkRoot)) -Detail ($(if ($androidSdkRoot) { $androidSdkRoot } else { "Unset" }))
