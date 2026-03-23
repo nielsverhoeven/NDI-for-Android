@@ -129,8 +129,28 @@ function computeSeriesSpread(values: number[]): { range: number; stddev: number 
 }
 
 function pickRandomYoutubeUrl(): string {
+  const explicitUrl = process.env.LATENCY_YOUTUBE_URL;
+  if (explicitUrl && explicitUrl.trim().length > 0) {
+    return explicitUrl.trim();
+  }
+
   const index = Math.floor(Math.random() * YOUTUBE_VIDEO_URLS.length);
   return YOUTUBE_VIDEO_URLS[index] ?? YOUTUBE_VIDEO_URLS[0];
+}
+
+function normalizeErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function isYoutubeUnavailableFailure(error: unknown): boolean {
+  const message = normalizeErrorMessage(error).toLowerCase();
+  return (
+    message.includes("youtube") ||
+    message.includes("chrome") ||
+    message.includes("url_bar") ||
+    message.includes("timed out") ||
+    message.includes("playback did not progress")
+  );
 }
 
 function resolveCheckpointArtifactPath(checkpointOutputPath: string): string {
@@ -276,18 +296,33 @@ async function runLatencyMeasurementScenario(testInfo: TestInfo): Promise<Latenc
     passStep();
 
     beginStep("PLAY_RANDOM_YOUTUBE_A");
-    launchChromeUrl(context.publisherSerial, youtubeUrl);
-    await waitForResourceIdTextContaining(context.publisherSerial, ":id/url_bar", "youtube", 30_000);
-    const publisherPlaybackProgress = await verifyPublisherYoutubePlaybackProgression(context.publisherSerial, testInfo);
-    await testInfo.attach("latency-youtube-url", {
-      body: Buffer.from(JSON.stringify({ youtubeUrl }, null, 2), "utf-8"),
-      contentType: "application/json",
-    });
-    await testInfo.attach("latency-publisher-youtube-progression", {
-      body: Buffer.from(JSON.stringify(publisherPlaybackProgress, null, 2), "utf-8"),
-      contentType: "application/json",
-    });
-    passStep();
+    try {
+      launchChromeUrl(context.publisherSerial, youtubeUrl);
+      await waitForResourceIdTextContaining(context.publisherSerial, ":id/url_bar", "youtube", 30_000);
+      const publisherPlaybackProgress = await verifyPublisherYoutubePlaybackProgression(context.publisherSerial, testInfo);
+      await testInfo.attach("latency-youtube-url", {
+        body: Buffer.from(JSON.stringify({ youtubeUrl }, null, 2), "utf-8"),
+        contentType: "application/json",
+      });
+      await testInfo.attach("latency-publisher-youtube-progression", {
+        body: Buffer.from(JSON.stringify(publisherPlaybackProgress, null, 2), "utf-8"),
+        contentType: "application/json",
+      });
+      passStep();
+      checkpoints.skip("YOUTUBE_UNAVAILABLE");
+    } catch (error) {
+      if (!isYoutubeUnavailableFailure(error)) {
+        throw error;
+      }
+
+      checkpoints.skip("PLAY_RANDOM_YOUTUBE_A");
+      activeStep = null;
+      beginStep("YOUTUBE_UNAVAILABLE");
+      const reason = `YOUTUBE_UNAVAILABLE: ${normalizeErrorMessage(error)}`;
+      checkpoints.fail("YOUTUBE_UNAVAILABLE", reason);
+      activeStep = null;
+      throw new Error(reason);
+    }
 
     beginStep("VERIFY_PLAYBACK_B");
     await waitForText(context.receiverSerial, "PLAYING", 20_000);
@@ -351,6 +386,7 @@ async function runLatencyMeasurementScenario(testInfo: TestInfo): Promise<Latenc
       sourceRecordingPath: completedSourceRecording.localPath,
       receiverRecordingPath: completedReceiverRecording.localPath,
       receiverPlaybackVerified,
+      validateRecordingArtifacts: true,
       maxLagFrames: 40,
       minCorrelation: 0.25,
     });
@@ -437,7 +473,7 @@ async function runLatencyMeasurementScenario(testInfo: TestInfo): Promise<Latenc
     };
   } catch (error) {
     if (activeStep) {
-      const reason = error instanceof Error ? error.message : String(error);
+      const reason = normalizeErrorMessage(error);
       checkpoints.fail(activeStep, `step=${activeStep}; reason=${reason}`);
       activeStep = null;
     }
@@ -1197,6 +1233,7 @@ test("@dual-emulator restart output with new stream name remains discoverable", 
 });
 
 test("@latency @us1 measure end-to-end NDI latency happy path", async ({}, testInfo) => {
+  test.setTimeout(600_000);
   const run = await runLatencyMeasurementScenario(testInfo);
 
   const payload = JSON.parse(readFileSync(run.analysisArtifactPath, "utf-8")) as {
@@ -1212,6 +1249,7 @@ test("@latency @us1 measure end-to-end NDI latency happy path", async ({}, testI
 });
 
 test("@latency @us1 emits mandatory latency artifact paths", async ({}, testInfo) => {
+  test.setTimeout(600_000);
   const run = await runLatencyMeasurementScenario(testInfo);
 
   expect(existsSync(run.sourceRecordingPath)).toBeTruthy();
@@ -1219,5 +1257,47 @@ test("@latency @us1 emits mandatory latency artifact paths", async ({}, testInfo
   expect(existsSync(run.analysisArtifactPath)).toBeTruthy();
   expect(run.sourceSnapshotPaths.length > 0).toBeTruthy();
   expect(run.receiverSnapshotPaths.length > 0).toBeTruthy();
+});
+
+test("@latency @us2 invalidates when receiver playback verification fails", () => {
+  const sourceMotionSeries = Array.from({ length: 30 }, (_, index) => Math.sin(index / 2.5));
+  const receiverMotionSeries = Array.from({ length: 30 }, (_, index) => Math.sin(index / 2.5));
+
+  const result = analyzeLatencyWithCrossCorrelation({
+    sourceMotionSeries,
+    receiverMotionSeries,
+    sampleRateFps: 30,
+    sourceRecordingPath: "source-recording.mp4",
+    receiverRecordingPath: "receiver-recording.mp4",
+    receiverPlaybackVerified: false,
+  });
+
+  expect(result.status).toBe("INVALID");
+  expect(result.invalidReason).toBe("RECEIVER_NOT_PLAYING");
+  expect(result.latencyMs).toBeNull();
+});
+
+test("@latency @us2 invalidates when recordings are missing or unusable", async ({}, testInfo) => {
+  const sourceMotionSeries = Array.from({ length: 30 }, (_, index) => Math.sin(index / 3));
+  const receiverMotionSeries = Array.from({ length: 30 }, (_, index) => Math.sin(index / 3));
+  const emptySource = testInfo.outputPath("latency-us2-empty-source.mp4");
+  const emptyReceiver = testInfo.outputPath("latency-us2-empty-receiver.mp4");
+
+  writeFileSync(emptySource, "", { encoding: "utf-8" });
+  writeFileSync(emptyReceiver, "", { encoding: "utf-8" });
+
+  const result = analyzeLatencyWithCrossCorrelation({
+    sourceMotionSeries,
+    receiverMotionSeries,
+    sampleRateFps: 30,
+    sourceRecordingPath: emptySource,
+    receiverRecordingPath: emptyReceiver,
+    receiverPlaybackVerified: true,
+    validateRecordingArtifacts: true,
+  });
+
+  expect(result.status).toBe("INVALID");
+  expect(result.invalidReason).toBe("UNUSABLE_RECORDING_ARTIFACT");
+  expect(result.latencyMs).toBeNull();
 });
 

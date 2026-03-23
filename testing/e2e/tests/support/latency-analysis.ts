@@ -1,8 +1,11 @@
+import { existsSync, statSync } from "node:fs";
+
 export const MOTION_CROSS_CORRELATION_METHOD = "MOTION_CROSS_CORRELATION" as const;
 
 export type LatencyInvalidReason =
   | "RECEIVER_NOT_PLAYING"
   | "MISSING_RECORDING_ARTIFACT"
+  | "UNUSABLE_RECORDING_ARTIFACT"
   | "INVALID_SAMPLE_RATE"
   | "INSUFFICIENT_SIGNAL"
   | "LOW_CORRELATION"
@@ -15,6 +18,7 @@ export type LatencyAnalysisInput = {
   sourceRecordingPath: string | null;
   receiverRecordingPath: string | null;
   receiverPlaybackVerified: boolean;
+  validateRecordingArtifacts?: boolean;
   maxLagFrames?: number;
   minCorrelation?: number;
 };
@@ -116,6 +120,22 @@ export function analyzeLatencyWithCrossCorrelation(input: LatencyAnalysisInput):
       "MISSING_RECORDING_ARTIFACT",
       "Latency analysis requires source and receiver recording artifact paths.",
     );
+  }
+
+  if (input.validateRecordingArtifacts) {
+    if (!existsSync(input.sourceRecordingPath) || !existsSync(input.receiverRecordingPath)) {
+      return buildInvalidLatencyResult(
+        "UNUSABLE_RECORDING_ARTIFACT",
+        "Source and receiver recording artifacts must exist on disk for latency analysis.",
+      );
+    }
+
+    if (statSync(input.sourceRecordingPath).size <= 0 || statSync(input.receiverRecordingPath).size <= 0) {
+      return buildInvalidLatencyResult(
+        "UNUSABLE_RECORDING_ARTIFACT",
+        "Recording artifacts are present but contain no data.",
+      );
+    }
   }
 
   if (!Number.isFinite(input.sampleRateFps) || input.sampleRateFps <= 0) {

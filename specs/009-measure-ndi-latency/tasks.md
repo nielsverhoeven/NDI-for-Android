@@ -2,6 +2,7 @@
 
 **Input**: Design documents from `/specs/009-measure-ndi-latency/`
 **Prerequisites**: `plan.md`, `spec.md`, `research.md`, `data-model.md`, `contracts/ndi-latency-validation-contract.md`, `quickstart.md`
+**Analysis fixes (2026-03-21)**: C1 (TDD enforcement), H1 (entity naming), H2 (SC-002 timeout gate), H3 (YouTube-unavailability detection), M1 (Espresso scanning), M2 (FR-005a → FR-006 renumbering) applied.
 
 **Tests**: Required by constitution. Each user story includes failing-test-first tasks.
 
@@ -26,10 +27,13 @@
 
 **⚠️ CRITICAL**: No user-story implementation starts before this phase completes.
 
+- [X] T004a [P] Add failing test for dual-recording lifecycle in `testing/e2e/tests/support/android-ui-driver.spec.ts`
 - [X] T004 Add dual-recording lifecycle helpers in `testing/e2e/tests/support/android-ui-driver.ts`
-- [X] T005 [P] Add latency analysis helper module (cross-correlation core) in `testing/e2e/tests/support/latency-analysis.ts`
-- [X] T006 [P] Add unit tests for latency analysis helper in `testing/e2e/tests/support/latency-analysis.spec.ts`
+- [X] T005 Add latency analysis helper module (cross-correlation core) in `testing/e2e/tests/support/latency-analysis.ts`
+- [X] T006 Add unit tests for latency analysis helper in `testing/e2e/tests/support/latency-analysis.spec.ts`
+- [X] T007a [P] Add failing tests for step-checkpoint wiring in `testing/e2e/tests/support/scenario-checkpoints.spec.ts`
 - [X] T007 Add step-checkpoint wiring for latency scenario in `testing/e2e/tests/support/scenario-checkpoints.ts`
+- [X] T008a [P] Add failing test for dual-emulator runner summary in `testing/e2e/scripts/run-dual-emulator-e2e.spec.ts`
 - [X] T008 Extend dual-emulator runner summary to include latency artifacts in `testing/e2e/scripts/run-dual-emulator-e2e.ps1`
 
 **Checkpoint**: Shared infrastructure complete.
@@ -66,15 +70,16 @@
 
 ### Tests for User Story 2 (REQUIRED) ⚠️
 
-- [ ] T015 [P] [US2] Add failing e2e test for receiver-not-playing invalidation in `testing/e2e/tests/interop-dual-emulator.spec.ts`
-- [ ] T016 [P] [US2] Add failing e2e test for missing/unusable recordings invalidation in `testing/e2e/tests/interop-dual-emulator.spec.ts`
+- [X] T015 [P] [US2] Add failing e2e test for receiver-not-playing invalidation in `testing/e2e/tests/interop-dual-emulator.spec.ts`
+- [X] T016 [P] [US2] Add failing e2e test for missing/unusable recordings invalidation in `testing/e2e/tests/interop-dual-emulator.spec.ts`
 
 ### Implementation for User Story 2
 
-- [ ] T017 [US2] Implement invalidation path that blocks latency output when playback verification fails in `testing/e2e/tests/interop-dual-emulator.spec.ts`
-- [ ] T018 [US2] Implement invalidation path for unusable recording artifacts in `testing/e2e/tests/support/latency-analysis.ts`
-- [ ] T019 [US2] Emit single explicit failed-step reason to checkpoints and runner summary in `testing/e2e/tests/support/scenario-checkpoints.ts`
-- [ ] T020 [US2] Propagate invalid-state evidence into run-summary JSON in `testing/e2e/scripts/run-dual-emulator-e2e.ps1`
+- [X] T017 [US2] Implement invalidation path that blocks latency output when playback verification fails in `testing/e2e/tests/interop-dual-emulator.spec.ts`
+- [X] T018 [US2] Implement invalidation path for unusable recording artifacts in `testing/e2e/tests/support/latency-analysis.ts`
+- [X] T019 [US2] Emit single explicit failed-step reason to checkpoints and runner summary in `testing/e2e/tests/support/scenario-checkpoints.ts`
+- [X] T020 [US2] Implement YouTube-unavailability detection with explicit YOUTUBE_UNAVAILABLE checkpoint in `testing/e2e/tests/interop-dual-emulator.spec.ts`
+- [X] T021 [US2] Propagate invalid-state evidence into run-summary JSON in `testing/e2e/scripts/run-dual-emulator-e2e.ps1`
 
 **Checkpoint**: US2 independently enforces invalid-run behavior.
 
@@ -88,14 +93,14 @@
 
 ### Tests for User Story 3 (REQUIRED) ⚠️
 
-- [ ] T021 [P] [US3] Add failing gate test ensuring existing regression suite is still mandatory in `testing/e2e/tests/support/regression-gate.spec.ts`
-- [ ] T022 [P] [US3] Add failing test for quality summary completeness (latency + regression) in `testing/e2e/tests/support/regression-manifest-consistency.spec.ts`
+- [X] T022 [P] [US3] Add failing gate test ensuring existing regression suite is still mandatory in `testing/e2e/tests/support/regression-gate.spec.ts`
+- [X] T023 [P] [US3] Add failing test for quality summary completeness (latency + regression) in `testing/e2e/tests/support/regression-manifest-consistency.spec.ts`
 
 ### Implementation for User Story 3
 
-- [ ] T023 [US3] Update primary PR runner to include latency scenario in new-settings suite while preserving existing-regression execution in `testing/e2e/scripts/run-primary-pr-e2e.ps1`
-- [ ] T024 [US3] Update summary script to report latency evidence plus existing-regression status in `testing/e2e/scripts/summarize-e2e-results.ps1`
-- [ ] T025 [US3] Update CI evidence documentation format in `test-results/android-test-results.md`
+- [X] T024 [US3] Update primary PR runner to include latency scenario in new-settings suite while preserving existing-regression execution in `testing/e2e/scripts/run-primary-pr-e2e.ps1`
+- [X] T025 [US3] Update summary script to report latency evidence plus existing-regression status in `testing/e2e/scripts/summarize-e2e-results.ps1`
+- [X] T026 [US3] Update CI evidence documentation format in `test-results/android-test-results.md`
 
 **Checkpoint**: US3 independently confirms regression preservation.
 
@@ -105,10 +110,12 @@
 
 **Purpose**: Final validation, docs, and execution evidence.
 
-- [ ] T026 [P] Update feature runbook with concrete commands and artifacts in `specs/009-measure-ndi-latency/quickstart.md`
-- [ ] T027 [P] Update testing docs with latency scenario expectations in `docs/testing.md`
-- [ ] T028 Execute full primary-profile run and record evidence in `test-results/android-test-results.md`
-- [ ] T029 Execute scheduled/matrix-equivalent run and record evidence in `test-results/android-test-results.md`
+- [X] T027 [P] Scan touched test files for legacy Espresso tests and convert to Playwright or document waiver in `specs/009-measure-ndi-latency/quickstart.md` (constitution v2.1.0 requirement)
+- [X] T028 [P] Add per-run timeout gate enforcement (SC-002: <10 min end-to-end) to Playwright harness in `testing/e2e/tests/interop-dual-emulator.spec.ts`
+- [X] T029 [P] Update feature runbook with concrete commands and artifacts in `specs/009-measure-ndi-latency/quickstart.md`
+- [X] T030 [P] Update testing docs with latency scenario expectations in `docs/testing.md`
+- [X] T031 Execute full primary-profile run and record evidence in `test-results/android-test-results.md`
+- [X] T032 Execute scheduled/matrix-equivalent run and record evidence in `test-results/android-test-results.md`
 
 ---
 

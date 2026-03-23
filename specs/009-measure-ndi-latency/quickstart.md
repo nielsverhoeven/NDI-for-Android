@@ -44,7 +44,25 @@ Confirm artifacts include:
 - Explicit failed-step reason when run status is not PASSED
 - Existing regression suite status in quality-gate summary
 
-## 5. Troubleshooting
+## 5. Constitution v2.1.0 Espresso Scan Gate
+
+Before final sign-off, scan touched test files for legacy Espresso usage and either convert to Playwright or document a temporary waiver.
+
+```powershell
+Get-ChildItem app,feature,core -Recurse -Include *Test.kt,*Test.java |
+	Select-String -Pattern "androidx\.test\.espresso|Espresso\.onView|onView\(" -SimpleMatch
+```
+
+Expected:
+- No Espresso references in touched scope, or
+- A documented waiver entry with approvers and conversion follow-up plan.
+
+## 6. SC-002 Timeout Gate
+
+- Latency scenario runs must enforce a per-run timeout of 600000ms (10 minutes) in Playwright.
+- Any timeout failure is treated as an invalid run and must not emit a valid latency value.
+
+## 7. Troubleshooting
 
 - If receiver never reaches playback screen, fail run with step-level reason and preserve artifacts.
 - If app startup fails on an emulator, reinstall APK and rerun scenario.

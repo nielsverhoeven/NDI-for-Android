@@ -1,9 +1,9 @@
 import { expect, test } from "@playwright/test";
 import {
   assertRoundTripNavigationPath,
+  createLatencyScenarioCheckpointRecorder,
   createScenarioCheckpointRecorder,
   normalizeRouteForAssertion,
-  type ScenarioCheckpointTimeline,
 } from "./scenario-checkpoints";
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -63,6 +63,55 @@ test("@us3 failedStepIndex and failedStepName captured on failure", () => {
   const timeline = recorder.toJson();
   expect(timeline.failedStepIndex).toBe(2);
   expect(timeline.failedStepName).toBe("START_VIEW_B");
+});
+
+test("@latency @us2 latency recorder supports optional youtube-unavailable checkpoint skip", () => {
+  const recorder = createLatencyScenarioCheckpointRecorder();
+
+  recorder.begin("START_STREAM_A");
+  recorder.pass("START_STREAM_A");
+  recorder.begin("OPEN_VIEWER_B");
+  recorder.pass("OPEN_VIEWER_B");
+  recorder.begin("START_SOURCE_RECORDING");
+  recorder.pass("START_SOURCE_RECORDING");
+  recorder.begin("START_RECEIVER_RECORDING");
+  recorder.pass("START_RECEIVER_RECORDING");
+  recorder.begin("PLAY_RANDOM_YOUTUBE_A");
+  recorder.pass("PLAY_RANDOM_YOUTUBE_A");
+  recorder.skip("YOUTUBE_UNAVAILABLE");
+
+  recorder.begin("VERIFY_PLAYBACK_B");
+  recorder.pass("VERIFY_PLAYBACK_B");
+
+  const timeline = recorder.toJson();
+  const unavailable = timeline.checkpoints.find((checkpoint) => checkpoint.stepName === "YOUTUBE_UNAVAILABLE");
+  expect(unavailable?.status).toBe("SKIPPED");
+});
+
+test("@latency @us2 latency recorder emits explicit youtube-unavailable failure step", () => {
+  const recorder = createLatencyScenarioCheckpointRecorder();
+
+  recorder.begin("START_STREAM_A");
+  recorder.pass("START_STREAM_A");
+  recorder.begin("OPEN_VIEWER_B");
+  recorder.pass("OPEN_VIEWER_B");
+  recorder.begin("START_SOURCE_RECORDING");
+  recorder.pass("START_SOURCE_RECORDING");
+  recorder.begin("START_RECEIVER_RECORDING");
+  recorder.pass("START_RECEIVER_RECORDING");
+  recorder.begin("PLAY_RANDOM_YOUTUBE_A");
+  recorder.pass("PLAY_RANDOM_YOUTUBE_A");
+
+  recorder.begin("YOUTUBE_UNAVAILABLE");
+  recorder.fail("YOUTUBE_UNAVAILABLE", "Unable to launch youtube playback on publisher emulator");
+
+  const timeline = recorder.toJson();
+  expect(timeline.failedStepName).toBe("YOUTUBE_UNAVAILABLE");
+  expect(timeline.failedStepIndex).toBe(6);
+
+  const failed = timeline.checkpoints.find((checkpoint) => checkpoint.stepName === "YOUTUBE_UNAVAILABLE");
+  expect(failed?.status).toBe("FAILED");
+  expect(failed?.failureReason).toContain("youtube");
 });
 
 // ──────────────────────────────────────────────────────────────────────────────

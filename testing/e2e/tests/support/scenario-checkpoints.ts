@@ -15,6 +15,7 @@ export type LatencyCheckpointName =
   | "START_SOURCE_RECORDING"
   | "START_RECEIVER_RECORDING"
   | "PLAY_RANDOM_YOUTUBE_A"
+  | "YOUTUBE_UNAVAILABLE"
   | "VERIFY_PLAYBACK_B"
   | "ANALYZE_LATENCY";
 
@@ -81,6 +82,7 @@ const ORDERED_LATENCY_STEPS: LatencyCheckpointName[] = [
   "START_SOURCE_RECORDING",
   "START_RECEIVER_RECORDING",
   "PLAY_RANDOM_YOUTUBE_A",
+  "YOUTUBE_UNAVAILABLE",
   "VERIFY_PLAYBACK_B",
   "ANALYZE_LATENCY",
 ];
@@ -120,6 +122,12 @@ export class ScenarioCheckpointRecorder {
   pass(step: SixStepCheckpointName): void {
     const checkpoint = this.find(step);
     checkpoint.status = "PASSED";
+    checkpoint.completedAtEpochMillis = Date.now();
+  }
+
+  skip(step: SixStepCheckpointName): void {
+    const checkpoint = this.find(step);
+    checkpoint.status = "SKIPPED";
     checkpoint.completedAtEpochMillis = Date.now();
   }
 
@@ -195,6 +203,12 @@ export class LatencyScenarioCheckpointRecorder {
   pass(step: LatencyCheckpointName): void {
     const checkpoint = this.find(step);
     checkpoint.status = "PASSED";
+    checkpoint.completedAtEpochMillis = Date.now();
+  }
+
+  skip(step: LatencyCheckpointName): void {
+    const checkpoint = this.find(step);
+    checkpoint.status = "SKIPPED";
     checkpoint.completedAtEpochMillis = Date.now();
   }
 

@@ -79,18 +79,18 @@ As a release owner, I can run this latency scenario without regressing existing 
 - **FR-003**: The system MUST launch and play a random YouTube video on Emulator A after both recordings are active.
 - **FR-004**: The system MUST verify that Emulator B displays actively playing video content from the NDI viewer during the measurement window.
 - **FR-005**: The system MUST analyze both recordings and compute end-to-end latency as a numeric result in milliseconds.
-- **FR-005a**: The primary latency computation method MUST use motion/content cross-correlation between source and receiver recordings.
-- **FR-006**: The system MUST persist run artifacts required to audit the measurement result, including both recordings and analysis output.
-- **FR-007**: The system MUST fail the run with explicit, step-level reasons when prerequisites, playback visibility, recording integrity, or analysis validity are not met.
-- **FR-008**: The system MUST include emulator-run end-to-end coverage for this user-visible latency scenario.
-- **FR-009**: The system MUST execute and keep passing all existing end-to-end suites covered by the regression gate policy.
+- **FR-006**: The primary latency computation method MUST use motion/content cross-correlation between source and receiver recordings.
+- **FR-007**: The system MUST persist run artifacts required to audit the measurement result, including both recordings and analysis output.
+- **FR-008**: The system MUST fail the run with explicit, step-level reasons when prerequisites, playback visibility, recording integrity, or analysis validity are not met.
+- **FR-009**: The system MUST include emulator-run end-to-end coverage for this user-visible latency scenario.
+- **FR-010**: The system MUST execute and keep passing all existing end-to-end suites covered by the regression gate policy.
 
 ### Key Entities *(include if feature involves data)*
 
 - **LatencyMeasurementRun**: One end-to-end scenario execution, including start time, end time, completion status, and failure reason when applicable.
 - **RecordingArtifact**: Captured video evidence for each emulator, including role (source/receiver), duration, and file reference.
 - **LatencyAnalysisResult**: Measurement output containing computed latency (milliseconds), confidence/validity status, and supporting metadata.
-- **ScenarioStepCheckpoint**: Ordered step outcomes for stream start, stream view, recording start, playback trigger, receiver visibility, and analysis completion.
+- **ScenarioCheckpoint**: Ordered step outcomes for stream start, stream view, recording start, playback trigger, receiver visibility, and analysis completion.
 
 ### Assumptions
 

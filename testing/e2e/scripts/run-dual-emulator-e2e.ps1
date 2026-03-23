@@ -449,6 +449,9 @@ $suiteCompleted = $false
 $suiteFailure = $null
 $suiteStartedAtUtc = (Get-Date).ToUniversalTime().ToString("o")
 $summaryPath = Join-Path $artifactDir "run-summary.json"
+$failedStepName = $null
+$failedStepIndex = $null
+$failedStepReason = $null
 try {
     $relayScript = Join-Path $PSScriptRoot "ndi-relay-server.mjs"
     $relayProcess = Start-Process -FilePath "node" -ArgumentList "`"$relayScript`"" -PassThru -WindowStyle Hidden
@@ -459,6 +462,9 @@ try {
     $env:APP_PACKAGE = $AppPackage
     $env:DUAL_EMULATOR_SCREENSHOT_DIR = $screenshotDir
     $env:DUAL_EMULATOR_CHECKPOINT_PATH = $checkpointArtifactPath
+    if (-not $env:LATENCY_YOUTUBE_URL) {
+        $env:LATENCY_YOUTUBE_URL = "https://www.youtube.com/watch?v=jNQXAC9IVRw"
+    }
     npm run test:dual-emulator -- --grep "@dual-emulator" --reporter=list
     if ($LASTEXITCODE -ne 0) {
         throw "Playwright dual-emulator suite failed with exit code $LASTEXITCODE"
@@ -481,11 +487,16 @@ finally {
     if (Test-Path $checkpointArtifactPath) {
         try {
             $cpJson = Get-Content $checkpointArtifactPath -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+            $failedStepName = $cpJson.failedStepName
+            $failedStepIndex = $cpJson.failedStepIndex
+            $failedCheckpoint = $cpJson.checkpoints | Where-Object { $_.status -eq "FAILED" } | Select-Object -First 1
+            if ($failedCheckpoint -and $failedCheckpoint.failureReason) {
+                $failedStepReason = [string]$failedCheckpoint.failureReason
+            }
             if ($cpJson.failedStepName) {
                 Write-Host ""
                 Write-Host "=========================================="
                 Write-Host "FAILED STEP: $($cpJson.failedStepName) (step $($cpJson.failedStepIndex))"
-                $failedCheckpoint = $cpJson.checkpoints | Where-Object { $_.status -eq "FAILED" } | Select-Object -First 1
                 if ($failedCheckpoint -and $failedCheckpoint.failureReason) {
                     Write-Host "REASON: $($failedCheckpoint.failureReason)"
                 }
@@ -503,6 +514,9 @@ finally {
         finishedAtUtc = (Get-Date).ToUniversalTime().ToString("o")
         completed = $suiteCompleted
         failure = $suiteFailure
+        failedStepName = $failedStepName
+        failedStepIndex = $failedStepIndex
+        failedStepReason = $failedStepReason
         checkpointArtifactPath = $checkpointArtifactPath
         screenshotDirectory = $screenshotDir
         latencyArtifacts = [PSCustomObject]@{
@@ -517,6 +531,12 @@ finally {
                 (Join-Path $artifactDir "latency-analysis.json"),
                 (Join-Path $artifactDir "analysis/latency-analysis.json")
             ))
+        }
+        invalidStateEvidence = [PSCustomObject]@{
+            hasFailedStep = [bool]$failedStepName
+            failedStepName = $failedStepName
+            failedStepIndex = $failedStepIndex
+            failedStepReason = $failedStepReason
         }
     }
     $summary | ConvertTo-Json -Depth 4 | Out-File -FilePath $summaryPath -Encoding utf8

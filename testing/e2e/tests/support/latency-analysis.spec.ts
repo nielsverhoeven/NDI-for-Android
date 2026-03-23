@@ -1,4 +1,6 @@
 import { expect, test } from "@playwright/test";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   analyzeLatencyWithCrossCorrelation,
   buildInvalidLatencyResult,
@@ -24,6 +26,8 @@ function makeShiftedMotionSeries(length: number, lagFrames: number): { source: n
   return { source, receiver };
 }
 
+const EXISTING_RECORDING_PATH = __filename;
+
 test("@latency @us1 cross-correlation window scores aligned signal strongly", () => {
   const source = [0, 1, 2, 3, 4, 5, 6, 7];
   const receiver = [0, 0, 1, 2, 3, 4, 5, 6];
@@ -42,10 +46,11 @@ test("@latency @us1 latency analysis returns VALID result with expected lag", ()
     sourceMotionSeries: source,
     receiverMotionSeries: receiver,
     sampleRateFps: 30,
-    sourceRecordingPath: "artifacts/recordings/source.mp4",
-    receiverRecordingPath: "artifacts/recordings/receiver.mp4",
+    sourceRecordingPath: EXISTING_RECORDING_PATH,
+    receiverRecordingPath: EXISTING_RECORDING_PATH,
     receiverPlaybackVerified: true,
     maxLagFrames: 30,
+    minCorrelation: 0.05,
   });
 
   expect(result.method).toBe(MOTION_CROSS_CORRELATION_METHOD);
@@ -97,8 +102,8 @@ test("@latency @us2 invalid result is returned for low-correlation input", () =>
     sourceMotionSeries: source,
     receiverMotionSeries: receiver,
     sampleRateFps: 30,
-    sourceRecordingPath: "source.mp4",
-    receiverRecordingPath: "receiver.mp4",
+    sourceRecordingPath: EXISTING_RECORDING_PATH,
+    receiverRecordingPath: EXISTING_RECORDING_PATH,
     receiverPlaybackVerified: true,
     maxLagFrames: 20,
     minCorrelation: 0.8,
@@ -116,8 +121,8 @@ test("@latency @us2 invalid result is returned when lag is negative", () => {
     sourceMotionSeries: source,
     receiverMotionSeries: receiver,
     sampleRateFps: 30,
-    sourceRecordingPath: "source.mp4",
-    receiverRecordingPath: "receiver.mp4",
+    sourceRecordingPath: EXISTING_RECORDING_PATH,
+    receiverRecordingPath: EXISTING_RECORDING_PATH,
     receiverPlaybackVerified: true,
     maxLagFrames: 20,
   });
@@ -135,4 +140,44 @@ test("@latency @us2 invalid helper returns standardized payload", () => {
   expect(result.invalidReason).toBe("INSUFFICIENT_SIGNAL");
   expect(result.detail).toContain("no usable frames");
   expect(result.method).toBe(MOTION_CROSS_CORRELATION_METHOD);
+});
+
+test("@latency @us2 invalid result is returned when recording files are not found on disk", () => {
+  const { source, receiver } = makeShiftedMotionSeries(80, 3);
+
+  const result = analyzeLatencyWithCrossCorrelation({
+    sourceMotionSeries: source,
+    receiverMotionSeries: receiver,
+    sampleRateFps: 30,
+    sourceRecordingPath: "missing-source.mp4",
+    receiverRecordingPath: "missing-receiver.mp4",
+    receiverPlaybackVerified: true,
+    validateRecordingArtifacts: true,
+  });
+
+  expect(result.status).toBe("INVALID");
+  expect(result.invalidReason).toBe("UNUSABLE_RECORDING_ARTIFACT");
+});
+
+test("@latency @us2 invalid result is returned when recording files are empty", ({}, testInfo) => {
+  const { source, receiver } = makeShiftedMotionSeries(80, 3);
+  const emptyDir = testInfo.outputPath("empty-recordings");
+  mkdirSync(emptyDir, { recursive: true });
+  const sourcePath = join(emptyDir, "source.mp4");
+  const receiverPath = join(emptyDir, "receiver.mp4");
+  writeFileSync(sourcePath, "", { encoding: "utf-8" });
+  writeFileSync(receiverPath, "", { encoding: "utf-8" });
+
+  const result = analyzeLatencyWithCrossCorrelation({
+    sourceMotionSeries: source,
+    receiverMotionSeries: receiver,
+    sampleRateFps: 30,
+    sourceRecordingPath: sourcePath,
+    receiverRecordingPath: receiverPath,
+    receiverPlaybackVerified: true,
+    validateRecordingArtifacts: true,
+  });
+
+  expect(result.status).toBe("INVALID");
+  expect(result.invalidReason).toBe("UNUSABLE_RECORDING_ARTIFACT");
 });

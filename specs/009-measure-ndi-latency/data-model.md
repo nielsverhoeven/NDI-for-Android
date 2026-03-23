@@ -46,18 +46,19 @@
   - VALID requires estimatedLatencyMs.
   - INVALID requires invalidReason.
 
-## Entity: ScenarioCheckpoint
+## Entity: ScenarioCheckpoint (formerly ScenarioStepCheckpoint)
 
 - Purpose: Step-level execution trace.
 - Fields:
-  - checkpointId (string, required).
+  - checkpointId (string, required): unique identifier.
   - runId (string, required).
-  - stepName (enum, required): START_STREAM_A | START_VIEW_B | START_RECORDING | START_YOUTUBE | VERIFY_VIEWER_PLAYBACK | ANALYZE_LATENCY.
+  - stepName (enum, required): START_STREAM_A | START_VIEW_B | START_RECORDING | START_YOUTUBE | VERIFY_VIEWER_PLAYBACK | YOUTUBE_UNAVAILABLE | ANALYZE_LATENCY.
   - status (enum, required): PASS | FAIL | SKIP.
   - timestampEpochMillis (long, required).
   - detail (string, optional).
 - Validation rules:
   - At most one checkpoint may be FAIL for terminal run failure reason.
+  - YOUTUBE_UNAVAILABLE step terminates scenario and marks run invalid with explicit unavailability reason.
 
 ## Entity: QualityGateEvidence
 

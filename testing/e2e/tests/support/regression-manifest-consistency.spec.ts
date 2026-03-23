@@ -31,3 +31,23 @@ test("@us3 manifest has no duplicate entries", () => {
   const manifest = readManifest();
   expect(new Set(manifest.specs).size).toBe(manifest.specs.length);
 });
+
+test("@us3 quality summary wiring includes latency scenario and existing regression", () => {
+  const scriptsRoot = join(__dirname, "..", "..", "scripts");
+  const primaryRunner = readFileSync(join(scriptsRoot, "run-primary-pr-e2e.ps1"), "utf-8");
+
+  expect(primaryRunner).toContain("latency-scenario");
+  expect(primaryRunner).toContain("-LatencyScenarioJson");
+  expect(primaryRunner).toContain("tests/support/latency-analysis.spec.ts");
+  expect(primaryRunner).toContain("tests/support/scenario-checkpoints.spec.ts");
+  expect(primaryRunner).toContain("@latency");
+});
+
+test("@us3 summary script emits latency and regression suites", () => {
+  const scriptsRoot = join(__dirname, "..", "..", "scripts");
+  const summarizeScript = readFileSync(join(scriptsRoot, "summarize-e2e-results.ps1"), "utf-8");
+
+  expect(summarizeScript).toContain("LatencyScenarioJson");
+  expect(summarizeScript).toContain("Latency Scenario");
+  expect(summarizeScript).toContain("Existing Regression");
+});
