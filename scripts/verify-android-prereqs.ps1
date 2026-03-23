@@ -1,7 +1,38 @@
 param(
     [switch]$CiMode,
-    [switch]$AllowMissingNdiSdk
+    [switch]$AllowMissingNdiSdk,
+    [switch]$NoInstall,  # Skip automatic installation of missing packages
+    [switch]$SkipExecution  # Skip main execution (for testing)
 )
+
+<#
+.SYNOPSIS
+    Verifies Android development prerequisites and optionally installs missing components.
+
+.DESCRIPTION
+    This script checks for required Android development tools and SDK components.
+    In CI mode or when packages are missing, it can automatically download and install
+    the required Android SDK packages using sdkmanager.
+
+.PARAMETER CiMode
+    Enables CI-specific behavior (e.g., fails fast on errors).
+
+.PARAMETER AllowMissingNdiSdk
+    Skips NDI SDK requirement check (useful for CI environments without proprietary SDK).
+
+.PARAMETER NoInstall
+    Prevents automatic installation of missing packages (verification-only mode).
+
+.EXAMPLE
+    .\verify-android-prereqs.ps1
+
+.EXAMPLE
+    .\verify-android-prereqs.ps1 -CiMode -AllowMissingNdiSdk
+
+.NOTES
+    Requires Android SDK to be installed and ANDROID_SDK_ROOT environment variable set.
+    Automatic installation requires internet access and accepts SDK licenses automatically.
+#>
 
 $ErrorActionPreference = "Stop"
 
@@ -25,7 +56,108 @@ function Add-Result {
     }
 }
 
+function Write-InstallationLog {
+    param(
+        [string]$Message,
+        [string]$Level = "INFO"
+    )
+
+    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    Write-Host "[$timestamp] [$Level] $Message"
+}
+
+function New-Prerequisite {
+    param(
+        [string]$Name,
+        [string]$Type,
+        [bool]$Required = $true,
+        [string]$CheckPath = "",
+        [string]$InstallCommand = ""
+    )
+
+    [pscustomobject]@{
+        Name = $Name
+        Type = $Type
+        Required = $Required
+        CheckPath = $CheckPath
+        InstallCommand = $InstallCommand
+    }
+}
+
+function New-InstallationResult {
+    param(
+        [string]$PrerequisiteName,
+        [bool]$Success,
+        [string]$ErrorMessage = "",
+        [TimeSpan]$Duration = [TimeSpan]::Zero
+    )
+
+    [pscustomobject]@{
+        PrerequisiteName = $PrerequisiteName
+        Success = $Success
+        ErrorMessage = $ErrorMessage
+        Duration = $Duration
+        Timestamp = Get-Date
+    }
+}
+
+function Install-AndroidPackage {
+    param(
+        [string]$packageName,
+        [int]$maxRetries = 3,
+        [int]$timeoutSeconds = 300  # 5 minutes timeout
+    )
+
+    Write-InstallationLog "Starting installation of Android package: $packageName (timeout: ${timeoutSeconds}s)"
+
+    $startTime = Get-Date
+    $timeoutTime = $startTime.AddSeconds($timeoutSeconds)
+
+    for ($attempt = 1; $attempt -le $maxRetries; $attempt++) {
+        # Check timeout
+        if ((Get-Date) -gt $timeoutTime) {
+            $duration = (Get-Date) - $startTime
+            return New-InstallationResult -PrerequisiteName $packageName -Success $false -ErrorMessage "Installation timed out after ${timeoutSeconds} seconds" -Duration $duration
+        }
+
+        try {
+            Write-InstallationLog "Attempt $attempt/$maxRetries for package: $packageName"
+
+            # Accept licenses first
+            $licenseProcess = Start-Process -FilePath "cmd.exe" -ArgumentList "/c echo y | sdkmanager --licenses" -NoNewWindow -Wait
+            if ($licenseProcess.ExitCode -ne 0) {
+                throw "License acceptance failed"
+            }
+
+            # Install package
+            $installProcess = Start-Process -FilePath "sdkmanager" -ArgumentList "`"$packageName`"" -NoNewWindow -Wait
+            if ($installProcess.ExitCode -eq 0) {
+                $duration = (Get-Date) - $startTime
+                Write-InstallationLog "Successfully installed package: $packageName in $($duration.TotalSeconds) seconds"
+                return New-InstallationResult -PrerequisiteName $packageName -Success $true -Duration $duration
+            } else {
+                throw "sdkmanager exited with code $($installProcess.ExitCode)"
+            }
+        }
+        catch {
+            $errorMessage = $_.Exception.Message
+            Write-InstallationLog "Attempt $attempt failed: $errorMessage" "ERROR"
+
+            if ($attempt -eq $maxRetries) {
+                $duration = (Get-Date) - $startTime
+                return New-InstallationResult -PrerequisiteName $packageName -Success $false -ErrorMessage $errorMessage -Duration $duration
+            }
+
+            # Wait before retry (exponential backoff)
+            $waitSeconds = [math]::Pow(2, $attempt - 1)
+            Write-InstallationLog "Waiting $waitSeconds seconds before retry..."
+            Start-Sleep -Seconds $waitSeconds
+        }
+    }
+}
+
 $results = @()
+$installationResults = @()
 
 $requiredCommands = @("java", "javac", "adb", "sdkmanager", "avdmanager", "emulator", "cmake", "ninja")
 foreach ($command in $requiredCommands) {
@@ -75,22 +207,42 @@ $androidPackages = @("platform-tools", "platforms;android-34", "build-tools;34.0
 if ($androidSdkRoot) {
     foreach ($package in $androidPackages) {
         $packagePath = Join-Path $androidSdkRoot ($package -replace ";", "\\")
-        $results += Add-Result -Name "package:$package" -Ok (Test-Path $packagePath) -Detail $packagePath
+        $exists = Test-Path $packagePath
+
+        if (-not $exists) {
+            Write-InstallationLog "Package $package missing, attempting installation"
+            $installResult = Install-AndroidPackage -packageName $package
+            $installationResults += $installResult
+            $exists = $installResult.Success
+        }
+
+        $results += Add-Result -Name "package:$package" -Ok $exists -Detail $packagePath
     }
 }
 
 $failed = $results | Where-Object { -not $_.Ok }
 
-Write-Host "Android prerequisite verification"
-foreach ($result in $results) {
-    $status = if ($result.Ok) { "PASS" } else { "FAIL" }
-    Write-Host ("[{0}] {1} - {2}" -f $status, $result.Name, $result.Detail)
-}
+if (-not $SkipExecution) {
+    Write-Host "Android prerequisite verification"
+    foreach ($result in $results) {
+        $status = if ($result.Ok) { "PASS" } else { "FAIL" }
+        Write-Host ("[{0}] {1} - {2}" -f $status, $result.Name, $result.Detail)
+    }
 
-if ($failed.Count -gt 0) {
-    if ($CiMode) {
-        Write-Error ("Prerequisite verification failed for {0} checks." -f $failed.Count)
-    } else {
-        exit 1
+    if ($installationResults.Count -gt 0) {
+        Write-Host ""
+        Write-Host "Installation Summary:"
+        foreach ($install in $installationResults) {
+            $status = if ($install.Success) { "SUCCESS" } else { "FAILED" }
+            Write-Host ("[{0}] {1} - {2} ({3}s)" -f $status, $install.PrerequisiteName, $(if ($install.Success) { "Installed" } else { $install.ErrorMessage }), $install.Duration.TotalSeconds)
+        }
+    }
+
+    if ($failed.Count -gt 0) {
+        if ($CiMode) {
+            Write-Error ("Prerequisite verification failed for {0} checks." -f $failed.Count)
+        } else {
+            exit 1
+        }
     }
 }
