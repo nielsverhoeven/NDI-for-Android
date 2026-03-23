@@ -9,6 +9,7 @@ import com.ndi.core.model.ViewerSession
 import com.ndi.core.model.navigation.HomeDashboardSnapshot
 import com.ndi.core.model.navigation.NavigationTransitionRecord
 import com.ndi.core.model.navigation.NavigationTrigger
+import com.ndi.core.model.navigation.BackgroundContinuationReason
 import com.ndi.core.model.navigation.StreamContinuityState
 import com.ndi.core.model.navigation.TopLevelDestination
 import com.ndi.core.model.navigation.TopLevelDestinationState
@@ -114,12 +115,17 @@ interface HomeDashboardRepository {
 
 /**
  * Tracks Stream/output continuity when navigating between top-level destinations.
- * Active output must NOT be stopped by top-level navigation.
+ * Active output must NOT be stopped by top-level navigation or app backgrounding.
+ * Continuity state is cleared only when an explicit stop is processed.
  */
 interface StreamContinuityRepository {
     fun observeContinuityState(): Flow<StreamContinuityState>
 
     suspend fun captureLastKnownState()
+
+    suspend fun markAppBackgrounded(reason: BackgroundContinuationReason)
+
+    suspend fun markAppForegrounded()
 
     suspend fun clearTransientStateOnExplicitStop()
 }

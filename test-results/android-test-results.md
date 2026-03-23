@@ -1,3 +1,55 @@
+# Android Validation Results - 2026-03-20 (US2 Re-validation After Interop Checkpoint Updates)
+
+## 1) Scope
+- Branch/commit: Working tree validation run on current local branch (commit hash not captured in this run).
+- Changed modules under validation focus: [testing/e2e/tests/interop-dual-emulator.spec.ts](testing/e2e/tests/interop-dual-emulator.spec.ts), [testing/e2e/tests/support/visual-assertions.spec.ts](testing/e2e/tests/support/visual-assertions.spec.ts), [testing/e2e/scripts/run-dual-emulator-e2e.ps1](testing/e2e/scripts/run-dual-emulator-e2e.ps1)
+- Related spec task IDs: T021, T022, T023, T026, T027, T028, T029 from [specs/005-background-stream-persistence/tasks.md](specs/005-background-stream-persistence/tasks.md)
+- Module graph confirmed from [settings.gradle.kts](settings.gradle.kts): :app, :core:model, :core:database, :core:testing, :feature:ndi-browser:domain, :feature:ndi-browser:data, :feature:ndi-browser:presentation, :ndi:sdk-bridge.
+- Objective: Re-validate US2 Chrome and nos.nl propagation after interop checkpoint updates and report runtime sign-off status.
+
+## 2) Stage Results
+| Stage | Status | Executed Commands | Result |
+|---|---|---|---|
+| Prerequisite gate (first attempt) | FAIL | ./scripts/verify-android-prereqs.ps1 | Failed because `JAVA_HOME` and `ANDROID_SDK_ROOT` were unset in shell environment. |
+| Prerequisite gate (re-run after session env normalization) | PASS | ./scripts/verify-android-prereqs.ps1 | Passed after setting valid session values (`JAVA_HOME=C:\Program Files\Java\jdk-21.0.10`, `ANDROID_SDK_ROOT=C:\Android\SDK`). |
+| Wrapper/toolchain capture | PASS | ./gradlew.bat --version | Gradle 9.2.1 detected with Java 21 launcher. |
+| US2 visual assertions | PASS | npm --prefix testing/e2e run test -- tests/support/visual-assertions.spec.ts --project=android-dual-emulator | 3/3 tests passed. |
+| US2 interop targeted run (direct Playwright, initial) | FAIL | npm --prefix testing/e2e run test -- tests/interop-dual-emulator.spec.ts --project=android-dual-emulator --grep "publish discover play stop interop" | Failed preflight: `adb -s emulator-5554 get-state` returned `device not found`. |
+| Emulator availability remediation | PASS | adb devices -l; avdmanager list avd; emulator launch/wait scripts | Both AVDs (`Emulator_A`, `Emulator_B`) brought online as `emulator-5554` and `emulator-5556`. |
+| US2 interop targeted run (direct Playwright, after emulator launch) | FAIL | npm --prefix testing/e2e run test -- tests/interop-dual-emulator.spec.ts --project=android-dual-emulator --grep "publish discover play stop interop" | Failed with `connect ECONNREFUSED 127.0.0.1:17455` (relay not provisioned in direct invocation). |
+| Stage 4 full dual-emulator harness | FAIL | powershell -ExecutionPolicy Bypass -File .\testing\e2e\scripts\run-dual-emulator-e2e.ps1 -EmulatorASerial emulator-5554 -EmulatorBSerial emulator-5556 | Harness completed preflight and executed suite; `publish discover play stop interop` failed (both attempts) on visual similarity assertion; companion interop test passed. |
+
+## 3) Issues Found & Fixes
+| Defect/Issue | Root Cause | Fix Applied | Verification |
+|---|---|---|---|
+| US2 runtime scenario initially could not start | Required dual-emulator devices were not online (`emulator-5554` missing) | Launched and stabilized `Emulator_A` and `Emulator_B` on expected ports and confirmed with `adb devices -l` | Both devices reached `device` state before rerun |
+| Direct interop invocation failed with relay connection error | Direct Playwright command does not provision harness relay server (`127.0.0.1:17455`) | Switched to official harness command [testing/e2e/scripts/run-dual-emulator-e2e.ps1](testing/e2e/scripts/run-dual-emulator-e2e.ps1) | Relay refusal no longer appeared in harness run |
+| US2 runtime propagation checkpoint failed under harness | Receiver frame similarity stayed below threshold during `waitForReceiverPreviewEvidence` in [testing/e2e/tests/support/visual-assertions.ts](testing/e2e/tests/support/visual-assertions.ts) | No code fix in this validation run (test execution and triage only) | Failure reproduced twice in same run: similarity 0.1699 and 0.2945 with high mean delta |
+| Harness command returned success exit code despite failing Playwright test | Runner script does not currently fail fast on downstream test failure status | No code change in this validation run | `terminal_last_command` reported exit code 0 while Playwright summary contained `1 failed` |
+
+## 4) E2E Evidence
+- Latest harness artifact directory:
+  - [testing/e2e/artifacts/dual-emulator-20260320-131333](testing/e2e/artifacts/dual-emulator-20260320-131333)
+- US2 interop failure trace:
+  - [testing/e2e/test-results/interop-dual-emulator--dua-d2744--discover-play-stop-interop-android-dual-emulator-retry1/trace.zip](testing/e2e/test-results/interop-dual-emulator--dua-d2744--discover-play-stop-interop-android-dual-emulator-retry1/trace.zip)
+- Key runtime screenshots captured by failing US2 run:
+  - [testing/e2e/test-results/interop-dual-emulator--dua-d2744--discover-play-stop-interop-android-dual-emulator/attachments/publisher-chrome-36740b29c88df34f2c5687b473e4b1b24ce061a4.png](testing/e2e/test-results/interop-dual-emulator--dua-d2744--discover-play-stop-interop-android-dual-emulator/attachments/publisher-chrome-36740b29c88df34f2c5687b473e4b1b24ce061a4.png)
+  - [testing/e2e/test-results/interop-dual-emulator--dua-d2744--discover-play-stop-interop-android-dual-emulator/attachments/receiver-chrome-953f478956a6e00160311e3528e8225f67fcea02.png](testing/e2e/test-results/interop-dual-emulator--dua-d2744--discover-play-stop-interop-android-dual-emulator/attachments/receiver-chrome-953f478956a6e00160311e3528e8225f67fcea02.png)
+- Visual helper evidence:
+  - `tests/support/visual-assertions.spec.ts` passed 3/3 in this run.
+
+## 5) Release Gate Status
+- [x] Prerequisite gate executed for this run (`scripts/verify-android-prereqs.ps1`)
+- [x] Wrapper/toolchain capture for this run (`./gradlew.bat --version`)
+- [ ] Stage 1 Android assemble tasks executed
+- [ ] Stage 2 module-aware unit tests executed
+- [ ] Stage 3 instrumentation/UI tests executed
+- [x] Stage 4 targeted US2 e2e validation attempted
+- [x] Stage 4 full dual-emulator harness run completed (`testing/e2e/scripts/run-dual-emulator-e2e.ps1`)
+- [ ] Stage 6 release checks executed (`:app:assembleRelease`, `:app:verifyReleaseHardening`)
+
+Final disposition for this run: **US2 runtime sign-off is FAIL/BLOCKED**. The environment is now feasible (both emulators online and harness runnable), but the required interop checkpoint (`publish discover play stop interop`) fails consistently on receiver-vs-publisher visual propagation validation, and the harness currently masks this failure via exit code 0.
+
 # Android Validation Results - 2026-03-17
 
 ## 1) Scope

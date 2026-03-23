@@ -4,6 +4,8 @@ import com.ndi.core.model.TelemetryEvent
 import com.ndi.feature.ndibrowser.domain.repository.NdiOutputRepository
 import com.ndi.feature.ndibrowser.domain.repository.OutputConfigurationRepository
 import com.ndi.feature.ndibrowser.domain.repository.ScreenCaptureConsentRepository
+import com.ndi.feature.ndibrowser.domain.repository.StreamContinuityRepository
+import com.ndi.core.model.navigation.BackgroundContinuationReason
 
 fun interface OutputTelemetryEmitter {
     fun emit(event: TelemetryEvent)
@@ -13,6 +15,7 @@ object OutputDependencies {
     var outputRepositoryProvider: (() -> NdiOutputRepository)? = null
     var outputConfigurationRepositoryProvider: (() -> OutputConfigurationRepository)? = null
     var screenCaptureConsentRepositoryProvider: (() -> ScreenCaptureConsentRepository)? = null
+    var streamContinuityRepositoryProvider: (() -> StreamContinuityRepository)? = null
     var telemetryEmitter: OutputTelemetryEmitter = OutputTelemetryEmitter {}
 
     fun requireOutputRepository(): NdiOutputRepository {
@@ -25,6 +28,10 @@ object OutputDependencies {
 
     fun requireScreenCaptureConsentRepository(): ScreenCaptureConsentRepository {
         return requireNotNull(screenCaptureConsentRepositoryProvider) { "Screen capture consent dependency is not configured." }.invoke()
+    }
+
+    fun requireStreamContinuityRepository(): StreamContinuityRepository {
+        return requireNotNull(streamContinuityRepositoryProvider) { "Stream continuity dependency is not configured." }.invoke()
     }
 }
 
@@ -142,6 +149,25 @@ object OutputTelemetry {
                 "sourceId" to sourceId,
                 "attempts" to attempts.toString(),
             ),
+        )
+    }
+
+    fun outputContinuityBackgrounded(sourceId: String, reason: BackgroundContinuationReason): TelemetryEvent {
+        return TelemetryEvent(
+            name = TelemetryEvent.OUTPUT_CONTINUITY_BACKGROUNDED,
+            timestampEpochMillis = System.currentTimeMillis(),
+            attributes = mapOf(
+                "sourceId" to sourceId,
+                "reason" to reason.name,
+            ),
+        )
+    }
+
+    fun outputContinuityForegrounded(sourceId: String): TelemetryEvent {
+        return TelemetryEvent(
+            name = TelemetryEvent.OUTPUT_CONTINUITY_FOREGROUNDED,
+            timestampEpochMillis = System.currentTimeMillis(),
+            attributes = mapOf("sourceId" to sourceId),
         )
     }
 }

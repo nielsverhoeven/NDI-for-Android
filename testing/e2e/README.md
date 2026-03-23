@@ -112,3 +112,50 @@ artifacts in this order:
 3. Verify receiver playing image is not black and shows visible content.
 4. If mismatch persists, inspect the paired UTP logs and logcat snapshots.
 
+## Background Stream Continuity Scenario (Feature 005)
+
+This scenario proves that stream output stays active when the broadcaster leaves
+the app and navigates to another application (Chrome, nos.nl).
+
+### What the scenario tests
+
+The six-step interop test (`@dual-emulator publish discover play stop interop`)
+exercises:
+
+1. **START_STREAM_A** — broadcaster starts NDI output on Emulator A, reaches ACTIVE.
+2. **START_VIEW_B** — receiver discovers and plays the stream on Emulator B, reaches PLAYING.
+3. **OPEN_CHROME_A** — broadcaster presses Home and opens Chrome on Emulator A.
+4. **VERIFY_CHROME_ON_B** — receiver viewer surface is checked for Chrome-like visual content.
+5. **OPEN_NOS_A** — broadcaster navigates Chrome to `https://nos.nl`.
+6. **VERIFY_NOS_ON_B** — receiver viewer surface is checked for nos.nl page content.
+
+Then the broadcaster returns to the app's output screen and taps **Stop Output**,
+confirming the stream terminates cleanly.
+
+### Fail-fast step diagnostics
+
+Every run persists a checkpoint timeline under:
+
+```
+testing/e2e/artifacts/dual-emulator-<timestamp>/scenario-checkpoints.json
+```
+
+On any step failure the harness prints:
+
+```
+==========================================
+FAILED STEP: <step-name> (step <N>)
+REASON: <error detail>
+Checkpoint artifact: <path>
+==========================================
+```
+
+and exits with a non-zero code.
+
+### Extending or modifying steps
+
+Step names are the `SixStepCheckpointName` union type in
+`testing/e2e/tests/support/scenario-checkpoints.ts`. Add new steps by extending
+that union and `ORDERED_STEPS`. The recorder enforces strict sequential execution
+— no step may be skipped.
+

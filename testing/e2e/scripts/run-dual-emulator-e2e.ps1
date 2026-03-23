@@ -7,6 +7,8 @@ param(
 
     [string]$AppPackage = "com.ndi.app.debug",
 
+    [string]$ScenarioCheckpointArtifactPath,
+
     [switch]$PreflightOnly
 )
 
@@ -281,6 +283,24 @@ $artifactDir = Join-Path $PSScriptRoot "..\artifacts\dual-emulator-$timestamp"
 New-Item -Path $artifactDir -ItemType Directory -Force | Out-Null
 $screenshotDir = Join-Path $artifactDir "screenshots"
 New-Item -Path $screenshotDir -ItemType Directory -Force | Out-Null
+$checkpointArtifactPath = if ($ScenarioCheckpointArtifactPath) {
+    [System.IO.Path]::GetFullPath($ScenarioCheckpointArtifactPath)
+}
+else {
+    Join-Path $artifactDir "scenario-checkpoints.json"
+}
+$checkpointArtifactDir = Split-Path -Path $checkpointArtifactPath -Parent
+if (-not [string]::IsNullOrWhiteSpace($checkpointArtifactDir)) {
+    New-Item -Path $checkpointArtifactDir -ItemType Directory -Force | Out-Null
+}
+
+$checkpointStub = [PSCustomObject]@{
+    runStartedAtUtc = (Get-Date).ToUniversalTime().ToString("o")
+    publisherSerial = $EmulatorASerial
+    receiverSerial = $EmulatorBSerial
+    status = "PENDING"
+}
+$checkpointStub | ConvertTo-Json -Depth 4 | Out-File -FilePath $checkpointArtifactPath -Encoding utf8
 
 $publisherProfile = Get-AndroidVersionProfile -Serial $EmulatorASerial -Role "publisher"
 $receiverProfile = Get-AndroidVersionProfile -Serial $EmulatorBSerial -Role "receiver"
@@ -325,7 +345,11 @@ try {
     $env:EMULATOR_B_SERIAL = $EmulatorBSerial
     $env:APP_PACKAGE = $AppPackage
     $env:DUAL_EMULATOR_SCREENSHOT_DIR = $screenshotDir
+    $env:DUAL_EMULATOR_CHECKPOINT_PATH = $checkpointArtifactPath
     npm run test:dual-emulator -- --grep "@dual-emulator" --reporter=list
+    if ($LASTEXITCODE -ne 0) {
+        throw "Playwright dual-emulator suite failed with exit code $LASTEXITCODE"
+    }
 }
 finally {
     if ($relayProcess -and -not $relayProcess.HasExited) {
@@ -335,5 +359,27 @@ finally {
     adb -s $EmulatorBSerial logcat -d -v time | Out-File -FilePath (Join-Path $artifactDir "receiver-postrun.log") -Encoding utf8
     Capture-EmulatorScreenshot -Serial $EmulatorASerial -DestinationPath (Join-Path $screenshotDir "publisher-postrun.png")
     Capture-EmulatorScreenshot -Serial $EmulatorBSerial -DestinationPath (Join-Path $screenshotDir "receiver-postrun.png")
+
+    # Surface failed-step diagnostics from the checkpoint artifact (T036).
+    if (Test-Path $checkpointArtifactPath) {
+        try {
+            $cpJson = Get-Content $checkpointArtifactPath -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+            if ($cpJson.failedStepName) {
+                Write-Host ""
+                Write-Host "=========================================="
+                Write-Host "FAILED STEP: $($cpJson.failedStepName) (step $($cpJson.failedStepIndex))"
+                $failedCheckpoint = $cpJson.checkpoints | Where-Object { $_.status -eq "FAILED" } | Select-Object -First 1
+                if ($failedCheckpoint -and $failedCheckpoint.failureReason) {
+                    Write-Host "REASON: $($failedCheckpoint.failureReason)"
+                }
+                Write-Host "Checkpoint artifact: $checkpointArtifactPath"
+                Write-Host "=========================================="
+            }
+        }
+        catch {
+            # Checkpoint file may be partial on early failure; skip silently.
+        }
+    }
+
     Pop-Location
 }

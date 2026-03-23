@@ -94,6 +94,7 @@ class AppGraph private constructor(context: Context) {
         OutputDependencies.outputRepositoryProvider = { outputRepository }
         OutputDependencies.outputConfigurationRepositoryProvider = { outputConfigurationRepository }
         OutputDependencies.screenCaptureConsentRepositoryProvider = { screenCaptureConsentRepository }
+        OutputDependencies.streamContinuityRepositoryProvider = { streamContinuityRepository }
 
         // Spec 003: Home dashboard dependencies
         HomeDependencies.homeDashboardRepositoryProvider = { homeDashboardRepository }

@@ -4,10 +4,13 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.ndi.core.model.OutputState
+import com.ndi.core.model.navigation.BackgroundContinuationReason
+import com.ndi.core.model.navigation.StreamContinuityState
 import com.ndi.core.model.navigation.TopLevelDestination
 import com.ndi.feature.ndibrowser.domain.repository.NdiOutputRepository
 import com.ndi.feature.ndibrowser.domain.repository.OutputConfigurationRepository
 import com.ndi.feature.ndibrowser.domain.repository.ScreenCaptureConsentRepository
+import com.ndi.feature.ndibrowser.domain.repository.StreamContinuityRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -32,11 +35,32 @@ data class OutputControlUiState(
     val topLevelDestination: TopLevelDestination = TopLevelDestination.STREAM,
 )
 
+private class NoOpStreamContinuityRepository : StreamContinuityRepository {
+    private val state = MutableStateFlow(
+        StreamContinuityState(
+            hasActiveOutput = false,
+            outputState = OutputState.READY,
+        ),
+    )
+
+    override fun observeContinuityState(): StateFlow<StreamContinuityState> = state.asStateFlow()
+
+    override suspend fun captureLastKnownState() = Unit
+
+    override suspend fun markAppBackgrounded(reason: BackgroundContinuationReason) = Unit
+
+    override suspend fun markAppForegrounded() = Unit
+
+    override suspend fun clearTransientStateOnExplicitStop() = Unit
+}
+
 class OutputControlViewModel(
     private val outputRepository: NdiOutputRepository,
     private val outputConfigurationRepository: OutputConfigurationRepository,
     private val screenCaptureConsentRepository: ScreenCaptureConsentRepository = OutputDependencies.requireScreenCaptureConsentRepository(),
     private val telemetryEmitter: OutputTelemetryEmitter = OutputDependencies.telemetryEmitter,
+    private val streamContinuityRepository: StreamContinuityRepository =
+        OutputDependencies.streamContinuityRepositoryProvider?.invoke() ?: NoOpStreamContinuityRepository(),
 ) : ViewModel() {
 
     private val retryWindowSeconds = 15
@@ -76,14 +100,20 @@ class OutputControlViewModel(
         if (sourceId.isBlank()) return
         viewModelScope.launch {
             val config = outputConfigurationRepository.getConfiguration()
+            val snapshot = _uiState.value
             _uiState.update {
                 it.copy(
                     sourceId = sourceId,
-                    streamName = config.preferredStreamName,
+                    streamName = if (snapshot.outputState == OutputState.ACTIVE && snapshot.sourceId == sourceId) {
+                        snapshot.streamName
+                    } else {
+                        config.preferredStreamName
+                    },
                     isLocalScreenSource = sourceId.startsWith("device-screen:"),
                 )
             }
             outputConfigurationRepository.saveLastSelectedInputSource(sourceId)
+            streamContinuityRepository.captureLastKnownState()
         }
     }
 
@@ -180,6 +210,7 @@ class OutputControlViewModel(
             runCatching {
                 telemetryEmitter.emit(OutputTelemetry.outputStopRequested(snapshot.sourceId))
                 outputRepository.stopOutput()
+                streamContinuityRepository.clearTransientStateOnExplicitStop()
                 telemetryEmitter.emit(OutputTelemetry.outputStopped(snapshot.sourceId))
             }.onFailure { error ->
                 _uiState.update {
@@ -243,10 +274,18 @@ class OutputControlViewModel(
         private val outputConfigurationRepository: OutputConfigurationRepository,
         private val screenCaptureConsentRepository: ScreenCaptureConsentRepository = OutputDependencies.requireScreenCaptureConsentRepository(),
         private val telemetryEmitter: OutputTelemetryEmitter = OutputDependencies.telemetryEmitter,
+        private val streamContinuityRepository: StreamContinuityRepository =
+            OutputDependencies.streamContinuityRepositoryProvider?.invoke() ?: NoOpStreamContinuityRepository(),
     ) : ViewModelProvider.Factory {
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
             require(modelClass.isAssignableFrom(OutputControlViewModel::class.java))
-            return OutputControlViewModel(outputRepository, outputConfigurationRepository, screenCaptureConsentRepository, telemetryEmitter) as T
+            return OutputControlViewModel(
+                outputRepository,
+                outputConfigurationRepository,
+                screenCaptureConsentRepository,
+                telemetryEmitter,
+                streamContinuityRepository,
+            ) as T
         }
     }
 }

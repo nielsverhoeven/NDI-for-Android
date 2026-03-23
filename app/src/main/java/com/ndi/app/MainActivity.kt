@@ -14,6 +14,7 @@ import com.google.android.material.navigationrail.NavigationRailView
 import com.ndi.app.databinding.ActivityMainBinding
 import com.ndi.app.di.AppGraph
 import com.ndi.app.navigation.LaunchContextResolver
+import com.ndi.app.navigation.AppContinuityViewModel
 import com.ndi.app.navigation.TopLevelNavEvent
 import com.ndi.app.navigation.TopLevelNavViewModel
 import com.ndi.app.navigation.TopLevelNavigationCoordinator
@@ -27,13 +28,15 @@ import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity(), HomeNavigationCallback {
 
+    private lateinit var appGraph: AppGraph
     private lateinit var binding: ActivityMainBinding
     private lateinit var navViewModel: TopLevelNavViewModel
+    private lateinit var continuityViewModel: AppContinuityViewModel
     private lateinit var navHost: TopLevelNavigationHost
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val appGraph = AppGraph.initialize(applicationContext)
+        appGraph = AppGraph.initialize(applicationContext)
         AppGraph.initialize(applicationContext)
 
         binding = ActivityMainBinding.inflate(layoutInflater)
@@ -46,6 +49,12 @@ class MainActivity : AppCompatActivity(), HomeNavigationCallback {
                 navigationRepository = appGraph.topLevelNavigationRepository,
             ),
         )[TopLevelNavViewModel::class.java]
+        continuityViewModel = ViewModelProvider(
+            this,
+            AppContinuityViewModel.Factory(
+                streamContinuityRepository = appGraph.streamContinuityRepository,
+            ),
+        )[AppContinuityViewModel::class.java]
 
         // Measure layout for adaptive nav
         binding.root.post {
@@ -152,6 +161,16 @@ class MainActivity : AppCompatActivity(), HomeNavigationCallback {
                 isEnabled = true
             }
         }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        continuityViewModel.onAppForegrounded()
+    }
+
+    override fun onStop() {
+        continuityViewModel.onAppBackgrounded(isChangingConfigurations)
+        super.onStop()
     }
 
     override fun onHomeNavigationEvent(event: HomeNavigationEvent) {

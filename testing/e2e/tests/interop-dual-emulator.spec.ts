@@ -14,10 +14,13 @@ import {
   captureScreenshot,
   clearLogcat,
   completeScreenShareConsent,
+  pressHome,
   forceStopApp,
   editTextTailByResourceIdSuffix,
   getBoundsByResourceIdSuffix,
   getTextByResourceIdSuffix,
+  launchChrome,
+  launchChromeUrl,
   launchDeepLink,
   launchMainActivity,
   replaceTextByResourceIdSuffix,
@@ -27,6 +30,8 @@ import {
   waitForText,
   waitForTextAbsent,
   waitForTextContaining,
+  waitForAnyResourceIdSuffix,
+  waitForResourceIdTextContaining,
   writeLogcatSnapshot,
   writeUiSnapshot,
 } from "./support/android-ui-driver";
@@ -42,8 +47,10 @@ import {
   compareRegionToBaseline,
   compareRegionToReference,
 } from "./support/visual-assertions";
+import { createScenarioCheckpointRecorder, type SixStepCheckpointName } from "./support/scenario-checkpoints";
 
 const externalScreenshotDir = process.env.DUAL_EMULATOR_SCREENSHOT_DIR;
+const checkpointArtifactPath = process.env.DUAL_EMULATOR_CHECKPOINT_PATH;
 
 function mirrorScreenshotIfConfigured(fileName: string, sourcePath: string): void {
   if (!externalScreenshotDir || !existsSync(sourcePath)) {
@@ -256,13 +263,33 @@ test("@dual-emulator publish discover play stop interop", async ({}, testInfo) =
   const receiverScreenshotPath = testInfo.outputPath("receiver-final.png");
   const receiverBeforePlayPath = testInfo.outputPath("receiver-before-play.png");
   const receiverPlayingScreenshotPath = testInfo.outputPath("receiver-playing.png");
+  const publisherChromePath = testInfo.outputPath("publisher-chrome.png");
+  const receiverChromePath = testInfo.outputPath("receiver-chrome.png");
+  const publisherNosPath = testInfo.outputPath("publisher-nos.png");
+  const receiverNosPath = testInfo.outputPath("receiver-nos.png");
   const publisherUiPath = testInfo.outputPath("publisher-ui.txt");
   const receiverUiPath = testInfo.outputPath("receiver-ui.txt");
   const publisherLogcatPath = testInfo.outputPath("publisher-logcat.txt");
   const receiverLogcatPath = testInfo.outputPath("receiver-logcat.txt");
   const baselineName = "Relay Session Baseline";
+  const checkpoints = createScenarioCheckpointRecorder();
+  let activeStep: SixStepCheckpointName | null = null;
+
+  const beginStep = (step: SixStepCheckpointName): void => {
+    checkpoints.begin(step);
+    activeStep = step;
+  };
+
+  const passStep = (): void => {
+    if (!activeStep) {
+      return;
+    }
+    checkpoints.pass(activeStep);
+    activeStep = null;
+  };
 
   try {
+    beginStep("START_STREAM_A");
     launchDeepLink(context.publisherSerial, context.packageName, "ndi://output/device-screen:local");
     const publisherConsent = await handleMediaProjectionConsent(context.publisherSerial, publisherAndroid.majorVersion);
     await testInfo.attach("publisher-consent-branch", {
@@ -279,8 +306,14 @@ test("@dual-emulator publish discover play stop interop", async ({}, testInfo) =
     await waitForText(context.publisherSerial, "ACTIVE", 45_000);
     captureScreenshot(context.publisherSerial, publisherActiveScreenshotPath);
     mirrorScreenshotIfConfigured("publisher-active.png", publisherActiveScreenshotPath);
-    await uploadPublisherFrameToRelay(firstConfig.discoverableName, publisherActiveScreenshotPath, testInfo);
+    const relaySourceId = await uploadPublisherFrameToRelay(
+      firstConfig.discoverableName,
+      publisherActiveScreenshotPath,
+      testInfo,
+    );
+    passStep();
 
+    beginStep("START_VIEW_B");
     launchMainActivity(context.receiverSerial, context.packageName);
     await tapFirstAvailableText(context.receiverSerial, ["Open Stream"], 8_000).catch(() => undefined);
     await waitForText(context.receiverSerial, "Refresh", 20_000);
@@ -314,12 +347,90 @@ test("@dual-emulator publish discover play stop interop", async ({}, testInfo) =
       body: Buffer.from(JSON.stringify(similarity, null, 2), "utf-8"),
       contentType: "application/json",
     });
+    passStep();
 
+    // Step 3/4: switch publisher to Chrome and validate Chrome is visible on receiver.
+    beginStep("OPEN_CHROME_A");
+    pressHome(context.publisherSerial);
+    launchChrome(context.publisherSerial);
+    await waitForAnyResourceIdSuffix(context.publisherSerial, [":id/search_box_text", ":id/url_bar"], 20_000);
+    captureScreenshot(context.publisherSerial, publisherChromePath);
+    mirrorScreenshotIfConfigured("publisher-chrome.png", publisherChromePath);
+    await uploadRelayFrame(relaySourceId, publisherChromePath);
+    passStep();
+
+    beginStep("VERIFY_CHROME_ON_B");
+    await waitForText(context.receiverSerial, "PLAYING", 15_000);
+    const chromeEvidence = await waitForReceiverPreviewEvidence(
+      context.receiverSerial,
+      receiverChromePath,
+      receiverPlayingScreenshotPath,
+      viewerSurfaceBounds,
+      publisherChromePath,
+      { timeoutMs: 15_000, minSimilarity: 0.62 },
+    );
+    mirrorScreenshotIfConfigured("receiver-chrome.png", receiverChromePath);
+    await testInfo.attach("receiver-chrome-visibility", {
+      body: Buffer.from(JSON.stringify(chromeEvidence.visibility, null, 2), "utf-8"),
+      contentType: "application/json",
+    });
+    await testInfo.attach("receiver-chrome-baseline-change", {
+      body: Buffer.from(JSON.stringify(chromeEvidence.changed, null, 2), "utf-8"),
+      contentType: "application/json",
+    });
+    await testInfo.attach("receiver-chrome-similarity", {
+      body: Buffer.from(JSON.stringify(chromeEvidence.similarity, null, 2), "utf-8"),
+      contentType: "application/json",
+    });
+    passStep();
+
+    // Step 5/6: navigate publisher Chrome to nos.nl and validate page visibility on receiver.
+    beginStep("OPEN_NOS_A");
+    launchChromeUrl(context.publisherSerial, "https://nos.nl");
+    await waitForResourceIdTextContaining(context.publisherSerial, ":id/url_bar", "nos", 25_000);
+    captureScreenshot(context.publisherSerial, publisherNosPath);
+    mirrorScreenshotIfConfigured("publisher-nos.png", publisherNosPath);
+    await uploadRelayFrame(relaySourceId, publisherNosPath);
+    passStep();
+
+    beginStep("VERIFY_NOS_ON_B");
+    await waitForText(context.receiverSerial, "PLAYING", 15_000);
+    const nosEvidence = await waitForReceiverPreviewEvidence(
+      context.receiverSerial,
+      receiverNosPath,
+      receiverChromePath,
+      viewerSurfaceBounds,
+      publisherNosPath,
+      { timeoutMs: 15_000, minSimilarity: 0.62 },
+    );
+    mirrorScreenshotIfConfigured("receiver-nos.png", receiverNosPath);
+    await testInfo.attach("receiver-nos-visibility", {
+      body: Buffer.from(JSON.stringify(nosEvidence.visibility, null, 2), "utf-8"),
+      contentType: "application/json",
+    });
+    await testInfo.attach("receiver-nos-baseline-change", {
+      body: Buffer.from(JSON.stringify(nosEvidence.changed, null, 2), "utf-8"),
+      contentType: "application/json",
+    });
+    await testInfo.attach("receiver-nos-similarity", {
+      body: Buffer.from(JSON.stringify(nosEvidence.similarity, null, 2), "utf-8"),
+      contentType: "application/json",
+    });
+
+    launchDeepLink(context.publisherSerial, context.packageName, "ndi://output/device-screen:local");
+    await tapFirstAvailableText(context.publisherSerial, ["Open Stream"], 8_000).catch(() => undefined);
+    await waitForText(context.publisherSerial, "Stop Output", 30_000);
     await tapText(context.publisherSerial, "Stop Output", 20_000);
     await waitForText(context.publisherSerial, "STOPPED", 30_000);
 
     expect(context.publisherSerial).not.toEqual(context.receiverSerial);
+    passStep();
   } catch (error) {
+    if (activeStep) {
+      const reason = error instanceof Error ? error.message : String(error);
+      checkpoints.fail(activeStep, reason);
+      activeStep = null;
+    }
     writeUiSnapshot(context.publisherSerial, publisherUiPath);
     writeUiSnapshot(context.receiverSerial, receiverUiPath);
     writeLogcatSnapshot(context.publisherSerial, publisherLogcatPath);
@@ -344,6 +455,10 @@ test("@dual-emulator publish discover play stop interop", async ({}, testInfo) =
 
     throw error;
   } finally {
+    checkpoints.finish();
+    if (checkpointArtifactPath) {
+      checkpoints.writeArtifact(checkpointArtifactPath);
+    }
     captureScreenshot(context.publisherSerial, publisherScreenshotPath);
     captureScreenshot(context.receiverSerial, receiverScreenshotPath);
     mirrorScreenshotIfConfigured("publisher-final.png", publisherScreenshotPath);
@@ -365,6 +480,30 @@ test("@dual-emulator publish discover play stop interop", async ({}, testInfo) =
     if (existsSync(receiverPlayingScreenshotPath)) {
       await testInfo.attach("receiver-playing", {
         path: receiverPlayingScreenshotPath,
+        contentType: "image/png",
+      });
+    }
+    if (existsSync(publisherChromePath)) {
+      await testInfo.attach("publisher-chrome", {
+        path: publisherChromePath,
+        contentType: "image/png",
+      });
+    }
+    if (existsSync(receiverChromePath)) {
+      await testInfo.attach("receiver-chrome", {
+        path: receiverChromePath,
+        contentType: "image/png",
+      });
+    }
+    if (existsSync(publisherNosPath)) {
+      await testInfo.attach("publisher-nos", {
+        path: publisherNosPath,
+        contentType: "image/png",
+      });
+    }
+    if (existsSync(receiverNosPath)) {
+      await testInfo.attach("receiver-nos", {
+        path: receiverNosPath,
         contentType: "image/png",
       });
     }

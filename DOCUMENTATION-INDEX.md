@@ -221,9 +221,33 @@ If you find something unclear:
 
 ---
 
-**This documentation ensures consistent, efficient test execution across all future iterations.**
+## Feature Specifications Index
 
-**Version**: 1.0
-**Last Updated**: 2026-03-17
+### 001 – Scan NDI Sources
+- Spec: `specs/001-scan-ndi-sources/spec.md`
+- Tasks: `specs/001-scan-ndi-sources/tasks.md`
+- Contract: `specs/001-scan-ndi-sources/contracts/ndi-feature-contract.md`
+
+### 002 – Stream NDI Source
+- Spec: `specs/002-stream-ndi-source/spec.md`
+- Tasks: `specs/002-stream-ndi-source/tasks.md`
+- Contract: `specs/002-stream-ndi-source/contracts/ndi-output-feature-contract.md`
+
+### 005 – Background Stream Persistence
+- Spec: `specs/005-background-stream-persistence/spec.md`
+- Plan: `specs/005-background-stream-persistence/plan.md`
+- Tasks: `specs/005-background-stream-persistence/tasks.md` (all tasks complete)
+- Quickstart: `specs/005-background-stream-persistence/quickstart.md`
+- Contract: `specs/005-background-stream-persistence/contracts/ndi-background-stream-persistence-contract.md`
+- Validation: `specs/005-background-stream-persistence/validation/` (US1, US2, US3 evidence)
+
+**Summary**: Keeps NDI output streaming active when the broadcaster navigates to Home or another app.
+Dual-emulator e2e validates six-step Chrome/nos.nl cross-app propagation with visual similarity proof.
+
+---
+
+**Version**: 1.1  
+**Last Updated**: 2026-03-20  
 **Status**: Ready for use ✓
+
 
