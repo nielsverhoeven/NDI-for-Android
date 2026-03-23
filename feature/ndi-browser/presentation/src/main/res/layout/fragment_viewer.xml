@@ -69,6 +69,14 @@
         android:visibility="gone" />
 
     <com.google.android.material.button.MaterialButton
+        android:id="@+id/settingsButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:layout_marginStart="12dp"
+        android:text="@string/settings_title" />
+
+    <com.google.android.material.button.MaterialButton
         android:id="@+id/backToListButton"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
