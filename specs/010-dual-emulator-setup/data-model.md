@@ -6,6 +6,57 @@
 
 ## Core Entities
 
+## JSON Schema Snippets
+
+### EmulatorInstance (schema excerpt)
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "EmulatorInstance",
+  "type": "object",
+  "required": ["id", "apiLevel", "state", "adbPort"],
+  "properties": {
+    "id": { "type": "string", "pattern": "^emulator-[0-9]+$" },
+    "apiLevel": { "type": "integer", "minimum": 32, "maximum": 35 },
+    "state": { "type": "string", "enum": ["PROVISIONING", "RUNNING", "IDLE", "FAILED", "STOPPED"] },
+    "adbPort": { "type": "integer", "minimum": 5554, "maximum": 5568 },
+    "relayPort": { "type": "integer", "minimum": 15000, "maximum": 15010 }
+  }
+}
+```
+
+### RelayServer (schema excerpt)
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "RelayServer",
+  "type": "object",
+  "required": ["id", "state", "listeningPort", "routes"],
+  "properties": {
+    "id": { "type": "string", "minLength": 1 },
+    "state": { "type": "string", "enum": ["STARTING", "RUNNING", "STOPPING", "STOPPED", "FAILED"] },
+    "listeningPort": { "type": "integer", "minimum": 15000, "maximum": 15010 },
+    "routes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["sourceEmulatorId", "destEmulatorId", "sourcePort", "destPort", "protocol"],
+        "properties": {
+          "sourceEmulatorId": { "type": "string" },
+          "destEmulatorId": { "type": "string" },
+          "sourcePort": { "type": "integer", "minimum": 1025 },
+          "destPort": { "type": "integer", "minimum": 1025 },
+          "protocol": { "type": "string", "enum": ["TCP", "UDP"] }
+        }
+      }
+    }
+  }
+}
+```
+
 ### 1. EmulatorInstance
 
 Represents a provisioned Android emulator instance with boot status, network state, and NDI integration.

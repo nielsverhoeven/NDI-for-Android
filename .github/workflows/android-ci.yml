@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - 001-scan-ndi-sources
   pull_request:
 
 jobs:

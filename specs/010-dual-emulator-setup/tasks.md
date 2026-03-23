@@ -210,11 +210,11 @@ Result: **US4 completion in ~T033**, ~5 tasks total.
 
 All user stories depend on completing this phase.
 
-- [ ] T001 Verify Gradle wrapper and build toolchain version match baseline specs/010-dual-emulator-setup/validation/gradle-check.ps1
-- [ ] T002 [P] Validate Android SDK emulator availability and API 32-35 images testing/e2e/scripts/helpers/validate-emulator-images.ps1
-- [ ] T003 [P] Verify NDI SDK bridge APK exists and is buildable at ndi/sdk-bridge/build/outputs/apk/release/ndi-sdk-bridge-release.apk
-- [ ] T004 [P] Create prerequisite validation gate (Windows PowerShell + Bash fallback) scripts/verify-e2e-dual-emulator-prereqs.ps1
-- [ ] T005 Create Gradle task for building NDI SDK APK on demand build.gradle.kts (ndi/sdk-bridge/assembleRelease gate)
+- [X] T001 Verify Gradle wrapper and build toolchain version match baseline specs/010-dual-emulator-setup/validation/gradle-check.ps1
+- [X] T002 [P] Validate Android SDK emulator availability and API 32-35 images testing/e2e/scripts/helpers/validate-emulator-images.ps1
+- [X] T003 [P] Verify NDI SDK bridge APK exists and is buildable at ndi/sdk-bridge/build/outputs/apk/release/ndi-sdk-bridge-release.apk
+- [X] T004 [P] Create prerequisite validation gate (Windows PowerShell + Bash fallback) scripts/verify-e2e-dual-emulator-prereqs.ps1
+- [X] T005 Create Gradle task for building NDI SDK APK on demand build.gradle.kts (ndi/sdk-bridge/assembleRelease gate)
 
 ---
 
@@ -229,16 +229,16 @@ Reliably provision two connected Android emulator instances with pre-configured 
 
 ### Implementation Tasks
 
-- [ ] T006 Create EmulatorInstance data model JSON schema specs/010-dual-emulator-setup/data-model.md (entity definition + validation rules)
-- [ ] T007 [P] Create PowerShell ADB wrapper helpers (state, boot, install, screen-record) testing/e2e/scripts/helpers/emulator-adb.ps1
-- [ ] T008 [P] Create PowerShell result/error handling utilities (ProvisioningResult, error codes) testing/e2e/scripts/helpers/result-handler.ps1
-- [ ] T009 [P] Create JSON schema validator for EmulatorInstance entities testing/e2e/scripts/helpers/entity-validator.ps1
-- [ ] T010 Create Provision-Emulator main function signature and contract testing/e2e/scripts/provision-dual-emulator.ps1
-- [ ] T011 [P] [US1] Implement Provision-Emulator core logic (start, detect, boot, verify) testing/e2e/scripts/provision-dual-emulator.ps1
-- [ ] T012 [P] [US1] Implement Provision-DualEmulator orchestration (atomic provision both emulators) testing/e2e/scripts/provision-dual-emulator.ps1
-- [ ] T013 [P] [US1] Implement Get-EmulatorState function (ADB query, return JSON snapshot) testing/e2e/scripts/provision-dual-emulator.ps1
-- [ ] T014 [US1] Create Pester unit tests for provisioning (passing cases, timeouts, port conflicts, NDI install failures) testing/e2e/scripts/tests/provision-dual-emulator.tests.ps1
-- [ ] T015 [US1] Integrate provisioning into CI/CD gate: GitHub Actions workflow must call provision-dual-emulator.ps1 before feature tests .github/workflows/e2e-dual-emulator.yml
+- [X] T006 Create EmulatorInstance data model JSON schema specs/010-dual-emulator-setup/data-model.md (entity definition + validation rules)
+- [X] T007 [P] Create PowerShell ADB wrapper helpers (state, boot, install, screen-record) testing/e2e/scripts/helpers/emulator-adb.ps1
+- [X] T008 [P] Create PowerShell result/error handling utilities (ProvisioningResult, error codes) testing/e2e/scripts/helpers/result-handler.ps1
+- [X] T009 [P] Create JSON schema validator for EmulatorInstance entities testing/e2e/scripts/helpers/entity-validator.ps1
+- [X] T010 Create Provision-Emulator main function signature and contract testing/e2e/scripts/provision-dual-emulator.ps1
+- [X] T011 [P] [US1] Implement Provision-Emulator core logic (start, detect, boot, verify) testing/e2e/scripts/provision-dual-emulator.ps1
+- [X] T012 [P] [US1] Implement Provision-DualEmulator orchestration (atomic provision both emulators) testing/e2e/scripts/provision-dual-emulator.ps1
+- [X] T013 [P] [US1] Implement Get-EmulatorState function (ADB query, return JSON snapshot) testing/e2e/scripts/provision-dual-emulator.ps1
+- [X] T014 [US1] Create Pester unit tests for provisioning (passing cases, timeouts, port conflicts, NDI install failures) testing/e2e/scripts/tests/provision-dual-emulator.tests.ps1
+- [X] T015 [US1] Integrate provisioning into CI/CD gate: GitHub Actions workflow must call provision-dual-emulator.ps1 before feature tests .github/workflows/e2e-dual-emulator.yml
 
 **Test Deliverables**:
 - Unit tests (Pester): 15+ test cases covering happy path, error cases, idempotency
@@ -257,16 +257,16 @@ Communicate between emulator instances through reliable TCP-based relay server w
 
 ### Implementation Tasks
 
-- [ ] T016 Create RelayServer and RelayRoute data models JSON schemas specs/010-dual-emulator-setup/data-model.md
-- [ ] T017 [P] Create TCP socket forwarding implementation (raw PowerShell sockets or Node.js bridge) testing/e2e/scripts/helpers/relay-tcp-forwarder.ps1
-- [ ] T018 [P] Create relay health check logic (echo test, latency measurement) testing/e2e/scripts/helpers/relay-health-check.ps1
-- [ ] T019 [P] Create relay metrics collection (bytes forwarded, latency percentiles, packet loss) testing/e2e/scripts/helpers/relay-metrics.ps1
-- [ ] T020 [P] Create Start-RelayServer function (start process, configure routes, initial health check) testing/e2e/scripts/start-relay-server.ps1
-- [ ] T021 [P] [US2] Implement Get-RelayServer function (query relay state without modification) testing/e2e/scripts/start-relay-server.ps1
-- [ ] T022 [P] [US2] Implement Stop-RelayServer function (graceful shutdown, port release) testing/e2e/scripts/start-relay-server.ps1
-- [ ] T023 [US2] Implement relay health monitor loop (background process, auto-restart on failure max 3 retries) testing/e2e/scripts/relay-health-monitor.ps1
-- [ ] T024 [US2] Create Pester unit tests for relay (start, stop, health check, latency verification, restart logic) testing/e2e/scripts/tests/relay-server.tests.ps1
-- [ ] T025 [US2] Integrate relay into Playwright fixture hooks (auto-start before test suite, cleanup after) testing/e2e/playwright.config.ts
+- [X] T016 Create RelayServer and RelayRoute data models JSON schemas specs/010-dual-emulator-setup/data-model.md
+- [X] T017 [P] Create TCP socket forwarding implementation (raw PowerShell sockets or Node.js bridge) testing/e2e/scripts/helpers/relay-tcp-forwarder.ps1
+- [X] T018 [P] Create relay health check logic (echo test, latency measurement) testing/e2e/scripts/helpers/relay-health-check.ps1
+- [X] T019 [P] Create relay metrics collection (bytes forwarded, latency percentiles, packet loss) testing/e2e/scripts/helpers/relay-metrics.ps1
+- [X] T020 [P] Create Start-RelayServer function (start process, configure routes, initial health check) testing/e2e/scripts/start-relay-server.ps1
+- [X] T021 [P] [US2] Implement Get-RelayServer function (query relay state without modification) testing/e2e/scripts/start-relay-server.ps1
+- [X] T022 [P] [US2] Implement Stop-RelayServer function (graceful shutdown, port release) testing/e2e/scripts/start-relay-server.ps1
+- [X] T023 [US2] Implement relay health monitor loop (background process, auto-restart on failure max 3 retries) testing/e2e/scripts/relay-health-monitor.ps1
+- [X] T024 [US2] Create Pester unit tests for relay (start, stop, health check, latency verification, restart logic) testing/e2e/scripts/tests/relay-server.tests.ps1
+- [X] T025 [US2] Integrate relay into Playwright fixture hooks (auto-start before test suite, cleanup after) testing/e2e/playwright.config.ts
 
 **Test Deliverables**:
 - Unit tests (Pester): 12+ test cases covering relay lifecycle, latency guarantees, restart recovery
@@ -285,9 +285,9 @@ Reset emulator state between test suites (clear app data, reset network state, d
 
 ### Implementation Tasks
 
-- [ ] T026 [US3] Implement Reset-EmulatorState function (clear app data, stop discovery, drain sources per-emulator) testing/e2e/scripts/reset-emulator-state.ps1
-- [ ] T027 [US3] Create Pester unit tests for reset (verify state clearing, bidirectional reset, idempotency) testing/e2e/scripts/tests/reset-emulator-state.tests.ps1
-- [ ] T028 [US3] Integrate reset into test suite lifecycle hooks (call after each Playwright test suite completes) testing/e2e/playwright.config.ts
+- [X] T026 [US3] Implement Reset-EmulatorState function (clear app data, stop discovery, drain sources per-emulator) testing/e2e/scripts/reset-emulator-state.ps1
+- [X] T027 [US3] Create Pester unit tests for reset (verify state clearing, bidirectional reset, idempotency) testing/e2e/scripts/tests/reset-emulator-state.tests.ps1
+- [X] T028 [US3] Integrate reset into test suite lifecycle hooks (call after each Playwright test suite completes) testing/e2e/playwright.config.ts
 
 **Test Deliverables**:
 - Unit tests (Pester): 8+ test cases covering state clearing, verification, error recovery
@@ -306,11 +306,11 @@ Automatically collect emulator logs, screen recordings, and NDI diagnostic data 
 
 ### Implementation Tasks
 
-- [ ] T029 [P] [US4] Implement Collect-Logcat function (ADB logcat, last 500 lines per device, save to file) testing/e2e/scripts/collect-test-artifacts.ps1
-- [ ] T030 [P] [US4] Implement Collect-ScreenRecording function (ADB screenrecord artifacts, save MP4 to host filesystem) testing/e2e/scripts/collect-test-artifacts.ps1
-- [ ] T031 [P] [US4] Implement Collect-Diagnostics function (NDI SDK logs, relay metrics, provisioning logs) testing/e2e/scripts/collect-test-artifacts.ps1
-- [ ] T032 [US4] Implement Generate-ArtifactManifest function (JSON summary: artifact paths, device state, provisioning metrics, checksums) testing/e2e/scripts/collect-test-artifacts.ps1
-- [ ] T033 [US4] Create Pester unit tests for collection (verify artifacts exist, JSON manifest valid, disk space handling) testing/e2e/scripts/tests/collect-test-artifacts.tests.ps1
+- [X] T029 [P] [US4] Implement Collect-Logcat function (ADB logcat, last 500 lines per device, save to file) testing/e2e/scripts/collect-test-artifacts.ps1
+- [X] T030 [P] [US4] Implement Collect-ScreenRecording function (ADB screenrecord artifacts, save MP4 to host filesystem) testing/e2e/scripts/collect-test-artifacts.ps1
+- [X] T031 [P] [US4] Implement Collect-Diagnostics function (NDI SDK logs, relay metrics, provisioning logs) testing/e2e/scripts/collect-test-artifacts.ps1
+- [X] T032 [US4] Implement Generate-ArtifactManifest function (JSON summary: artifact paths, device state, provisioning metrics, checksums) testing/e2e/scripts/collect-test-artifacts.ps1
+- [X] T033 [US4] Create Pester unit tests for collection (verify artifacts exist, JSON manifest valid, disk space handling) testing/e2e/scripts/tests/collect-test-artifacts.tests.ps1
 
 **Test Deliverables**:
 - Unit tests (Pester): 10+ test cases covering logcat, screen recording, diagnostics, manifest generation
@@ -329,8 +329,8 @@ Provide comprehensive documentation of emulator provisioning, relay connectivity
 
 ### Implementation Tasks
 
-- [ ] T034 [US5] Create comprehensive infrastructure guide docs/dual-emulator-setup.md (local setup, CI/CD integration, troubleshooting, architecture diagram)
-- [ ] T035 [US5] Create troubleshooting guide docs/dual-emulator-setup.md appendix (common failures, recovery steps, latency debugging, relay restart procedures)
+- [X] T034 [US5] Create comprehensive infrastructure guide docs/dual-emulator-setup.md (local setup, CI/CD integration, troubleshooting, architecture diagram)
+- [X] T035 [US5] Create troubleshooting guide docs/dual-emulator-setup.md appendix (common failures, recovery steps, latency debugging, relay restart procedures)
 
 **Deliverables**:
 - Infrastructure guide with architecture diagrams, local setup steps, CI/CD integration instructions
@@ -340,9 +340,9 @@ Provide comprehensive documentation of emulator provisioning, relay connectivity
 
 ## Final Phase: Polish & Cross-Cutting Concerns
 
-- [ ] T036 [P] Integrate provisioning + relay + artifact collection into GitHub Actions e2e workflow .github/workflows/e2e-dual-emulator.yml
-- [ ] T037 [P] Create end-to-end validation test (provision → relay → run latency test → collect artifacts → verify success) testing/e2e/tests/support/e2e-infrastructure.spec.ts
-- [ ] T038 Verify feature 009 (latency measurement) validates dual-emulator infrastructure with 95% stability specs/009-measure-ndi-latency/tasks.md reference + validation
+- [X] T036 [P] Integrate provisioning + relay + artifact collection into GitHub Actions e2e workflow .github/workflows/e2e-dual-emulator.yml
+- [X] T037 [P] Create end-to-end validation test (provision → relay → run latency test → collect artifacts → verify success) testing/e2e/tests/support/e2e-infrastructure.spec.ts
+- [X] T038 Verify feature 009 (latency measurement) validates dual-emulator infrastructure with 95% stability specs/009-measure-ndi-latency/tasks.md reference + validation
 
 ---
 

@@ -1,3 +1,59 @@
+# Android Validation Results - 2026-03-23 (Feature 010 Dual-Emulator Infrastructure Revalidation)
+
+## 1) Scope
+- Branch/commit: `010-dual-emulator-setup` @ `92616c1`.
+- Validation intent: feature 010 dual-emulator infrastructure verification with script tests and focused e2e support tests.
+- Changed modules under direct validation: `testing/e2e/scripts/*`, `testing/e2e/scripts/helpers/*`, `testing/e2e/tests/support/*`, `scripts/verify-e2e-dual-emulator-prereqs.ps1`.
+- Related spec task IDs: T001-T005, T014, T024, T027, T033, T037, T038 from `specs/010-dual-emulator-setup/tasks.md`.
+- Module graph confirmed from `settings.gradle.kts`: `:app`, `:core:model`, `:core:database`, `:core:testing`, `:feature:ndi-browser:domain`, `:feature:ndi-browser:data`, `:feature:ndi-browser:presentation`, `:ndi:sdk-bridge`.
+
+## 2) Stage Results
+| Stage | Status | Executed Commands | Result |
+|---|---|---|---|
+| Prerequisite gate (initial) | FAIL | `./scripts/verify-android-prereqs.ps1` | Failed due unset `JAVA_HOME` and `ANDROID_SDK_ROOT`. |
+| Prerequisite gate (re-run) | PASS | `$env:JAVA_HOME='C:\Program Files\Java\jdk-21.0.10'; $env:ANDROID_SDK_ROOT='C:\Android\SDK'; ./scripts/verify-android-prereqs.ps1` | All toolchain and SDK checks passed. |
+| Wrapper/toolchain capture | PASS | `./gradlew.bat --version` | Gradle 9.2.1, Java 21 launcher detected. |
+| Feature-010 script unit tests | PASS | `Invoke-Pester -Path ./testing/e2e/scripts/tests` | 12/12 tests passed (re-run after fixes also 12/12). |
+| Focused e2e support test (infrastructure presence) | PASS | `npm --prefix testing/e2e run test -- tests/support/e2e-infrastructure.spec.ts --project=android-primary` | 1/1 passed. |
+| Focused e2e support test (provisioning smoke) | FAIL/BLOCKED | `npm --prefix testing/e2e run test -- tests/support/dual-emulator-provisioning.spec.ts --project=android-primary` | Script exits non-zero because `emulator-5554` and `emulator-5556` are not connected. |
+| Focused e2e support test (relay health smoke) | FAIL/BLOCKED | `npm --prefix testing/e2e run test -- tests/support/relay-connectivity.spec.ts --project=android-primary` | Script exits non-zero on `UNHEALTHY`; Playwright wrapper treats this as command failure. |
+| Feature-010 prereq gate | FAIL | `./scripts/verify-e2e-dual-emulator-prereqs.ps1` | Fails on `ndi-sdk-apk` artifact check path. |
+| Applicable build safety check | PASS | `./gradlew.bat :ndi:sdk-bridge:assemble` | Module assemble passed, but prereq gate still expects non-existent APK artifact path. |
+
+## 3) Issues Found & Fixes
+| Defect/Issue | Root Cause | Fix Applied | Verification |
+|---|---|---|---|
+| Relay health script failed on Windows PowerShell random payload generation | `RandomNumberGenerator.Fill` not available in `powershell.exe` runtime used by support specs | Added runtime-compatible fallback using `RandomNumberGenerator.Create().GetBytes()` in `testing/e2e/scripts/helpers/relay-health-check.ps1` | Pester suite re-run passed 12/12; relay health now returns real latency samples instead of crypto method exceptions. |
+| Relay TCP forwarder dropped payload handling on initial connection | Server loop required `DataAvailable` before first read, so echo checks could fail at startup | Updated loop in `testing/e2e/scripts/helpers/relay-tcp-forwarder.ps1` to read while connected | Health output improved to real sample timings (`averageLatencyMs`, `peakLatencyMs`) but still `UNHEALTHY` in this environment. |
+| Feature-010 prereq gate blocks on NDI SDK APK path | `scripts/verify-e2e-dual-emulator-prereqs.ps1` checks for `ndi/sdk-bridge/build/outputs/apk/release/ndi-sdk-bridge-release.apk`, while `:ndi:sdk-bridge` is an Android library module with no APK output | No code change in this run (reported as release blocker requiring gate contract correction) | `./gradlew.bat :ndi:sdk-bridge:assemble` passes but prereq gate still fails on artifact path mismatch. |
+| Provisioning support test blocked by missing live devices | No active ADB devices for expected emulator serials | No code change in this run (environment blocker) | Direct script run confirms `SOURCE_PROVISION_FAILED` and `RECEIVER_PROVISION_FAILED` with `device not found`. |
+
+## 4) E2E Evidence
+- Script test result source: `testing/e2e/scripts/tests` (Invoke-Pester output: 12 passed, 0 failed).
+- Focused support pass artifact: Playwright run for `testing/e2e/tests/support/e2e-infrastructure.spec.ts` (1 passed).
+- Provisioning failure JSON: `testing/e2e/artifacts/runtime/provisioning-result.manual.json`.
+- Relay start/health JSON: `testing/e2e/artifacts/runtime/relay-start.manual.json`, `testing/e2e/artifacts/runtime/relay-health.manual.json`.
+- Relay support failure trace: `testing/e2e/test-results/support-relay-connectivity-533ee-r-explicit-unhealthy-result-android-primary-retry1/trace.zip`.
+- Provisioning support failure trace: `testing/e2e/test-results/support-dual-emulator-prov-514cf-ipt-emits-valid-status-JSON-android-primary-retry1/trace.zip`.
+
+## 5) Release Gate Status
+- [x] Prerequisite gate executed (`scripts/verify-android-prereqs.ps1`)
+- [x] Wrapper/toolchain validated (`./gradlew.bat --version`)
+- [x] Applicable feature-010 script unit tests passed (`Invoke-Pester` for `testing/e2e/scripts/tests`)
+- [x] Focused e2e support validation executed (`e2e-infrastructure.spec.ts` pass + provisioning/relay smoke attempts)
+- [ ] Stage 1 full Android assemble sweep executed (`:app`, `:feature:*`, `:ndi:sdk-bridge` all variants)
+- [ ] Stage 2 module-aware Android unit tests executed for impacted app modules
+- [ ] Stage 3 instrumentation/UI tests executed for impacted app flows
+- [ ] Stage 4 full dual-emulator harness pass (`testing/e2e/scripts/run-dual-emulator-e2e.ps1`)
+- [ ] Stage 6 release checks executed (`:app:assembleRelease`, `:app:verifyReleaseHardening`)
+
+Final disposition for this validation run: **FAIL/BLOCKED for release readiness**.
+
+Blocking items:
+- Dual-emulator device availability is missing (`emulator-5554`, `emulator-5556` not connected).
+- `verify-e2e-dual-emulator-prereqs.ps1` currently enforces an APK path for `:ndi:sdk-bridge` that does not exist for a library module.
+- Relay connectivity support flow remains unstable and exits non-zero in `UNHEALTHY` state, causing Playwright wrapper failure.
+
 # 009-Latency-Measurement Evidence Template
 
 ## Required Evidence (Per Validation Cycle)
