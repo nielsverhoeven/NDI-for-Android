@@ -10,6 +10,15 @@ Before any e2e test executes, this feature guarantees that the latest debug APK 
 
 ---
 
+## Feature Documentation Index
+
+- `specs/011-e2e-app-preinstall/plan.md`
+- `specs/011-e2e-app-preinstall/data-model.md`
+- `specs/011-e2e-app-preinstall/contracts/install-script.contract.md`
+- `specs/011-e2e-app-preinstall/contracts/pre-flight-report.contract.md`
+
+---
+
 ## Prerequisites
 
 - Android emulators provisioned by Feature 010

@@ -38,6 +38,10 @@ jobs:
         shell: pwsh
         run: ./gradlew.bat :ndi:sdk-bridge:assembleRelease
 
+      - name: Build app debug APK
+        shell: pwsh
+        run: ./gradlew.bat :app:assembleDebug
+
       - name: Validate emulator images (32-35)
         shell: pwsh
         run: ./testing/e2e/scripts/helpers/validate-emulator-images.ps1
@@ -45,6 +49,10 @@ jobs:
       - name: Provision dual emulators
         shell: pwsh
         run: ./testing/e2e/scripts/provision-dual-emulator.ps1 -Action provision-dual -InstallNdiSdk -SkipBootIfAlreadyRunning
+
+      - name: Install app on emulators
+        shell: pwsh
+        run: ./testing/e2e/scripts/install-app-preinstall.ps1
 
       - name: Start relay server
         shell: pwsh
@@ -60,7 +68,12 @@ jobs:
         working-directory: testing/e2e
         run: npx playwright test tests/support/e2e-infrastructure.spec.ts tests/support/dual-emulator-provisioning.spec.ts tests/support/relay-connectivity.spec.ts --project=android-primary
 
-      - name: Run latency consumer suite (feature 009)
+      - name: Run app pre-flight support spec
+        shell: pwsh
+        working-directory: testing/e2e
+        run: npx playwright test tests/support/app-preinstall.spec.ts --project=android-primary
+
+      - name: Run existing Playwright regression suites
         shell: pwsh
         working-directory: testing/e2e
         run: npx playwright test tests/interop-dual-emulator.spec.ts --project=android-primary

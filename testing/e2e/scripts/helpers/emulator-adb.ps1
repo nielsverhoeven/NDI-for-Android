@@ -57,6 +57,38 @@ function Wait-EmulatorBoot {
     return $false
 }
 
+function Wait-ForEmulatorReady {
+    param(
+        [Parameter(Mandatory = $true)][string]$Serial,
+        [int]$TimeoutSeconds = 60
+    )
+
+    $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+    $reachable = $false
+
+    while ($stopwatch.Elapsed.TotalSeconds -lt $TimeoutSeconds) {
+        if (Test-AdbDeviceConnected -Serial $Serial) {
+            $reachable = $true
+            $boot = (Invoke-Adb -Arguments @("-s", $Serial, "shell", "getprop", "sys.boot_completed") -AllowFailure).Trim()
+            if ($boot -eq "1") {
+                return [PSCustomObject]@{
+                    reachable = $true
+                    ready = $true
+                    readinessWaitMs = [int]$stopwatch.ElapsedMilliseconds
+                }
+            }
+        }
+
+        Start-Sleep -Seconds 2
+    }
+
+    return [PSCustomObject]@{
+        reachable = $reachable
+        ready = $false
+        readinessWaitMs = [int]$stopwatch.ElapsedMilliseconds
+    }
+}
+
 function Get-EmulatorStateSnapshot {
     param([Parameter(Mandatory = $true)][string]$Serial)
 
@@ -84,6 +116,37 @@ function Install-ApkToEmulator {
     }
 
     Invoke-Adb -Arguments @("-s", $Serial, "install", "-r", $ApkPath) | Out-Null
+}
+
+function Get-InstalledAppVersion {
+    param(
+        [Parameter(Mandatory = $true)][string]$Serial,
+        [Parameter(Mandatory = $true)][string]$PackageName
+    )
+
+    $output = Invoke-Adb -Arguments @("-s", $Serial, "shell", "dumpsys", "package", $PackageName) -AllowFailure
+    $versionNameMatch = [regex]::Match($output, "versionName=(?<name>[^\r\n]+)")
+    $versionCodeMatch = [regex]::Match($output, "versionCode=(?<code>\d+)")
+
+    $versionName = if ($versionNameMatch.Success) { $versionNameMatch.Groups["name"].Value.Trim() } else { $null }
+    $versionCode = if ($versionCodeMatch.Success) { [int]$versionCodeMatch.Groups["code"].Value } else { $null }
+
+    return [PSCustomObject]@{
+        versionName = $versionName
+        versionCode = $versionCode
+    }
+}
+
+function Test-AppLaunchable {
+    param(
+        [Parameter(Mandatory = $true)][string]$Serial,
+        [Parameter(Mandatory = $true)][string]$PackageName,
+        [Parameter(Mandatory = $true)][string]$ActivityName
+    )
+
+    $component = "$PackageName/$ActivityName"
+    $output = Invoke-Adb -Arguments @("-s", $Serial, "shell", "am", "start", "-W", "-n", $component) -AllowFailure
+    return $output -match "Status:\s*ok"
 }
 
 function Start-EmulatorRecording {

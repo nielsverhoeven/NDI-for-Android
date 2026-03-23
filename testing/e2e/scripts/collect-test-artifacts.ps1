@@ -3,6 +3,7 @@ param(
     [string[]]$EmulatorIds = @("emulator-5554", "emulator-5556"),
     [string]$ArtifactsRoot = "testing/e2e/artifacts",
     [string]$RelayMetricsPath = "testing/e2e/artifacts/runtime/relay-metrics.json",
+    [string]$PreinstallReportPath = "testing/e2e/artifacts/runtime/preinstall-report.json",
     [string]$OutputPath
 )
 
@@ -83,6 +84,11 @@ try {
     }
 
     $artifactPaths += Collect-Diagnostics -Devices $EmulatorIds -Directory $sessionDir
+    if (Test-Path -LiteralPath $PreinstallReportPath) {
+        $reportCopyPath = Join-Path $sessionDir "preinstall-report.json"
+        Copy-Item -LiteralPath $PreinstallReportPath -Destination $reportCopyPath -Force
+        $artifactPaths += $reportCopyPath
+    }
     $manifestPath = Generate-ArtifactManifest -Directory $sessionDir -Paths $artifactPaths
     $artifactPaths += $manifestPath
 
