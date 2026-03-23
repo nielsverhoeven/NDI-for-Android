@@ -239,7 +239,7 @@ $ndiOk = $AllowMissingNdiSdk.IsPresent -or (-not [string]::IsNullOrWhiteSpace($n
 $ndiDetail = if ($ndiSdkPath) { $ndiSdkPath } elseif ($AllowMissingNdiSdk) { "Skipped in current mode" } else { "NDI Android SDK not found" }
 $results += Add-Result -Name "sdk:NDI" -Ok $ndiOk -Detail $ndiDetail
 
-$androidPackages = @("platform-tools", "platforms;android-34", "build-tools;34.0.0")
+$androidPackages = @("platform-tools", "platforms;android-34", "build-tools;34.0.0", "emulator")
 if ($androidSdkRoot) {
     foreach ($package in $androidPackages) {
         $packagePath = Join-Path $androidSdkRoot ($package -replace ";", "\\")
