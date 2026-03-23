@@ -171,7 +171,8 @@ if ($androidSdkRoot -and (Test-Path $androidSdkRoot)) {
         (Join-Path $androidSdkRoot "platform-tools"),
         (Join-Path $androidSdkRoot "cmdline-tools\latest\bin"),
         (Join-Path $androidSdkRoot "cmdline-tools\bin"),
-        (Join-Path $androidSdkRoot "tools\bin")
+        (Join-Path $androidSdkRoot "tools\bin"),
+        (Join-Path $androidSdkRoot "emulator")
     )
     
     # Add valid paths to PATH
