@@ -11,6 +11,10 @@
         android:layout_height="wrap_content"
         android:title="@string/ndi_source_list_title" />
 
+    <include
+        android:id="@+id/developerOverlay"
+        layout="@layout/include_developer_overlay" />
+
     <com.google.android.material.button.MaterialButton
         android:id="@+id/refreshButton"
         android:layout_width="wrap_content"
@@ -39,6 +43,15 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="16dp"
         android:text="@string/ndi_discovery_error"
+        android:visibility="gone" />
+
+    <TextView
+        android:id="@+id/discoveryFallbackWarning"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:text="@string/settings_fallback_warning"
+        android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
         android:visibility="gone" />
 
     <androidx.recyclerview.widget.RecyclerView

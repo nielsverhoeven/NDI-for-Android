@@ -2,6 +2,7 @@ package com.ndi.app.di
 
 import android.content.Context
 import com.ndi.core.database.NdiDatabase
+import com.ndi.core.model.NdiOverlayMode
 import com.ndi.feature.ndibrowser.data.OutputRecoveryCoordinator
 import com.ndi.feature.ndibrowser.data.OutputSessionCoordinator
 import com.ndi.feature.ndibrowser.data.mapper.OutputSessionMapper
@@ -26,13 +27,34 @@ import com.ndi.feature.ndibrowser.domain.repository.TopLevelNavigationRepository
 import com.ndi.feature.ndibrowser.domain.repository.UserSelectionRepository
 import com.ndi.feature.ndibrowser.domain.repository.ViewContinuityRepository
 import com.ndi.app.navigation.NdiNavigation
+import com.ndi.feature.ndibrowser.data.repository.DeveloperDiagnosticsRepositoryImpl
+import com.ndi.feature.ndibrowser.data.repository.NdiDiscoveryConfigRepositoryImpl
+import com.ndi.feature.ndibrowser.data.repository.NdiSettingsRepositoryImpl
+import com.ndi.feature.ndibrowser.domain.repository.DeveloperDiagnosticsRepository
+import com.ndi.feature.ndibrowser.domain.repository.NdiDiscoveryConfigRepository
+import com.ndi.feature.ndibrowser.domain.repository.NdiSettingsRepository
 import com.ndi.feature.ndibrowser.home.HomeDependencies
 import com.ndi.feature.ndibrowser.output.OutputDependencies
+import com.ndi.feature.ndibrowser.settings.DeveloperOverlayStateMapper
+import com.ndi.feature.ndibrowser.settings.OverlayDisplayState
+import com.ndi.feature.ndibrowser.settings.OverlayLogRedactor
+import com.ndi.feature.ndibrowser.settings.SettingsDependencies
+import com.ndi.feature.ndibrowser.settings.SettingsTelemetry
 import com.ndi.feature.ndibrowser.source_list.SourceListDependencies
 import com.ndi.feature.ndibrowser.viewer.ViewerDependencies
 import com.ndi.sdkbridge.NativeNdiBridge
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.stateIn
 
 class AppGraph private constructor(context: Context) {
+
+    private val appScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
     private val database = NdiDatabase.getInstance(context)
 
@@ -84,22 +106,85 @@ class AppGraph private constructor(context: Context) {
         userSelectionRepository = userSelectionRepository,
     )
 
+    // ---- Spec 006: Settings Menu repositories ----
+
+    val settingsRepository: NdiSettingsRepository = NdiSettingsRepositoryImpl(
+        settingsDao = database.settingsPreferenceDao(),
+    )
+
+    val discoveryConfigRepository: NdiDiscoveryConfigRepository = NdiDiscoveryConfigRepositoryImpl(
+        settingsRepository = settingsRepository,
+    )
+
+    val developerDiagnosticsRepository: DeveloperDiagnosticsRepository = DeveloperDiagnosticsRepositoryImpl(
+        viewerRepository = viewerRepository,
+        outputRepository = outputRepository,
+    )
+
+    private var previousOverlayMode: NdiOverlayMode? = null
+
+    private val overlayDisplayStateFlow: StateFlow<OverlayDisplayState?> =
+        combine(
+            settingsRepository.observeSettings(),
+            developerDiagnosticsRepository.observeOverlayState(),
+        ) { settings, overlayState ->
+            val redactedLogs = overlayState.recentLogs.map { log ->
+                OverlayLogRedactor.redact(log.messageRedacted)
+            }
+            val linesRedacted = overlayState.recentLogs.count { log ->
+                OverlayLogRedactor.redact(log.messageRedacted) != log.messageRedacted
+            }
+            if (linesRedacted > 0) {
+                SettingsDependencies.telemetryEmitter.emit(
+                    SettingsTelemetry.overlayLogRedactionApplied(linesRedacted),
+                )
+            }
+
+            DeveloperOverlayStateMapper.map(
+                developerModeEnabled = settings.developerModeEnabled,
+                streamStatus = overlayState.streamStatusLabel.takeIf { it.isNotBlank() },
+                sessionId = OverlayLogRedactor.redactSessionId(overlayState.sessionId),
+                recentLogs = redactedLogs,
+            )
+        }.onEach { overlayDisplayState ->
+            val currentMode = overlayDisplayState?.mode ?: NdiOverlayMode.DISABLED
+            val previousMode = previousOverlayMode
+            if (previousMode != null && previousMode != currentMode) {
+                SettingsDependencies.telemetryEmitter.emit(
+                    SettingsTelemetry.developerOverlayStateChanged(previousMode, currentMode),
+                )
+            }
+            previousOverlayMode = currentMode
+        }.stateIn(
+            scope = appScope,
+            started = SharingStarted.Eagerly,
+            initialValue = null,
+        )
+
     init {
         SourceListDependencies.discoveryRepositoryProvider = { discoveryRepository }
         SourceListDependencies.userSelectionRepositoryProvider = { userSelectionRepository }
         SourceListDependencies.viewerNavigationRequestProvider = NdiNavigation::viewerRequest
         SourceListDependencies.outputNavigationRequestProvider = NdiNavigation::outputRequest
+        SourceListDependencies.overlayStateProvider = { overlayDisplayStateFlow }
         ViewerDependencies.viewerRepositoryProvider = { viewerRepository }
         ViewerDependencies.userSelectionRepositoryProvider = { userSelectionRepository }
+        ViewerDependencies.overlayStateProvider = { overlayDisplayStateFlow }
         OutputDependencies.outputRepositoryProvider = { outputRepository }
         OutputDependencies.outputConfigurationRepositoryProvider = { outputConfigurationRepository }
         OutputDependencies.screenCaptureConsentRepositoryProvider = { screenCaptureConsentRepository }
         OutputDependencies.streamContinuityRepositoryProvider = { streamContinuityRepository }
+        OutputDependencies.overlayStateProvider = { overlayDisplayStateFlow }
 
         // Spec 003: Home dashboard dependencies
         HomeDependencies.homeDashboardRepositoryProvider = { homeDashboardRepository }
         HomeDependencies.streamContinuityRepositoryProvider = { streamContinuityRepository }
         HomeDependencies.viewContinuityRepositoryProvider = { viewContinuityRepository }
+
+        // Spec 006: Settings dependencies
+        SettingsDependencies.settingsRepositoryProvider = { settingsRepository }
+        SettingsDependencies.developerDiagnosticsRepositoryProvider = { developerDiagnosticsRepository }
+        SettingsDependencies.overlayStateProvider = { overlayDisplayStateFlow }
     }
 
     companion object {

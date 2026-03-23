@@ -5,6 +5,16 @@
     android:orientation="vertical"
     android:padding="16dp">
 
+    <com.google.android.material.appbar.MaterialToolbar
+        android:id="@+id/viewerTopAppBar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="4dp" />
+
+    <include
+        android:id="@+id/developerOverlay"
+        layout="@layout/include_developer_overlay" />
+
     <TextView
         android:id="@+id/viewerTitle"
         android:layout_width="wrap_content"

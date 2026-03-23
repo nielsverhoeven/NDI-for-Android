@@ -5,19 +5,23 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import androidx.core.net.toUri
 import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import androidx.navigation.NavDeepLinkRequest
 import androidx.navigation.fragment.findNavController
 import com.ndi.core.model.PlaybackState
 import com.ndi.feature.ndibrowser.presentation.R
 import com.ndi.feature.ndibrowser.presentation.databinding.FragmentViewerBinding
+import com.ndi.feature.ndibrowser.settings.DeveloperOverlayRenderer
 import java.net.HttpURLConnection
 import java.net.URL
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -49,6 +53,19 @@ class ViewerFragment : Fragment() {
             viewModel.onBackToListPressed()
             runCatching { findNavController().popBackStack() }
         }
+        fragmentBinding.viewerTopAppBar.inflateMenu(R.menu.viewer_menu)
+        fragmentBinding.viewerTopAppBar.setOnMenuItemClickListener { item ->
+            if (item.itemId == R.id.action_settings) {
+                runCatching {
+                    findNavController().navigate(
+                        NavDeepLinkRequest.Builder.fromUri("ndi://settings".toUri()).build(),
+                    )
+                }
+                true
+            } else {
+                false
+            }
+        }
         return fragmentBinding.root
     }
 
@@ -59,7 +76,16 @@ class ViewerFragment : Fragment() {
 
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                viewModel.uiState.collect { state ->
+                val overlayFlow = ViewerDependencies.overlayStateFlowOrNull()
+                val stateFlow = if (overlayFlow == null) {
+                    viewModel.uiState
+                } else {
+                    viewModel.uiState.combine(overlayFlow) { state, overlayDisplayState ->
+                        state.copy(overlayDisplayState = overlayDisplayState)
+                    }
+                }
+
+                stateFlow.collect { state ->
                     val fragmentBinding = binding ?: return@collect
                     fragmentBinding.viewerTitle.text = getString(R.string.ndi_viewer_title, state.sourceId)
                     fragmentBinding.viewerState.text = state.playbackState.name
@@ -67,6 +93,13 @@ class ViewerFragment : Fragment() {
                     fragmentBinding.recoveryMessage.text = state.interruptionMessage
                     fragmentBinding.recoveryMessage.isVisible = state.interruptionMessage != null
                     fragmentBinding.retryButton.isVisible = state.recoveryActionsVisible
+                    DeveloperOverlayRenderer.render(
+                        container = fragmentBinding.developerOverlay.developerOverlayContainer,
+                        streamStatusView = fragmentBinding.developerOverlay.overlayStreamStatus,
+                        sessionIdView = fragmentBinding.developerOverlay.overlaySessionId,
+                        recentLogsView = fragmentBinding.developerOverlay.overlayRecentLogs,
+                        overlayDisplayState = state.overlayDisplayState,
+                    )
                     renderRelayPreview(state.sourceId, state.playbackState)
                 }
             }

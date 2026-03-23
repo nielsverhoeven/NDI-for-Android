@@ -53,4 +53,20 @@ object NdiNavigation {
         TopLevelDestination.STREAM -> R.id.streamFragment
         TopLevelDestination.VIEW -> R.id.viewFragment
     }
+
+    // ---- Spec 006: Settings navigation helpers ----
+
+    fun settingsRequest(): NavDeepLinkRequest {
+        return NavDeepLinkRequest.Builder
+            .fromUri("ndi://settings".toUri())
+            .build()
+    }
+
+    fun settingsDestinationId(): Int = R.id.settingsFragment
+
+    fun sourceListToSettingsActionId(): Int = R.id.action_streamFragment_to_settingsFragment
+
+    fun viewerToSettingsActionId(): Int = R.id.action_viewFragment_to_settingsFragment
+
+    fun outputToSettingsActionId(): Int = R.id.action_outputControlFragment_to_settingsFragment
 }

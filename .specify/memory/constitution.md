@@ -1,6 +1,6 @@
 <!--
 Sync Impact Report
-Version change: 1.1.0 -> 2.0.0
+Version change: 2.0.0 -> 2.1.0
 Modified principles:
 - IV. Strict Test-Driven Development (NON-NEGOTIABLE) -> IV. Strict Test-Driven Development (NON-NEGOTIABLE)
 Added sections:
@@ -12,10 +12,7 @@ Templates requiring updates:
 - ✅ .specify/templates/spec-template.md
 - ✅ .specify/templates/tasks-template.md
 - ⚠ pending: .specify/templates/commands/*.md (directory not present)
-- ✅ specs/001-scan-ndi-sources/plan.md
-- ✅ specs/001-scan-ndi-sources/research.md
-- ✅ specs/001-scan-ndi-sources/quickstart.md
-- ✅ specs/002-stream-ndi-source/plan.md
+- ✅ Runtime guidance currently does not contain constitution quality-gate references requiring update
 Follow-up TODOs:
 - None
 -->
@@ -58,6 +55,9 @@ refactor safely. Unit tests MUST use JUnit. End-to-end flows MUST default to
 Playwright. If Playwright is not feasible for a required end-to-end scenario, an
 alternative must be proposed with justification and approval. 
 If existing Espresso tests are found when working on a feature, they must be converted to Playwright tests as part of the implementation.
+Any feature that introduces or changes visual behavior MUST add Playwright e2e
+coverage executed on emulator(s) for the new or changed user-visible flow and
+MUST verify that all existing Playwright e2e tests still pass.
 
 Rationale: Enforced TDD keeps scope controlled, prevents regressions, and
 creates executable documentation of expected behavior.
@@ -162,7 +162,11 @@ deployable on current Android standards.
 5. Release branches MUST pass unit, instrumentation/UI, and release build
   validation with R8/ProGuard enabled before merge, and MUST include
   Playwright end-to-end results unless a documented exception applies.
-6. Each release cycle MUST include a toolchain currency review covering
+6. Any feature that adds or changes visual UI behavior MUST include emulator-run
+  Playwright e2e coverage for the changed functionality before merge.
+7. Any feature pull request that changes UI behavior MUST include evidence that
+  the existing Playwright e2e suite was executed and remains passing.
+8. Each release cycle MUST include a toolchain currency review covering
   compileSdk, targetSdk, AGP, Gradle, Kotlin, JDK/JBR, AndroidX/Jetpack, NDK,
   CMake, and required proprietary SDK compatibility.
 
@@ -194,4 +198,4 @@ Compliance review expectations:
 3. Periodic audits MUST be performed each release cycle to verify ongoing
   adherence and remove drift.
 
-**Version**: 2.0.0 | **Ratified**: 2026-03-15 | **Last Amended**: 2026-03-16
+**Version**: 2.1.0 | **Ratified**: 2026-03-15 | **Last Amended**: 2026-03-20

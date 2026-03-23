@@ -65,6 +65,17 @@
 
 [Add more user stories as needed, each with an assigned priority]
 
+### Visual Change Quality Gate *(mandatory when UI changes are present)*
+
+- If this feature adds or changes visual behavior, the spec MUST define
+  Playwright end-to-end tests that run on emulator(s) and cover each
+  new/updated user-visible flow.
+- If this feature adds or changes visual behavior, the spec MUST include a
+  regression requirement to execute all existing Playwright e2e tests and
+  keep them passing.
+- If no visual behavior changes are included, state "No visual change" with a
+  short justification.
+
 ### Edge Cases
 
 <!--
@@ -89,11 +100,15 @@
 - **FR-003**: Users MUST be able to [key interaction, e.g., "reset their password"]
 - **FR-004**: System MUST [data requirement, e.g., "persist user preferences"]
 - **FR-005**: System MUST [behavior, e.g., "log all security events"]
+- **FR-006**: For visual additions/changes, system MUST include emulator-run
+  Playwright e2e coverage for new/updated functionality.
+- **FR-007**: For visual additions/changes, system MUST execute and keep
+  passing all existing Playwright e2e tests.
 
 *Example of marking unclear requirements:*
 
-- **FR-006**: System MUST authenticate users via [NEEDS CLARIFICATION: auth method not specified - email/password, SSO, OAuth?]
-- **FR-007**: System MUST retain user data for [NEEDS CLARIFICATION: retention period not specified]
+- **FR-008**: System MUST authenticate users via [NEEDS CLARIFICATION: auth method not specified - email/password, SSO, OAuth?]
+- **FR-009**: System MUST retain user data for [NEEDS CLARIFICATION: retention period not specified]
 
 ### Key Entities *(include if feature involves data)*
 

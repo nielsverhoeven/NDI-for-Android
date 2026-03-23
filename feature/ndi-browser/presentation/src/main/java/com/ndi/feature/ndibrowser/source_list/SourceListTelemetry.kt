@@ -6,6 +6,7 @@ import com.ndi.core.model.DiscoveryStatus
 import com.ndi.core.model.TelemetryEvent
 import com.ndi.feature.ndibrowser.domain.repository.NdiDiscoveryRepository
 import com.ndi.feature.ndibrowser.domain.repository.UserSelectionRepository
+import kotlinx.coroutines.flow.Flow
 
 fun interface SourceListTelemetryEmitter {
     fun emit(event: TelemetryEvent)
@@ -16,6 +17,8 @@ object SourceListDependencies {
     var userSelectionRepositoryProvider: (() -> UserSelectionRepository)? = null
     var viewerNavigationRequestProvider: ((String) -> NavDeepLinkRequest)? = null
     var outputNavigationRequestProvider: ((String) -> NavDeepLinkRequest)? = null
+    var fallbackWarningProvider: (() -> Flow<String?>)? = null
+    var overlayStateProvider: (() -> Flow<com.ndi.feature.ndibrowser.settings.OverlayDisplayState?>)? = null
     var telemetryEmitter: SourceListTelemetryEmitter = SourceListTelemetryEmitter {}
 
     fun requireDiscoveryRepository(): NdiDiscoveryRepository {
@@ -33,6 +36,10 @@ object SourceListDependencies {
     fun outputNavigationRequest(sourceId: String): NavDeepLinkRequest {
         return requireNotNull(outputNavigationRequestProvider) { "Source list output navigation is not configured." }.invoke(sourceId)
     }
+
+    fun fallbackWarningFlowOrNull(): Flow<String?>? = fallbackWarningProvider?.invoke()
+
+    fun overlayStateFlowOrNull(): Flow<com.ndi.feature.ndibrowser.settings.OverlayDisplayState?>? = overlayStateProvider?.invoke()
 }
 
 object SourceListTelemetry {
