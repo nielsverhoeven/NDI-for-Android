@@ -47,6 +47,10 @@ jobs:
         shell: pwsh
         run: npm --prefix testing/e2e ci
 
+      - name: Install Playwright browsers
+        shell: pwsh
+        run: npm --prefix testing/e2e exec playwright install --with-deps
+
       - name: Run primary profile e2e gate
         shell: pwsh
         run: npm --prefix testing/e2e run test:pr:primary

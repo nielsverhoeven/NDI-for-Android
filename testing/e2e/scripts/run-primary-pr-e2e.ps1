@@ -65,6 +65,9 @@ function Invoke-PlaywrightSuite {
 
 Push-Location (Join-Path $PSScriptRoot "..")
 try {
+    Write-Host "Ensuring Playwright browsers are installed for e2e execution"
+    npx playwright install --with-deps
+
     $newSettingsJson = Join-Path $OutputRoot "new-settings.json"
     $latencyJson = Join-Path $OutputRoot "latency-scenario.json"
     $existingJson = Join-Path $OutputRoot "existing-regression.json"

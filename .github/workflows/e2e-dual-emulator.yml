@@ -63,6 +63,11 @@ jobs:
         working-directory: testing/e2e
         run: npm ci
 
+      - name: Install Playwright browsers
+        shell: pwsh
+        working-directory: testing/e2e
+        run: npx playwright install --with-deps
+
       - name: Run support validation specs
         shell: pwsh
         working-directory: testing/e2e
