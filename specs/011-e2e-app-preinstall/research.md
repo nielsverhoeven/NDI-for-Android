@@ -6,22 +6,22 @@
 
 ## Decision 1: ADB Version Extraction Method
 
-**Decision**: Extract `versionName` and `versionCode` from the APK artifact *before* install using `aapt dump badging` (or `aapt2`), then confirm from the device *after* install via `adb -s <serial> shell dumpsys package com.ndi.app.debug`.
+**Decision**: Extract `versionName` and `versionCode` from the APK artifact before install using `aapt dump badging` (or `aapt2`), then confirm from the device after install via `adb -s <serial> shell dumpsys package com.ndi.app.debug`.
 
 **Rationale**:
-- Pre-install extraction validates the artifact before committing to installation; if the APK is corrupt, we abort early.
+- Pre-install extraction validates the artifact before committing to installation; if the APK is corrupt, the run aborts early.
 - Post-install confirmation via `dumpsys package` closes the loop and produces the authoritative per-device record for the Pre-Flight Report.
-- `aapt`/`aapt2` are bundled with Android SDK build-tools (already required by the project) and available in CI (via `android-actions/setup-android@v3`).
-- `dumpsys package <pkg> | grep -E "versionName|versionCode"` is a standard, stable ADB pattern used in existing `android-device-fixtures.ts`.
+- `aapt` and `aapt2` are bundled with Android SDK build-tools already required by the repo and available in CI.
 
 **Alternatives considered**:
-- `pm dump` — same data, less commonly used pattern; `dumpsys package` preferred.
-- Read `AndroidManifest.xml` from APK with `apkanalyzer` — heavier tool, not required for version extraction alone.
+- `pm dump` only: workable but less explicit for host-side artifact validation.
+- `apkanalyzer`: heavier than necessary for version extraction alone.
 
 **Commands**:
 ```powershell
 # Pre-install (APK metadata)
 aapt dump badging app-debug.apk | Select-String "package: name="
+
 # Post-install (device confirmation)
 adb -s emulator-5554 shell dumpsys package com.ndi.app.debug | Select-String "versionName|versionCode"
 ```
@@ -30,110 +30,133 @@ adb -s emulator-5554 shell dumpsys package com.ndi.app.debug | Select-String "ve
 
 ## Decision 2: Launch Verification Method
 
-**Decision**: Use `adb -s <serial> shell am start -W -n com.ndi.app.debug/com.ndi.app.MainActivity` and check the `result=` line in the output for `ACTIVITY_LAUNCHED` (exit code 0). Force-stop the app immediately after to leave the emulator in a clean state.
+**Decision**: Use `adb -s <serial> shell am start -W -n com.ndi.app.debug/com.ndi.app.MainActivity`, treat zero exit code plus `Status: ok` in stdout as success, and force-stop the app immediately afterward.
 
 **Rationale**:
-- `-W` (wait) flag causes `am start` to block until the activity is fully launched or fails, producing a deterministic result.
-- `am start` returns non-zero exit code on launch failure (e.g., `ACTIVITY_NOT_STARTED_CLASS_NOT_FOUND`), which is caught by `Invoke-Adb`'s existing error handling.
-- The main activity is `com.ndi.app.MainActivity` in package `com.ndi.app.debug` (confirmed in `app/src/main/AndroidManifest.xml`).
-- Force-stopping after verification ensures no residual app state bleeds into the first test.
+- `-W` blocks until Android reports launch success or failure, giving a deterministic verification point.
+- `Status: ok` is the stable success signal exposed by `am start -W` across emulator images.
+- Force-stopping after verification leaves the first real test in control of app startup state.
 
 **Alternatives considered**:
-- `pidof <package>` polling — non-deterministic timing; `-W` is strictly better.
-- `monkey -p <package> 1` — invokes random input; not a clean launch test.
-- `am instrument` — heavyweight and requires a test APK.
+- `pidof` polling: timing-sensitive and less deterministic.
+- `monkey -p`: noisy and not a clean launch signal.
 
 ---
 
-## Decision 3: Per-Emulator Timeout Enforcement
+## Decision 3: Per-Device Timeout Enforcement
 
-**Decision**: Use `Start-Job` / `Wait-Job -Timeout 60` / `Remove-Job -Force` pattern in PowerShell to impose the 60-second per-emulator install timeout.
+**Decision**: Enforce one 60-second per-device deadline that covers readiness wait, installation, post-install version confirmation, and launch verification. Use a PowerShell stopwatch and remaining-time budget for each step, wrapping the install call in `Start-Job` and `Wait-Job -Timeout <remaining>` only when needed.
 
 **Rationale**:
-- Aligns with the 60s constraint from FR-008 / SC-003.
-- Native PowerShell pattern available in both PowerShell 5.1 and 7+, matching the Windows CI runner environment (`windows-latest`).
-- `Remove-Job -Force` kills the ADB process tree if timeout fires.
-- Existing `emulator-adb.ps1` helpers (`Install-ApkToEmulator`, `Invoke-Adb`) are synchronous; wrapping in a job bounds their wall-clock time without rewriting them.
+- Aligns FR-008 and FR-011 under one measurable device budget.
+- Prevents separate waits from silently exceeding the user-visible timeout commitment.
+- Reuses existing synchronous helper functions without rewriting them around process objects.
 
 **Alternatives considered**:
-- `System.Diagnostics.Process` with `WaitForExit(milliseconds)` — viable but requires wrapping `adb` binary invocation directly; job approach reuses existing helpers cleanly.
-- `Invoke-Command -AsJob` — for remote PS sessions; not needed for local ADB invocation.
+- Separate readiness and install timeouts: introduces conflicting interpretations of the 60-second requirement.
+- Raw `System.Diagnostics.Process` management: workable but unnecessary for the current helper structure.
 
 ---
 
-## Decision 4: Pre-Flight Report Artifact Location
+## Decision 4: Emulator Readiness Signal
 
-**Decision**: Write the Pre-Flight Report to `testing/e2e/artifacts/runtime/preinstall-report.json`, consistent with the provisioning result at `testing/e2e/artifacts/runtime/provisioning-result.json` (already used by `provision-dual-emulator.ps1`).
+**Decision**: Treat a device as ready only when `adb -s <serial> get-state` returns `device` and `adb -s <serial> shell getprop sys.boot_completed` returns `1`. Poll within the per-device 60-second deadline before attempting installation.
 
 **Rationale**:
-- Keeps all runtime infrastructure outputs in one directory, picked up by `collect-test-artifacts.ps1 -SessionId ci-<run_id>` and uploaded via `actions/upload-artifact`.
-- Playwright specs reading the report use the same base path convention used for `provisioning-result.json`.
+- Distinguishes a reachable emulator from one whose framework is ready to accept installs.
+- Maps directly to the clarified FR-011 readiness behavior.
+- Supports a distinct `NOT_READY` failure state in the report.
 
 **Alternatives considered**:
-- Root `testing/e2e/artifacts/` — too flat; `runtime/` sub-directory groups live session data.
-- Inside `playwright-report/` — mixing infra reports with test reporter output creates confusion.
+- Immediate failure on the first miss: too brittle for fresh boots.
+- Assuming Feature 010 always guarantees readiness: conflicts with the clarified spec and hides boot-lag regressions.
 
 ---
 
-## Decision 5: Integration Point — CI vs. Global Setup
+## Decision 5: Pre-Flight Report Artifact Location
 
-**Decision**: Dual-track integration:
-1. **CI**: Explicit step `Install app on emulators` in `.github/workflows/e2e-dual-emulator.yml`, after `Provision dual emulators` and before any test step. The step calls `testing/e2e/scripts/install-app-preinstall.ps1`.
-2. **Local / global-setup**: `global-setup-dual-emulator.ts` calls `install-app-preinstall.ps1` after provisioning (gated by `DUAL_EMULATOR_AUTOMATION !== "0"`), so local `npx playwright test` runs also get the guarantee.
+**Decision**: Write the Pre-Flight Report to `testing/e2e/artifacts/runtime/preinstall-report.json`, aligned with the runtime artifact conventions already used by Feature 010.
 
 **Rationale**:
-- CI explicit step is observable and restartable independently; failure surfaces at the right step in GitHub Actions logs.
-- Global-setup integration ensures the guarantee holds for local developer runs that don't invoke the script directly.
-- No duplication risk: the script is idempotent (FR-007), so double-execution (CI step + global setup) when both are active is safe — the second run simply overwrites the report with identical data.
+- Keeps runtime infrastructure outputs in a single predictable directory.
+- Allows Playwright support specs and CI artifact upload steps to consume the same file without extra path translation.
+- Avoids mixing operational data with Playwright HTML report output.
 
 **Alternatives considered**:
-- CI-only (no global-setup hook) — local developer runs would not have the guarantee; violates SC-001.
-- Global-setup-only (no explicit CI step) — CI step ordering is less visible; harder to observe or skip independently.
+- Root `testing/e2e/artifacts/`: too flat for session/runtime separation.
+- `playwright-report/`: conflates harness state with reporter output.
 
 ---
 
-## Decision 6: APK Artifact Path
+## Decision 6: Integration Point - CI vs. Global Setup
 
-**Decision**: Default path `app/build/outputs/apk/debug/app-debug.apk` relative to repo root; parametrize via `$ApkPath` script parameter with environment variable `APP_APK_PATH` as override.
+**Decision**: Keep dual entry points with report reuse:
+1. **CI**: explicit `Install app on emulators` step in `.github/workflows/e2e-dual-emulator.yml`, after provisioning and before any test step.
+2. **Local / global setup**: `global-setup-dual-emulator.ts` validates whether a fresh matching `preinstall-report.json` already exists for the current APK and target serials; otherwise it invokes the install script.
 
 **Rationale**:
-- `./gradlew :app:assembleDebug` outputs to `app/build/outputs/apk/debug/app-debug.apk` — standard Gradle AGP output convention, confirmed by project structure.
-- Explicit parameter allows artifact path override for future variant or flavor support without script modification.
+- Satisfies FR-009's explicit CI gate ordering requirement.
+- Preserves SC-001 for local runs started directly from Playwright.
+- Avoids needless duplicate installs when CI already created a valid report for the same run.
+
+**Alternatives considered**:
+- CI only: local runs would not be protected.
+- Global setup only: CI step ordering would be opaque and harder to diagnose.
 
 ---
 
-## Decision 7: Package Name and Debug Application ID
+## Decision 7: APK Artifact Path
 
-**Decision**: Canonical debug package name is `com.ndi.app.debug` (from `app/build.gradle.kts`: `applicationId = "com.ndi.app"` + `applicationIdSuffix = ".debug"`).
-
-**Rationale**: Matches the constant `DEFAULT_PACKAGE = "com.ndi.app.debug"` already in `android-device-fixtures.ts` and the emulator test fixtures; no divergence introduced.
-
----
-
-## Decision 8: CI Build Step — `assembleDebug` placement
-
-**Decision**: Insert a `Build app debug APK` step in `.github/workflows/e2e-dual-emulator.yml` after `Setup Android SDK` and before `Validate emulator images` (i.e., before provisioning). This ensures the APK artifact exists before the install step runs.
+**Decision**: Default path is `app/build/outputs/apk/debug/app-debug.apk` relative to repo root, overridable via `-ApkPath` or `APP_APK_PATH`.
 
 **Rationale**:
-- Emulator image validation and provisioning depend on ADB tooling, not on the APK.  Building before provisioning keeps parallel resource use reasonable (build consumes CPU while emulators would be starting — but since provisioning `SkipBootIfAlreadyRunning` applies, no real contention).
-- Placing the build step before provisioning mirrors the logical dependency: `build → provision → install → test`.
-- The CI workflow currently builds only `:ndi:sdk-bridge:assembleRelease` (NDI bridge); this feature adds `:app:assembleDebug` as a separate step with a clear, distinct label.
+- Matches the standard output of `./gradlew :app:assembleDebug`.
+- Supports future variant overrides without changing script logic.
 
-**Workflow triggers**: `app/**` and `app/build.gradle.kts` paths not currently in the `on.pull_request.paths` filter. Per spec scope, the workflow trigger paths are not modified by this feature (out of scope).
+**Alternatives considered**:
+- Hard-coded debug-only path with no override: simpler now, but blocks future variant experimentation.
 
 ---
 
-## Decision 9: Playwright Spec for Pre-Flight Validation (TDD anchor)
+## Decision 8: Package Name and Debug Application ID
 
-**Decision**: New `testing/e2e/tests/support/app-preinstall.spec.ts` spec, tagged `@preinstall`, reads `preinstall-report.json` and asserts: overall status is PASS, both emulators have `apkInstalled: true`, `launchVerified: true`, `versionName` matches expected, and `elapsedMs ≤ 60000` per device.
+**Decision**: The canonical debug package name is `com.ndi.app.debug`.
 
 **Rationale**:
-- Constitution IV requires TDD (failing-first). The spec file is the failing test; `install-app-preinstall.ps1` is the implementation that makes it pass.
-- Placing it in `tests/support/` keeps it alongside other infra validation specs (`e2e-infrastructure.spec.ts`, `dual-emulator-provisioning.spec.ts`).
-- Tag `@preinstall` allows targeted CI step: `npx playwright test tests/support/app-preinstall.spec.ts`.
+- Matches `app/build.gradle.kts` (`applicationId = "com.ndi.app"` plus `.debug` suffix).
+- Matches existing Playwright Android fixture assumptions in the repo.
+
+---
+
+## Decision 9: CI Build Step Placement
+
+**Decision**: Insert a `Build app debug APK` step in `.github/workflows/e2e-dual-emulator.yml` after Android SDK setup and before emulator provisioning.
+
+**Rationale**:
+- Ensures the required artifact exists before the install gate executes.
+- Preserves a clear CI ordering model: build, provision, install, validate, regress.
+- Keeps build failures separate from emulator or Playwright failures in workflow logs.
+
+**Alternatives considered**:
+- Building after provisioning: no functional advantage and more confusing failure ordering.
+
+---
+
+## Decision 10: Playwright Validation Strategy
+
+**Decision**: Add a new failing-first `testing/e2e/tests/support/app-preinstall.spec.ts` support spec tagged `@preinstall`, then rerun the existing Playwright suites under `testing/e2e/tests/**/*.spec.ts` after the support gate passes.
+
+**Rationale**:
+- Provides a clear Red-Green-Refactor entry point.
+- Keeps validation in the repo's default end-to-end framework.
+- Closes the regression gap by explicitly re-running the existing suites, not only the new support spec.
+
+**Alternatives considered**:
+- Script-only validation: insufficient against the constitution's Playwright default.
+- PowerShell unit tests: conflicts with the repo's JUnit governance for unit testing.
 
 ---
 
 ## No NEEDS CLARIFICATION Items Remain
 
-All NEEDS CLARIFICATION items from the Technical Context were resolved via spec clarifications (2026-03-23) and the research decisions above. The plan proceeds to Phase 1.
+All technical-context unknowns were resolved from the clarified spec and repo facts. The plan can proceed to task generation.

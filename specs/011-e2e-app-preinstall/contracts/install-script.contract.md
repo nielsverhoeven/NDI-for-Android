@@ -24,21 +24,21 @@
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `ApkPath` | `string` | `app/build/outputs/apk/debug/app-debug.apk` (relative to repo root) | Path to the APK artifact to install. Can also be set via env var `APP_APK_PATH`. |
+| `ApkPath` | `string` | `app/build/outputs/apk/debug/app-debug.apk` | Path to the APK artifact to install. Can also be set via `APP_APK_PATH`. |
 | `PackageName` | `string` | `com.ndi.app.debug` | Android application ID of the app being installed. Must match the built APK. |
-| `Serials` | `string[]` | `@("emulator-5554", "emulator-5556")` | ADB device serials to install the app on. Can also be set via env vars `EMULATOR_A_SERIAL` and `EMULATOR_B_SERIAL`. |
-| `TimeoutSeconds` | `int` | `60` | Per-device install+verify timeout in seconds (FR-008). If any device exceeds this, its record gets `status = "TIMEOUT"` and overall status is `FAIL`. |
-| `OutputPath` | `string` | `testing/e2e/artifacts/runtime/preinstall-report.json` | Filesystem path for the Pre-Flight Report JSON. Created if not present; replaced on each run. |
+| `Serials` | `string[]` | `@("emulator-5554", "emulator-5556")` | ADB device serials to target. Can also be sourced from `EMULATOR_A_SERIAL` and `EMULATOR_B_SERIAL` when `-Serials` is omitted. |
+| `TimeoutSeconds` | `int` | `60` | Per-device readiness-plus-install-plus-verify budget in seconds. If the device fails before the deadline or exceeds it, the device record becomes `NOT_READY` or `TIMEOUT` and overall status is `FAIL`. |
+| `OutputPath` | `string` | `testing/e2e/artifacts/runtime/preinstall-report.json` | Destination for the JSON Pre-Flight Report. The file is replaced on each run. |
 
 ---
 
 ## Environment Variable Overrides
 
 | Variable | Overrides Parameter | Notes |
-|----------|--------------------|-|
-| `APP_APK_PATH` | `ApkPath` | Explicit `-ApkPath` takes precedence over env var |
-| `EMULATOR_A_SERIAL` | First entry in default `Serials` | Only applies when `-Serials` is not specified |
-| `EMULATOR_B_SERIAL` | Second entry in default `Serials` | Only applies when `-Serials` is not specified |
+|----------|---------------------|-------|
+| `APP_APK_PATH` | `ApkPath` | Explicit `-ApkPath` takes precedence |
+| `EMULATOR_A_SERIAL` | First default serial | Applies only when `-Serials` is omitted |
+| `EMULATOR_B_SERIAL` | Second default serial | Applies only when `-Serials` is omitted |
 
 ---
 
@@ -46,58 +46,61 @@
 
 | Code | Meaning |
 |------|---------|
-| `0` | Pre-flight PASS — all devices installed and launch-verified; report written to `OutputPath` |
-| `1` | Pre-flight FAIL — one or more devices failed, or artifact missing; report written with failure details |
+| `0` | Pre-flight PASS. All devices became ready, installed the APK, matched the expected version, and passed launch verification. |
+| `1` | Pre-flight FAIL. Artifact missing, device not ready, install failed, version mismatched, or launch verification failed. |
 
-The script ALWAYS writes the report before exiting, regardless of outcome.
+The script MUST always write the report before exiting.
 
 ---
 
 ## Stdout / Stderr Protocol
 
-- `stdout`: Human-readable progress log (per-device install start, version info, launch verification result, summary line).
-- `stderr`: Reserved for unexpected script-level errors (not device-level errors; device errors are in the report).
-- Final line on `stdout`: One of:
-  - `PRE-FLIGHT PASS: All N devices verified (versionName=X versionCode=Y)`
-  - `PRE-FLIGHT FAIL: <consolidated reason>`
+- `stdout`: Human-readable progress log including readiness wait, install start, version confirmation, launch verification, and summary.
+- `stderr`: Reserved for unexpected script-level failures, not expected device-level failures.
+- Final line on `stdout` is one of:
+  - `PRE-FLIGHT PASS: N/N devices verified; expected=<versionIdentifier>; devices=<serial:versionIdentifier,...>`
+  - `PRE-FLIGHT FAIL: <consolidated reason>; expected=<versionIdentifier|missing>`
 
-CI consumers (GitHub Actions) can use these final lines for step summary annotations.
+CI consumers may surface the final line in step summaries.
 
 ---
 
 ## Idempotency Guarantee
 
-Running the script multiple times with the same APK artifact MUST produce exit code `0` each time, provided emulators are reachable and the APK is valid (FR-007). The `-r` flag is always passed to `adb install`, ensuring forced replacement.
+Running the script multiple times with the same valid APK MUST continue to produce exit code `0` when the requested devices are reachable and ready. The script always uses replacement install semantics (`adb install -r`).
 
 ---
 
 ## Dependencies
 
-The script sources the following helper:
-- `testing/e2e/scripts/helpers/emulator-adb.ps1` — provides `Invoke-Adb`, `Install-ApkToEmulator`, `Get-EmulatorStateSnapshot`
+The script sources `testing/e2e/scripts/helpers/emulator-adb.ps1` and requires these helper capabilities:
 
-Additions to `emulator-adb.ps1` required by this feature:
-- `Get-InstalledAppVersion -Serial <string> -PackageName <string>` → `@{ versionName: string; versionCode: int }`
-- `Test-AppLaunchable -Serial <string> -PackageName <string> -ActivityName <string>` → `boolean`
+- `Wait-ForEmulatorReady -Serial <string> -TimeoutSeconds <int>` -> `@{ ready: bool; readinessWaitMs: int }`
+- `Install-ApkToEmulator -Serial <string> -ApkPath <string>`
+- `Get-InstalledAppVersion -Serial <string> -PackageName <string>` -> `@{ versionName: string; versionCode: int }`
+- `Test-AppLaunchable -Serial <string> -PackageName <string> -ActivityName <string>` -> `boolean`
 
 ---
 
-## Sequence (Happy Path)
+## Happy-Path Sequence
 
-```
-1. Resolve ApkPath → abs path
-2. Validate APK exists → abort with FR-003 if not
-3. Extract versionName + versionCode from APK via aapt
+```text
+1. Resolve ApkPath to an absolute path
+2. Validate the APK exists; abort-before-install if not
+3. Extract versionName and versionCode from the APK
 4. For each serial in Serials:
-   a. Start-Job: { Install-ApkToEmulator -Serial $s -ApkPath $p }
-   b. Wait-Job -Timeout $TimeoutSeconds
-   c. If job timed out → record TIMEOUT, Remove-Job -Force
-   d. Get-InstalledAppVersion -Serial $s → compare to expected
-   e. Test-AppLaunchable -Serial $s → launchVerified
-   f. Record EmulatorInstallRecord
-5. Compute overallStatus, failureReason
+   a. Start a per-device deadline stopwatch
+   b. Wait for emulator readiness within the deadline
+   c. If readiness is not reached -> record NOT_READY
+   d. Install the APK within the remaining deadline budget
+   e. If install exceeds remaining budget -> record TIMEOUT
+   f. Confirm installed version from device and compare to expected
+   g. Launch verify with `am start -W`; success requires zero exit and `Status: ok`
+   h. Force-stop app after successful launch verification
+   i. Record EmulatorInstallRecord
+5. Compute overallStatus and failureReason
 6. Write PreFlightReport to OutputPath
-7. Exit 0 (PASS) or 1 (FAIL)
+7. Exit 0 on PASS or 1 on FAIL
 ```
 
 ---
@@ -105,15 +108,16 @@ Additions to `emulator-adb.ps1` required by this feature:
 ## Caller Contract (CI Step)
 
 ```yaml
-# Required step ordering in .github/workflows/e2e-dual-emulator.yml:
+# Required ordering inside .github/workflows/e2e-dual-emulator.yml:
 # 1. Setup Java, Node, Android SDK
-# 2. Build app debug APK         ← MUST precede this step
-# 3. Provision dual emulators    ← MUST precede this step
-# 4. Install app on emulators    ← THIS STEP (calls install-app-preinstall.ps1)
-# 5. Run test specs              ← MUST follow this step
+# 2. Build app debug APK
+# 3. Provision dual emulators
+# 4. Install app on emulators     <- this script
+# 5. Run support validation spec
+# 6. Run existing Playwright regression suites
 ```
 
-The CI step MUST use `shell: pwsh` and be invoked from the repo root so that relative paths resolve correctly.
+The CI step MUST use `shell: pwsh` and run from repo root so relative paths resolve correctly.
 
 ---
 
@@ -121,8 +125,9 @@ The CI step MUST use `shell: pwsh` and be invoked from the repo root so that rel
 
 ```typescript
 // After provisioning and before returning:
+// 1. Reuse an existing fresh matching preinstall-report.json when present.
+// 2. Otherwise invoke the PowerShell pre-install script.
 runPowerShellScript("../../scripts/install-app-preinstall.ps1");
-// The script exits non-zero on FAIL → execFileSync throws → global setup fails → test run aborts
 ```
 
-The TypeScript caller does not pass `-OutputPath`; the default path is used. ADB serials default to env vars `EMULATOR_A_SERIAL` / `EMULATOR_B_SERIAL` when set, otherwise use the `emulator-5554` / `emulator-5556` defaults.
+The TypeScript caller uses the default `OutputPath`. ADB serials come from `EMULATOR_A_SERIAL` and `EMULATOR_B_SERIAL` when available, otherwise the emulator defaults are used.

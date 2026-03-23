@@ -6,142 +6,143 @@
 
 ## What This Feature Does
 
-Before any e2e test executes, this feature guarantees that the **latest debug APK** is freshly installed on every registered emulator and launch-verified. A structured Pre-Flight Report is written after each run.
+Before any e2e test executes, this feature guarantees that the latest debug APK is freshly installed on every registered emulator. Each device gets up to 60 seconds to become ready, install the APK, confirm the expected version, and pass launch verification. A structured Pre-Flight Report is written after each run.
 
 ---
 
 ## Prerequisites
 
-- Android emulators booted and ADB-reachable (Feature 010 handles this)
-- Android SDK on `PATH` (includes `adb`, `aapt`/`aapt2`)
-- Node 20 + npm (for Playwright)
-- PowerShell 7 (`pwsh`)
-- Repo cloned at repo root
+- Android emulators provisioned by Feature 010
+- Android SDK on `PATH`, including `adb` and `aapt` or `aapt2`
+- Node 20 and npm
+- PowerShell 7 or Windows PowerShell 5.1
+- Repo opened at the workspace root
 
 ---
 
 ## Local Developer Workflow
 
-### Step 1 — Build the debug APK
+### Step 1 - Build the debug APK
 
 ```powershell
-# From repo root
 ./gradlew.bat :app:assembleDebug
-# Output: app/build/outputs/apk/debug/app-debug.apk
 ```
 
-### Step 2 — Boot emulators (Feature 010)
+Expected output path:
+
+```text
+app/build/outputs/apk/debug/app-debug.apk
+```
+
+### Step 2 - Provision emulators
 
 ```powershell
 ./testing/e2e/scripts/provision-dual-emulator.ps1 -Action provision-dual -InstallNdiSdk -SkipBootIfAlreadyRunning
 ```
 
-### Step 3 — Run the pre-installation step manually (optional, for verification)
+### Step 3 - Run the pre-install gate manually (optional verification)
 
 ```powershell
 ./testing/e2e/scripts/install-app-preinstall.ps1
-# Outputs:
-#   PRE-FLIGHT PASS: All 2 devices verified (versionName=0.1.0 versionCode=1)
-# Report: testing/e2e/artifacts/runtime/preinstall-report.json
 ```
 
-### Step 4 — Run e2e tests
+Expected summary format:
+
+```text
+PRE-FLIGHT PASS: 2/2 devices verified; expected=0.1.0+1; devices=emulator-5554:0.1.0+1,emulator-5556:0.1.0+1
+```
+
+Report location:
+
+```text
+testing/e2e/artifacts/runtime/preinstall-report.json
+```
+
+### Step 4 - Run Playwright
 
 ```powershell
-cd testing/e2e
+Set-Location testing/e2e
 npm ci
-# The pre-install runs automatically via global-setup-dual-emulator.ts when:
-#   DUAL_EMULATOR_AUTOMATION != "0" (the default)
 npx playwright test --project=android-primary
 ```
 
-The global setup calls `install-app-preinstall.ps1` automatically. If you ran Step 3 manually, the global setup re-runs the install (idempotent — no harm, same result).
+`global-setup-dual-emulator.ts` enforces pre-install automatically. If Step 3 already produced a fresh matching report for the current APK and serials, global setup reuses it instead of reinstalling.
 
 ---
 
 ## Run Only the Pre-Flight Validation Spec
 
 ```powershell
-cd testing/e2e
+Set-Location testing/e2e
 npx playwright test tests/support/app-preinstall.spec.ts --project=android-primary
 ```
 
-This spec reads the Pre-Flight Report and asserts all devices passed with the correct version.
+This support spec reads the Pre-Flight Report and validates the expected device states and version identifiers.
 
 ---
 
-## Skip Pre-Installation (Development / Debugging Only)
+## Override APK Path
 
 ```powershell
-# Disables the entire DUAL_EMULATOR_AUTOMATION hook, including pre-install
-$env:DUAL_EMULATOR_AUTOMATION = "0"
-npx playwright test ...
-```
-
-> **Warning**: Disabling automation means no install guarantee. Tests may run against a stale or missing app.
-
----
-
-## Override APK Path (Non-Default Variant)
-
-```powershell
-# Via environment variable (applies to both script and global-setup)
 $env:APP_APK_PATH = "app/build/outputs/apk/release/app-release.apk"
 ./testing/e2e/scripts/install-app-preinstall.ps1
+```
 
-# Or via explicit parameter
+Or explicitly:
+
+```powershell
 ./testing/e2e/scripts/install-app-preinstall.ps1 -ApkPath "app/build/outputs/apk/release/app-release.apk"
 ```
 
 ---
 
-## CI / CD Workflow
+## CI Workflow Order
 
-The pre-installation gate is integrated into `.github/workflows/e2e-dual-emulator.yml` as explicit steps (in order):
+The feature extends `.github/workflows/e2e-dual-emulator.yml` with this effective order:
 
-```
+```text
 1. Checkout
 2. Setup Java 21
 3. Setup Node 20
 4. Setup Android SDK
 5. Verify prereqs
-6. Build NDI bridge release APK      (existing)
-7. Build app debug APK               ← NEW (assembleDebug)
-8. Validate emulator images (32-35)
+6. Build NDI bridge release APK
+7. Build app debug APK                 <- new
+8. Validate emulator images
 9. Provision dual emulators
-10. Install app on emulators          ← NEW (install-app-preinstall.ps1)
+10. Install app on emulators           <- new
 11. Start relay server
-12. Install test dependencies (npm ci)
+12. Install test dependencies
 13. Run support validation specs
-14. Run app pre-flight spec           ← NEW (app-preinstall.spec.ts)
-15. Run latency consumer suite (feature 009)
+14. Run app pre-flight support spec    <- new
+15. Run existing Playwright regression suites
 16. Collect artifacts
 17. Stop relay and reset
 18. Upload artifacts
 ```
 
-Steps 7 and 10 are the additions from this feature. Steps cannot be bypassed — there is no `if:` condition on either step per FR-009.
+The build and pre-install steps are required gates and must not be bypassed.
 
 ---
 
-## Reading the Pre-Flight Report
+## Read the Pre-Flight Report
 
 ```powershell
 Get-Content testing/e2e/artifacts/runtime/preinstall-report.json | ConvertFrom-Json | Format-List
 ```
 
-Or in Node.js / Playwright:
+Or from Node:
 
 ```typescript
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-const reportPath = resolve(__dirname, "../../../../testing/e2e/artifacts/runtime/preinstall-report.json");
+const reportPath = resolve(process.cwd(), "artifacts/runtime/preinstall-report.json");
 const report = JSON.parse(readFileSync(reportPath, "utf-8"));
 
-console.log(`Overall: ${report.overallStatus}`);
+console.log(report.overallStatus, report.buildArtifact.versionIdentifier);
 for (const device of report.devices) {
-  console.log(`  ${device.serial}: ${device.status} (${device.installedVersionName} / ${device.installedVersionCode})`);
+  console.log(device.serial, device.status, device.installedVersionIdentifier);
 }
 ```
 
@@ -150,13 +151,13 @@ for (const device of report.devices) {
 ## Troubleshooting
 
 | Symptom | Likely Cause | Resolution |
-|---------|-------------|------------|
-| `APK artifact not found` | `assembleDebug` not run | Run `./gradlew.bat :app:assembleDebug` first |
-| `TIMEOUT` on device | Emulator storage full or ADB hanging | Check emulator disk space; run `adb -s <serial> shell df /data`; reboot emulator |
-| `UNREACHABLE` on device | Emulator not started or ADB not connected | Run Feature 010 provisioning script; verify with `adb devices` |
-| `LAUNCH_FAILED` | Corrupt install or missing activity | Wipe emulator app data (`adb -s <serial> shell pm clear com.ndi.app.debug`) and re-run |
-| `VERSION_MISMATCH` | Installing wrong APK variant | Check `$ApkPath` parameter or `APP_APK_PATH` env var points to the correct APK |
-| `PRE-FLIGHT FAIL` in CI | Any above | Check `testing/e2e/artifacts/runtime/preinstall-report.json` in the uploaded CI artifact; the `failureReason` field provides a 5-minute-resolution-target message (SC-004) |
+|---------|--------------|------------|
+| `APK artifact not found` | `assembleDebug` was not run | Run `./gradlew.bat :app:assembleDebug` first |
+| `UNREACHABLE` | Emulator is not connected to ADB | Re-run provisioning and verify `adb devices` |
+| `NOT_READY` | Emulator boot did not complete within the 60-second device budget | Check `adb -s <serial> shell getprop sys.boot_completed`; reprovision if needed |
+| `TIMEOUT` | Install or launch verification exceeded the remaining budget | Check emulator responsiveness, storage, and ADB health |
+| `VERSION_MISMATCH` | Wrong APK variant or stale artifact path | Verify `APP_APK_PATH` or `-ApkPath` points at the intended APK |
+| `LAUNCH_FAILED` | Install succeeded but the app could not launch cleanly | Check `am start -W` output and clear app state before retrying |
 
 ---
 
@@ -164,12 +165,11 @@ for (const device of report.devices) {
 
 | File | Role |
 |------|------|
-| `testing/e2e/scripts/install-app-preinstall.ps1` | Pre-installation orchestrator script |
-| `testing/e2e/scripts/helpers/emulator-adb.ps1` | ADB helper (extended with version + launch verification) |
-| `testing/e2e/tests/support/app-preinstall.ts` | TypeScript fixture for reading/asserting the report |
-| `testing/e2e/tests/support/app-preinstall.spec.ts` | Playwright pre-flight validation spec (`@preinstall`) |
-| `testing/e2e/tests/support/global-setup-dual-emulator.ts` | Calls pre-install script as part of global setup |
-| `testing/e2e/artifacts/runtime/preinstall-report.json` | Pre-Flight Report output (created at runtime) |
-| `.github/workflows/e2e-dual-emulator.yml` | CI workflow (extended with build + install steps) |
-| `specs/011-e2e-app-preinstall/contracts/pre-flight-report.contract.md` | JSON schema contract for the report |
-| `specs/011-e2e-app-preinstall/contracts/install-script.contract.md` | Script interface contract |
+| `testing/e2e/scripts/install-app-preinstall.ps1` | Pre-install orchestrator |
+| `testing/e2e/scripts/helpers/emulator-adb.ps1` | Readiness, install, version, and launch helpers |
+| `testing/e2e/tests/support/app-preinstall.spec.ts` | Failing-first Playwright support spec |
+| `testing/e2e/tests/support/global-setup-dual-emulator.ts` | Local Playwright enforcement hook |
+| `testing/e2e/artifacts/runtime/preinstall-report.json` | Runtime pre-flight report |
+| `.github/workflows/e2e-dual-emulator.yml` | CI gate ordering |
+| `specs/011-e2e-app-preinstall/contracts/pre-flight-report.contract.md` | JSON report contract |
+| `specs/011-e2e-app-preinstall/contracts/install-script.contract.md` | Script contract |

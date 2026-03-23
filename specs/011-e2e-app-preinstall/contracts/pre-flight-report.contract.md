@@ -9,8 +9,7 @@
 
 ## Overview
 
-`install-app-preinstall.ps1` writes a structured JSON report to  
-`testing/e2e/artifacts/runtime/preinstall-report.json` after the pre-flight installation phase completes (whether or not it succeeded). This contract defines the schema that consumers MUST be able to parse.
+`install-app-preinstall.ps1` writes a structured JSON report to `testing/e2e/artifacts/runtime/preinstall-report.json` after the pre-flight phase completes, whether the run passed or failed. Consumers MUST treat this schema as the source of truth for device-level pre-install state.
 
 ---
 
@@ -22,62 +21,96 @@
   "title": "PreFlightReport",
   "type": "object",
   "required": [
-    "reportId", "timestamp", "buildArtifact", "devices",
-    "overallStatus", "failureReason", "totalElapsedMs", "abortedBeforeInstall"
+    "reportId",
+    "timestamp",
+    "buildArtifact",
+    "devices",
+    "overallStatus",
+    "failureReason",
+    "totalElapsedMs",
+    "abortedBeforeInstall"
   ],
   "properties": {
     "reportId": {
       "type": "string",
-      "format": "uuid",
-      "description": "UUID v4 uniquely identifying this report run."
+      "format": "uuid"
     },
     "timestamp": {
       "type": "string",
-      "format": "date-time",
-      "description": "UTC ISO 8601 timestamp when the report was generated."
+      "format": "date-time"
     },
     "buildArtifact": {
       "type": "object",
-      "required": ["path", "variant", "packageName", "versionName", "versionCode", "buildTimestamp", "exists"],
+      "required": [
+        "path",
+        "variant",
+        "packageName",
+        "versionName",
+        "versionCode",
+        "versionIdentifier",
+        "buildTimestamp",
+        "exists"
+      ],
       "properties": {
-        "path":           { "type": "string" },
-        "variant":        { "type": "string", "enum": ["debug", "release"] },
-        "packageName":    { "type": "string" },
-        "versionName":    { "type": "string" },
-        "versionCode":    { "type": "integer", "minimum": 1 },
-        "buildTimestamp": { "type": "string", "format": "date-time" },
-        "exists":         { "type": "boolean" }
+        "path": { "type": "string" },
+        "variant": { "type": "string", "enum": ["debug", "release"] },
+        "packageName": { "type": "string" },
+        "versionName": { "type": ["string", "null"] },
+        "versionCode": { "type": ["integer", "null"], "minimum": 1 },
+        "versionIdentifier": { "type": ["string", "null"] },
+        "buildTimestamp": { "type": ["string", "null"], "format": "date-time" },
+        "exists": { "type": "boolean" }
       }
     },
     "devices": {
       "type": "array",
-      "minItems": 1,
+      "minItems": 0,
       "items": {
         "type": "object",
         "required": [
-          "serial", "reachable", "apkInstalled",
-          "installedVersionName", "installedVersionCode",
-          "launchVerified", "elapsedMs", "status", "errorMessage"
+          "serial",
+          "reachable",
+          "ready",
+          "readinessWaitMs",
+          "apkInstalled",
+          "installedVersionName",
+          "installedVersionCode",
+          "installedVersionIdentifier",
+          "launchVerified",
+          "elapsedMs",
+          "status",
+          "errorMessage"
         ],
         "properties": {
-          "serial":               { "type": "string" },
-          "reachable":            { "type": "boolean" },
-          "apkInstalled":         { "type": "boolean" },
+          "serial": { "type": "string" },
+          "reachable": { "type": "boolean" },
+          "ready": { "type": "boolean" },
+          "readinessWaitMs": { "type": "integer", "minimum": 0 },
+          "apkInstalled": { "type": "boolean" },
           "installedVersionName": { "type": ["string", "null"] },
-          "installedVersionCode": { "type": ["integer", "null"], "minimum": 0 },
-          "launchVerified":       { "type": "boolean" },
-          "elapsedMs":            { "type": "integer", "minimum": 0 },
+          "installedVersionCode": { "type": ["integer", "null"], "minimum": 1 },
+          "installedVersionIdentifier": { "type": ["string", "null"] },
+          "launchVerified": { "type": "boolean" },
+          "elapsedMs": { "type": "integer", "minimum": 0 },
           "status": {
             "type": "string",
-            "enum": ["PASS", "INSTALL_FAILED", "VERSION_MISMATCH", "LAUNCH_FAILED", "TIMEOUT", "UNREACHABLE"]
+            "enum": [
+              "PASS",
+              "NOT_READY",
+              "INSTALL_FAILED",
+              "VERSION_MISMATCH",
+              "LAUNCH_FAILED",
+              "TIMEOUT",
+              "UNREACHABLE"
+            ]
           },
           "errorMessage": { "type": ["string", "null"] }
         }
       }
     },
-    "overallStatus":        { "type": "string", "enum": ["PASS", "FAIL"] },
-    "failureReason":        { "type": ["string", "null"] },
-    "totalElapsedMs":       { "type": "integer", "minimum": 0 },
+    "overallStatus": { "type": "string", "enum": ["PASS", "FAIL"] },
+    "failureReason": { "type": ["string", "null"] },
+    "totalElapsedMs": { "type": "integer", "minimum": 0 },
     "abortedBeforeInstall": { "type": "boolean" }
   }
 }
@@ -97,6 +130,7 @@
     "packageName": "com.ndi.app.debug",
     "versionName": "0.1.0",
     "versionCode": 1,
+    "versionIdentifier": "0.1.0+1",
     "buildTimestamp": "2026-03-23T13:55:12.000Z",
     "exists": true
   },
@@ -104,9 +138,12 @@
     {
       "serial": "emulator-5554",
       "reachable": true,
+      "ready": true,
+      "readinessWaitMs": 3200,
       "apkInstalled": true,
       "installedVersionName": "0.1.0",
       "installedVersionCode": 1,
+      "installedVersionIdentifier": "0.1.0+1",
       "launchVerified": true,
       "elapsedMs": 18450,
       "status": "PASS",
@@ -115,9 +152,12 @@
     {
       "serial": "emulator-5556",
       "reachable": true,
+      "ready": true,
+      "readinessWaitMs": 4100,
       "apkInstalled": true,
       "installedVersionName": "0.1.0",
       "installedVersionCode": 1,
+      "installedVersionIdentifier": "0.1.0+1",
       "launchVerified": true,
       "elapsedMs": 20130,
       "status": "PASS",
@@ -133,7 +173,7 @@
 
 ---
 
-## Example: Missing Build Artifact (FR-003)
+## Example: Missing Build Artifact
 
 ```json
 {
@@ -143,9 +183,10 @@
     "path": "C:\\gitrepos\\NDI-for-Android\\app\\build\\outputs\\apk\\debug\\app-debug.apk",
     "variant": "debug",
     "packageName": "com.ndi.app.debug",
-    "versionName": "",
-    "versionCode": 0,
-    "buildTimestamp": "",
+    "versionName": null,
+    "versionCode": null,
+    "versionIdentifier": null,
+    "buildTimestamp": null,
     "exists": false
   },
   "devices": [],
@@ -158,18 +199,19 @@
 
 ---
 
-## Example: Installation Timeout on One Device (FR-004, FR-008)
+## Example: Emulator Not Ready Within Deadline
 
 ```json
 {
   "reportId": "c3d4e5f6-a7b8-9012-cdef-123456789012",
   "timestamp": "2026-03-23T14:10:00.000Z",
   "buildArtifact": {
-    "path": "...",
+    "path": "C:\\gitrepos\\NDI-for-Android\\app\\build\\outputs\\apk\\debug\\app-debug.apk",
     "variant": "debug",
     "packageName": "com.ndi.app.debug",
     "versionName": "0.1.0",
     "versionCode": 1,
+    "versionIdentifier": "0.1.0+1",
     "buildTimestamp": "2026-03-23T14:00:00.000Z",
     "exists": true
   },
@@ -177,9 +219,12 @@
     {
       "serial": "emulator-5554",
       "reachable": true,
+      "ready": true,
+      "readinessWaitMs": 1800,
       "apkInstalled": true,
       "installedVersionName": "0.1.0",
       "installedVersionCode": 1,
+      "installedVersionIdentifier": "0.1.0+1",
       "launchVerified": true,
       "elapsedMs": 19800,
       "status": "PASS",
@@ -188,18 +233,21 @@
     {
       "serial": "emulator-5556",
       "reachable": true,
+      "ready": false,
+      "readinessWaitMs": 60000,
       "apkInstalled": false,
       "installedVersionName": null,
       "installedVersionCode": null,
+      "installedVersionIdentifier": null,
       "launchVerified": false,
-      "elapsedMs": 60001,
-      "status": "TIMEOUT",
-      "errorMessage": "emulator-5556: Installation exceeded 60-second limit. ADB install job timed out. Verify emulator storage availability and ADB connectivity."
+      "elapsedMs": 60000,
+      "status": "NOT_READY",
+      "errorMessage": "emulator-5556: Emulator did not become install-ready within 60 seconds. Verify boot completion and ADB responsiveness."
     }
   ],
   "overallStatus": "FAIL",
-  "failureReason": "Pre-flight installation failed on 1 of 2 devices. emulator-5556: TIMEOUT — Installation exceeded 60-second limit.",
-  "totalElapsedMs": 79801,
+  "failureReason": "Pre-flight installation failed on 1 of 2 devices. emulator-5556: NOT_READY - Emulator did not become install-ready within 60 seconds.",
+  "totalElapsedMs": 79800,
   "abortedBeforeInstall": false
 }
 ```
@@ -208,14 +256,16 @@
 
 ## Invariants
 
-- The report MUST be written even when `overallStatus == "FAIL"` (including abort-before-install).
+- The report MUST be written even when `overallStatus == "FAIL"`, including abort-before-install.
+- `devices` may be empty only when `abortedBeforeInstall == true`.
 - `overallStatus == "PASS"` iff all device `status` values are `"PASS"`.
 - `failureReason` is non-null iff `overallStatus == "FAIL"`.
-- `elapsedMs` per device ≤ 60000 is required for `status == "PASS"` (FR-008 / SC-003).
-- The report file is replaced on each run (not appended).
+- `elapsedMs` per device includes readiness wait, installation, version confirmation, and launch verification.
+- `elapsedMs <= 60000` is required for any `PASS` device record.
+- The report file is replaced on each run, never appended.
 
 ---
 
 ## Breaking Change Policy
 
-Changes to this schema that remove fields or change field types/enums are **breaking** and require updating `app-preinstall.spec.ts` and any other consumer in the same PR. Additive changes (new optional fields) are non-breaking.
+Any change that removes fields, changes types, or changes enum values is breaking and requires updating all report consumers in the same change. Additive optional fields are non-breaking.
