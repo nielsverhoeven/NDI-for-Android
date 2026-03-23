@@ -1,6 +1,6 @@
 import { expect, test, type TestInfo } from "@playwright/test";
-import { copyFileSync, existsSync, mkdirSync } from "node:fs";
-import { join } from "node:path";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import {
   type AndroidVersionInfo,
   type SupportedVersionWindow,
@@ -12,6 +12,7 @@ import {
 } from "./support/android-device-fixtures";
 import {
   captureScreenshot,
+  clearAppData,
   clearLogcat,
   completeScreenShareConsent,
   pressHome,
@@ -23,7 +24,11 @@ import {
   launchChromeUrl,
   launchDeepLink,
   launchMainActivity,
+  launchPackageFromLauncher,
+  pressBack,
   replaceTextByResourceIdSuffix,
+  startScreenRecording,
+  stopScreenRecording,
   tapFirstAvailableText,
   tapText,
   tapTextContaining,
@@ -47,10 +52,33 @@ import {
   compareRegionToBaseline,
   compareRegionToReference,
 } from "./support/visual-assertions";
-import { createScenarioCheckpointRecorder, type SixStepCheckpointName } from "./support/scenario-checkpoints";
+import {
+  createLatencyScenarioCheckpointRecorder,
+  createScenarioCheckpointRecorder,
+  type LatencyCheckpointName,
+  type SixStepCheckpointName,
+} from "./support/scenario-checkpoints";
+import { analyzeLatencyWithCrossCorrelation } from "./support/latency-analysis";
 
 const externalScreenshotDir = process.env.DUAL_EMULATOR_SCREENSHOT_DIR;
 const checkpointArtifactPath = process.env.DUAL_EMULATOR_CHECKPOINT_PATH;
+
+const LATENCY_SAMPLE_INTERVAL_MS = 200;
+const LATENCY_SAMPLE_COUNT = 28;
+const FULL_FRAME_BOUNDS = { x1: 0, y1: 0, x2: 10_000, y2: 10_000 };
+const YOUTUBE_VIDEO_URLS = [
+  "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+  "https://www.youtube.com/watch?v=aqz-KE-bpKQ",
+  "https://www.youtube.com/watch?v=jNQXAC9IVRw",
+] as const;
+
+type LatencyScenarioRunResult = {
+  analysisArtifactPath: string;
+  sourceRecordingPath: string;
+  receiverRecordingPath: string;
+  sourceSnapshotPaths: string[];
+  receiverSnapshotPaths: string[];
+};
 
 function mirrorScreenshotIfConfigured(fileName: string, sourcePath: string): void {
   if (!externalScreenshotDir || !existsSync(sourcePath)) {
@@ -59,6 +87,447 @@ function mirrorScreenshotIfConfigured(fileName: string, sourcePath: string): voi
 
   mkdirSync(externalScreenshotDir, { recursive: true });
   copyFileSync(sourcePath, join(externalScreenshotDir, fileName));
+}
+
+function getRunnerArtifactRoot(): string | null {
+  if (!externalScreenshotDir) {
+    return null;
+  }
+
+  return dirname(externalScreenshotDir);
+}
+
+function mirrorLatencyArtifactIfConfigured(relativePath: string, sourcePath: string): string {
+  const runnerArtifactRoot = getRunnerArtifactRoot();
+  if (!runnerArtifactRoot || !existsSync(sourcePath)) {
+    return sourcePath;
+  }
+
+  const destinationPath = join(runnerArtifactRoot, relativePath);
+  mkdirSync(dirname(destinationPath), { recursive: true });
+  copyFileSync(sourcePath, destinationPath);
+  return destinationPath;
+}
+
+async function sleep(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function computeSeriesSpread(values: number[]): { range: number; stddev: number } {
+  if (values.length === 0) {
+    return { range: 0, stddev: 0 };
+  }
+
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const mean = values.reduce((sum, value) => sum + value, 0) / values.length;
+  const variance = values.reduce((sum, value) => sum + (value - mean) * (value - mean), 0) / values.length;
+  return {
+    range: max - min,
+    stddev: Math.sqrt(variance),
+  };
+}
+
+function pickRandomYoutubeUrl(): string {
+  const explicitUrl = process.env.LATENCY_YOUTUBE_URL;
+  if (explicitUrl && explicitUrl.trim().length > 0) {
+    return explicitUrl.trim();
+  }
+
+  const index = Math.floor(Math.random() * YOUTUBE_VIDEO_URLS.length);
+  return YOUTUBE_VIDEO_URLS[index] ?? YOUTUBE_VIDEO_URLS[0];
+}
+
+function normalizeErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function isYoutubeUnavailableFailure(error: unknown): boolean {
+  const message = normalizeErrorMessage(error).toLowerCase();
+  return (
+    message.includes("youtube") ||
+    message.includes("chrome") ||
+    message.includes("url_bar") ||
+    message.includes("timed out") ||
+    message.includes("playback did not progress")
+  );
+}
+
+function resolveCheckpointArtifactPath(checkpointOutputPath: string): string {
+  if (!checkpointArtifactPath) {
+    return checkpointOutputPath;
+  }
+
+  const resolvedPath = resolve(checkpointArtifactPath);
+  mkdirSync(dirname(resolvedPath), { recursive: true });
+  return resolvedPath;
+}
+
+async function verifyPublisherYoutubePlaybackProgression(
+  serial: string,
+  testInfo: TestInfo,
+): Promise<{ range: number; stddev: number; sampleCount: number }> {
+  const sampleCount = 5;
+  const sampleIntervalMs = 900;
+  const publisherMotionSeries: number[] = [];
+
+  for (let sampleIndex = 0; sampleIndex < sampleCount; sampleIndex++) {
+    const screenshotPath = testInfo.outputPath(`latency-publisher-youtube-progress-${sampleIndex}.png`);
+    captureScreenshot(serial, screenshotPath);
+    publisherMotionSeries.push(analyzeRegionVisibility(screenshotPath, FULL_FRAME_BOUNDS, { stride: 6 }).averageLuma);
+
+    if (sampleIndex < sampleCount - 1) {
+      await sleep(sampleIntervalMs);
+    }
+  }
+
+  const spread = computeSeriesSpread(publisherMotionSeries);
+  if (spread.range < 10 || spread.stddev < 2.5) {
+    throw new Error(
+      `Publisher YouTube playback did not progress after launch: range=${spread.range.toFixed(2)}, stddev=${spread.stddev.toFixed(2)}, sampleCount=${sampleCount}.`,
+    );
+  }
+
+  return {
+    ...spread,
+    sampleCount,
+  };
+}
+
+async function runLatencyMeasurementScenario(testInfo: TestInfo): Promise<LatencyScenarioRunResult> {
+  const context = getDualEmulatorContext();
+
+  verifyDeviceReady(context.publisherSerial);
+  verifyDeviceReady(context.receiverSerial);
+  const supportWindow = computeSupportedVersionWindow();
+  const publisherAndroid = verifySupportedAndroidVersion(context.publisherSerial, "publisher");
+  const receiverAndroid = verifySupportedAndroidVersion(context.receiverSerial, "receiver");
+  verifyPackageInstalled(context.publisherSerial, context.packageName);
+  verifyPackageInstalled(context.receiverSerial, context.packageName);
+  await attachAndroidVersionValidation(testInfo, publisherAndroid, receiverAndroid, supportWindow);
+
+  clearLogcat(context.publisherSerial);
+  clearLogcat(context.receiverSerial);
+  forceStopApp(context.publisherSerial, context.packageName);
+  forceStopApp(context.receiverSerial, context.packageName);
+  clearAppData(context.receiverSerial, context.packageName);
+
+  const receiverBeforePlaybackPath = testInfo.outputPath("latency-receiver-before-playback.png");
+  const sourceRecordingPath = testInfo.outputPath("recordings/source-recording.mp4");
+  const receiverRecordingPath = testInfo.outputPath("recordings/receiver-recording.mp4");
+  const analysisArtifactPath = testInfo.outputPath("latency-analysis.json");
+  const artifactManifestPath = testInfo.outputPath("latency-artifacts.json");
+  const checkpointOutputPath = testInfo.outputPath("latency-checkpoints.json");
+  const runnerCheckpointOutputPath = resolveCheckpointArtifactPath(checkpointOutputPath);
+  const publisherUiPath = testInfo.outputPath("latency-publisher-ui.txt");
+  const receiverUiPath = testInfo.outputPath("latency-receiver-ui.txt");
+  const publisherLogcatPath = testInfo.outputPath("latency-publisher-logcat.txt");
+  const receiverLogcatPath = testInfo.outputPath("latency-receiver-logcat.txt");
+
+  const checkpoints = createLatencyScenarioCheckpointRecorder();
+  let activeStep: LatencyCheckpointName | null = null;
+
+  const sourceSnapshots: string[] = [];
+  const receiverSnapshots: string[] = [];
+  const sourceMotionSeries: number[] = [];
+  const receiverMotionSeries: number[] = [];
+  const youtubeUrl = pickRandomYoutubeUrl();
+
+  let receiverPlaybackVerified = false;
+  let viewerBounds: { x1: number; y1: number; x2: number; y2: number } | null = null;
+
+  let sourceRecording = null as Awaited<ReturnType<typeof startScreenRecording>> | null;
+  let receiverRecording = null as Awaited<ReturnType<typeof startScreenRecording>> | null;
+
+  const beginStep = (step: LatencyCheckpointName): void => {
+    checkpoints.begin(step);
+    activeStep = step;
+  };
+
+  const passStep = (): void => {
+    if (!activeStep) {
+      return;
+    }
+    checkpoints.pass(activeStep);
+    activeStep = null;
+  };
+
+  try {
+    beginStep("START_STREAM_A");
+    launchDeepLink(context.publisherSerial, context.packageName, "ndi://output/device-screen:local");
+    const publisherConsent = await handleMediaProjectionConsent(context.publisherSerial, publisherAndroid.majorVersion);
+    await testInfo.attach("latency-publisher-consent", {
+      body: Buffer.from(JSON.stringify(publisherConsent, null, 2), "utf-8"),
+      contentType: "application/json",
+    });
+
+    await ensureOutputScreen(context.publisherSerial, context.packageName, publisherAndroid.majorVersion);
+    const streamConfig = await configureDiscoverableName(context.publisherSerial, "Latency Session");
+    await tapText(context.publisherSerial, "Start Output", 20_000);
+    await handleMediaProjectionConsent(context.publisherSerial, publisherAndroid.majorVersion, false);
+    await waitForText(context.publisherSerial, "ACTIVE", 45_000);
+    passStep();
+
+    beginStep("OPEN_VIEWER_B");
+    launchMainActivity(context.receiverSerial, context.packageName);
+    await ensureReceiverDiscoveryScreen(context.receiverSerial, context.packageName);
+    await tapText(context.receiverSerial, "Refresh", 20_000);
+    captureScreenshot(context.receiverSerial, receiverBeforePlaybackPath);
+    const discoveredName = await waitForTextContaining(context.receiverSerial, streamConfig.discoverableName, 60_000);
+    await tapTextContaining(context.receiverSerial, discoveredName, 20_000);
+    await waitForText(context.receiverSerial, "PLAYING", 30_000);
+    viewerBounds = getBoundsByResourceIdSuffix(context.receiverSerial, ":id/viewerSurfacePlaceholder");
+    passStep();
+
+    beginStep("START_SOURCE_RECORDING");
+    sourceRecording = startScreenRecording(context.publisherSerial, "source", {
+      remotePath: "/sdcard/ndi-e2e-source-recording.mp4",
+      maxDurationSeconds: 90,
+      bitRateMbps: 10,
+    });
+    passStep();
+
+    beginStep("START_RECEIVER_RECORDING");
+    receiverRecording = startScreenRecording(context.receiverSerial, "receiver", {
+      remotePath: "/sdcard/ndi-e2e-receiver-recording.mp4",
+      maxDurationSeconds: 90,
+      bitRateMbps: 10,
+    });
+    passStep();
+
+    beginStep("PLAY_RANDOM_YOUTUBE_A");
+    try {
+      launchChromeUrl(context.publisherSerial, youtubeUrl);
+      await waitForResourceIdTextContaining(context.publisherSerial, ":id/url_bar", "youtube", 30_000);
+      const publisherPlaybackProgress = await verifyPublisherYoutubePlaybackProgression(context.publisherSerial, testInfo);
+      await testInfo.attach("latency-youtube-url", {
+        body: Buffer.from(JSON.stringify({ youtubeUrl }, null, 2), "utf-8"),
+        contentType: "application/json",
+      });
+      await testInfo.attach("latency-publisher-youtube-progression", {
+        body: Buffer.from(JSON.stringify(publisherPlaybackProgress, null, 2), "utf-8"),
+        contentType: "application/json",
+      });
+      passStep();
+      checkpoints.skip("YOUTUBE_UNAVAILABLE");
+    } catch (error) {
+      if (!isYoutubeUnavailableFailure(error)) {
+        throw error;
+      }
+
+      checkpoints.skip("PLAY_RANDOM_YOUTUBE_A");
+      activeStep = null;
+      beginStep("YOUTUBE_UNAVAILABLE");
+      const reason = `YOUTUBE_UNAVAILABLE: ${normalizeErrorMessage(error)}`;
+      checkpoints.fail("YOUTUBE_UNAVAILABLE", reason);
+      activeStep = null;
+      throw new Error(reason);
+    }
+
+    beginStep("VERIFY_PLAYBACK_B");
+    await waitForText(context.receiverSerial, "PLAYING", 20_000);
+    if (!viewerBounds) {
+      throw new Error("Receiver viewer bounds are unavailable for playback verification.");
+    }
+
+    for (let sampleIndex = 0; sampleIndex < LATENCY_SAMPLE_COUNT; sampleIndex++) {
+      const sourceSamplePath = testInfo.outputPath(`latency-source-sample-${sampleIndex.toString().padStart(2, "0")}.png`);
+      const receiverSamplePath = testInfo.outputPath(
+        `latency-receiver-sample-${sampleIndex.toString().padStart(2, "0")}.png`,
+      );
+
+      captureScreenshot(context.publisherSerial, sourceSamplePath);
+      captureScreenshot(context.receiverSerial, receiverSamplePath);
+      sourceSnapshots.push(sourceSamplePath);
+      receiverSnapshots.push(receiverSamplePath);
+
+      sourceMotionSeries.push(analyzeRegionVisibility(sourceSamplePath, FULL_FRAME_BOUNDS, { stride: 6 }).averageLuma);
+      receiverMotionSeries.push(analyzeRegionVisibility(receiverSamplePath, viewerBounds, { stride: 5 }).averageLuma);
+
+      if (sampleIndex < LATENCY_SAMPLE_COUNT - 1) {
+        await sleep(LATENCY_SAMPLE_INTERVAL_MS);
+      }
+    }
+
+    const receiverFinalSnapshot = receiverSnapshots[receiverSnapshots.length - 1];
+    if (!receiverFinalSnapshot) {
+      throw new Error("Receiver playback verification did not capture any snapshots.");
+    }
+
+    assertRegionChangedFromBaseline(receiverFinalSnapshot, receiverBeforePlaybackPath, viewerBounds, 7);
+    const spread = computeSeriesSpread(receiverMotionSeries);
+    if (spread.range < 8 || spread.stddev < 2) {
+      throw new Error(
+        `Receiver playback gate failed: insufficient motion variance (range=${spread.range.toFixed(2)}, stddev=${spread.stddev.toFixed(2)}).`,
+      );
+    }
+
+    receiverPlaybackVerified = true;
+    await testInfo.attach("latency-receiver-playback-gate", {
+      body: Buffer.from(JSON.stringify({ spread, sampleCount: receiverMotionSeries.length }, null, 2), "utf-8"),
+      contentType: "application/json",
+    });
+    passStep();
+
+    beginStep("ANALYZE_LATENCY");
+    if (!sourceRecording || !receiverRecording) {
+      throw new Error("Latency analysis requires both source and receiver recordings to be active.");
+    }
+
+    const completedSourceRecording = await stopScreenRecording(sourceRecording, sourceRecordingPath);
+    sourceRecording = null;
+    const completedReceiverRecording = await stopScreenRecording(receiverRecording, receiverRecordingPath);
+    receiverRecording = null;
+
+    const analysis = analyzeLatencyWithCrossCorrelation({
+      sourceMotionSeries,
+      receiverMotionSeries,
+      sampleRateFps: 1000 / LATENCY_SAMPLE_INTERVAL_MS,
+      sourceRecordingPath: completedSourceRecording.localPath,
+      receiverRecordingPath: completedReceiverRecording.localPath,
+      receiverPlaybackVerified,
+      validateRecordingArtifacts: true,
+      maxLagFrames: 40,
+      minCorrelation: 0.25,
+    });
+
+    const mirroredSourceRecordingPath = mirrorLatencyArtifactIfConfigured(
+      "recordings/source-recording.mp4",
+      completedSourceRecording.localPath,
+    );
+    const mirroredReceiverRecordingPath = mirrorLatencyArtifactIfConfigured(
+      "recordings/receiver-recording.mp4",
+      completedReceiverRecording.localPath,
+    );
+
+    const structuredOutput = {
+      runType: "LATENCY_US1_HAPPY_PATH",
+      measuredAtUtc: new Date().toISOString(),
+      youtubeUrl,
+      sampleCount: LATENCY_SAMPLE_COUNT,
+      sampleRateFps: 1000 / LATENCY_SAMPLE_INTERVAL_MS,
+      sourceSeriesSummary: computeSeriesSpread(sourceMotionSeries),
+      receiverSeriesSummary: computeSeriesSpread(receiverMotionSeries),
+      analysis,
+      artifacts: {
+        sourceRecordingPath: mirroredSourceRecordingPath,
+        receiverRecordingPath: mirroredReceiverRecordingPath,
+        analysisArtifactPath,
+      },
+    };
+
+    writeFileSync(analysisArtifactPath, JSON.stringify(structuredOutput, null, 2), { encoding: "utf-8" });
+    const mirroredAnalysisPath = mirrorLatencyArtifactIfConfigured("latency-analysis.json", analysisArtifactPath);
+
+    const artifactManifest = {
+      sourceRecordingPath: mirroredSourceRecordingPath,
+      receiverRecordingPath: mirroredReceiverRecordingPath,
+      analysisArtifactPath: mirroredAnalysisPath,
+      sourceSnapshotPaths: sourceSnapshots,
+      receiverSnapshotPaths: receiverSnapshots,
+      checkpointArtifactPath: runnerCheckpointOutputPath,
+    };
+    writeFileSync(artifactManifestPath, JSON.stringify(artifactManifest, null, 2), { encoding: "utf-8" });
+
+    await testInfo.attach("latency-analysis", {
+      path: analysisArtifactPath,
+      contentType: "application/json",
+    });
+    await testInfo.attach("latency-artifacts", {
+      path: artifactManifestPath,
+      contentType: "application/json",
+    });
+    await testInfo.attach("latency-source-recording", {
+      path: completedSourceRecording.localPath,
+      contentType: "video/mp4",
+    });
+    await testInfo.attach("latency-receiver-recording", {
+      path: completedReceiverRecording.localPath,
+      contentType: "video/mp4",
+    });
+    const sourceSnapshot = sourceSnapshots[sourceSnapshots.length - 1];
+    if (sourceSnapshot) {
+      await testInfo.attach("latency-source-snapshot", {
+        path: sourceSnapshot,
+        contentType: "image/png",
+      });
+    }
+    const receiverSnapshot = receiverSnapshots[receiverSnapshots.length - 1];
+    if (receiverSnapshot) {
+      await testInfo.attach("latency-receiver-snapshot", {
+        path: receiverSnapshot,
+        contentType: "image/png",
+      });
+    }
+
+    expect(analysis.status).toBe("VALID");
+    expect(analysis.latencyMs).not.toBeNull();
+    passStep();
+
+    return {
+      analysisArtifactPath,
+      sourceRecordingPath: completedSourceRecording.localPath,
+      receiverRecordingPath: completedReceiverRecording.localPath,
+      sourceSnapshotPaths: sourceSnapshots,
+      receiverSnapshotPaths: receiverSnapshots,
+    };
+  } catch (error) {
+    if (activeStep) {
+      const reason = normalizeErrorMessage(error);
+      checkpoints.fail(activeStep, `step=${activeStep}; reason=${reason}`);
+      activeStep = null;
+    }
+
+    writeUiSnapshot(context.publisherSerial, publisherUiPath);
+    writeUiSnapshot(context.receiverSerial, receiverUiPath);
+    writeLogcatSnapshot(context.publisherSerial, publisherLogcatPath);
+    writeLogcatSnapshot(context.receiverSerial, receiverLogcatPath);
+
+    await testInfo.attach("latency-publisher-ui", {
+      path: publisherUiPath,
+      contentType: "text/plain",
+    });
+    await testInfo.attach("latency-receiver-ui", {
+      path: receiverUiPath,
+      contentType: "text/plain",
+    });
+    await testInfo.attach("latency-publisher-logcat", {
+      path: publisherLogcatPath,
+      contentType: "text/plain",
+    });
+    await testInfo.attach("latency-receiver-logcat", {
+      path: receiverLogcatPath,
+      contentType: "text/plain",
+    });
+
+    throw error;
+  } finally {
+    if (sourceRecording) {
+      try {
+        await stopScreenRecording(sourceRecording, sourceRecordingPath);
+      } catch {
+        // Best-effort teardown for partial runs.
+      }
+    }
+
+    if (receiverRecording) {
+      try {
+        await stopScreenRecording(receiverRecording, receiverRecordingPath);
+      } catch {
+        // Best-effort teardown for partial runs.
+      }
+    }
+
+    checkpoints.finish();
+    checkpoints.writeArtifact(checkpointOutputPath);
+    if (runnerCheckpointOutputPath !== checkpointOutputPath) {
+      checkpoints.writeArtifact(runnerCheckpointOutputPath);
+    }
+    await testInfo.attach("latency-checkpoints", {
+      path: checkpointOutputPath,
+      contentType: "application/json",
+    });
+  }
 }
 
 async function attachAndroidVersionValidation(
@@ -114,6 +583,32 @@ async function configureDiscoverableName(
   }
 }
 
+async function ensureReceiverDiscoveryScreen(serial: string, packageName: string): Promise<void> {
+  const deadline = Date.now() + 60_000;
+
+  while (Date.now() < deadline) {
+    launchMainActivity(serial, packageName);
+    await tapFirstAvailableText(serial, ["Open Stream", "Open Viewer", "Viewer"], 6_000).catch(() => undefined);
+    try {
+      await waitForText(serial, "Refresh", 6_000);
+      return;
+    } catch {
+      // Fallback: launcher-style app start can recover from devices that remain on home.
+      await pressHome(serial).catch(() => undefined);
+      await pressBack(serial).catch(() => undefined);
+      launchPackageFromLauncher(serial, packageName);
+      await tapFirstAvailableText(serial, ["Open Stream", "Open Viewer", "Viewer"], 6_000).catch(() => undefined);
+      try {
+        await waitForText(serial, "Refresh", 6_000);
+        return;
+      } catch {
+        await pressBack(serial).catch(() => undefined);
+      }
+    }
+  }
+
+  throw new Error(`Unable to reach receiver discovery screen with Refresh on ${serial}`);
+}
 async function ensureOutputScreen(
   serial: string,
   packageName: string,
@@ -257,6 +752,7 @@ test("@dual-emulator publish discover play stop interop", async ({}, testInfo) =
   clearLogcat(context.receiverSerial);
   forceStopApp(context.publisherSerial, context.packageName);
   forceStopApp(context.receiverSerial, context.packageName);
+  clearAppData(context.receiverSerial, context.packageName);
 
   const publisherScreenshotPath = testInfo.outputPath("publisher-final.png");
   const publisherActiveScreenshotPath = testInfo.outputPath("publisher-active.png");
@@ -315,8 +811,7 @@ test("@dual-emulator publish discover play stop interop", async ({}, testInfo) =
 
     beginStep("START_VIEW_B");
     launchMainActivity(context.receiverSerial, context.packageName);
-    await tapFirstAvailableText(context.receiverSerial, ["Open Stream"], 8_000).catch(() => undefined);
-    await waitForText(context.receiverSerial, "Refresh", 20_000);
+    await ensureReceiverDiscoveryScreen(context.receiverSerial, context.packageName);
     await tapText(context.receiverSerial, "Refresh", 20_000);
     captureScreenshot(context.receiverSerial, receiverBeforePlayPath);
     mirrorScreenshotIfConfigured("receiver-before-play.png", receiverBeforePlayPath);
@@ -566,8 +1061,7 @@ test("@dual-emulator restart output with new stream name remains discoverable", 
     await uploadPublisherFrameToRelay(firstConfig.discoverableName, publisherFirstPath, testInfo);
 
     launchMainActivity(context.receiverSerial, context.packageName);
-    await tapFirstAvailableText(context.receiverSerial, ["Open Stream"], 8_000).catch(() => undefined);
-    await waitForText(context.receiverSerial, "Refresh", 20_000);
+    await ensureReceiverDiscoveryScreen(context.receiverSerial, context.packageName);
     await tapText(context.receiverSerial, "Refresh", 20_000);
     captureScreenshot(context.receiverSerial, receiverFirstBeforePath);
     mirrorScreenshotIfConfigured("restart-receiver-first-before-play.png", receiverFirstBeforePath);
@@ -736,5 +1230,74 @@ test("@dual-emulator restart output with new stream name remains discoverable", 
       });
     }
   }
+});
+
+test("@latency @us1 measure end-to-end NDI latency happy path", async ({}, testInfo) => {
+  test.setTimeout(600_000);
+  const run = await runLatencyMeasurementScenario(testInfo);
+
+  const payload = JSON.parse(readFileSync(run.analysisArtifactPath, "utf-8")) as {
+    analysis: { status: string; latencyMs: number | null; invalidReason: string | null };
+    artifacts: { sourceRecordingPath: string; receiverRecordingPath: string; analysisArtifactPath: string };
+  };
+
+  expect(payload.analysis.status).toBe("VALID");
+  expect(payload.analysis.latencyMs).not.toBeNull();
+  expect(payload.analysis.invalidReason).toBeNull();
+  expect(payload.artifacts.sourceRecordingPath.length > 0).toBeTruthy();
+  expect(payload.artifacts.receiverRecordingPath.length > 0).toBeTruthy();
+});
+
+test("@latency @us1 emits mandatory latency artifact paths", async ({}, testInfo) => {
+  test.setTimeout(600_000);
+  const run = await runLatencyMeasurementScenario(testInfo);
+
+  expect(existsSync(run.sourceRecordingPath)).toBeTruthy();
+  expect(existsSync(run.receiverRecordingPath)).toBeTruthy();
+  expect(existsSync(run.analysisArtifactPath)).toBeTruthy();
+  expect(run.sourceSnapshotPaths.length > 0).toBeTruthy();
+  expect(run.receiverSnapshotPaths.length > 0).toBeTruthy();
+});
+
+test("@latency @us2 invalidates when receiver playback verification fails", () => {
+  const sourceMotionSeries = Array.from({ length: 30 }, (_, index) => Math.sin(index / 2.5));
+  const receiverMotionSeries = Array.from({ length: 30 }, (_, index) => Math.sin(index / 2.5));
+
+  const result = analyzeLatencyWithCrossCorrelation({
+    sourceMotionSeries,
+    receiverMotionSeries,
+    sampleRateFps: 30,
+    sourceRecordingPath: "source-recording.mp4",
+    receiverRecordingPath: "receiver-recording.mp4",
+    receiverPlaybackVerified: false,
+  });
+
+  expect(result.status).toBe("INVALID");
+  expect(result.invalidReason).toBe("RECEIVER_NOT_PLAYING");
+  expect(result.latencyMs).toBeNull();
+});
+
+test("@latency @us2 invalidates when recordings are missing or unusable", async ({}, testInfo) => {
+  const sourceMotionSeries = Array.from({ length: 30 }, (_, index) => Math.sin(index / 3));
+  const receiverMotionSeries = Array.from({ length: 30 }, (_, index) => Math.sin(index / 3));
+  const emptySource = testInfo.outputPath("latency-us2-empty-source.mp4");
+  const emptyReceiver = testInfo.outputPath("latency-us2-empty-receiver.mp4");
+
+  writeFileSync(emptySource, "", { encoding: "utf-8" });
+  writeFileSync(emptyReceiver, "", { encoding: "utf-8" });
+
+  const result = analyzeLatencyWithCrossCorrelation({
+    sourceMotionSeries,
+    receiverMotionSeries,
+    sampleRateFps: 30,
+    sourceRecordingPath: emptySource,
+    receiverRecordingPath: emptyReceiver,
+    receiverPlaybackVerified: true,
+    validateRecordingArtifacts: true,
+  });
+
+  expect(result.status).toBe("INVALID");
+  expect(result.invalidReason).toBe("UNUSABLE_RECORDING_ARTIFACT");
+  expect(result.latencyMs).toBeNull();
 });
 

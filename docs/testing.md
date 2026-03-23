@@ -97,9 +97,15 @@ npm --prefix testing/e2e run test:matrix
 
 Gate policy:
 
-- Both `new settings` and `existing regression` suites must pass.
+- `new settings`, `latency scenario`, and `existing regression` suites must pass.
 - Skipped or partial runs are treated as failures.
 - Waivers require both approver roles and are validated from waiver metadata.
+
+Latency scenario expectations:
+
+- The dual-emulator latency flow uses motion/content cross-correlation and writes a structured latency artifact.
+- Run summary must include failed-step diagnostics (`failedStepName`, `failedStepReason`) for invalid runs.
+- SC-002 is enforced by a 600000ms per-run timeout gate on latency tests.
 
 Artifacts:
 

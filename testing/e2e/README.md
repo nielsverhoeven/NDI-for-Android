@@ -18,6 +18,11 @@ Default package: `com.ndi.app.debug`
 - `APP_PACKAGE`: Android app package (default `com.ndi.app.debug`)
 - `E2E_MATRIX_PROFILES`: Comma-separated profiles for matrix runs (default `api34,api35`)
 - `E2E_WAIVER_FILE`: Optional waiver JSON path consumed by the summary script
+- `DUAL_EMULATOR_SOURCE_RECORDING_PATH`: Optional absolute path for source (publisher) recording artifact
+- `DUAL_EMULATOR_RECEIVER_RECORDING_PATH`: Optional absolute path for receiver recording artifact
+- `DUAL_EMULATOR_LATENCY_ANALYSIS_PATH`: Optional absolute path for latency analysis JSON artifact
+
+When these latency env vars are not provided, the dual-emulator runner attempts to resolve artifacts from default locations under `testing/e2e/artifacts/dual-emulator-*/recordings/` and `testing/e2e/artifacts/dual-emulator-*/latency-analysis.json`.
 
 ## Launching Emulators with Visible GUI
 

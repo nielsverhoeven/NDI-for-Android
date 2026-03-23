@@ -6,6 +6,9 @@ param(
     [string]$NewSettingsJson,
 
     [Parameter(Mandatory = $true)]
+    [string]$LatencyScenarioJson,
+
+    [Parameter(Mandatory = $true)]
     [string]$ExistingRegressionJson,
 
     [string]$OutputPath,
@@ -68,11 +71,12 @@ function Assert-WaiverMetadata {
 }
 
 $newSettings = Read-PlaywrightStats -Path $NewSettingsJson
+$latencyScenario = Read-PlaywrightStats -Path $LatencyScenarioJson
 $existingRegression = Read-PlaywrightStats -Path $ExistingRegressionJson
 
 $hasFailureOrIncomplete = (
-    $newSettings.unexpected -gt 0 -or $existingRegression.unexpected -gt 0 -or
-    $newSettings.skipped -gt 0 -or $existingRegression.skipped -gt 0
+    $newSettings.unexpected -gt 0 -or $latencyScenario.unexpected -gt 0 -or $existingRegression.unexpected -gt 0 -or
+    $newSettings.skipped -gt 0 -or $latencyScenario.skipped -gt 0 -or $existingRegression.skipped -gt 0
 )
 
 $waiverUsed = $false
@@ -95,6 +99,7 @@ $lines = @(
     "| Suite | Expected | Unexpected | Flaky | Skipped | DurationMs |",
     "|---|---:|---:|---:|---:|---:|",
     "| New Settings | $($newSettings.expected) | $($newSettings.unexpected) | $($newSettings.flaky) | $($newSettings.skipped) | $($newSettings.durationMs) |",
+    "| Latency Scenario | $($latencyScenario.expected) | $($latencyScenario.unexpected) | $($latencyScenario.flaky) | $($latencyScenario.skipped) | $($latencyScenario.durationMs) |",
     "| Existing Regression | $($existingRegression.expected) | $($existingRegression.unexpected) | $($existingRegression.flaky) | $($existingRegression.skipped) | $($existingRegression.durationMs) |"
 )
 

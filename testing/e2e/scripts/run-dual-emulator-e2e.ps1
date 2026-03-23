@@ -28,6 +28,33 @@ function Capture-EmulatorScreenshot {
     adb -s $Serial shell rm $remotePath | Out-Null
 }
 
+function Resolve-LatencyArtifactPath {
+    param(
+        [string]$ExplicitPath,
+        [string[]]$Candidates
+    )
+
+    if ($ExplicitPath) {
+        $fullPath = [System.IO.Path]::GetFullPath($ExplicitPath)
+        if (Test-Path $fullPath) {
+            return $fullPath
+        }
+    }
+
+    foreach ($candidate in $Candidates) {
+        if (-not $candidate) {
+            continue
+        }
+
+        $fullCandidate = [System.IO.Path]::GetFullPath($candidate)
+        if (Test-Path $fullCandidate) {
+            return $fullCandidate
+        }
+    }
+
+    return $null
+}
+
 function Get-EmulatorPortFromSerial {
     param(
         [Parameter(Mandatory = $true)]
@@ -82,6 +109,84 @@ function Wait-ForEmulatorOnline {
     }
 
     throw "Timed out waiting for $Serial to come online."
+}
+
+function Test-PackageManagerReady {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Serial
+    )
+
+    try {
+        $androidPackage = (adb -s $Serial shell pm path android).Trim()
+        return $androidPackage -and $androidPackage.StartsWith("package:")
+    }
+    catch {
+        return $false
+    }
+}
+
+function Wait-ForEmulatorBootComplete {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Serial,
+        [int]$TimeoutSeconds = 240,
+        [int]$StableSeconds = 6
+    )
+
+    $started = Get-Date
+    $stableSince = $null
+
+    while (((Get-Date) - $started).TotalSeconds -lt $TimeoutSeconds) {
+        $state = ""
+        try {
+            $state = (adb -s $Serial get-state).Trim()
+        }
+        catch {
+            $state = ""
+        }
+
+        if ($state -ne "device") {
+            $stableSince = $null
+            Start-Sleep -Seconds 2
+            continue
+        }
+
+        $sysBootComplete = ""
+        $devBootComplete = ""
+        $bootAnimState = ""
+        try {
+            $sysBootComplete = (adb -s $Serial shell getprop sys.boot_completed).Trim()
+            $devBootComplete = (adb -s $Serial shell getprop dev.bootcomplete).Trim()
+            $bootAnimState = (adb -s $Serial shell getprop init.svc.bootanim).Trim().ToLowerInvariant()
+        }
+        catch {
+            $stableSince = $null
+            Start-Sleep -Seconds 2
+            continue
+        }
+
+        $bootFlagReady = ($sysBootComplete -eq "1" -or $devBootComplete -eq "1")
+        $bootAnimationStopped = [string]::IsNullOrWhiteSpace($bootAnimState) -or $bootAnimState -eq "stopped"
+        $packageManagerReady = Test-PackageManagerReady -Serial $Serial
+
+        if ($bootFlagReady -and $bootAnimationStopped -and $packageManagerReady) {
+            if (-not $stableSince) {
+                $stableSince = Get-Date
+            }
+
+            if (((Get-Date) - $stableSince).TotalSeconds -ge $StableSeconds) {
+                return
+            }
+        }
+        else {
+            $stableSince = $null
+        }
+
+        Start-Sleep -Seconds 2
+    }
+
+    throw "Timed out waiting for $Serial to report boot-complete and package-manager readiness."
 }
 
 function Get-VisibleEmulatorWindowProcesses {
@@ -268,6 +373,10 @@ if ($stateA -ne "device" -or $stateB -ne "device") {
     throw "Emulators failed to remain online after visibility enforcement."
 }
 
+Write-Host "Waiting for emulator boot-complete and package-manager readiness..."
+Wait-ForEmulatorBootComplete -Serial $EmulatorASerial
+Wait-ForEmulatorBootComplete -Serial $EmulatorBSerial
+
 $publisherPackage = adb -s $EmulatorASerial shell pm path $AppPackage
 if (-not $publisherPackage -or -not $publisherPackage.StartsWith("package:")) {
     throw "Package $AppPackage is not installed on publisher $EmulatorASerial."
@@ -340,6 +449,9 @@ $suiteCompleted = $false
 $suiteFailure = $null
 $suiteStartedAtUtc = (Get-Date).ToUniversalTime().ToString("o")
 $summaryPath = Join-Path $artifactDir "run-summary.json"
+$failedStepName = $null
+$failedStepIndex = $null
+$failedStepReason = $null
 try {
     $relayScript = Join-Path $PSScriptRoot "ndi-relay-server.mjs"
     $relayProcess = Start-Process -FilePath "node" -ArgumentList "`"$relayScript`"" -PassThru -WindowStyle Hidden
@@ -350,6 +462,9 @@ try {
     $env:APP_PACKAGE = $AppPackage
     $env:DUAL_EMULATOR_SCREENSHOT_DIR = $screenshotDir
     $env:DUAL_EMULATOR_CHECKPOINT_PATH = $checkpointArtifactPath
+    if (-not $env:LATENCY_YOUTUBE_URL) {
+        $env:LATENCY_YOUTUBE_URL = "https://www.youtube.com/watch?v=jNQXAC9IVRw"
+    }
     npm run test:dual-emulator -- --grep "@dual-emulator" --reporter=list
     if ($LASTEXITCODE -ne 0) {
         throw "Playwright dual-emulator suite failed with exit code $LASTEXITCODE"
@@ -372,11 +487,16 @@ finally {
     if (Test-Path $checkpointArtifactPath) {
         try {
             $cpJson = Get-Content $checkpointArtifactPath -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+            $failedStepName = $cpJson.failedStepName
+            $failedStepIndex = $cpJson.failedStepIndex
+            $failedCheckpoint = $cpJson.checkpoints | Where-Object { $_.status -eq "FAILED" } | Select-Object -First 1
+            if ($failedCheckpoint -and $failedCheckpoint.failureReason) {
+                $failedStepReason = [string]$failedCheckpoint.failureReason
+            }
             if ($cpJson.failedStepName) {
                 Write-Host ""
                 Write-Host "=========================================="
                 Write-Host "FAILED STEP: $($cpJson.failedStepName) (step $($cpJson.failedStepIndex))"
-                $failedCheckpoint = $cpJson.checkpoints | Where-Object { $_.status -eq "FAILED" } | Select-Object -First 1
                 if ($failedCheckpoint -and $failedCheckpoint.failureReason) {
                     Write-Host "REASON: $($failedCheckpoint.failureReason)"
                 }
@@ -394,8 +514,30 @@ finally {
         finishedAtUtc = (Get-Date).ToUniversalTime().ToString("o")
         completed = $suiteCompleted
         failure = $suiteFailure
+        failedStepName = $failedStepName
+        failedStepIndex = $failedStepIndex
+        failedStepReason = $failedStepReason
         checkpointArtifactPath = $checkpointArtifactPath
         screenshotDirectory = $screenshotDir
+        latencyArtifacts = [PSCustomObject]@{
+            sourceRecordingPath = (Resolve-LatencyArtifactPath -ExplicitPath $env:DUAL_EMULATOR_SOURCE_RECORDING_PATH -Candidates @(
+                (Join-Path $artifactDir "recordings/source-recording.mp4"),
+                (Join-Path $artifactDir "recordings/publisher-recording.mp4")
+            ))
+            receiverRecordingPath = (Resolve-LatencyArtifactPath -ExplicitPath $env:DUAL_EMULATOR_RECEIVER_RECORDING_PATH -Candidates @(
+                (Join-Path $artifactDir "recordings/receiver-recording.mp4")
+            ))
+            analysisArtifactPath = (Resolve-LatencyArtifactPath -ExplicitPath $env:DUAL_EMULATOR_LATENCY_ANALYSIS_PATH -Candidates @(
+                (Join-Path $artifactDir "latency-analysis.json"),
+                (Join-Path $artifactDir "analysis/latency-analysis.json")
+            ))
+        }
+        invalidStateEvidence = [PSCustomObject]@{
+            hasFailedStep = [bool]$failedStepName
+            failedStepName = $failedStepName
+            failedStepIndex = $failedStepIndex
+            failedStepReason = $failedStepReason
+        }
     }
     $summary | ConvertTo-Json -Depth 4 | Out-File -FilePath $summaryPath -Encoding utf8
 

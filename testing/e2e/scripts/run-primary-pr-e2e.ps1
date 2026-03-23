@@ -43,12 +43,17 @@ function Invoke-PlaywrightSuite {
         [Parameter(Mandatory = $true)]
         [string[]]$Specs,
         [Parameter(Mandatory = $true)]
-        [string]$JsonPath
+        [string]$JsonPath,
+        [string]$Grep
     )
 
     Write-Host "Running suite '$Name' on project '$PrimaryProject'"
-    $playwrightArgs = @("playwright", "test", "--project=$PrimaryProject", "--reporter=json", "--output", "$resultsDir/$Name") + $Specs
-    & npx $playwrightArgs | Out-File -FilePath $JsonPath -Encoding utf8
+    $playwrightArgs = @("playwright", "test", "--project=$PrimaryProject", "--reporter=json", "--output", "$resultsDir/$Name")
+    if ($Grep) {
+        $playwrightArgs += @("--grep", $Grep)
+    }
+    $playwrightArgs += $Specs
+    & npx @playwrightArgs | Out-File -FilePath $JsonPath -Encoding utf8
     if ($LASTEXITCODE -ne 0) {
         throw "Playwright suite '$Name' failed with exit code $LASTEXITCODE"
     }
@@ -61,14 +66,20 @@ function Invoke-PlaywrightSuite {
 Push-Location (Join-Path $PSScriptRoot "..")
 try {
     $newSettingsJson = Join-Path $OutputRoot "new-settings.json"
+    $latencyJson = Join-Path $OutputRoot "latency-scenario.json"
     $existingJson = Join-Path $OutputRoot "existing-regression.json"
 
     Invoke-PlaywrightSuite -Name "new-settings" -Specs $newSettingsSpecs -JsonPath $newSettingsJson
+    Invoke-PlaywrightSuite -Name "latency-scenario" -Specs @(
+        "tests/support/latency-analysis.spec.ts",
+        "tests/support/scenario-checkpoints.spec.ts"
+    ) -JsonPath $latencyJson -Grep "@latency"
     Invoke-PlaywrightSuite -Name "existing-regression" -Specs $existingRegressionSpecs -JsonPath $existingJson
 
     & powershell -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "summarize-e2e-results.ps1") `
         -Profile "primary" `
         -NewSettingsJson $newSettingsJson `
+        -LatencyScenarioJson $latencyJson `
         -ExistingRegressionJson $existingJson `
         -OutputPath (Join-Path $OutputRoot "summary-primary.md")
 

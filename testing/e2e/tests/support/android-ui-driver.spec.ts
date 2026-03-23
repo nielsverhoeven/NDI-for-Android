@@ -3,6 +3,7 @@ import {
   assertAllowedStaticDelay,
   getSettingsEntryCandidates,
   resolveConsentFlowVariant,
+  startScreenRecording,
   STATIC_DELAY_MAX_MS,
 } from "./android-ui-driver";
 
@@ -39,4 +40,20 @@ test("@settings @us1 output settings candidates include output-state controls", 
 
   expect(candidates).toContain("Start Output");
   expect(candidates).toContain("Stop Output");
+});
+
+test("@latency @us2 dual-recording lifecycle rejects invalid maxDurationSeconds", () => {
+  expect(() =>
+    startScreenRecording("emulator-5554", "source", {
+      maxDurationSeconds: 0,
+    }),
+  ).toThrow(/Invalid recording duration/);
+});
+
+test("@latency @us2 dual-recording lifecycle rejects invalid bitRateMbps", () => {
+  expect(() =>
+    startScreenRecording("emulator-5556", "receiver", {
+      bitRateMbps: 99,
+    }),
+  ).toThrow(/Invalid recording bitrate/);
 });

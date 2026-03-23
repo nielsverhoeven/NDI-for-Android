@@ -1,5 +1,6 @@
-import { execFileSync } from "node:child_process";
-import { writeFileSync } from "node:fs";
+import { execFileSync, type ChildProcess, spawn } from "node:child_process";
+import { existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
 
 const MAIN_ACTIVITY = "com.ndi.app.MainActivity";
 const CHROME_PACKAGE = "com.android.chrome";
@@ -105,12 +106,205 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function waitForChildExit(process: ChildProcess, timeoutMs: number): Promise<void> {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      reject(new Error(`Timed out waiting for recording process to exit after ${timeoutMs}ms`));
+    }, timeoutMs);
+
+    const finish = (error?: Error): void => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      clearTimeout(timer);
+      if (error) {
+        reject(error);
+      } else {
+        resolve();
+      }
+    };
+
+    if (process.exitCode !== null || process.killed) {
+      finish();
+      return;
+    }
+
+    process.once("exit", () => finish());
+    process.once("error", (error) => finish(error instanceof Error ? error : new Error(String(error))));
+  });
+}
+
+export type RecordingRole = "source" | "receiver";
+
+export type ScreenRecordingOptions = {
+  remotePath?: string;
+  maxDurationSeconds?: number;
+  bitRateMbps?: number;
+};
+
+export type ActiveScreenRecording = {
+  serial: string;
+  role: RecordingRole;
+  remotePath: string;
+  process: ChildProcess;
+  startedAtEpochMillis: number;
+};
+
+export type CompletedScreenRecording = {
+  serial: string;
+  role: RecordingRole;
+  remotePath: string;
+  localPath: string;
+  startedAtEpochMillis: number;
+  stoppedAtEpochMillis: number;
+  byteLength: number;
+};
+
+export type DualScreenRecordingSession = {
+  source: ActiveScreenRecording;
+  receiver: ActiveScreenRecording;
+};
+
+export type DualScreenRecordingResult = {
+  source: CompletedScreenRecording;
+  receiver: CompletedScreenRecording;
+};
+
+export function startScreenRecording(
+  serial: string,
+  role: RecordingRole,
+  options?: ScreenRecordingOptions,
+): ActiveScreenRecording {
+  const remotePath = options?.remotePath ?? `/sdcard/ndi-e2e-${role}-recording.mp4`;
+  const maxDurationSeconds = options?.maxDurationSeconds ?? 120;
+  const bitRateMbps = options?.bitRateMbps ?? 8;
+
+  if (maxDurationSeconds < 1 || maxDurationSeconds > 180) {
+    throw new Error(`Invalid recording duration ${maxDurationSeconds}s for ${role}. Expected 1-180 seconds.`);
+  }
+
+  if (bitRateMbps < 1 || bitRateMbps > 20) {
+    throw new Error(`Invalid recording bitrate ${bitRateMbps}Mbps for ${role}. Expected 1-20 Mbps.`);
+  }
+
+  runAdb(serial, ["shell", "rm", "-f", remotePath]);
+
+  const process = spawn(
+    "adb",
+    [
+      "-s",
+      serial,
+      "shell",
+      "screenrecord",
+      "--bit-rate",
+      `${bitRateMbps * 1_000_000}`,
+      "--time-limit",
+      `${maxDurationSeconds}`,
+      remotePath,
+    ],
+    {
+      stdio: ["ignore", "pipe", "pipe"],
+    },
+  );
+
+  return {
+    serial,
+    role,
+    remotePath,
+    process,
+    startedAtEpochMillis: Date.now(),
+  };
+}
+
+export async function stopScreenRecording(
+  activeRecording: ActiveScreenRecording,
+  localPath: string,
+  timeoutMs = 12_000,
+): Promise<CompletedScreenRecording> {
+  if (activeRecording.process.exitCode === null && !activeRecording.process.killed) {
+    activeRecording.process.kill("SIGINT");
+  }
+
+  await waitForChildExit(activeRecording.process, timeoutMs).catch(() => {
+    if (activeRecording.process.exitCode === null && !activeRecording.process.killed) {
+      activeRecording.process.kill("SIGKILL");
+    }
+  });
+
+  mkdirSync(dirname(localPath), { recursive: true });
+  runAdb(activeRecording.serial, ["pull", activeRecording.remotePath, localPath]);
+
+  if (!existsSync(localPath)) {
+    throw new Error(
+      `Recording pull failed for ${activeRecording.role} (${activeRecording.serial}). Missing file: ${localPath}`,
+    );
+  }
+
+  const byteLength = statSync(localPath).size;
+  if (byteLength <= 0) {
+    throw new Error(
+      `Recording artifact for ${activeRecording.role} (${activeRecording.serial}) is empty: ${localPath}`,
+    );
+  }
+
+  return {
+    serial: activeRecording.serial,
+    role: activeRecording.role,
+    remotePath: activeRecording.remotePath,
+    localPath,
+    startedAtEpochMillis: activeRecording.startedAtEpochMillis,
+    stoppedAtEpochMillis: Date.now(),
+    byteLength,
+  };
+}
+
+export function startDualScreenRecording(
+  sourceSerial: string,
+  receiverSerial: string,
+  options?: {
+    source?: ScreenRecordingOptions;
+    receiver?: ScreenRecordingOptions;
+  },
+): DualScreenRecordingSession {
+  return {
+    source: startScreenRecording(sourceSerial, "source", options?.source),
+    receiver: startScreenRecording(receiverSerial, "receiver", options?.receiver),
+  };
+}
+
+export async function stopDualScreenRecording(
+  session: DualScreenRecordingSession,
+  destinationPaths: {
+    sourcePath: string;
+    receiverPath: string;
+  },
+  timeoutMs = 12_000,
+): Promise<DualScreenRecordingResult> {
+  const [source, receiver] = await Promise.all([
+    stopScreenRecording(session.source, destinationPaths.sourcePath, timeoutMs),
+    stopScreenRecording(session.receiver, destinationPaths.receiverPath, timeoutMs),
+  ]);
+
+  return { source, receiver };
+}
+
 export function clearLogcat(serial: string): void {
   runAdb(serial, ["logcat", "-c"]);
 }
 
 export function forceStopApp(serial: string, packageName: string): void {
   runAdb(serial, ["shell", "am", "force-stop", packageName]);
+}
+
+export function clearAppData(serial: string, packageName: string): void {
+  runAdb(serial, ["shell", "pm", "clear", packageName]);
 }
 
 export function launchMainActivity(serial: string, packageName: string): void {
@@ -121,6 +315,18 @@ export function launchMainActivity(serial: string, packageName: string): void {
     "-W",
     "-n",
     `${packageName}/${MAIN_ACTIVITY}`,
+  ]);
+}
+
+export function launchPackageFromLauncher(serial: string, packageName: string): void {
+  runAdb(serial, [
+    "shell",
+    "monkey",
+    "-p",
+    packageName,
+    "-c",
+    "android.intent.category.LAUNCHER",
+    "1",
   ]);
 }
 
