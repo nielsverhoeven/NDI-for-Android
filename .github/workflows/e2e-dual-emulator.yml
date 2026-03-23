@@ -1,0 +1,85 @@
+name: e2e-dual-emulator
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - testing/e2e/**
+      - ndi/sdk-bridge/**
+      - .github/workflows/e2e-dual-emulator.yml
+
+jobs:
+  dual-emulator:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Verify prereqs
+        shell: pwsh
+        run: ./scripts/verify-e2e-dual-emulator-prereqs.ps1 -AllowMissingNdiSdk
+
+      - name: Build NDI bridge release APK
+        shell: pwsh
+        run: ./gradlew.bat :ndi:sdk-bridge:assembleRelease
+
+      - name: Validate emulator images (32-35)
+        shell: pwsh
+        run: ./testing/e2e/scripts/helpers/validate-emulator-images.ps1
+
+      - name: Provision dual emulators
+        shell: pwsh
+        run: ./testing/e2e/scripts/provision-dual-emulator.ps1 -Action provision-dual -InstallNdiSdk -SkipBootIfAlreadyRunning
+
+      - name: Start relay server
+        shell: pwsh
+        run: ./testing/e2e/scripts/start-relay-server.ps1 -Action start
+
+      - name: Install test dependencies
+        shell: pwsh
+        working-directory: testing/e2e
+        run: npm ci
+
+      - name: Run support validation specs
+        shell: pwsh
+        working-directory: testing/e2e
+        run: npx playwright test tests/support/e2e-infrastructure.spec.ts tests/support/dual-emulator-provisioning.spec.ts tests/support/relay-connectivity.spec.ts --project=android-primary
+
+      - name: Run latency consumer suite (feature 009)
+        shell: pwsh
+        working-directory: testing/e2e
+        run: npx playwright test tests/interop-dual-emulator.spec.ts --project=android-primary
+
+      - name: Collect artifacts
+        if: always()
+        shell: pwsh
+        run: ./testing/e2e/scripts/collect-test-artifacts.ps1 -SessionId ci-${{ github.run_id }}
+
+      - name: Stop relay and reset
+        if: always()
+        shell: pwsh
+        run: |
+          ./testing/e2e/scripts/start-relay-server.ps1 -Action stop
+          ./testing/e2e/scripts/reset-emulator-state.ps1
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dual-emulator-artifacts-${{ github.run_id }}
+          path: testing/e2e/artifacts/
