@@ -6,6 +6,7 @@ export const TIMING_THRESHOLDS = {
     discoveryApply: 1000,     // ms: discovery setting immediate apply
     streamStatusUpdate: 3000, // ms: stream status propagation
     fallbackWarning: 3000,    // ms: fallback warning appearance
+    persistenceRelaunch: 5000, // ms: settings value appears after app relaunch
 };
 
 /**

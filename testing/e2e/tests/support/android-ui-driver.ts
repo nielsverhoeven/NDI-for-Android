@@ -139,6 +139,33 @@ export function launchDeepLink(serial: string, packageName: string, uri: string)
   ]);
 }
 
+export type SettingsEntrySurface = "source-list" | "viewer" | "output";
+
+export function getSettingsEntryCandidates(surface: SettingsEntrySurface): string[] {
+  const universal = ["Settings", "Open settings"];
+
+  switch (surface) {
+    case "source-list":
+      return [...universal, "More options", "Refresh"];
+    case "viewer":
+      return [...universal, "Back", "PLAYING"];
+    case "output":
+      return [...universal, "Start Output", "Stop Output"];
+    default:
+      return universal;
+  }
+}
+
+export async function openSettingsFromSurface(
+  serial: string,
+  surface: SettingsEntrySurface,
+  timeoutMs = 15_000,
+): Promise<void> {
+  const candidates = getSettingsEntryCandidates(surface);
+  await tapFirstAvailableText(serial, candidates, timeoutMs);
+  await waitForText(serial, "Settings", timeoutMs);
+}
+
 export function captureScreenshot(serial: string, destinationPath: string): void {
   const screenshotBytes = execFileSync("adb", ["-s", serial, "exec-out", "screencap", "-p"], {
     stdio: ["ignore", "pipe", "pipe"],

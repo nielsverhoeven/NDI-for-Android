@@ -28,6 +28,18 @@ export type ScenarioCheckpointTimeline = {
   checkpoints: ScenarioCheckpoint[];
 };
 
+export function normalizeRouteForAssertion(route: string): string {
+  const [base] = route.split(/[?#]/);
+  const normalized = base.trim().replace(/\/+$/, "");
+  return normalized.toLowerCase();
+}
+
+export function assertRoundTripNavigationPath(originRoute: string, returnedRoute: string): void {
+  if (normalizeRouteForAssertion(originRoute) !== normalizeRouteForAssertion(returnedRoute)) {
+    throw new Error(`Navigation round-trip mismatch: '${originRoute}' -> '${returnedRoute}'.`);
+  }
+}
+
 const ORDERED_STEPS: SixStepCheckpointName[] = [
   "START_STREAM_A",
   "START_VIEW_B",

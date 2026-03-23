@@ -2,7 +2,7 @@ import { test } from "@playwright/test";
 import { assertWithinThreshold, TIMING_THRESHOLDS } from "./support/timingAssertions";
 
 test.describe("Settings Discovery Fallback", () => {
-  test("shows fallback warning within 3s after unreachable endpoint is saved", async ({ page }) => {
+  test("@settings @us2 shows fallback warning within 3s after unreachable endpoint is saved", async ({ page }) => {
     test.fail(
       true,
       "Emulator fallback wiring is pending; this spec documents <=3s warning requirements.",
@@ -15,5 +15,8 @@ test.describe("Settings Discovery Fallback", () => {
     await assertWithinThreshold(async () => {
       await page.getByText(/falling back to default|fallback/i).waitFor({ state: "visible" });
     }, TIMING_THRESHOLDS.fallbackWarning, "discovery fallback warning latency");
+
+    await page.getByRole("button", { name: /save/i }).click();
+    await page.getByText(/fallback|unreachable|default/i).waitFor({ state: "visible" });
   });
 });

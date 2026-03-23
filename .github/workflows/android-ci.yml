@@ -28,3 +28,55 @@ jobs:
       - name: Verify Android prerequisites
         shell: pwsh
         run: pwsh ./scripts/verify-android-prereqs.ps1 -CiMode -AllowMissingNdiSdk
+
+  e2e-primary:
+    runs-on: windows-latest
+    needs: preflight
+    if: ${{ github.event_name == 'pull_request' || github.ref == 'refs/heads/main' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: testing/e2e/package-lock.json
+
+      - name: Install e2e dependencies
+        shell: pwsh
+        run: npm --prefix testing/e2e ci
+
+      - name: Run primary profile e2e gate
+        shell: pwsh
+        run: npm --prefix testing/e2e run test:pr:primary
+
+      - name: Upload e2e artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-primary-new-settings
+          path: |
+            testing/e2e/artifacts/primary-pr-*/results/new-settings/**
+            testing/e2e/artifacts/primary-pr-*/new-settings.json
+            testing/e2e/artifacts/primary-pr-*/summary-primary.md
+
+      - name: Upload existing regression artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-primary-existing-regression
+          path: |
+            testing/e2e/artifacts/primary-pr-*/results/existing-regression/**
+            testing/e2e/artifacts/primary-pr-*/existing-regression.json
+            testing/e2e/artifacts/primary-pr-*/summary-primary.md
+
+      - name: Upload shared e2e logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-primary-shared-logs
+          path: |
+            testing/e2e/test-results/**
+            testing/e2e/playwright-report/**

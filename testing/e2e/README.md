@@ -11,6 +11,14 @@ Android workflows.
 
 Default package: `com.ndi.app.debug`
 
+## Environment Variables
+
+- `EMULATOR_A_SERIAL`: Primary/publisher emulator serial (default `emulator-5554`)
+- `EMULATOR_B_SERIAL`: Receiver emulator serial (default `emulator-5556`)
+- `APP_PACKAGE`: Android app package (default `com.ndi.app.debug`)
+- `E2E_MATRIX_PROFILES`: Comma-separated profiles for matrix runs (default `api34,api35`)
+- `E2E_WAIVER_FILE`: Optional waiver JSON path consumed by the summary script
+
 ## Launching Emulators with Visible GUI
 
 Before running e2e tests, launch both emulators visibly in separate terminal windows:
@@ -50,6 +58,49 @@ $env:EMULATOR_B_SERIAL = "emulator-5556"
 $env:APP_PACKAGE = "com.ndi.app.debug"
 npm run test:dual-emulator
 ```
+
+## PR Primary Gate Run
+
+Use one primary profile for required PR validation:
+
+```powershell
+npm run test:pr:primary
+```
+
+This run executes:
+
+1. New settings suite coverage
+2. Existing regression suite coverage
+3. Summary evidence generation
+
+Any failed, skipped, or partial execution is treated as a gate failure.
+
+## Scheduled Matrix Run
+
+Use matrix profiles (typically on a nightly schedule):
+
+```powershell
+$env:E2E_MATRIX_PROFILES = "api34,api35"
+npm run test:matrix
+```
+
+The matrix runner executes full-suite coverage per profile and fails if any
+profile is incomplete or failing.
+
+## Regression-Pass Gate Policy
+
+For this repository, a validation cycle is compliant only when both suites pass:
+
+1. New settings suite (`@settings` coverage)
+2. Existing regression suite (manifest-defined baseline scenarios)
+
+Policy rules:
+
+- Any unexpected failure blocks sign-off.
+- Any skipped scenario is treated as an incomplete run and blocks sign-off.
+- Waivers are temporary and require both approver roles:
+  - `mobile-maintainer`
+  - `architecture-quality-reviewer`
 
 ## Important: Emulator Visibility During Tests
 
