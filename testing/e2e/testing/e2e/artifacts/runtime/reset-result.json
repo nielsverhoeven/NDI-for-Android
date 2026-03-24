@@ -1,0 +1,16 @@
+﻿{
+    "operation":  "Reset-EmulatorState",
+    "status":  "FAILURE",
+    "timestamp":  "2026-03-24T16:35:35.6532281Z",
+    "data":  null,
+    "errors":  [
+                   {
+                       "code":  "RESET_FAILED",
+                       "message":  "* daemon not running; starting now at tcp:5037",
+                       "details":  null
+                   }
+               ],
+    "warnings":  [
+
+                 ]
+}

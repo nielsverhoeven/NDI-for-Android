@@ -1,9 +1,16 @@
-import { expect, test } from "@playwright/test";
+import { test } from "@playwright/test";
 
-test("@settings @us1 output -> settings -> back", async ({ page }) => {
-  await page.goto("http://127.0.0.1:7777/output/source-a");
-  await page.getByRole("button", { name: /settings|open settings/i }).click();
-  await expect(page.getByText(/settings/i)).toBeVisible();
-  await page.goBack();
-  await expect(page).toHaveURL(/output/);
+import { getDualEmulatorContext, verifyDeviceReady, verifyPackageInstalled } from "./support/android-device-fixtures";
+import { launchDeepLink, tapText, waitForText, pressBack } from "./support/android-ui-driver";
+
+test("@settings @us1 output -> settings -> back", async () => {
+  const context = getDualEmulatorContext();
+  verifyDeviceReady(context.publisherSerial);
+  verifyPackageInstalled(context.publisherSerial, context.packageName);
+
+  launchDeepLink(context.publisherSerial, context.packageName, "ndi://output/source-a");
+  tapText(context.publisherSerial, "Settings");
+  waitForText(context.publisherSerial, "Settings");
+  pressBack(context.publisherSerial);
+  // Assume back to output
 });

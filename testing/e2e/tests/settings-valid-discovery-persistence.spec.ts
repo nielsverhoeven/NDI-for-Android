@@ -1,18 +1,24 @@
-import { expect, test } from "@playwright/test";
+import { test } from "@playwright/test";
 import { assertWithinThreshold, TIMING_THRESHOLDS } from "./support/timingAssertions";
 
-test("@settings @us2 valid discovery endpoint persists across relaunch", async ({ page }) => {
-  test.fail(
-    true,
-    "Device relaunch persistence validation wiring is pending; this test defines required persisted-settings behavior.",
-  );
+import { getDualEmulatorContext, verifyDeviceReady, verifyPackageInstalled } from "./support/android-device-fixtures";
+import { launchDeepLink, editTextTailByResourceIdSuffix, tapText, forceStopApp, getTextByResourceIdSuffix } from "./support/android-ui-driver";
 
-  await page.goto("http://127.0.0.1:7777/settings");
-  await page.locator("#discoveryServerEditText").fill("ndi-persist.local:5960");
-  await page.getByRole("button", { name: /save/i }).click();
+test("@settings @us2 valid discovery endpoint persists across relaunch", async () => {
+  const context = getDualEmulatorContext();
+  verifyDeviceReady(context.publisherSerial);
+  verifyPackageInstalled(context.publisherSerial, context.packageName);
+
+  launchDeepLink(context.publisherSerial, context.packageName, "ndi://settings");
+  editTextTailByResourceIdSuffix(context.publisherSerial, "discoveryServerEditText", "ndi-persist.local:5960");
+  tapText(context.publisherSerial, "Save");
 
   await assertWithinThreshold(async () => {
-    await page.reload();
-    await expect(page.locator("#discoveryServerEditText")).toHaveValue(/ndi-persist\.local:5960/);
+    forceStopApp(context.publisherSerial, context.packageName);
+    launchDeepLink(context.publisherSerial, context.packageName, "ndi://settings");
+    const value = getTextByResourceIdSuffix(context.publisherSerial, "discoveryServerEditText");
+    if (!value.includes("ndi-persist.local:5960")) {
+      throw new Error(`Expected value not found: ${value}`);
+    }
   }, TIMING_THRESHOLDS.persistenceRelaunch, "persisted value visible after relaunch");
 });

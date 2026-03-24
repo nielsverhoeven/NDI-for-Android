@@ -1,9 +1,17 @@
-import { expect, test } from "@playwright/test";
+import { test } from "@playwright/test";
 
-test("@settings @us1 source-list -> settings -> back", async ({ page }) => {
-  await page.goto("http://127.0.0.1:7777/source-list");
-  await page.getByRole("button", { name: /settings|open settings/i }).click();
-  await expect(page.getByText(/settings/i)).toBeVisible();
-  await page.goBack();
-  await expect(page).toHaveURL(/source-list/);
+import { getDualEmulatorContext, verifyDeviceReady, verifyPackageInstalled } from "./support/android-device-fixtures";
+import { launchMainActivity, tapText, waitForText, pressBack } from "./support/android-ui-driver";
+
+test("@settings @us1 source-list -> settings -> back", async () => {
+  const context = getDualEmulatorContext();
+  verifyDeviceReady(context.publisherSerial);
+  verifyPackageInstalled(context.publisherSerial, context.packageName);
+
+  launchMainActivity(context.publisherSerial, context.packageName);
+  waitForText(context.publisherSerial, "Available NDI Sources");
+  tapText(context.publisherSerial, "Settings");
+  waitForText(context.publisherSerial, "Settings");
+  pressBack(context.publisherSerial);
+  waitForText(context.publisherSerial, "Available NDI Sources");
 });
