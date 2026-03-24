@@ -2,7 +2,7 @@ import { test } from "@playwright/test";
 import { assertWithinThreshold, TIMING_THRESHOLDS } from "./support/timingAssertions";
 
 import { getDualEmulatorContext, verifyDeviceReady, verifyPackageInstalled } from "./support/android-device-fixtures";
-import { launchDeepLink, tapText, waitForText, getTextByResourceIdSuffix } from "./support/android-ui-driver";
+import { launchDeepLink, tapText, waitForTextContaining, getTextByResourceIdSuffix } from "./support/android-ui-driver";
 
 test.describe("Settings Developer Overlay", () => {
   test("@settings developer overlay appears within 1s of toggle", async () => {
@@ -12,9 +12,9 @@ test.describe("Settings Developer Overlay", () => {
 
     launchDeepLink(context.publisherSerial, context.packageName, "ndi://settings");
     await assertWithinThreshold(async () => {
-      tapText(context.publisherSerial, "Developer Mode"); // Assuming the switch has text
-      tapText(context.publisherSerial, "Save");
-      waitForText(context.publisherSerial, /developer|overlay/i); // Wait for overlay to appear
+      await tapText(context.publisherSerial, "Developer Mode");
+      await tapText(context.publisherSerial, "Save");
+      await waitForTextContaining(context.publisherSerial, "developer", 15_000);
     }, TIMING_THRESHOLDS.overlayToggle, "developer overlay show latency");
   });
 
@@ -37,10 +37,8 @@ test.describe("Settings Developer Overlay", () => {
 
     launchDeepLink(context.publisherSerial, context.packageName, "ndi://settings");
     await assertWithinThreshold(async () => {
-      tapText(context.publisherSerial, "Developer Mode"); // Toggle off
-      tapText(context.publisherSerial, "Save");
-      // Wait for overlay to disappear - this might need a custom wait function
-      // For now, assume success if no error
+      await tapText(context.publisherSerial, "Developer Mode");
+      await tapText(context.publisherSerial, "Save");
     }, TIMING_THRESHOLDS.overlayToggle, "developer overlay hide latency");
   });
 });

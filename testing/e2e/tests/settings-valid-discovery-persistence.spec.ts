@@ -10,8 +10,8 @@ test("@settings @us2 valid discovery endpoint persists across relaunch", async (
   verifyPackageInstalled(context.publisherSerial, context.packageName);
 
   launchDeepLink(context.publisherSerial, context.packageName, "ndi://settings");
-  editTextTailByResourceIdSuffix(context.publisherSerial, "discoveryServerEditText", "ndi-persist.local:5960");
-  tapText(context.publisherSerial, "Save");
+  await editTextTailByResourceIdSuffix(context.publisherSerial, "discoveryServerEditText", 100, "ndi-persist.local:5960");
+  await tapText(context.publisherSerial, "Save");
 
   await assertWithinThreshold(async () => {
     forceStopApp(context.publisherSerial, context.packageName);

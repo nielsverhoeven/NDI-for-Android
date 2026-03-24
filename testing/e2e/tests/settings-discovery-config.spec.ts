@@ -2,7 +2,7 @@ import { test } from "@playwright/test";
 import { assertWithinThreshold, TIMING_THRESHOLDS } from "./support/timingAssertions";
 
 import { getDualEmulatorContext, verifyDeviceReady, verifyPackageInstalled } from "./support/android-device-fixtures";
-import { launchDeepLink, editTextTailByResourceIdSuffix, tapText, waitForText } from "./support/android-ui-driver";
+import { launchDeepLink, editTextTailByResourceIdSuffix, tapText, waitForTextContaining } from "./support/android-ui-driver";
 
 test.describe("Settings Discovery Configuration", () => {
   test("@settings @us2 saves and applies discovery server endpoint within 1s", async () => {
@@ -12,11 +12,10 @@ test.describe("Settings Discovery Configuration", () => {
 
     await assertWithinThreshold(async () => {
       launchDeepLink(context.publisherSerial, context.packageName, "ndi://settings");
-      tapText(context.publisherSerial, "Settings");
-      editTextTailByResourceIdSuffix(context.publisherSerial, "discoveryServerEditText", "ndi-server.local");
-      tapText(context.publisherSerial, "Save");
-      waitForText(context.publisherSerial, /settings saved|applied/i);
-      // Note: getTextByResourceIdSuffix would be used to check value, but since it's within threshold, we assume success if no error
+      await tapText(context.publisherSerial, "Settings");
+      await editTextTailByResourceIdSuffix(context.publisherSerial, "discoveryServerEditText", 100, "ndi-server.local");
+      await tapText(context.publisherSerial, "Save");
+      await waitForTextContaining(context.publisherSerial, "saved", 15_000);
     }, TIMING_THRESHOLDS.discoveryApply, "discovery endpoint apply latency");
   });
 
@@ -26,9 +25,9 @@ test.describe("Settings Discovery Configuration", () => {
     verifyPackageInstalled(context.publisherSerial, context.packageName);
 
     launchDeepLink(context.publisherSerial, context.packageName, "ndi://settings");
-    editTextTailByResourceIdSuffix(context.publisherSerial, "discoveryServerEditText", "::1");
-    tapText(context.publisherSerial, "Save");
+    await editTextTailByResourceIdSuffix(context.publisherSerial, "discoveryServerEditText", 100, "::1");
+    await tapText(context.publisherSerial, "Save");
 
-    waitForText(context.publisherSerial, /invalid|host|format/i);
+    await waitForTextContaining(context.publisherSerial, "invalid", 15_000);
   });
 });

@@ -9,9 +9,9 @@ test("@settings @us1 source-list -> settings -> back", async () => {
   verifyPackageInstalled(context.publisherSerial, context.packageName);
 
   launchMainActivity(context.publisherSerial, context.packageName);
-  waitForText(context.publisherSerial, "Available NDI Sources");
-  tapText(context.publisherSerial, "Settings");
-  waitForText(context.publisherSerial, "Settings");
-  pressBack(context.publisherSerial);
-  waitForText(context.publisherSerial, "Available NDI Sources");
+  await waitForText(context.publisherSerial, "Available NDI Sources", 15_000);
+  await tapText(context.publisherSerial, "Settings");
+  await waitForText(context.publisherSerial, "Settings", 15_000);
+  await pressBack(context.publisherSerial);
+  await waitForText(context.publisherSerial, "Available NDI Sources", 15_000);
 });

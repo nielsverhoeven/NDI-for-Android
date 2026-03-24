@@ -9,7 +9,7 @@ test("@settings @us2 invalid discovery endpoint is rejected and not applied", as
   verifyPackageInstalled(context.publisherSerial, context.packageName);
 
   launchDeepLink(context.publisherSerial, context.packageName, "ndi://settings");
-  editTextTailByResourceIdSuffix(context.publisherSerial, "discoveryServerEditText", "host:99999");
-  tapText(context.publisherSerial, "Save");
-  waitForText(context.publisherSerial, "Invalid server format");
+  await editTextTailByResourceIdSuffix(context.publisherSerial, "discoveryServerEditText", 100, "host:99999");
+  await tapText(context.publisherSerial, "Save");
+  await waitForText(context.publisherSerial, "Invalid server format", 15_000);
 });

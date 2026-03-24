@@ -9,8 +9,8 @@ test("@settings @us1 viewer -> settings -> back", async () => {
   verifyPackageInstalled(context.publisherSerial, context.packageName);
 
   launchDeepLink(context.publisherSerial, context.packageName, "ndi://viewer/source-a");
-  tapText(context.publisherSerial, "Settings");
-  waitForText(context.publisherSerial, "Settings");
-  pressBack(context.publisherSerial);
+  await tapText(context.publisherSerial, "Settings");
+  await waitForText(context.publisherSerial, "Settings", 15_000);
+  await pressBack(context.publisherSerial);
   // Assume back to viewer
 });
