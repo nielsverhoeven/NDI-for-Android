@@ -48,19 +48,44 @@ function Invoke-PlaywrightSuite {
     )
 
     Write-Host "Running suite '$Name' on project '$PrimaryProject'"
-    $playwrightArgs = @("playwright", "test", "--project=$PrimaryProject", "--reporter=json", "--output", "$resultsDir/$Name")
+    Write-Host "Specs: $($Specs -join ', ')"
+    if ($Grep) {
+        Write-Host "Grep filter: $Grep"
+    }
+    Write-Host "Output directory: $resultsDir/$Name"
+    Write-Host "JSON capture path: $JsonPath"
+
+    $playwrightArgs = @("playwright", "test", "--project=$PrimaryProject", "--reporter=line,json", "--output", "$resultsDir/$Name")
     if ($Grep) {
         $playwrightArgs += @("--grep", $Grep)
     }
     $playwrightArgs += $Specs
-    & npx @playwrightArgs | Out-File -FilePath $JsonPath -Encoding utf8
-    if ($LASTEXITCODE -ne 0) {
-        throw "Playwright suite '$Name' failed with exit code $LASTEXITCODE"
+
+    Write-Host "Command: npx $($playwrightArgs -join ' ')"
+    Write-Host "--- Playwright Output Start ---"
+
+    # Execute and stream logs while capturing structured JSON to file
+    $playwrightRaw = & npx @playwrightArgs 2>&1 | Tee-Object -FilePath $JsonPath
+    $playwrightExitCode = $LASTEXITCODE
+
+    Write-Host "--- Playwright Output End ---"
+    Write-Host "Exit code: $playwrightExitCode"
+
+    if ($playwrightExitCode -ne 0) {
+        Write-Host "Playwright failed with exit code $playwrightExitCode" -ForegroundColor Red
+        if (Test-Path $JsonPath) {
+            Write-Host "Captured result snippet (first 2000 chars):"
+            Write-Host ($playwrightRaw -join "`n").Substring(0, [Math]::Min(2000, ($playwrightRaw -join "`n").Length))
+        }
+
+        throw "Playwright suite '$Name' failed with exit code $playwrightExitCode"
     }
 
     if (-not (Test-Path $JsonPath)) {
         throw "Suite '$Name' did not emit JSON report at $JsonPath"
     }
+
+    Write-Host "Suite '$Name' finished successfully" -ForegroundColor Green
 }
 
 Push-Location (Join-Path $PSScriptRoot "..")

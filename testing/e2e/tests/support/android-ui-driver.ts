@@ -319,6 +319,7 @@ export function launchMainActivity(serial: string, packageName: string): void {
 }
 
 export function launchPackageFromLauncher(serial: string, packageName: string): void {
+  console.log(`[android-ui-driver] launchPackageFromLauncher serial=${serial} package=${packageName}`);
   runAdb(serial, [
     "shell",
     "monkey",
@@ -331,6 +332,7 @@ export function launchPackageFromLauncher(serial: string, packageName: string): 
 }
 
 export function launchDeepLink(serial: string, packageName: string, uri: string): void {
+  console.log(`[android-ui-driver] launchDeepLink serial=${serial} package=${packageName} uri=${uri}`);
   runAdb(serial, [
     "shell",
     "am",
@@ -344,6 +346,7 @@ export function launchDeepLink(serial: string, packageName: string, uri: string)
     uri,
   ]);
 }
+
 
 export type SettingsEntrySurface = "source-list" | "viewer" | "output";
 
@@ -427,24 +430,30 @@ function findFirstByText(nodes: UiNode[], text: string): UiNode | undefined {
 }
 
 export async function waitForText(serial: string, text: string, timeoutMs: number): Promise<void> {
+  console.log(`[android-ui-driver] waitForText serial=${serial} text=${text} timeoutMs=${timeoutMs}`);
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     const nodes = dumpUi(serial);
     if (findFirstByText(nodes, text)) {
+      console.log(`[android-ui-driver] Found text '${text}' on ${serial}`);
       return;
     }
     await delay(300);
   }
+  const uiDump = dumpUi(serial);
+  console.log(`[android-ui-driver] waitForText timeout serial=${serial} text=${text} nodes=${uiDump.length}`);
   throw new Error(`Timed out waiting for text '${text}' on ${serial}`);
 }
 
 export async function tapText(serial: string, text: string, timeoutMs = 15_000): Promise<void> {
+  console.log(`[android-ui-driver] tapText serial=${serial} text=${text} timeoutMs=${timeoutMs}`);
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     const nodes = dumpUi(serial);
     const node = findFirstByText(nodes, text);
     if (node && node.bounds) {
       const { x, y } = boundsCenter(node.bounds);
+      console.log(`[android-ui-driver] tapText: tapping at (${x},${y}) node=${node.resourceId}`);
       runAdb(serial, ["shell", "input", "tap", `${x}`, `${y}`]);
       await delay(150);
       return;
@@ -452,7 +461,10 @@ export async function tapText(serial: string, text: string, timeoutMs = 15_000):
     await delay(250);
   }
 
+  const uiDump = dumpUi(serial);
+  console.log(`[android-ui-driver] tapText timeout serial=${serial} text=${text} nodes=${uiDump.length}`);
   throw new Error(`Timed out tapping text '${text}' on ${serial}`);
+
 }
 
 export async function tapFirstAvailableText(serial: string, candidates: string[], timeoutMs = 10_000): Promise<string> {
@@ -613,12 +625,14 @@ export async function editTextTailByResourceIdSuffix(
   appendText: string,
   timeoutMs = 15_000,
 ): Promise<void> {
+  console.log(`[android-ui-driver] editTextTailByResourceIdSuffix serial=${serial} resourceIdSuffix=${resourceIdSuffix} deleteChars=${deleteCharsFromEnd} appendText='${appendText}' timeoutMs=${timeoutMs}`);
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     const nodes = dumpUi(serial);
     const match = nodes.find((node) => node.resourceId.endsWith(resourceIdSuffix) && node.bounds);
     if (match) {
       const { x, y } = boundsCenter(match.bounds);
+      console.log(`[android-ui-driver] editTextTailByResourceIdSuffix: focusing on node resourceId=${match.resourceId} at (${x},${y})`);
       runAdb(serial, ["shell", "input", "tap", `${x}`, `${y}`]);
       await delay(100);
       runAdb(serial, ["shell", "input", "keyevent", "123"]); // end of line
@@ -634,6 +648,8 @@ export async function editTextTailByResourceIdSuffix(
     await delay(150);
   }
 
+  const nodes = dumpUi(serial);
+  console.log(`[android-ui-driver] editTextTailByResourceIdSuffix timeout serial=${serial} resourceIdSuffix=${resourceIdSuffix} nodes=${nodes.length}`);
   throw new Error(`Timed out editing text tail for resource id suffix '${resourceIdSuffix}' on ${serial}`);
 }
 

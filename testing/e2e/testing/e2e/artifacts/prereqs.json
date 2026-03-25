@@ -1,7 +1,7 @@
 ﻿{
     "operation":  "verify-e2e-dual-emulator-prereqs",
     "status":  "FAILURE",
-    "timestamp":  "2026-03-24T16:35:32.6301239Z",
+    "timestamp":  "2026-03-25T08:21:48.7596398Z",
     "data":  {
                  "checks":  [
                                 {
