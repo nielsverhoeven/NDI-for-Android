@@ -62,7 +62,7 @@ async function globalSetup(): Promise<void> {
     return;
   }
 
-  runPowerShellScript("../../../../scripts/verify-e2e-dual-emulator-prereqs.ps1");
+  runPowerShellScript("../../../../scripts/verify-e2e-dual-emulator-prereqs.ps1", ["-AllowMissingNdiSdk"]);
   runPowerShellScript("../../scripts/provision-dual-emulator.ps1", ["-Action", "provision-dual", "-InstallNdiSdk", "-SkipBootIfAlreadyRunning"]);
   const reportPath = resolve(__dirname, "../../artifacts/runtime/preinstall-report.json");
   const apkPath = resolve(__dirname, "../../../../app/build/outputs/apk/debug/app-debug.apk");

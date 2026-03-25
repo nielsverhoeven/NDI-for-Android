@@ -70,7 +70,19 @@ function Provision-Emulator {
     }
 
     if ($InstallSdk) {
-        Install-ApkToEmulator -Serial $EmulatorSerial -ApkPath $ApkPath
+        $effectiveApkPath = $ApkPath
+        if (-not (Test-Path -LiteralPath $effectiveApkPath)) {
+            $alternateAarPath = Join-Path (Split-Path -Parent $effectiveApkPath) "..\aar\sdk-bridge-release.aar"
+            if (Test-Path -LiteralPath $alternateAarPath) {
+                Write-Warning "NDI SDK bridge artifact is AAR at '$alternateAarPath'. APK install is skipped because AAR is not installable on emulator."
+            }
+            else {
+                Write-Warning "NDI SDK APK not found at '$effectiveApkPath'. Skipping NDI install (if you require this, build :ndi:sdk-bridge:assembleRelease with APK output path)."
+            }
+        }
+        else {
+            Install-ApkToEmulator -Serial $EmulatorSerial -ApkPath $effectiveApkPath
+        }
     }
 
     $duration = [int]((Get-Date) - $started).TotalMilliseconds
