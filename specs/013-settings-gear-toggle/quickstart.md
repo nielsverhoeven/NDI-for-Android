@@ -5,10 +5,11 @@
 
 ## Overview
 
-Implement a consistent gear action in the top-right of the source list, viewer,
-output, and settings surfaces. Tapping the gear opens `settingsFragment` from
-non-settings surfaces and closes it from the settings surface by returning to
-the previous destination.
+Implement a consistent gear/cog action in the top-right of the source list,
+viewer, output, and settings surfaces. Tapping the gear opens
+`settingsFragment` from non-settings surfaces and closes it from the settings
+surface by returning to the previous destination. While settings is open, keep
+the top-right gear visible and show a visible settings header/title.
 
 ## Prerequisites
 
@@ -26,11 +27,12 @@ the previous destination.
 
 ## Implementation Steps
 
-1. Update source list, viewer, and output menus so `action_settings` uses `showAsAction="always"`.
-2. Add a Material top app bar to the settings layout with the same gear affordance in the top-right corner.
+1. Update source list, viewer, and output menus so `action_settings` uses `showAsAction="always"` with explicit gear/cog iconography (no wrench/manage icon substitutions).
+2. Add a Material top app bar to the settings layout with a visible settings title/header and the same top-right gear affordance.
 3. Centralize toggle routing so non-settings surfaces navigate to `settingsFragment` and the settings surface pops back to the previous destination.
 4. Guard against duplicate settings navigation on rapid repeated taps.
 5. Update accessibility content descriptions and Playwright selectors so the gear action is discoverable on all in-scope surfaces.
+6. For source-list emulator validation, start from Home and use `Open Stream` to reach the in-scope source-list surface before asserting the gear toggle flow.
 
 ## Local Validation Commands
 
@@ -48,7 +50,7 @@ npm run test:pr:primary
 
 This run must include:
 
-1. New `@settings` coverage proving gear visibility and open/close behavior.
+1. New `@settings` coverage proving gear visibility, gear-only iconography intent, visible settings title/header, and open/close behavior.
 2. Existing regression suite coverage remaining green.
 
 ## Expected Evidence

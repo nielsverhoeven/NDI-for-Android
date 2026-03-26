@@ -7,7 +7,10 @@ import com.ndi.core.model.PlaybackState
 import com.ndi.feature.ndibrowser.domain.repository.NdiViewerRepository
 import com.ndi.feature.ndibrowser.domain.repository.UserSelectionRepository
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -29,6 +32,10 @@ class ViewerViewModel(
 
     private val _uiState = MutableStateFlow(ViewerUiState())
     val uiState: StateFlow<ViewerUiState> = _uiState.asStateFlow()
+
+    private val _settingsToggleEvents = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    val settingsToggleEvents: SharedFlow<Unit> = _settingsToggleEvents.asSharedFlow()
+    private var settingsToggleInFlight: Boolean = false
 
     init {
         viewModelScope.launch {
@@ -77,6 +84,16 @@ class ViewerViewModel(
 
     fun onLayoutMeasured(widthDp: Int) {
         _uiState.update { current -> current.copy(layoutMode = ViewerAdaptiveLayout.resolve(widthDp)) }
+    }
+
+    fun onSettingsTogglePressed() {
+        if (settingsToggleInFlight) return
+        settingsToggleInFlight = true
+        _settingsToggleEvents.tryEmit(Unit)
+    }
+
+    fun onSettingsToggleSettled() {
+        settingsToggleInFlight = false
     }
 
     class Factory(

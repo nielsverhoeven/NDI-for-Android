@@ -12,8 +12,8 @@ function Test-EmulatorInstance {
 
     $errors = @()
     if (-not $Instance.id) { $errors += "id is required" }
-    if (-not ($Instance.apiLevel -is [int]) -or $Instance.apiLevel -lt 32 -or $Instance.apiLevel -gt 35) {
-        $errors += "apiLevel must be an integer in range 32-35"
+    if (-not ($Instance.apiLevel -is [int]) -or $Instance.apiLevel -lt 32 -or $Instance.apiLevel -gt 36) {
+        $errors += "apiLevel must be an integer in range 32-36"
     }
     if (-not ($Instance.adbPort -is [int]) -or $Instance.adbPort -lt 5554 -or $Instance.adbPort -gt 5568) {
         $errors += "adbPort must be in range 5554-5568"

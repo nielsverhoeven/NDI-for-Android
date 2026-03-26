@@ -1,17 +1,13 @@
 package com.ndi.feature.ndibrowser.source_list
 
 import androidx.core.net.toUri
+import androidx.fragment.app.testing.launchFragmentInContainer
 import androidx.navigation.NavDeepLinkRequest
-import androidx.test.core.app.ActivityScenario
 import androidx.test.espresso.Espresso.onView
-import androidx.test.espresso.action.ViewActions.click
 import androidx.test.espresso.assertion.ViewAssertions.matches
 import androidx.test.espresso.matcher.ViewMatchers.isDisplayed
-import androidx.test.espresso.matcher.ViewMatchers.withId
 import androidx.test.espresso.matcher.ViewMatchers.withText
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import com.ndi.app.MainActivity
-import com.ndi.app.R
 import com.ndi.core.model.DiscoverySnapshot
 import com.ndi.core.model.DiscoveryStatus
 import com.ndi.core.model.DiscoveryTrigger
@@ -41,8 +37,9 @@ class SourceListFallbackWarningTest {
         }
         SourceListDependencies.fallbackWarningProvider = { flowOf(warningText) }
 
-        ActivityScenario.launch(MainActivity::class.java).use {
-            onView(withId(R.id.streamFragment)).perform(click())
+        launchFragmentInContainer<SourceListFragment>(
+            themeResId = com.google.android.material.R.style.Theme_Material3_DayNight_NoActionBar,
+        ).use {
             onView(withText(warningText)).check(matches(isDisplayed()))
         }
     }

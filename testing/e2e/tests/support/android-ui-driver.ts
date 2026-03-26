@@ -350,6 +350,10 @@ export function launchDeepLink(serial: string, packageName: string, uri: string)
 
 export type SettingsEntrySurface = "source-list" | "viewer" | "output";
 
+export function getSettingsCloseCandidates(): string[] {
+  return ["Close settings", "Close", "Settings"];
+}
+
 export function getSettingsEntryCandidates(surface: SettingsEntrySurface): string[] {
   const universal = ["Settings", "Open settings"];
 
@@ -370,9 +374,17 @@ export async function openSettingsFromSurface(
   surface: SettingsEntrySurface,
   timeoutMs = 15_000,
 ): Promise<void> {
-  const candidates = getSettingsEntryCandidates(surface);
-  await tapFirstAvailableText(serial, candidates, timeoutMs);
-  await waitForText(serial, "Settings", timeoutMs);
+  await tapByResourceIdSuffix(serial, "action_settings", timeoutMs).catch(async () => {
+    const candidates = getSettingsEntryCandidates(surface);
+    await tapFirstAvailableText(serial, candidates, timeoutMs);
+  });
+  await waitForResourceIdSuffix(serial, "settingsHeaderTitle", timeoutMs);
+}
+
+export async function closeSettingsFromSettingsSurface(serial: string, timeoutMs = 15_000): Promise<void> {
+  await tapByResourceIdSuffix(serial, "action_settings", timeoutMs).catch(async () => {
+    await tapFirstAvailableText(serial, getSettingsCloseCandidates(), timeoutMs);
+  });
 }
 
 export function captureScreenshot(serial: string, destinationPath: string): void {
@@ -385,9 +397,29 @@ export function captureScreenshot(serial: string, destinationPath: string): void
 }
 
 export function dumpUi(serial: string): UiNode[] {
-  runAdb(serial, ["shell", "uiautomator", "dump", "/sdcard/window_dump.xml"]);
-  const xml = runAdb(serial, ["exec-out", "cat", "/sdcard/window_dump.xml"]);
-  return parseNodes(xml);
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt < 4; attempt++) {
+    try {
+      runAdb(serial, ["shell", "uiautomator", "dump", "--compressed", "/sdcard/window_dump.xml"]);
+      const xml = runAdb(serial, ["exec-out", "cat", "/sdcard/window_dump.xml"]);
+      if (!xml.includes("<hierarchy")) {
+        throw new Error(`UI dump on ${serial} did not return hierarchy XML`);
+      }
+      return parseNodes(xml);
+    } catch (error) {
+      lastError = error;
+      if (attempt < 3) {
+        try {
+          runAdbRaw(serial, ["shell", "rm", "-f", "/sdcard/window_dump.xml"]);
+        } catch {
+          // Best-effort cleanup before retrying a flaky dump.
+        }
+      }
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error(`Failed to dump UI hierarchy for ${serial}`);
 }
 
 export function getBoundsByResourceIdSuffix(serial: string, resourceIdSuffix: string): RectBounds {
@@ -465,6 +497,23 @@ export async function tapText(serial: string, text: string, timeoutMs = 15_000):
   console.log(`[android-ui-driver] tapText timeout serial=${serial} text=${text} nodes=${uiDump.length}`);
   throw new Error(`Timed out tapping text '${text}' on ${serial}`);
 
+}
+
+export async function tapByResourceIdSuffix(serial: string, resourceIdSuffix: string, timeoutMs = 15_000): Promise<void> {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const nodes = dumpUi(serial);
+    const match = nodes.find((node) => node.resourceId.endsWith(resourceIdSuffix) && node.bounds);
+    if (match) {
+      const { x, y } = boundsCenter(match.bounds);
+      runAdb(serial, ["shell", "input", "tap", `${x}`, `${y}`]);
+      await delay(150);
+      return;
+    }
+    await delay(250);
+  }
+
+  throw new Error(`Timed out tapping resource id suffix '${resourceIdSuffix}' on ${serial}`);
 }
 
 export async function tapFirstAvailableText(serial: string, candidates: string[], timeoutMs = 10_000): Promise<string> {

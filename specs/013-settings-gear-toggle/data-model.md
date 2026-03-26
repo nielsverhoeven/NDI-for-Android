@@ -12,6 +12,8 @@
   - `surfaceId`: Enum `SOURCE_LIST | VIEWER | OUTPUT | SETTINGS`
   - `hasTopAppBar`: Boolean, always `true` for in-scope surfaces after implementation
   - `settingsActionVisible`: Boolean, must evaluate to `true` for all in-scope surfaces
+  - `iconography`: Enum `GEAR_OR_COG` (no wrench/manage variants)
+  - `settingsHeaderVisible`: Boolean, required `true` when `surfaceId == SETTINGS`
 
 ### 2. SettingsVisibilityState
 
@@ -38,10 +40,12 @@
 ## Validation Rules
 
 - The settings action must remain visible on every in-scope surface top app bar.
+- The settings action iconography must be gear/cog on every in-scope surface; wrench/manage iconography is invalid.
 - When `isSettingsOpen == false`, a gear tap must resolve to `requestedAction = OPEN` and navigate to `settingsFragment` exactly once.
 - When `isSettingsOpen == true`, a gear tap must resolve to `requestedAction = CLOSE` and pop back to the previous surface exactly once.
 - Repeated taps must not create duplicate `settingsFragment` entries on the back stack.
 - Rotation/configuration change must preserve the correct `SettingsVisibilityState` as derived from the nav destination rather than a stale local Boolean.
+- While `isSettingsOpen == true`, the settings surface must show a visible settings header/title and keep the top-right gear visible/tappable.
 
 ## State Transitions
 

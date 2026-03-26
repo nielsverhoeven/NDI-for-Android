@@ -12,7 +12,6 @@ import androidx.fragment.app.viewModels
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
-import androidx.navigation.NavDeepLinkRequest
 import androidx.navigation.fragment.findNavController
 import com.ndi.core.model.PlaybackState
 import com.ndi.feature.ndibrowser.presentation.R
@@ -49,13 +48,6 @@ class ViewerFragment : Fragment() {
         val fragmentBinding = FragmentViewerBinding.inflate(inflater, container, false)
         binding = fragmentBinding
         fragmentBinding.retryButton.setOnClickListener { viewModel.onRetryPressed() }
-        fragmentBinding.settingsButton.setOnClickListener {
-            runCatching {
-                findNavController().navigate(
-                    NavDeepLinkRequest.Builder.fromUri("ndi://settings".toUri()).build(),
-                )
-            }
-        }
         fragmentBinding.backToListButton.setOnClickListener {
             viewModel.onBackToListPressed()
             runCatching { findNavController().popBackStack() }
@@ -63,11 +55,7 @@ class ViewerFragment : Fragment() {
         fragmentBinding.viewerTopAppBar.inflateMenu(R.menu.viewer_menu)
         fragmentBinding.viewerTopAppBar.setOnMenuItemClickListener { item ->
             if (item.itemId == R.id.action_settings) {
-                runCatching {
-                    findNavController().navigate(
-                        NavDeepLinkRequest.Builder.fromUri("ndi://settings".toUri()).build(),
-                    )
-                }
+                viewModel.onSettingsTogglePressed()
                 true
             } else {
                 false
@@ -83,6 +71,13 @@ class ViewerFragment : Fragment() {
 
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                launch {
+                    viewModel.settingsToggleEvents.collect {
+                        runCatching {
+                            findNavController().navigate("ndi://settings".toUri())
+                        }
+                    }
+                }
                 val overlayFlow = ViewerDependencies.overlayStateFlowOrNull()
                 val stateFlow = if (overlayFlow == null) {
                     viewModel.uiState
@@ -167,5 +162,10 @@ class ViewerFragment : Fragment() {
         relayPreviewSourceId = null
         binding = null
         super.onDestroyView()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        viewModel.onSettingsToggleSettled()
     }
 }

@@ -17,7 +17,8 @@
         android:label="@string/nav_stream">
         <action
             android:id="@+id/action_streamFragment_to_settingsFragment"
-            app:destination="@id/settingsFragment" />
+            app:destination="@id/settingsFragment"
+            app:launchSingleTop="true" />
     </fragment>
 
     <fragment
@@ -29,7 +30,8 @@
             app:destination="@id/viewerHostFragment" />
         <action
             android:id="@+id/action_viewFragment_to_settingsFragment"
-            app:destination="@id/settingsFragment" />
+            app:destination="@id/settingsFragment"
+            app:launchSingleTop="true" />
     </fragment>
 
     <!-- ====== Detail destinations (retain existing deep links) ====== -->
@@ -45,6 +47,10 @@
             app:popUpTo="@id/viewFragment"
             app:popUpToInclusive="false"
             app:launchSingleTop="true" />
+        <action
+            android:id="@+id/action_viewerHostFragment_to_settingsFragment"
+            app:destination="@id/settingsFragment"
+            app:launchSingleTop="true" />
         <argument
             android:name="sourceId"
             app:argType="string"
@@ -58,7 +64,8 @@
         <deepLink app:uri="ndi://output/{sourceId}" />
         <action
             android:id="@+id/action_outputControlFragment_to_settingsFragment"
-            app:destination="@id/settingsFragment" />
+            app:destination="@id/settingsFragment"
+            app:launchSingleTop="true" />
         <argument
             android:name="sourceId"
             app:argType="string"

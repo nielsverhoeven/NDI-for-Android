@@ -73,6 +73,10 @@ class OutputControlViewModel(
     private val _consentPromptEvents = MutableSharedFlow<String>(extraBufferCapacity = 1)
     val consentPromptEvents: SharedFlow<String> = _consentPromptEvents.asSharedFlow()
 
+    private val _settingsToggleEvents = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    val settingsToggleEvents: SharedFlow<Unit> = _settingsToggleEvents.asSharedFlow()
+    private var settingsToggleInFlight: Boolean = false
+
     init {
         viewModelScope.launch {
             outputRepository.observeOutputSession().collect { session ->
@@ -268,6 +272,16 @@ class OutputControlViewModel(
                 }
             }
         }
+    }
+
+    fun onSettingsTogglePressed() {
+        if (settingsToggleInFlight) return
+        settingsToggleInFlight = true
+        _settingsToggleEvents.tryEmit(Unit)
+    }
+
+    fun onSettingsToggleSettled() {
+        settingsToggleInFlight = false
     }
 
     class Factory(

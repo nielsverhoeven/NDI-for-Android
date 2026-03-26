@@ -10,5 +10,7 @@ Contract files:
 
 - `settings-gear-toggle-ui-contract.md`
 
-These contracts define expected visibility, toggle semantics, accessibility, and
-Playwright-observable behavior for the settings entry points.
+These contracts define expected gear/cog-only iconography, persistent
+top-right visibility, settings title/header visibility while open, toggle
+semantics, accessibility, and Playwright-observable behavior for the settings
+entry points.

@@ -45,6 +45,10 @@ class SourceListViewModel(
     private val _outputNavigationEvents = MutableSharedFlow<String>(extraBufferCapacity = 1)
     val outputNavigationEvents: SharedFlow<String> = _outputNavigationEvents.asSharedFlow()
 
+    private val _settingsToggleEvents = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    val settingsToggleEvents: SharedFlow<Unit> = _settingsToggleEvents.asSharedFlow()
+    private var settingsToggleInFlight: Boolean = false
+
     init {
         viewModelScope.launch {
             discoveryRepository.observeDiscoveryState().collect(::onDiscoverySnapshot)
@@ -91,6 +95,16 @@ class SourceListViewModel(
         _uiState.update { current ->
             current.copy(layoutMode = SourceListAdaptiveLayout.resolve(widthDp))
         }
+    }
+
+    fun onSettingsTogglePressed() {
+        if (settingsToggleInFlight) return
+        settingsToggleInFlight = true
+        _settingsToggleEvents.tryEmit(Unit)
+    }
+
+    fun onSettingsToggleSettled() {
+        settingsToggleInFlight = false
     }
 
     fun onFallbackWarningChanged(message: String?) {

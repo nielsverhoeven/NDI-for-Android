@@ -8,6 +8,12 @@ import com.ndi.core.model.navigation.TopLevelDestination
 
 object NdiNavigation {
 
+    enum class SettingsToggleAction {
+        OPEN,
+        CLOSE,
+        NONE,
+    }
+
     fun viewerRequest(sourceId: String): NavDeepLinkRequest {
         return NavDeepLinkRequest.Builder
             .fromUri("ndi://viewer/$sourceId".toUri())
@@ -66,7 +72,22 @@ object NdiNavigation {
 
     fun sourceListToSettingsActionId(): Int = R.id.action_streamFragment_to_settingsFragment
 
-    fun viewerToSettingsActionId(): Int = R.id.action_viewFragment_to_settingsFragment
+    fun viewerToSettingsActionId(): Int = R.id.action_viewerHostFragment_to_settingsFragment
 
     fun outputToSettingsActionId(): Int = R.id.action_outputControlFragment_to_settingsFragment
+
+    fun resolveSettingsToggleAction(currentDestinationId: Int): SettingsToggleAction {
+        return when {
+            currentDestinationId == settingsDestinationId() -> SettingsToggleAction.CLOSE
+            else -> SettingsToggleAction.OPEN
+        }
+    }
+
+    fun shouldOpenSettings(currentDestinationId: Int): Boolean {
+        return resolveSettingsToggleAction(currentDestinationId) == SettingsToggleAction.OPEN
+    }
+
+    fun shouldCloseSettings(currentDestinationId: Int): Boolean {
+        return resolveSettingsToggleAction(currentDestinationId) == SettingsToggleAction.CLOSE
+    }
 }

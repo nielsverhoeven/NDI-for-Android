@@ -3,6 +3,8 @@ package com.ndi.app.navigation
 import com.ndi.app.R
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.junit.runners.JUnit4
@@ -39,5 +41,41 @@ class NdiNavigationSettingsTest {
     @Test
     fun settingsDestinationId_returnsSettingsFragmentId() {
         assertEquals(R.id.settingsFragment, NdiNavigation.settingsDestinationId())
+    }
+
+    @Test
+    fun resolveSettingsToggleAction_returnsOpenWhenCurrentDestinationIsNotSettings() {
+        assertEquals(
+            NdiNavigation.SettingsToggleAction.OPEN,
+            NdiNavigation.resolveSettingsToggleAction(R.id.streamFragment),
+        )
+    }
+
+    @Test
+    fun resolveSettingsToggleAction_returnsCloseWhenCurrentDestinationIsSettings() {
+        assertEquals(
+            NdiNavigation.SettingsToggleAction.CLOSE,
+            NdiNavigation.resolveSettingsToggleAction(R.id.settingsFragment),
+        )
+    }
+
+    @Test
+    fun shouldOpenSettings_trueOutsideSettings_falseInSettings() {
+        assertTrue(NdiNavigation.shouldOpenSettings(R.id.streamFragment))
+        assertFalse(NdiNavigation.shouldOpenSettings(R.id.settingsFragment))
+    }
+
+    @Test
+    fun shouldCloseSettings_trueInSettings_falseOutsideSettings() {
+        assertTrue(NdiNavigation.shouldCloseSettings(R.id.settingsFragment))
+        assertFalse(NdiNavigation.shouldCloseSettings(R.id.viewerHostFragment))
+    }
+
+    @Test
+    fun viewerToSettingsActionId_returnsViewerHostSettingsAction() {
+        assertEquals(
+            R.id.action_viewerHostFragment_to_settingsFragment,
+            NdiNavigation.viewerToSettingsActionId(),
+        )
     }
 }
