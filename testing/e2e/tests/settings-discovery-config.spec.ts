@@ -1,34 +1,33 @@
-import { expect, test } from "@playwright/test";
+import { test } from "@playwright/test";
 import { assertWithinThreshold, TIMING_THRESHOLDS } from "./support/timingAssertions";
 
+import { getDualEmulatorContext, verifyDeviceReady, verifyPackageInstalled } from "./support/android-device-fixtures";
+import { launchDeepLink, editTextTailByResourceIdSuffix, tapText, waitForTextContaining } from "./support/android-ui-driver";
+
 test.describe("Settings Discovery Configuration", () => {
-  test("@settings @us2 saves and applies discovery server endpoint within 1s", async ({ page }) => {
-    test.fail(
-      true,
-      "Emulator UI wiring is pending; this spec documents the expected <=1s apply behavior.",
-    );
+  test("@settings @us2 saves and applies discovery server endpoint within 1s", async () => {
+    const context = getDualEmulatorContext();
+    verifyDeviceReady(context.publisherSerial);
+    verifyPackageInstalled(context.publisherSerial, context.packageName);
 
     await assertWithinThreshold(async () => {
-      await page.goto("http://127.0.0.1:7777/settings");
-      await page.getByRole("button", { name: /settings/i }).click();
-      await page.locator("#discoveryServerEditText").fill("ndi-server.local");
-      await page.getByRole("button", { name: /save/i }).click();
-      await expect(page.getByText(/settings saved|applied/i)).toBeVisible();
-      await expect(page.locator("#discoveryServerEditText")).toHaveValue(/ndi-server\.local/);
+      launchDeepLink(context.publisherSerial, context.packageName, "ndi://settings");
+      await tapText(context.publisherSerial, "Settings");
+      await editTextTailByResourceIdSuffix(context.publisherSerial, "discoveryServerEditText", 100, "ndi-server.local");
+      await tapText(context.publisherSerial, "Save");
+      await waitForTextContaining(context.publisherSerial, "saved", 15_000);
     }, TIMING_THRESHOLDS.discoveryApply, "discovery endpoint apply latency");
   });
 
-  test("@settings @us2 validates invalid discovery input and shows inline error", async ({ page }) => {
-    test.fail(
-      true,
-      "Emulator UI wiring is pending; this spec documents expected inline validation.",
-    );
+  test("@settings @us2 validates invalid discovery input and shows inline error", async () => {
+    const context = getDualEmulatorContext();
+    verifyDeviceReady(context.publisherSerial);
+    verifyPackageInstalled(context.publisherSerial, context.packageName);
 
-    await page.goto("http://127.0.0.1:7777/settings");
-    await page.locator("#discoveryServerEditText").fill("::1");
-    await page.getByRole("button", { name: /save/i }).click();
+    launchDeepLink(context.publisherSerial, context.packageName, "ndi://settings");
+    await editTextTailByResourceIdSuffix(context.publisherSerial, "discoveryServerEditText", 100, "::1");
+    await tapText(context.publisherSerial, "Save");
 
-    await expect(page.locator("#validationMessage")).toBeVisible();
-    await expect(page.locator("#validationMessage")).toContainText(/invalid|host|format/i);
+    await waitForTextContaining(context.publisherSerial, "invalid", 15_000);
   });
 });

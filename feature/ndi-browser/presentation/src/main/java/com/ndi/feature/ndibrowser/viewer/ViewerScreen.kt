@@ -49,6 +49,13 @@ class ViewerFragment : Fragment() {
         val fragmentBinding = FragmentViewerBinding.inflate(inflater, container, false)
         binding = fragmentBinding
         fragmentBinding.retryButton.setOnClickListener { viewModel.onRetryPressed() }
+        fragmentBinding.settingsButton.setOnClickListener {
+            runCatching {
+                findNavController().navigate(
+                    NavDeepLinkRequest.Builder.fromUri("ndi://settings".toUri()).build(),
+                )
+            }
+        }
         fragmentBinding.backToListButton.setOnClickListener {
             viewModel.onBackToListPressed()
             runCatching { findNavController().popBackStack() }

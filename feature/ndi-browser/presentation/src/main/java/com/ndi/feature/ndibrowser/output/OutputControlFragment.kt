@@ -63,6 +63,13 @@ class OutputControlFragment : Fragment() {
                 viewModel.onRetryOutputPressed()
             },
         )
+        fragmentBinding.settingsButton.setOnClickListener {
+            runCatching {
+                findNavController().navigate(
+                    NavDeepLinkRequest.Builder.fromUri("ndi://settings".toUri()).build(),
+                )
+            }
+        }
         fragmentBinding.outputTopAppBar.inflateMenu(R.menu.output_menu)
         fragmentBinding.outputTopAppBar.setOnMenuItemClickListener { item ->
             if (item.itemId == R.id.action_settings) {

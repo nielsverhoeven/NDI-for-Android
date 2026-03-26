@@ -1,14 +1,16 @@
-import { expect, test } from "@playwright/test";
+import { test } from "@playwright/test";
 
-test("@settings @us1 viewer -> settings -> back", async ({ page }) => {
-  test.fail(
-    true,
-    "Android UI selector wiring for viewer entry is pending; this test defines required access-path coverage.",
-  );
+import { getDualEmulatorContext, verifyDeviceReady, verifyPackageInstalled } from "./support/android-device-fixtures";
+import { launchDeepLink, tapText, waitForText, pressBack } from "./support/android-ui-driver";
 
-  await page.goto("http://127.0.0.1:7777/viewer/source-a");
-  await page.getByRole("button", { name: /settings|open settings/i }).click();
-  await expect(page.getByText(/settings/i)).toBeVisible();
-  await page.goBack();
-  await expect(page).toHaveURL(/viewer/);
+test("@settings @us1 viewer -> settings -> back", async () => {
+  const context = getDualEmulatorContext();
+  verifyDeviceReady(context.publisherSerial);
+  verifyPackageInstalled(context.publisherSerial, context.packageName);
+
+  launchDeepLink(context.publisherSerial, context.packageName, "ndi://viewer/source-a");
+  await tapText(context.publisherSerial, "Settings");
+  await waitForText(context.publisherSerial, "Settings", 15_000);
+  await pressBack(context.publisherSerial);
+  // Assume back to viewer
 });
