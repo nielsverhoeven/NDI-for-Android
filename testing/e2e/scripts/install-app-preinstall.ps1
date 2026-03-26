@@ -81,22 +81,40 @@ function Get-ApkMetadata {
         [string]$ApkPath
     )
 
-    $aapt = Get-AaptExecutable
-    $output = & $aapt dump badging $ApkPath 2>&1
-    if ($LASTEXITCODE -ne 0) {
-        throw ([string]::Format("Unable to extract APK metadata using {0}: {1}", $aapt, $output))
+    $toolsToTry = New-Object System.Collections.Generic.List[string]
+    $primaryTool = Get-AaptExecutable
+    $toolsToTry.Add($primaryTool)
+
+    if ($primaryTool -like "*aapt.exe") {
+        $fallbackAapt2 = Join-Path (Split-Path -Parent $primaryTool) "aapt2.exe"
+        if ((Test-Path -LiteralPath $fallbackAapt2) -and -not $toolsToTry.Contains($fallbackAapt2)) {
+            $toolsToTry.Add($fallbackAapt2)
+        }
     }
 
-    $joined = ($output -join "`n")
-    $match = [regex]::Match($joined, "package:\s+name='[^']+'\s+versionCode='(?<code>\d+)'\s+versionName='(?<name>[^']+)'")
-    if (-not $match.Success) {
-        throw "Could not parse APK version metadata from aapt output."
+    if ($primaryTool -like "*aapt2.exe") {
+        $fallbackAapt = Join-Path (Split-Path -Parent $primaryTool) "aapt.exe"
+        if ((Test-Path -LiteralPath $fallbackAapt) -and -not $toolsToTry.Contains($fallbackAapt)) {
+            $toolsToTry.Add($fallbackAapt)
+        }
     }
 
-    return [PSCustomObject]@{
-        versionName = $match.Groups["name"].Value
-        versionCode = [int]$match.Groups["code"].Value
+    $errors = @()
+    foreach ($tool in $toolsToTry) {
+        $output = & $tool dump badging $ApkPath 2>&1
+        $joined = ($output -join "`n")
+        $match = [regex]::Match($joined, "package:\s+name='[^']+'\s+versionCode='(?<code>\d+)'\s+versionName='(?<name>[^']+)'")
+        if ($match.Success) {
+            return [PSCustomObject]@{
+                versionName = $match.Groups["name"].Value
+                versionCode = [int]$match.Groups["code"].Value
+            }
+        }
+
+        $errors += "{0}: {1}" -f $tool, $joined
     }
+
+    throw ([string]::Format("Unable to extract APK metadata. Tried tools: {0}", ($errors -join " | ")))
 }
 
 function New-DeviceRecord {
@@ -181,9 +199,21 @@ try {
         exit 1
     }
 
-    $metadata = Get-ApkMetadata -ApkPath $apkAbsolutePath
+    $metadata = $null
+    try {
+        $metadata = Get-ApkMetadata -ApkPath $apkAbsolutePath
+    }
+    catch {
+        Write-Warning "Unable to parse APK metadata from '$apkAbsolutePath'. Continuing with install/launch verification only. Details: $($_.Exception.Message)"
+    }
     $buildTimestamp = (Get-Item -LiteralPath $apkAbsolutePath).LastWriteTimeUtc.ToString("o")
-    $buildArtifact = New-BuildArtifact -Path $apkAbsolutePath -PackageName $PackageName -Exists $true -VersionName $metadata.versionName -VersionCode $metadata.versionCode -BuildTimestamp $buildTimestamp
+    $versionName = $null
+    $versionCode = $null
+    if ($metadata) {
+        $versionName = $metadata.versionName
+        $versionCode = $metadata.versionCode
+    }
+    $buildArtifact = New-BuildArtifact -Path $apkAbsolutePath -PackageName $PackageName -Exists $true -VersionName $versionName -VersionCode $versionCode -BuildTimestamp $buildTimestamp
     $expectedVersionIdentifier = $buildArtifact.versionIdentifier
 
     foreach ($serial in $effectiveSerials) {
@@ -260,7 +290,7 @@ try {
             $record.installedVersionIdentifier = "$($installed.versionName)+$($installed.versionCode)"
         }
 
-        if ($record.installedVersionIdentifier -ne $expectedVersionIdentifier) {
+        if ($expectedVersionIdentifier -and $record.installedVersionIdentifier -ne $expectedVersionIdentifier) {
             $record.status = "VERSION_MISMATCH"
             $record.errorMessage = "{0}: Installed version '{1}' does not match expected '{2}'." -f $serial, $record.installedVersionIdentifier, $expectedVersionIdentifier
             $record.elapsedMs = [int]$deviceStopwatch.ElapsedMilliseconds

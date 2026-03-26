@@ -1,3 +1,66 @@
+# Feature 013: Settings Gear Toggle - Phase 4 Validation (2026-03-26)
+
+## 1) Scope
+- Branch/commit: `013-settings-gear-toggle` @ `7c46e43`.
+- Validation intent: Phase 4 verification for T024-T027 in `specs/013-settings-gear-toggle/tasks.md`.
+- Changed/impacted modules under direct validation: `:app`, `:feature:ndi-browser:presentation`, `testing/e2e`.
+- Related spec task IDs: T024, T025, T026, T027.
+- Module graph confirmed from `settings.gradle.kts`: `:app`, `:core:model`, `:core:database`, `:core:testing`, `:feature:ndi-browser:domain`, `:feature:ndi-browser:data`, `:feature:ndi-browser:presentation`, `:ndi:sdk-bridge`.
+
+## 2) Stage Results
+| Stage | Status | Executed Commands | Result |
+|---|---|---|---|
+| Prerequisite gate (initial) | FAIL | `./scripts/verify-android-prereqs.ps1` | Failed only because `JAVA_HOME` was unset. |
+| Prerequisite gate (re-run) | FAIL/BLOCKED | `$env:JAVA_HOME='C:\Program Files\Java\jdk-21.0.10'; ./scripts/verify-android-prereqs.ps1` | All checks printed PASS, then the script threw a PowerShell `Count` property error in its own failure-summary logic. |
+| Wrapper/toolchain capture | PASS | `./gradlew.bat --version` | Gradle 9.2.1, Java 21 launcher detected. |
+| JUnit validation | PASS | `./gradlew.bat :app:testDebugUnitTest :feature:ndi-browser:presentation:testDebugUnitTest` | Impacted app and presentation unit suites passed. |
+| Focused instrumentation validation | PASS | `./gradlew.bat :feature:ndi-browser:presentation:connectedDebugAndroidTest '-Pandroid.testInstrumentationRunnerArguments.class=com.ndi.feature.ndibrowser.settings.SettingsGearToggleTest,com.ndi.feature.ndibrowser.settings.SourceListSettingsNavigationTest,com.ndi.feature.ndibrowser.settings.ViewerSettingsNavigationTest,com.ndi.feature.ndibrowser.settings.OutputSettingsNavigationTest'` | 5 targeted tests passed on each connected emulator. |
+| Playwright settings toggle coverage | FAIL | `npm --prefix testing/e2e run test -- tests/settings-navigation-source-list.spec.ts tests/settings-navigation-viewer.spec.ts tests/settings-navigation-output.spec.ts --project=android-primary` | All 3 specs failed due app-state timeouts and `uiautomator dump` instability; teardown also failed with `RESET_FAILED`. |
+| Existing regression suite status | NOT EXECUTED | Inspected `testing/e2e/artifacts/primary-pr-20260326-160208/` and `testing/e2e/scripts/run-primary-pr-e2e.ps1` | Latest local primary-PR run stopped in `new-settings`; no `existing-regression.json` artifact was produced. |
+| Release hardening | PASS | `./gradlew.bat :app:assembleRelease :app:verifyReleaseHardening` | Release build and hardening verification passed. |
+| Material 3 / top app bar compliance review | FAIL | Static review of menu/layout resources plus passing instrumentation coverage | Top app bars are `MaterialToolbar`, but the settings surface uses a close icon instead of the required persistent gear; non-settings surfaces still use `ic_menu_manage`. |
+
+## 3) Issues Found & Fixes
+| Defect/Issue | Root Cause | Fix Applied | Verification |
+|---|---|---|---|
+| Settings top app bar swaps the gear for a close icon | `feature/ndi-browser/presentation/src/main/res/menu/settings_menu.xml` uses `@android:drawable/ic_menu_close_clear_cancel` with close-specific strings | No code change in this validation run | Static review confirmed mismatch against T017/T024/T025/T027 requirements. |
+| Source/viewer/output menus are not gear/cog-only | `source_list_menu.xml`, `viewer_menu.xml`, and `output_menu.xml` still use `@android:drawable/ic_menu_manage` | No code change in this validation run | Static review confirmed icon resource mismatch against task/spec wording. |
+| Android tests pass without validating the key Phase 4 UI assertions | `SettingsGearToggleTest` and related instrumentation specs only assert menu-item visibility/interaction, not actual iconography or visible header/title treatment | No code change in this validation run | Test-source review plus passing instrumentation run confirmed the gap. |
+| Playwright settings coverage is still red | Current app/harness state times out before expected surface text appears, and `uiautomator dump` intermittently fails on `emulator-5554` | No code change in this validation run | Fresh Playwright run failed all 3 settings navigation specs. |
+| Latest primary PR regression suite has no existing-regression result | `run-primary-pr-e2e.ps1` stops after a failing `new-settings` suite, so the existing-regression suite never starts | No code change in this validation run | Latest local artifact folder contains `new-settings.json` only. |
+| Android prereq script can false-fail after successful checks | `scripts/verify-android-prereqs.ps1` assumes `$failed.Count` exists even when a single object is returned | No code change in this validation run | Re-run reproduced the script exception after all checks printed PASS. |
+| T023 task tracking appears stale | `specs/013-settings-gear-toggle/quickstart.md` already contains the requested validation guidance, but `tasks.md` still leaves T023 unchecked | No doc change in this validation run | Manual review confirmed quickstart/task mismatch. |
+
+## 4) E2E Evidence
+- Latest targeted settings run: Playwright console output captured via chat session resource file during this validation.
+- Latest primary-PR artifact root: `testing/e2e/artifacts/primary-pr-20260326-160208/`.
+- Latest primary-PR evidence present: `testing/e2e/artifacts/primary-pr-20260326-160208/new-settings.json` and `testing/e2e/artifacts/primary-pr-20260326-160208/results/`.
+- Missing expected regression artifact: `testing/e2e/artifacts/primary-pr-20260326-160208/existing-regression.json`.
+- Playwright traces from the failing targeted run:
+  - `testing/e2e/test-results/settings-navigation-output-5188e-s1-output---settings---back-android-primary-retry1/trace.zip`
+  - `testing/e2e/test-results/settings-navigation-source-6e53d-urce-list---settings---back-android-primary-retry1/trace.zip`
+  - `testing/e2e/test-results/settings-navigation-viewer-031e0-s1-viewer---settings---back-android-primary-retry1/trace.zip`
+
+## 5) Release Gate Status
+- [x] Prerequisite gate executed
+- [x] Wrapper/toolchain validated (`./gradlew.bat --version`)
+- [x] Impacted module-aware JUnit suites passed
+- [x] Focused instrumentation coverage executed and passed
+- [ ] Playwright toggle coverage passed
+- [ ] Existing regression suite executed successfully in the current validation cycle
+- [x] `:app:assembleRelease` passed
+- [x] `:app:verifyReleaseHardening` passed
+- [ ] Material 3 / top app bar compliance satisfied for persistent gear and visible settings title treatment
+
+Final disposition for feature 013 Phase 4 validation: **FAIL/PARTIAL**.
+
+Blocking items:
+- Replace the settings-screen close icon/strings with the persistent gear behavior required by the feature contract.
+- Replace `ic_menu_manage` on source/viewer/output with a gear/cog-only asset that matches the spec language.
+- Add explicit instrumentation and Playwright assertions for persistent gear visibility and visible settings header/title treatment.
+- Stabilize the Playwright harness path (`uiautomator dump` failures and teardown reset failure) before re-running the full primary PR suite.
+- Reconcile T023 in task tracking with the already-updated quickstart guidance.
+
 # Android Validation Results - 2026-03-23 (Feature 010 Dual-Emulator Infrastructure Revalidation)
 
 ## 1) Scope

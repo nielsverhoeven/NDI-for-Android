@@ -42,6 +42,9 @@
     <string name="settings_validation_saved">Settings saved.</string>
     <string name="settings_fallback_warning">Discovery server unavailable. Falling back to default.</string>
     <string name="settings_back_content_description">Back</string>
+    <string name="settings_open_content_description">Open settings</string>
+    <string name="settings_close_content_description">Close settings</string>
+    <string name="settings_close_label">Close settings</string>
     <string name="overlay_stream_direction">Direction: %1$s</string>
     <string name="overlay_stream_status">Status: %1$s</string>
     <string name="overlay_stream_source">Source: %1$s</string>

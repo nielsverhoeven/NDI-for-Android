@@ -1,14 +1,25 @@
 ﻿{
     "operation":  "Reset-EmulatorState",
-    "status":  "FAILURE",
-    "timestamp":  "2026-03-25T08:21:51.5608331Z",
-    "data":  null,
+    "status":  "SUCCESS",
+    "timestamp":  "2026-03-26T16:14:49.7820687Z",
+    "data":  [
+                 {
+                     "emulatorId":  "emulator-5554",
+                     "packagesCleared":  [
+                                             "com.ndi.app.debug"
+                                         ],
+                     "resetAt":  "2026-03-26T16:14:48.5585307Z"
+                 },
+                 {
+                     "emulatorId":  "emulator-5556",
+                     "packagesCleared":  [
+                                             "com.ndi.app.debug"
+                                         ],
+                     "resetAt":  "2026-03-26T16:14:49.7659216Z"
+                 }
+             ],
     "errors":  [
-                   {
-                       "code":  "RESET_FAILED",
-                       "message":  "* daemon not running; starting now at tcp:5037",
-                       "details":  null
-                   }
+
                ],
     "warnings":  [
 

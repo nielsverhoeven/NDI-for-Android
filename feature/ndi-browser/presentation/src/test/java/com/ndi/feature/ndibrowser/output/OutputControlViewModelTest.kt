@@ -14,6 +14,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
@@ -153,6 +154,36 @@ class OutputControlViewModelTest {
 
         assertEquals(1, repository.startCalls)
         assertEquals(OutputState.ACTIVE, viewModel.uiState.value.outputState)
+    }
+
+    @Test
+    fun onSettingsTogglePressed_emitsOnceUntilSettled() = runTest(mainDispatcherRule.dispatcher.scheduler) {
+        val repository = FakeOutputRepository()
+        val viewModel = OutputControlViewModel(
+            repository,
+            InMemoryOutputConfigurationRepository(),
+            InMemoryScreenCaptureConsentRepository(),
+            OutputTelemetryEmitter {},
+        )
+
+        var emissionCount = 0
+        val collector = launch(start = CoroutineStart.UNDISPATCHED) {
+            viewModel.settingsToggleEvents.collect {
+                emissionCount += 1
+            }
+        }
+
+        viewModel.onSettingsTogglePressed()
+        viewModel.onSettingsTogglePressed()
+        advanceUntilIdle()
+        assertEquals(1, emissionCount)
+
+        viewModel.onSettingsToggleSettled()
+        viewModel.onSettingsTogglePressed()
+        advanceUntilIdle()
+        assertEquals(2, emissionCount)
+
+        collector.cancel()
     }
 }
 

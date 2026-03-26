@@ -55,7 +55,7 @@ function Invoke-PlaywrightSuite {
     Write-Host "Output directory: $resultsDir/$Name"
     Write-Host "JSON capture path: $JsonPath"
 
-    $playwrightArgs = @("playwright", "test", "--project=$PrimaryProject", "--reporter=line,json", "--output", "$resultsDir/$Name")
+    $playwrightArgs = @("playwright", "test", "--project=$PrimaryProject", "--workers=1", "--reporter=line,json", "--output", "$resultsDir/$Name")
     if ($Grep) {
         $playwrightArgs += @("--grep", $Grep)
     }

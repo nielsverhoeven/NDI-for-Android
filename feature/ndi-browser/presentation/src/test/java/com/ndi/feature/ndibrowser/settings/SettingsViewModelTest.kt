@@ -5,9 +5,9 @@ import com.ndi.core.model.NdiSettingsSnapshot
 import com.ndi.feature.ndibrowser.domain.repository.NdiSettingsRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestCoroutineScheduler
@@ -127,6 +127,30 @@ class SettingsViewModelTest {
         viewModel.onDeveloperModeToggled(true)
 
         assertTrue(viewModel.uiState.value.developerModeEnabled)
+    }
+
+    @Test
+    fun onSettingsTogglePressed_emitsOnceUntilSettled() = runTest(scheduler) {
+        val viewModel = SettingsViewModel(FakeSettingsRepository())
+        var emissionCount = 0
+        val collector = launch(start = CoroutineStart.UNDISPATCHED) {
+            viewModel.closeSettingsEvents.collect {
+                emissionCount += 1
+            }
+        }
+
+        viewModel.onSettingsTogglePressed()
+        viewModel.onSettingsTogglePressed()
+        advanceUntilIdle()
+
+        assertEquals(1, emissionCount)
+
+        viewModel.onCloseSettingsSettled()
+        viewModel.onSettingsTogglePressed()
+        advanceUntilIdle()
+
+        assertEquals(2, emissionCount)
+        collector.cancel()
     }
 }
 
