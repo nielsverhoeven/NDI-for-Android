@@ -1,66 +1,73 @@
 # Research Findings: Settings Gear Toggle
 
 **Feature**: 013-settings-gear-toggle  
-**Date**: March 23, 2026  
-**Researcher**: speckit.plan
+**Date**: March 26, 2026  
+**Researcher**: Spec Kit plan workflow
 
 ## Research Tasks & Findings
 
-### Task 1: Research current implementation of settings menu access in the app
+### Task 1: Determine the existing settings entry architecture
 
-**Decision**: The current settings access is via a menu item in the top app bar overflow menu, with a gear icon, that navigates to a settings fragment.
+**Decision**: Reuse the existing `settingsFragment` destination and `NdiNavigation.settingsRequest()` deep link rather than introducing a new modal surface.
 
-**Rationale**: Code analysis shows menu XML with action_settings using @android:drawable/ic_menu_manage (gear icon), and tests expect navigation to settingsFragment. Release notes indicate navigation-based settings screen.
+**Rationale**: Source list, viewer, and output screens already route `action_settings` to `ndi://settings`, and the nav graph already defines `settingsFragment` as the settings destination. Reusing this path preserves the single-activity navigation model and avoids duplicating the already implemented settings UI and persistence behavior.
 
-**Alternatives Considered**: 
-- Modal dialog: Rejected because tests and navigation code indicate fragment navigation.
-- Bottom sheet: Not currently implemented, but could be an alternative for the feature.
+**Alternatives considered**:
 
-### Task 2: Research the UI structure of the app, especially how top app bars and menus are used
+- Bottom sheet dialog: Rejected because it would bypass the current navigation contract and duplicate an existing settings feature surface.
+- Activity-level dialog/overlay: Rejected because it would add another UI architecture pattern to a fragment-driven app.
 
-**Decision**: The app uses a single-activity architecture with Navigation Component. Each main screen (SourceList, Viewer, Output) is a fragment with its own TopAppBar containing a menu.
+### Task 2: Determine how to satisfy “always visible in the top right corner”
 
-**Rationale**: Code shows Fragment classes with TopAppBar views, inflating menus like source_list_menu.xml. Single-activity confirmed by AGENTS.md.
+**Decision**: Promote each `action_settings` toolbar item from `showAsAction="ifRoom"` to `showAsAction="always"`, and add an equivalent top app bar gear action to the settings screen itself.
 
-**Alternatives Considered**: 
-- Activity-level top bar: Not used, each fragment manages its own.
-- Compose: App uses View binding, not Compose.
+**Rationale**: The existing menus already use a gear icon but allow overflow placement. Changing to an always-on action meets the visibility requirement on source list, viewer, and output screens. The settings screen currently has no top app bar, so adding a top app bar with the same gear affordance is the simplest way to keep the icon visible while settings is open.
 
-### Task 3: Research how the settings menu is currently implemented
+**Alternatives considered**:
 
-**Decision**: Settings is implemented as a fragment destination in the navigation graph, accessed via deep link "ndi://settings".
+- Global activity toolbar: Rejected because the app currently uses fragment-owned top app bars.
+- Floating overlay button: Rejected because it would break Material top app bar conventions and complicate layout handling.
 
-**Rationale**: Navigation tests expect settingsRequest() returning NavDeepLinkRequest with "ndi://settings", and settingsDestinationId() returning R.id.settingsFragment.
+### Task 3: Define the toggle behavior without violating navigation architecture
 
-**Alternatives Considered**: 
-- Modal implementation: Not found in current code, but the feature spec suggests modal behavior (open/close vs navigate).
+**Decision**: Model toggle behavior as `open = navigate to settingsFragment` and `close = popBackStack()` when the current destination is `settingsFragment`.
 
-### Task 4: Research best practices for always-visible toggle buttons in Android apps
+**Rationale**: The specification describes open/close semantics, but the codebase represents settings as a dedicated destination. Using the same gear affordance to navigate into settings from non-settings screens and pop back out from the settings screen satisfies the user-visible toggle expectation without introducing a parallel state container.
 
-**Decision**: Use TopAppBar action with showAsAction="always" for guaranteed visibility in the top right.
+**Alternatives considered**:
 
-**Rationale**: Material Design guidelines recommend toolbar actions for primary actions. showAsAction="always" ensures visibility regardless of screen size.
+- Replace navigation with an in-place menu panel: Rejected because it would require broader screen restructuring and conflicts with the existing settings destination.
+- Keep back arrow on settings and treat only open as gear behavior: Rejected because the feature explicitly requires the same button to close when settings is open.
 
-**Alternatives Considered**: 
-- FloatingActionButton: Not standard for settings, typically for primary actions.
-- Custom overlay view: More complex, violates standard Android patterns.
+### Task 4: Handle rotation and rapid repeated taps safely
 
-### Task 5: Research Material 3 guidelines for settings access and gear icons
+**Decision**: Derive the toggle state from the current navigation destination/back stack and guard against duplicate navigation events so repeated taps cannot stack multiple settings destinations.
 
-**Decision**: Use gear icon (Icons.Filled.Settings) in an IconButton for settings access, following Material 3 iconography.
+**Rationale**: The edge cases call out rapid taps and rotation. Nav destination state already survives configuration changes better than ad hoc fragment Booleans. A single navigation helper or destination check can ensure the app no-ops on redundant “open” requests and pops exactly once on “close”.
 
-**Rationale**: Material 3 specifies gear/settings icon for settings actions. IconButton provides proper touch targets and states.
+**Alternatives considered**:
 
-**Alternatives Considered**: 
-- Custom icon: Not recommended, standard icons improve recognition.
-- Text button: Less compact, not standard for toolbar actions.
+- Local fragment Boolean only: Rejected because it risks desynchronizing after rotation or process recreation.
+- Persisting a settings-open flag in storage: Rejected because open/close is transient UI state, not persisted domain state.
 
-### Task 6: Research implementation approach for toggle behavior
+### Task 5: Define test strategy for the visual toggle requirement
 
-**Decision**: Change the menu item behavior from navigation to toggling a modal bottom sheet for settings.
+**Decision**: Convert the existing placeholder Playwright `settings-navigation-*` specs from expected-fail coverage to real emulator-run toggle tests, and require a full existing regression suite pass alongside them.
 
-**Rationale**: Feature spec requires "open/close" behavior, not navigation. BottomSheetDialogFragment aligns with Material 3 for settings panels.
+**Rationale**: The constitution and feature spec both require emulator Playwright coverage for visual changes and an explicit existing-suite regression run. The repo already has placeholder settings navigation specs plus a `test:pr:primary` path that bundles new-settings and existing-regression coverage.
 
-**Alternatives Considered**: 
-- AlertDialog: Less flexible for settings content.
-- Navigation with back handling: Doesn't match "toggle" requirement.
+**Alternatives considered**:
+
+- Unit tests only: Rejected because visibility and toolbar interaction are visual behaviors that require end-to-end verification.
+- Adding entirely new e2e specs without reusing placeholders: Rejected because the current placeholders already define the intended coverage entry points.
+
+### Task 6: Confirm feature scope boundaries
+
+**Decision**: Scope the feature to surfaces that already expose or host settings behavior: source list, viewer, output, and the settings screen itself.
+
+**Rationale**: These are the concrete surfaces with existing settings entry points or the settings destination itself. Expanding the scope to unrelated screens such as the home dashboard would be a separate navigation/product decision not described in the feature spec.
+
+**Alternatives considered**:
+
+- Entire app chrome overhaul: Rejected as out of scope for the requested gear-toggle behavior.
+

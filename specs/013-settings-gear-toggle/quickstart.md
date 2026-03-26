@@ -1,63 +1,62 @@
-# Quickstart: Settings Gear Toggle
+# QuickStart: Settings Gear Toggle
 
 **Feature**: 013-settings-gear-toggle  
-**Date**: March 23, 2026  
+**Date**: March 26, 2026  
 
 ## Overview
 
-Add a gear icon in the top right corner of main screens that toggles the visibility of a settings bottom sheet.
+Implement a consistent gear action in the top-right of the source list, viewer,
+output, and settings surfaces. Tapping the gear opens `settingsFragment` from
+non-settings surfaces and closes it from the settings surface by returning to
+the previous destination.
 
 ## Prerequisites
 
-- Settings bottom sheet component exists (BottomSheetDialogFragment)
-- Top app bar menus configured in each main screen
+- Android prerequisites satisfied via `scripts/verify-android-prereqs.ps1`
+- Debug app buildable with the current toolchain
+- Two visible Android emulators available for Playwright validation when running e2e
+- Existing settings feature remains intact; this feature only changes entry/exit behavior and toolbar presentation
+
+## Test-First Workflow
+
+1. Add or update failing JUnit coverage for navigation/toggle behavior before implementation.
+2. Convert the placeholder Playwright `settings-navigation-*.spec.ts` tests from expected-fail to real assertions before wiring the UI changes.
+3. Implement the minimal toolbar/layout/navigation changes needed to satisfy the tests.
+4. Refactor shared settings-toggle helpers only after tests pass.
 
 ## Implementation Steps
 
-1. **Update Menu XML**: Change showAsAction from "ifRoom" to "always" for action_settings in menu files
-2. **Create Settings Bottom Sheet**: Implement SettingsBottomSheetDialogFragment with configuration UI
-3. **Modify Screen Logic**: Update SourceListScreen, ViewerScreen, OutputScreen to handle toggle instead of navigation
-4. **Add State Management**: Track bottom sheet visibility state in ViewModels
-5. **Update Tests**: Modify navigation tests to verify toggle behavior
+1. Update source list, viewer, and output menus so `action_settings` uses `showAsAction="always"`.
+2. Add a Material top app bar to the settings layout with the same gear affordance in the top-right corner.
+3. Centralize toggle routing so non-settings surfaces navigate to `settingsFragment` and the settings surface pops back to the previous destination.
+4. Guard against duplicate settings navigation on rapid repeated taps.
+5. Update accessibility content descriptions and Playwright selectors so the gear action is discoverable on all in-scope surfaces.
 
-## Key Code Changes
+## Local Validation Commands
 
-### Menu Updates
-```xml
-<item
-    android:id="@+id/action_settings"
-    android:icon="@android:drawable/ic_menu_manage"
-    android:title="@string/settings_title"
-    app:showAsAction="always" />
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\verify-android-prereqs.ps1
+.\gradlew.bat :app:testDebugUnitTest :feature:ndi-browser:presentation:testDebugUnitTest
+.\gradlew.bat :app:assembleDebug :app:verifyReleaseHardening
 ```
 
-### Screen Updates
-```kotlin
-// In onCreateView or similar
-binding.topAppBar.setOnMenuItemClickListener { item ->
-    when (item.itemId) {
-        R.id.action_settings -> {
-            viewModel.onSettingsToggle()
-            true
-        }
-        // other items
-    }
-}
+For emulator Playwright validation:
+
+```powershell
+npm run test:pr:primary
 ```
 
-### ViewModel Updates
-```kotlin
-fun onSettingsToggle() {
-    if (settingsSheet.isVisible) {
-        settingsSheet.dismiss()
-    } else {
-        settingsSheet.show()
-    }
-}
-```
+This run must include:
 
-## Testing
+1. New `@settings` coverage proving gear visibility and open/close behavior.
+2. Existing regression suite coverage remaining green.
 
-- Unit tests for ViewModel toggle logic
-- UI tests for icon visibility and tap behavior
-- Playwright e2e for full toggle flow and regression
+## Expected Evidence
+
+- Passing JUnit results for new toggle/navigation tests
+- Passing Playwright results for:
+  - `testing/e2e/tests/settings-navigation-source-list.spec.ts`
+  - `testing/e2e/tests/settings-navigation-viewer.spec.ts`
+  - `testing/e2e/tests/settings-navigation-output.spec.ts`
+- Evidence that the existing regression suite still passed in the same validation cycle
+- Successful release-hardening verification

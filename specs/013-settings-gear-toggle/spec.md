@@ -9,7 +9,7 @@
 
 ### User Story 1 - Toggle Settings Menu (Priority: P1)
 
-User sees a gear icon in the top right corner of the screen. The gear icon is always visible. When the user taps the gear icon, if the settings menu is closed, it opens the settings menu. If the settings menu is open, it closes the settings menu.
+User sees a gear icon in the top right corner on the source list, viewer, output, and settings screens. The gear icon is always visible on those in-scope screens. When the user taps the gear icon, if the settings menu is closed, it opens the settings menu. If the settings menu is open, it closes the settings menu.
 
 **Why this priority**: This is the core functionality for accessing the settings menu, enabling users to configure app preferences.
 
@@ -36,7 +36,7 @@ This feature adds visual behavior (gear icon and menu toggle), so the spec MUST 
 
 ### Functional Requirements
 
-- **FR-001**: System MUST display a gear icon in the top right corner of the screen at all times during app usage.
+- **FR-001**: System MUST display a gear icon in the top right corner of the source list, viewer, output, and settings screens whenever those screens are visible.
 - **FR-002**: System MUST open the settings menu when the gear icon is tapped and the settings menu is currently closed.
 - **FR-003**: System MUST close the settings menu when the gear icon is tapped and the settings menu is currently open.
 - **FR-004**: For visual additions/changes, system MUST include emulator-run Playwright e2e coverage for the gear icon toggle functionality.
@@ -51,11 +51,11 @@ No key entities involved, as this is a UI interaction feature without data persi
 ### Measurable Outcomes
 
 - **SC-001**: Users can open the settings menu by tapping the gear icon with a response time under 1 second.
-- **SC-002**: The gear icon remains visible in the top right corner across all app screens and orientations.
-- **SC-003**: Settings menu toggle functionality works reliably with 100% success rate in automated testing.
+- **SC-002**: The gear icon remains visible in the top right corner across the source list, viewer, output, and settings screens in both portrait and landscape orientations.
+- **SC-003**: Settings menu toggle functionality is considered reliable when all feature acceptance tests (JUnit, instrumentation, and Playwright toggle coverage) pass in one clean validation run with no skipped tests.
 - **SC-004**: No regression in existing UI functionality, with all existing e2e tests passing.
 
 ## Assumptions
 
 - The settings menu component already exists and can be programmatically opened and closed.
-- The app has a consistent top-level UI structure where the gear icon can be overlaid or integrated.
+- The source list, viewer, output, and settings screens have a consistent top-app-bar structure where the gear icon can be integrated without expanding scope to unrelated screens.

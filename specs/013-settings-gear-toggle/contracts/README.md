@@ -1,8 +1,14 @@
 # Interface Contracts: Settings Gear Toggle
 
 **Feature**: 013-settings-gear-toggle  
-**Date**: March 23, 2026  
+**Date**: March 26, 2026  
 
-This feature is purely internal UI interaction with no external interfaces or API contracts. The settings gear toggle controls visibility of an existing internal settings component.
+This feature exposes a user-facing UI contract and an automation-facing
+observability contract for the settings gear affordance.
 
-No contract files are required.
+Contract files:
+
+- `settings-gear-toggle-ui-contract.md`
+
+These contracts define expected visibility, toggle semantics, accessibility, and
+Playwright-observable behavior for the settings entry points.
