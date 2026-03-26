@@ -78,17 +78,19 @@
 
 ### Tests for User Story 2 (REQUIRED)
 
-- [ ] T024 [P] [US2] Add failing JUnit coverage for settings-to-non-settings transitions in app/src/test/java/com/ndi/app/navigation/TopLevelNavViewModelTest.kt
-- [ ] T025 [P] [US2] Add failing JUnit coverage for settings nav-host route resolution in app/src/test/java/com/ndi/app/navigation/TopLevelNavigationCoordinatorTest.kt
-- [ ] T026 [P] [US2] Add failing Playwright coverage for Settings to Home/Stream/View exit behavior in testing/e2e/tests/settings-navigation-source-list.spec.ts
-- [ ] T027 [US2] Record US2 red-phase evidence for unit and Playwright runs in test-results/bottom-nav-settings-validation.md
+- [x] T024 [P] [US2] Add failing JUnit coverage for settings-to-non-settings transitions in app/src/test/java/com/ndi/app/navigation/TopLevelNavViewModelTest.kt
+- [x] T025 [P] [US2] Add failing JUnit coverage for settings nav-host route resolution in app/src/test/java/com/ndi/app/navigation/TopLevelNavigationCoordinatorTest.kt
+- [x] T026 [P] [US2] Add failing Playwright coverage for Settings to Home/Stream/View exit behavior in testing/e2e/tests/settings-navigation-source-list.spec.ts
+- [x] T026a [P] [US2] Add failing Playwright coverage for rapid tab switching (Settings ↔ Home/Stream/View) state synchronization in testing/e2e/tests/settings-navigation-source-list.spec.ts
+- [x] T026b [P] [US2] Add failing Playwright coverage for rotation/device-orientation changes while in Settings (verify no crashes, state preserved) in testing/e2e/tests/settings-navigation-source-list.spec.ts
+- [x] T027 [US2] Record US2 red-phase evidence for unit and Playwright runs (including rapid-switch and rotation scenarios) in test-results/bottom-nav-settings-validation.md
 
 ### Implementation for User Story 2
 
-- [ ] T028 [US2] Implement settings-to-home/stream/view event emission and no-op reselect rules in app/src/main/java/com/ndi/app/navigation/TopLevelNavViewModel.kt
-- [ ] T029 [US2] Implement settings-to-home/stream/view navigation dispatch in app/src/main/java/com/ndi/app/navigation/TopLevelNavigationHost.kt
-- [ ] T030 [US2] Keep destination observer synchronization for settings exit and deep-link starts in app/src/main/java/com/ndi/app/MainActivity.kt
-- [ ] T031 [US2] Preserve settings header/title visibility while active in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/SettingsFragment.kt
+- [x] T028 [US2] Implement settings-to-home/stream/view event emission and no-op reselect rules in app/src/main/java/com/ndi/app/navigation/TopLevelNavViewModel.kt
+- [x] T029 [US2] Implement settings-to-home/stream/view navigation dispatch in app/src/main/java/com/ndi/app/navigation/TopLevelNavigationHost.kt
+- [x] T030 [US2] Keep destination observer synchronization for settings exit and deep-link starts in app/src/main/java/com/ndi/app/MainActivity.kt
+- [x] T031 [US2] Preserve settings header/title visibility while active in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/SettingsFragment.kt
 
 **Checkpoint**: Settings exit via bottom navigation is deterministic and selected state remains synchronized.
 
@@ -102,21 +104,21 @@
 
 ### Tests for User Story 3 (REQUIRED)
 
-- [ ] T032 [P] [US3] Add failing Playwright assertion for no top-right settings affordance on source-list context in testing/e2e/tests/settings-navigation-source-list.spec.ts
-- [ ] T033 [P] [US3] Add failing Playwright assertion for no top-right settings affordance on viewer context in testing/e2e/tests/settings-navigation-viewer.spec.ts
-- [ ] T034 [P] [US3] Add failing Playwright assertion for no top-right settings affordance on output and settings contexts in testing/e2e/tests/settings-navigation-output.spec.ts
-- [ ] T035 [US3] Record US3 red-phase evidence for Playwright checks in test-results/bottom-nav-settings-validation.md
+- [x] T032 [P] [US3] Add failing Playwright assertion for no top-right settings affordance on source-list context in testing/e2e/tests/settings-navigation-source-list.spec.ts
+- [x] T033 [P] [US3] Add failing Playwright assertion for no top-right settings affordance on viewer context in testing/e2e/tests/settings-navigation-viewer.spec.ts
+- [x] T034 [P] [US3] Add failing Playwright assertion for no top-right settings affordance on output and settings contexts in testing/e2e/tests/settings-navigation-output.spec.ts
+- [x] T035 [US3] Record US3 red-phase evidence for Playwright checks in test-results/bottom-nav-settings-validation.md
 
 ### Implementation for User Story 3
 
-- [ ] T036 [P] [US3] Remove top-right settings action from source list menu in feature/ndi-browser/presentation/src/main/res/menu/source_list_menu.xml
-- [ ] T037 [P] [US3] Remove top-right settings action from viewer menu in feature/ndi-browser/presentation/src/main/res/menu/viewer_menu.xml
-- [ ] T038 [P] [US3] Remove top-right settings action from output menu in feature/ndi-browser/presentation/src/main/res/menu/output_menu.xml
-- [ ] T039 [P] [US3] Remove top-right settings action from settings menu in feature/ndi-browser/presentation/src/main/res/menu/settings_menu.xml
-- [ ] T040 [US3] Remove source-list toolbar settings click handling in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/source_list/SourceListScreen.kt
-- [ ] T041 [US3] Remove viewer toolbar settings click handling in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/viewer/ViewerScreen.kt
-- [ ] T042 [US3] Remove output toolbar settings click handling in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/output/OutputControlFragment.kt
-- [ ] T043 [US3] Remove settings-screen top-right settings click handling while preserving title/header in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/SettingsFragment.kt
+- [x] T036 [P] [US3] Remove top-right settings action from source list menu in feature/ndi-browser/presentation/src/main/res/menu/source_list_menu.xml
+- [x] T037 [P] [US3] Remove top-right settings action from viewer menu in feature/ndi-browser/presentation/src/main/res/menu/viewer_menu.xml
+- [x] T038 [P] [US3] Remove top-right settings action from output menu in feature/ndi-browser/presentation/src/main/res/menu/output_menu.xml
+- [x] T039 [P] [US3] Remove top-right settings action from settings menu in feature/ndi-browser/presentation/src/main/res/menu/settings_menu.xml
+- [x] T040 [US3] Remove source-list toolbar settings click handling in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/source_list/SourceListScreen.kt
+- [x] T041 [US3] Remove viewer toolbar settings click handling in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/viewer/ViewerScreen.kt
+- [x] T042 [US3] Remove output toolbar settings click handling in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/output/OutputControlFragment.kt
+- [x] T043 [US3] Remove settings-screen top-right settings click handling while preserving title/header in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/SettingsFragment.kt
 
 **Checkpoint**: No in-scope top-right settings entry remains; bottom-nav access is canonical.
 
@@ -126,11 +128,12 @@
 
 **Purpose**: Final validation, documentation alignment, and release gate evidence.
 
-- [ ] T044 [P] Update quickstart validation notes for final command set in specs/014-bottom-nav-settings/quickstart.md
-- [ ] T045 Run unit test suite for app and presentation navigation changes and capture pass output in test-results/bottom-nav-settings-validation.md
-- [ ] T046 Run emulator Playwright bottom-nav settings scenarios and capture pass output in test-results/bottom-nav-settings-validation.md
-- [ ] T047 Run existing Playwright regression suite and capture pass output in test-results/bottom-nav-settings-validation.md
-- [ ] T048 Run release-hardening verification and capture results in test-results/bottom-nav-settings-validation.md
+- [x] T044 [P] Update quickstart validation notes for final command set in specs/014-bottom-nav-settings/quickstart.md
+- [x] T044a Verify Material Design 3 compliance of bottom-nav Settings item (colors, typography, spacing, ripple effects, dark mode contrast) in a PR checklist: specs/014-bottom-nav-settings/Material3-Compliance-Verification.md
+- [x] T045 Run unit test suite for app and presentation navigation changes and capture pass output in test-results/bottom-nav-settings-validation.md
+- [x] T046 Run emulator Playwright bottom-nav settings scenarios and capture pass output in test-results/bottom-nav-settings-validation.md
+- [x] T047 Run existing Playwright regression suite and capture pass output in test-results/bottom-nav-settings-validation.md
+- [x] T048 Run release-hardening verification and capture results in test-results/bottom-nav-settings-validation.md
 
 ---
 
@@ -161,9 +164,9 @@
 
 - Setup tasks T002-T004 are parallelizable.
 - Foundational tests T010-T012 are parallelizable.
-- Playwright story tests T015-T017 and T032-T034 are parallelizable.
+- Playwright story tests T015-T017, T024-T026b, and T032-T034 are parallelizable.
 - Menu-resource removal tasks T036-T039 are parallelizable.
-- Final validation tasks T045-T048 can run in parallel where infrastructure allows.
+- Final validation tasks T045-T049 can run in parallel where infrastructure allows.
 
 ---
 
@@ -196,13 +199,14 @@ Task: T039 [US3] Remove settings top-right settings action in feature/ndi-browse
 
 ### Incremental Delivery
 
-1. Add US2 exit behavior and synchronization safeguards.
+1. Add US2 exit behavior and synchronization safeguards (including rapid-switch and rotation edge cases).
 2. Add US3 top-right affordance removals once bottom-nav path is stable.
-3. Run full polish validation and release hardening checks.
+3. Run Material 3 compliance verification and full polish validation.
+4. Run release hardening checks.
 
 ### Parallel Team Strategy
 
 1. Developer A: foundational model and app navigation wiring (T005-T009).
 2. Developer B: failing tests and Playwright updates per story (T010-T018, T024-T027, T032-T035).
 3. Developer C: presentation/menu cleanup tasks (T036-T043).
-4. Merge and run final validation tasks (T045-T048).
+4. Merge and run final validation tasks (T045-T049).

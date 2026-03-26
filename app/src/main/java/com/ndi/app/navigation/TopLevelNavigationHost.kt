@@ -61,6 +61,7 @@ class TopLevelNavigationHost(
         R.id.homeDashboardFragment -> TopLevelDestination.HOME
         R.id.streamFragment -> TopLevelDestination.STREAM
         R.id.viewFragment -> TopLevelDestination.VIEW
+        R.id.settingsFragment -> TopLevelDestination.SETTINGS
         else -> null
     }
 
@@ -68,6 +69,7 @@ class TopLevelNavigationHost(
         TopLevelDestination.HOME -> R.id.homeDashboardFragment
         TopLevelDestination.STREAM -> R.id.streamFragment
         TopLevelDestination.VIEW -> R.id.viewFragment
+        TopLevelDestination.SETTINGS -> R.id.settingsFragment
     }
 
     companion object {
@@ -76,6 +78,7 @@ class TopLevelNavigationHost(
                 R.id.homeDashboardFragment,
                 R.id.streamFragment,
                 R.id.viewFragment,
+                R.id.settingsFragment,
             )
             return navItemId in topLevelIds
         }

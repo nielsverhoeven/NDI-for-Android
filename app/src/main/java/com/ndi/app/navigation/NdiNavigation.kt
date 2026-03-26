@@ -58,6 +58,7 @@ object NdiNavigation {
         TopLevelDestination.HOME -> R.id.homeDashboardFragment
         TopLevelDestination.STREAM -> R.id.streamFragment
         TopLevelDestination.VIEW -> R.id.viewFragment
+        TopLevelDestination.SETTINGS -> R.id.settingsFragment
     }
 
     // ---- Spec 006: Settings navigation helpers ----

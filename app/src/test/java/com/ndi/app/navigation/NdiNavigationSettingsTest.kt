@@ -78,4 +78,29 @@ class NdiNavigationSettingsTest {
             NdiNavigation.viewerToSettingsActionId(),
         )
     }
+
+    @Test
+    fun settingsDestinationId_mapsToSettingsFragment() {
+        assertEquals(R.id.settingsFragment, NdiNavigation.settingsDestinationId())
+    }
+
+    @Test
+    fun resolveSettingsToggleAction_returnsOpenForNonSettingsDestination() {
+        val toggleAction = NdiNavigation.resolveSettingsToggleAction(R.id.streamFragment)
+        assertEquals(NdiNavigation.SettingsToggleAction.OPEN, toggleAction)
+    }
+
+    @Test
+    fun resolveSettingsToggleAction_returnsCloseForSettingsDestination() {
+        val toggleAction = NdiNavigation.resolveSettingsToggleAction(R.id.settingsFragment)
+        assertEquals(NdiNavigation.SettingsToggleAction.CLOSE, toggleAction)
+    }
+
+    @Test
+    fun topLevelDestinationId_mapsSettingsToSettingsFragment() {
+        assertEquals(
+            R.id.settingsFragment,
+            NdiNavigation.topLevelDestinationId(com.ndi.core.model.navigation.TopLevelDestination.SETTINGS),
+        )
+    }
 }

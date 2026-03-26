@@ -44,7 +44,6 @@ class SettingsFragment : Fragment() {
             onSave = viewModel::onSaveSettings,
             onDiscoveryChanged = viewModel::onDiscoveryServerChanged,
             onDeveloperModeToggled = viewModel::onDeveloperModeToggled,
-            onSettingsToggle = viewModel::onSettingsTogglePressed,
         )
         return fragmentBinding.root
     }
@@ -100,18 +99,9 @@ class SettingsScreen(
     onSave: () -> Unit,
     onDiscoveryChanged: (String) -> Unit,
     onDeveloperModeToggled: (Boolean) -> Unit,
-    onSettingsToggle: () -> Unit,
 ) {
     init {
         binding.settingsTopAppBar.inflateMenu(R.menu.settings_menu)
-        binding.settingsTopAppBar.setOnMenuItemClickListener { item ->
-            if (item.itemId == R.id.action_settings) {
-                onSettingsToggle()
-                true
-            } else {
-                false
-            }
-        }
         binding.saveSettingsButton.setOnClickListener { onSave() }
         binding.developerModeSwitch.setOnCheckedChangeListener { _, isChecked ->
             onDeveloperModeToggled(isChecked)

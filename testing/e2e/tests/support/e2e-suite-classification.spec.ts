@@ -8,6 +8,7 @@ export const NEW_SETTINGS_SPECS = [
   "tests/settings-invalid-discovery-validation.spec.ts",
   "tests/settings-discovery-fallback.spec.ts",
   "tests/settings-discovery-config.spec.ts",
+  "tests/bottom-nav-settings.spec.ts",
 ] as const;
 
 export const EXISTING_REGRESSION_SPECS = [

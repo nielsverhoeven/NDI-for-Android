@@ -5,7 +5,6 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import androidx.core.net.toUri
 import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
@@ -53,14 +52,6 @@ class ViewerFragment : Fragment() {
             runCatching { findNavController().popBackStack() }
         }
         fragmentBinding.viewerTopAppBar.inflateMenu(R.menu.viewer_menu)
-        fragmentBinding.viewerTopAppBar.setOnMenuItemClickListener { item ->
-            if (item.itemId == R.id.action_settings) {
-                viewModel.onSettingsTogglePressed()
-                true
-            } else {
-                false
-            }
-        }
         return fragmentBinding.root
     }
 
@@ -71,13 +62,6 @@ class ViewerFragment : Fragment() {
 
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                launch {
-                    viewModel.settingsToggleEvents.collect {
-                        runCatching {
-                            findNavController().navigate("ndi://settings".toUri())
-                        }
-                    }
-                }
                 val overlayFlow = ViewerDependencies.overlayStateFlowOrNull()
                 val stateFlow = if (overlayFlow == null) {
                     viewModel.uiState
@@ -166,6 +150,5 @@ class ViewerFragment : Fragment() {
 
     override fun onResume() {
         super.onResume()
-        viewModel.onSettingsToggleSettled()
     }
 }

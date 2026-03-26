@@ -33,14 +33,26 @@ Replace top-right settings entry affordances with a dedicated Settings bottom na
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\verify-android-prereqs.ps1
 .\gradlew.bat --version
-.\gradlew.bat :app:testDebugUnitTest :feature:ndi-browser:presentation:testDebugUnitTest
-.\gradlew.bat :app:assembleDebug :app:verifyReleaseHardening
+.\gradlew.bat :app:testDebugUnitTest --no-daemon
+.\gradlew.bat :feature:ndi-browser:presentation:testDebugUnitTest --no-daemon
 ```
 
-For Playwright validation:
+For focused Playwright bottom-nav settings validation (US1/US2/US3):
+
+```powershell
+npx playwright test tests/settings-navigation-source-list.spec.ts tests/settings-navigation-viewer.spec.ts tests/settings-navigation-output.spec.ts --project=android-primary
+```
+
+For Playwright regression gate:
 
 ```powershell
 npm run test:pr:primary
+```
+
+For release hardening gate:
+
+```powershell
+.\gradlew.bat :app:assembleDebug :app:verifyReleaseHardening --no-daemon
 ```
 
 ## Expected Evidence

@@ -34,6 +34,7 @@ sealed interface TopLevelNavEvent {
     object NavigateToHome : TopLevelNavEvent
     object NavigateToStream : TopLevelNavEvent
     object NavigateToView : TopLevelNavEvent
+    object NavigateToSettings : TopLevelNavEvent
     data class NavigationFailure(val reasonCode: String) : TopLevelNavEvent
 }
 
@@ -158,6 +159,7 @@ class TopLevelNavViewModel(
             TopLevelDestination.HOME -> TopLevelNavEvent.NavigateToHome
             TopLevelDestination.STREAM -> TopLevelNavEvent.NavigateToStream
             TopLevelDestination.VIEW -> TopLevelNavEvent.NavigateToView
+            TopLevelDestination.SETTINGS -> TopLevelNavEvent.NavigateToSettings
         }
         _events.emit(event)
     }
@@ -178,6 +180,11 @@ class TopLevelNavViewModel(
                 destination = TopLevelDestination.VIEW,
                 iconResId = R.drawable.ic_nav_view,
                 selected = selectedDestination == TopLevelDestination.VIEW,
+            ),
+            TopLevelDestinationItem(
+                destination = TopLevelDestination.SETTINGS,
+                iconResId = R.drawable.ic_nav_settings,
+                selected = selectedDestination == TopLevelDestination.SETTINGS,
             ),
         )
     }
