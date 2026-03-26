@@ -93,10 +93,11 @@ Pipeline stages:
 ./testing/e2e/scripts/start-relay-server.ps1 -Action health
 ```
 
-### Missing NDI bridge APK
+### Missing NDI bridge artifact
 
 1. Build with `./gradlew.bat :ndi:sdk-bridge:assembleRelease`.
-2. Confirm file exists at `ndi/sdk-bridge/build/outputs/apk/release/ndi-sdk-bridge-release.apk`.
+2. For modern library output, confirm at `ndi/sdk-bridge/build/outputs/aar/sdk-bridge-release.aar`.
+3. If APK is required by legacy workflows, add an app wrapper or use the prebuilt `ndi-sdk-bridge-release.apk` artifact path for emulator install.
 
 ### Artifact collection failed
 

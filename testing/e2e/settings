@@ -1,0 +1,8 @@
+Listing tests:
+  [android-primary] › settings-navigation-source-list.spec.ts:6:5 › @settings @us1 source-list -> settings -> back
+  [android-primary] › support\android-ui-driver.spec.ts:25:5 › @settings @us1 source-list settings candidates prioritize settings affordance
+  [android-matrix-api34] › settings-navigation-source-list.spec.ts:6:5 › @settings @us1 source-list -> settings -> back
+  [android-matrix-api34] › support\android-ui-driver.spec.ts:25:5 › @settings @us1 source-list settings candidates prioritize settings affordance
+  [android-matrix-api35] › settings-navigation-source-list.spec.ts:6:5 › @settings @us1 source-list -> settings -> back
+  [android-matrix-api35] › support\android-ui-driver.spec.ts:25:5 › @settings @us1 source-list settings candidates prioritize settings affordance
+Total: 6 tests in 2 files

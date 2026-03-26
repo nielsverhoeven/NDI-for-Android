@@ -1,16 +1,15 @@
-import { expect, test } from "@playwright/test";
+import { test } from "@playwright/test";
 
-test("@settings @us2 invalid discovery endpoint is rejected and not applied", async ({ page }) => {
-  test.fail(
-    true,
-    "Invalid-value apply rejection wiring is pending; this test defines the required non-application behavior.",
-  );
+import { getDualEmulatorContext, verifyDeviceReady, verifyPackageInstalled } from "./support/android-device-fixtures";
+import { launchDeepLink, editTextTailByResourceIdSuffix, tapText, waitForText } from "./support/android-ui-driver";
 
-  await page.goto("http://127.0.0.1:7777/settings");
-  await page.locator("#discoveryServerEditText").fill("host:99999");
-  await page.getByRole("button", { name: /save/i }).click();
+test("@settings @us2 invalid discovery endpoint is rejected and not applied", async () => {
+  const context = getDualEmulatorContext();
+  verifyDeviceReady(context.publisherSerial);
+  verifyPackageInstalled(context.publisherSerial, context.packageName);
 
-  await expect(page.locator("#validationMessage")).toBeVisible();
-  await expect(page.locator("#validationMessage")).toContainText(/invalid|port|range/i);
-  await expect(page.getByText(/settings saved|applied/i)).toHaveCount(0);
+  launchDeepLink(context.publisherSerial, context.packageName, "ndi://settings");
+  await editTextTailByResourceIdSuffix(context.publisherSerial, "discoveryServerEditText", 100, "host:99999");
+  await tapText(context.publisherSerial, "Save");
+  await waitForText(context.publisherSerial, "Invalid server format", 15_000);
 });

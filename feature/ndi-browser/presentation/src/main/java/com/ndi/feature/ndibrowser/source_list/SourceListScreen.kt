@@ -130,6 +130,7 @@ class SourceListScreen(
     init {
         binding.sourceRecyclerView.adapter = adapter
         binding.refreshButton.setOnClickListener { onManualRefresh() }
+        binding.settingsButton.setOnClickListener { onSettingsClicked() }
         binding.topAppBar.inflateMenu(R.menu.source_list_menu)
         binding.topAppBar.setOnMenuItemClickListener { item ->
             if (item.itemId == R.id.action_settings) {

@@ -6,10 +6,34 @@ Android workflows.
 ## Required Inputs
 
 - Two running Android emulators **with GUI visible** (non-headless) and distinct serials
-- Debug app installed on both emulators
+- Debug app APK available at `app/build/outputs/apk/debug/app-debug.apk` (or override via `APP_APK_PATH`)
 - `adb` available on `PATH`
 
 Default package: `com.ndi.app.debug`
+
+## Mandatory Pre-Install Gate
+
+Before any Playwright tests begin, the harness enforces a pre-flight app installation gate:
+
+1. Build (CI): `./gradlew.bat :app:assembleDebug`
+2. Wait for each emulator to become install-ready (within the 60-second per-device budget)
+3. Install with replacement semantics (`adb install -r`)
+4. Verify installed `versionName+versionCode`
+5. Verify the app can launch (`am start -W`)
+
+Runtime report path:
+
+- `testing/e2e/artifacts/runtime/preinstall-report.json`
+
+Status meanings:
+
+- `PASS`: readiness, install, version match, and launch verification succeeded
+- `UNREACHABLE`: emulator not reachable via ADB
+- `NOT_READY`: emulator reachable but not boot-ready before deadline
+- `INSTALL_FAILED`: install command failed
+- `VERSION_MISMATCH`: installed version differs from expected artifact
+- `LAUNCH_FAILED`: install succeeded but launch verification failed
+- `TIMEOUT`: readiness/install/verification exceeded the per-device budget
 
 ## Environment Variables
 

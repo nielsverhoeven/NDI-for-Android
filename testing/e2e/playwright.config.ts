@@ -21,17 +21,17 @@ export default defineConfig({
     {
       name: "android-primary",
       testMatch: /.*\.spec\.ts/,
-      grep: /@dual-emulator|@us1|@us2|@us3|@settings|@latency/,
+      grep: /@dual-emulator|@us1|@us2|@us3|@settings|@latency|@preinstall/,
     },
     {
       name: "android-matrix-api34",
       testMatch: /.*\.spec\.ts/,
-      grep: /@dual-emulator|@us1|@us2|@us3|@settings|@latency/,
+      grep: /@dual-emulator|@us1|@us2|@us3|@settings|@latency|@preinstall/,
     },
     {
       name: "android-matrix-api35",
       testMatch: /.*\.spec\.ts/,
-      grep: /@dual-emulator|@us1|@us2|@us3|@settings|@latency/,
+      grep: /@dual-emulator|@us1|@us2|@us3|@settings|@latency|@preinstall/,
     },
   ],
 });

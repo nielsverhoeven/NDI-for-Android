@@ -1,22 +1,24 @@
 import { test } from "@playwright/test";
 import { assertWithinThreshold, TIMING_THRESHOLDS } from "./support/timingAssertions";
 
-test.describe("Settings Discovery Fallback", () => {
-  test("@settings @us2 shows fallback warning within 3s after unreachable endpoint is saved", async ({ page }) => {
-    test.fail(
-      true,
-      "Emulator fallback wiring is pending; this spec documents <=3s warning requirements.",
-    );
+import { getDualEmulatorContext, verifyDeviceReady, verifyPackageInstalled } from "./support/android-device-fixtures";
+import { launchDeepLink, editTextTailByResourceIdSuffix, tapText, waitForTextContaining } from "./support/android-ui-driver";
 
-    await page.goto("http://127.0.0.1:7777/settings");
-    await page.locator("#discoveryServerEditText").fill("unreachable.ndi.invalid:5960");
-    await page.getByRole("button", { name: /save/i }).click();
+test.describe("Settings Discovery Fallback", () => {
+  test("@settings @us2 shows fallback warning within 3s after unreachable endpoint is saved", async () => {
+    const context = getDualEmulatorContext();
+    verifyDeviceReady(context.publisherSerial);
+    verifyPackageInstalled(context.publisherSerial, context.packageName);
+
+    launchDeepLink(context.publisherSerial, context.packageName, "ndi://settings");
+    await editTextTailByResourceIdSuffix(context.publisherSerial, "discoveryServerEditText", 100, "unreachable.ndi.invalid:5960");
+    await tapText(context.publisherSerial, "Save");
 
     await assertWithinThreshold(async () => {
-      await page.getByText(/falling back to default|fallback/i).waitFor({ state: "visible" });
+      await waitForTextContaining(context.publisherSerial, "fallback", 15_000);
     }, TIMING_THRESHOLDS.fallbackWarning, "discovery fallback warning latency");
 
-    await page.getByRole("button", { name: /save/i }).click();
-    await page.getByText(/fallback|unreachable|default/i).waitFor({ state: "visible" });
+    await tapText(context.publisherSerial, "Save");
+    await waitForTextContaining(context.publisherSerial, "fallback", 15_000);
   });
 });
