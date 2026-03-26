@@ -6,8 +6,11 @@ import androidx.lifecycle.viewModelScope
 import com.ndi.core.model.NdiDiscoveryEndpoint
 import com.ndi.core.model.NdiSettingsSnapshot
 import com.ndi.feature.ndibrowser.domain.repository.NdiSettingsRepository
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
@@ -17,6 +20,10 @@ class SettingsViewModel(
 
     private val _uiState = MutableStateFlow(SettingsUiState())
     val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
+
+    private val _closeSettingsEvents = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    val closeSettingsEvents: SharedFlow<Unit> = _closeSettingsEvents.asSharedFlow()
+    private var closeSettingsInFlight: Boolean = false
 
     init {
         viewModelScope.launch {
@@ -64,6 +71,16 @@ class SettingsViewModel(
                 ),
             )
         }
+    }
+
+    fun onSettingsTogglePressed() {
+        if (closeSettingsInFlight) return
+        closeSettingsInFlight = true
+        _closeSettingsEvents.tryEmit(Unit)
+    }
+
+    fun onCloseSettingsSettled() {
+        closeSettingsInFlight = false
     }
 
     private fun validateDiscoveryInput(input: String): String? {

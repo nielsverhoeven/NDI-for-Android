@@ -14,11 +14,14 @@ function Reset-EmulatorState {
 
     $cleared = @()
     foreach ($pkg in $Packages) {
-        Invoke-Adb -Arguments @("-s", $EmulatorSerial, "shell", "pm", "clear", $pkg) -AllowFailure | Out-Null
-        $cleared += $pkg
+        $packagePath = Invoke-Adb -Arguments @("-s", $EmulatorSerial, "shell", "pm", "path", $pkg) -AllowFailure
+        if ($packagePath -match "^package:") {
+            Invoke-Adb -Arguments @("-s", $EmulatorSerial, "shell", "pm", "clear", $pkg) -AllowFailure | Out-Null
+            Invoke-Adb -Arguments @("-s", $EmulatorSerial, "shell", "am", "force-stop", $pkg) -AllowFailure | Out-Null
+            $cleared += $pkg
+        }
     }
 
-    Invoke-Adb -Arguments @("-s", $EmulatorSerial, "shell", "am", "force-stop", "com.ndi.app") -AllowFailure | Out-Null
     return [PSCustomObject]@{
         emulatorId = $EmulatorSerial
         packagesCleared = $cleared

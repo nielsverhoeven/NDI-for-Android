@@ -17,16 +17,28 @@
 - Bottom sheet dialog: Rejected because it would bypass the current navigation contract and duplicate an existing settings feature surface.
 - Activity-level dialog/overlay: Rejected because it would add another UI architecture pattern to a fragment-driven app.
 
-### Task 2: Determine how to satisfy “always visible in the top right corner”
+### Task 2: Determine how to satisfy “always visible in the top right corner” and explicit gear/cog iconography
 
-**Decision**: Promote each `action_settings` toolbar item from `showAsAction="ifRoom"` to `showAsAction="always"`, and add an equivalent top app bar gear action to the settings screen itself.
+**Decision**: Promote each `action_settings` toolbar item from `showAsAction="ifRoom"` to `showAsAction="always"`, enforce gear/cog icon assets and labels across all in-scope surfaces, and add an equivalent top app bar gear action to the settings screen itself.
 
-**Rationale**: The existing menus already use a gear icon but allow overflow placement. Changing to an always-on action meets the visibility requirement on source list, viewer, and output screens. The settings screen currently has no top app bar, so adding a top app bar with the same gear affordance is the simplest way to keep the icon visible while settings is open.
+**Rationale**: The refined specification requires both persistent top-right visibility and explicit gear/cog iconography. Standardizing icon resources/content descriptions prevents accidental wrench/manage substitutions and keeps accessibility/automation stable. The settings screen currently has no top app bar, so adding a top app bar with the same gear affordance is the simplest way to keep the icon visible while settings is open.
 
 **Alternatives considered**:
 
 - Global activity toolbar: Rejected because the app currently uses fragment-owned top app bars.
 - Floating overlay button: Rejected because it would break Material top app bar conventions and complicate layout handling.
+- Wrench/manage icon variants: Rejected because the spec explicitly requires gear/cog iconography and forbids alternate settings metaphors for this affordance.
+
+### Task 2b: Ensure a visible settings header/title while settings is open
+
+**Decision**: Add a visible top app bar title on the settings screen (for example, "Settings") while preserving the top-right gear affordance.
+
+**Rationale**: The updated requirements explicitly call for a visible settings header/title while open. A Material top app bar title is the most direct, consistent, and accessible way to satisfy this without introducing custom chrome.
+
+**Alternatives considered**:
+
+- Header text inside body content only: Rejected because it can scroll away and does not satisfy a stable top-level screen heading requirement.
+- Icon-only toolbar with no title: Rejected because the spec explicitly requires a visible settings header/title.
 
 ### Task 3: Define the toggle behavior without violating navigation architecture
 

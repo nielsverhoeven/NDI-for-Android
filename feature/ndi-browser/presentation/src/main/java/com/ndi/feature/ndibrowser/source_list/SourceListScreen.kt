@@ -10,11 +10,9 @@ import androidx.fragment.app.viewModels
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
-import androidx.navigation.fragment.findNavController
+import androidx.core.net.toUri
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
-import androidx.core.net.toUri
-import androidx.navigation.NavDeepLinkRequest
 import androidx.navigation.fragment.findNavController
 import com.ndi.feature.ndibrowser.settings.DeveloperOverlayRenderer
 import com.ndi.feature.ndibrowser.presentation.R
@@ -48,13 +46,7 @@ class SourceListFragment : Fragment() {
             onManualRefresh = viewModel::onManualRefresh,
             onSourceClicked = viewModel::onSourceSelected,
             onOutputClicked = viewModel::onOutputRequested,
-            onSettingsClicked = {
-                runCatching {
-                    findNavController().navigate(
-                        NavDeepLinkRequest.Builder.fromUri("ndi://settings".toUri()).build(),
-                    )
-                }
-            },
+            onSettingsClicked = viewModel::onSettingsTogglePressed,
         )
         return fragmentBinding.root
     }
@@ -85,6 +77,13 @@ class SourceListFragment : Fragment() {
                         }
                     }
                 }
+                launch {
+                    viewModel.settingsToggleEvents.collect {
+                        runCatching {
+                            findNavController().navigate("ndi://settings".toUri())
+                        }
+                    }
+                }
                 SourceListDependencies.fallbackWarningFlowOrNull()?.let { fallbackWarningFlow ->
                     launch {
                         fallbackWarningFlow.collect(viewModel::onFallbackWarningChanged)
@@ -96,6 +95,7 @@ class SourceListFragment : Fragment() {
 
     override fun onStart() {
         super.onStart()
+        viewModel.onSettingsToggleSettled()
         viewModel.onScreenVisible()
     }
 
@@ -130,7 +130,6 @@ class SourceListScreen(
     init {
         binding.sourceRecyclerView.adapter = adapter
         binding.refreshButton.setOnClickListener { onManualRefresh() }
-        binding.settingsButton.setOnClickListener { onSettingsClicked() }
         binding.topAppBar.inflateMenu(R.menu.source_list_menu)
         binding.topAppBar.setOnMenuItemClickListener { item ->
             if (item.itemId == R.id.action_settings) {

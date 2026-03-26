@@ -44,6 +44,12 @@ test("@settings @us3 suite classification: settings suite does not overlap regre
   expect(overlap).toEqual([]);
 });
 
+test("@settings @us1 suite classification: toggle entry specs are present", () => {
+  expect(NEW_SETTINGS_SPECS).toContain("tests/settings-navigation-source-list.spec.ts");
+  expect(NEW_SETTINGS_SPECS).toContain("tests/settings-navigation-viewer.spec.ts");
+  expect(NEW_SETTINGS_SPECS).toContain("tests/settings-navigation-output.spec.ts");
+});
+
 test("@latency @us1 suite classification: latency specs are unique", () => {
   expect(hasDuplicates(LATENCY_SCENARIO_SPECS)).toBeFalsy();
 });

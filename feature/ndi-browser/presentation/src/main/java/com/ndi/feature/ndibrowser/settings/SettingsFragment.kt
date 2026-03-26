@@ -11,6 +11,8 @@ import androidx.fragment.app.viewModels
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import androidx.navigation.fragment.findNavController
+import com.ndi.feature.ndibrowser.presentation.R
 import com.ndi.core.model.TelemetryEvent
 import com.ndi.feature.ndibrowser.presentation.databinding.FragmentSettingsBinding
 import kotlinx.coroutines.launch
@@ -42,6 +44,7 @@ class SettingsFragment : Fragment() {
             onSave = viewModel::onSaveSettings,
             onDiscoveryChanged = viewModel::onDiscoveryServerChanged,
             onDeveloperModeToggled = viewModel::onDeveloperModeToggled,
+            onSettingsToggle = viewModel::onSettingsTogglePressed,
         )
         return fragmentBinding.root
     }
@@ -53,12 +56,21 @@ class SettingsFragment : Fragment() {
                 launch {
                     viewModel.uiState.collect { screen.render(it) }
                 }
+                launch {
+                    viewModel.closeSettingsEvents.collect {
+                        val popped = runCatching { findNavController().popBackStack() }.getOrDefault(false)
+                        if (!popped) {
+                            SettingsDependencies.settingsNavigationBackProvider?.invoke()
+                        }
+                    }
+                }
             }
         }
     }
 
     override fun onResume() {
         super.onResume()
+        viewModel.onCloseSettingsSettled()
         SettingsDependencies.telemetryEmitter.emit(
             TelemetryEvent(
                 name = TelemetryEvent.SETTINGS_OPENED,
@@ -88,8 +100,18 @@ class SettingsScreen(
     onSave: () -> Unit,
     onDiscoveryChanged: (String) -> Unit,
     onDeveloperModeToggled: (Boolean) -> Unit,
+    onSettingsToggle: () -> Unit,
 ) {
     init {
+        binding.settingsTopAppBar.inflateMenu(R.menu.settings_menu)
+        binding.settingsTopAppBar.setOnMenuItemClickListener { item ->
+            if (item.itemId == R.id.action_settings) {
+                onSettingsToggle()
+                true
+            } else {
+                false
+            }
+        }
         binding.saveSettingsButton.setOnClickListener { onSave() }
         binding.developerModeSwitch.setOnCheckedChangeListener { _, isChecked ->
             onDeveloperModeToggled(isChecked)

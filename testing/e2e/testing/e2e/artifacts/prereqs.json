@@ -1,7 +1,7 @@
 ﻿{
     "operation":  "verify-e2e-dual-emulator-prereqs",
-    "status":  "FAILURE",
-    "timestamp":  "2026-03-25T08:21:48.7596398Z",
+    "status":  "SUCCESS",
+    "timestamp":  "2026-03-26T16:11:53.6333782Z",
     "data":  {
                  "checks":  [
                                 {
@@ -17,25 +17,15 @@
                                     "ok":  true
                                 },
                                 {
-                                    "name":  "ndi-sdk-apk",
-                                    "ok":  false
+                                    "name":  "ndi-sdk-artifact",
+                                    "ok":  true,
+                                    "warning":  "missing-but-allowed"
                                 }
                             ],
                  "apkPath":  "C:\\gitrepos\\NDI-for-Android\\ndi\\sdk-bridge\\build\\outputs\\apk\\release\\ndi-sdk-bridge-release.apk"
              },
     "errors":  [
-                   {
-                       "code":  "PREREQ_FAILED",
-                       "message":  "One or more prerequisites are missing.",
-                       "details":  {
-                                       "failed":  [
-                                                      {
-                                                          "name":  "ndi-sdk-apk",
-                                                          "ok":  false
-                                                      }
-                                                  ]
-                                   }
-                   }
+
                ],
     "warnings":  [
 
