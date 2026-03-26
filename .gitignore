@@ -26,3 +26,4 @@ externalNativeBuild/
 captures/
 /.kotlin/
 exports/*.apk
+testing/e2e/testing/e2e/artifacts/runtime/relay-metrics.json
