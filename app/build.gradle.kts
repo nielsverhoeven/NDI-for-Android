@@ -54,6 +54,41 @@ kotlin {
     jvmToolchain(21)
 }
 
+afterEvaluate {
+    val androidExtension = project.extensions.getByType<com.android.build.api.dsl.ApplicationExtension>()
+    val versionName = androidExtension.defaultConfig.versionName ?: "dev"
+
+    val renameDebugApk = tasks.register("renameDebugApk") {
+        doLast {
+            val apkDir = layout.buildDirectory.dir("outputs/apk/debug").get().asFile
+            val originalApk = File(apkDir, "app-debug.apk")
+            val renamedApk = File(apkDir, "ndi-for-android-${versionName}.apk")
+            if (originalApk.exists()) {
+                originalApk.renameTo(renamedApk)
+            }
+        }
+    }
+
+    val renameReleaseApk = tasks.register("renameReleaseApk") {
+        doLast {
+            val apkDir = layout.buildDirectory.dir("outputs/apk/release").get().asFile
+            val originalApk = File(apkDir, "app-release.apk")
+            val renamedApk = File(apkDir, "ndi-for-android-${versionName}.apk")
+            if (originalApk.exists()) {
+                originalApk.renameTo(renamedApk)
+            }
+        }
+    }
+
+    tasks.named("assembleDebug") {
+        finalizedBy(renameDebugApk)
+    }
+
+    tasks.named("assembleRelease") {
+        finalizedBy(renameReleaseApk)
+    }
+}
+
 tasks.register("verifyReleaseHardening") {
     group = "verification"
     description = "Ensures release minification and resource shrinking remain enabled."
