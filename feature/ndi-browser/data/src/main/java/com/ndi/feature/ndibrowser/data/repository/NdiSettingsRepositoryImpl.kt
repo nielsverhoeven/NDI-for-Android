@@ -3,6 +3,7 @@ package com.ndi.feature.ndibrowser.data.repository
 import com.ndi.core.database.SettingsPreferenceDao
 import com.ndi.core.database.SettingsPreferenceEntity
 import com.ndi.core.model.NdiSettingsSnapshot
+import com.ndi.core.model.NdiThemeMode
 import com.ndi.feature.ndibrowser.domain.repository.NdiSettingsRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -42,6 +43,8 @@ class NdiSettingsRepositoryImpl(
     private fun defaultSnapshot() = NdiSettingsSnapshot(
         discoveryServerInput = null,
         developerModeEnabled = false,
+        themeMode = NdiThemeMode.SYSTEM,
+        accentColorId = "accent_teal",
         updatedAtEpochMillis = 0L,
     )
 }
@@ -49,6 +52,8 @@ class NdiSettingsRepositoryImpl(
 private fun SettingsPreferenceEntity.toSnapshot(): NdiSettingsSnapshot = NdiSettingsSnapshot(
     discoveryServerInput = discoveryServerInput,
     developerModeEnabled = developerModeEnabled,
+    themeMode = runCatching { NdiThemeMode.valueOf(themeMode) }.getOrDefault(NdiThemeMode.SYSTEM),
+    accentColorId = accentColorId,
     updatedAtEpochMillis = updatedAtEpochMillis,
 )
 
@@ -56,5 +61,7 @@ private fun NdiSettingsSnapshot.toEntity(): SettingsPreferenceEntity = SettingsP
     id = 1,
     discoveryServerInput = discoveryServerInput,
     developerModeEnabled = developerModeEnabled,
+    themeMode = themeMode.name,
+    accentColorId = accentColorId,
     updatedAtEpochMillis = updatedAtEpochMillis,
 )

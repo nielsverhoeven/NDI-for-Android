@@ -1,6 +1,7 @@
 package com.ndi.feature.ndibrowser.settings
 
 import android.os.Bundle
+import android.net.Uri
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -44,6 +45,9 @@ class SettingsFragment : Fragment() {
             onSave = viewModel::onSaveSettings,
             onDiscoveryChanged = viewModel::onDiscoveryServerChanged,
             onDeveloperModeToggled = viewModel::onDeveloperModeToggled,
+            onOpenThemeEditor = {
+                findNavController().navigate(Uri.parse("ndi://theme-editor"))
+            },
         )
         return fragmentBinding.root
     }
@@ -99,10 +103,12 @@ class SettingsScreen(
     onSave: () -> Unit,
     onDiscoveryChanged: (String) -> Unit,
     onDeveloperModeToggled: (Boolean) -> Unit,
+    onOpenThemeEditor: () -> Unit,
 ) {
     init {
         binding.settingsTopAppBar.inflateMenu(R.menu.settings_menu)
         binding.saveSettingsButton.setOnClickListener { onSave() }
+        binding.openThemeEditorButton.setOnClickListener { onOpenThemeEditor() }
         binding.developerModeSwitch.setOnCheckedChangeListener { _, isChecked ->
             onDeveloperModeToggled(isChecked)
         }

@@ -93,7 +93,15 @@ class SettingsViewModelTest {
 
     @Test
     fun onSaveSettings_validState_callsRepositorySave() = runTest(scheduler) {
-        val repository = FakeSettingsRepository()
+        val repository = FakeSettingsRepository(
+            NdiSettingsSnapshot(
+                discoveryServerInput = null,
+                developerModeEnabled = false,
+                themeMode = com.ndi.core.model.NdiThemeMode.DARK,
+                accentColorId = "accent_red",
+                updatedAtEpochMillis = 0L,
+            ),
+        )
         val viewModel = SettingsViewModel(repository)
 
         viewModel.onDiscoveryServerChanged("ndi-server.local")
@@ -104,6 +112,8 @@ class SettingsViewModelTest {
         assertEquals(1, repository.savedSnapshots.size)
         assertEquals("ndi-server.local", repository.savedSnapshots.first().discoveryServerInput)
         assertTrue(repository.savedSnapshots.first().developerModeEnabled)
+        assertEquals(com.ndi.core.model.NdiThemeMode.DARK, repository.savedSnapshots.first().themeMode)
+        assertEquals("accent_red", repository.savedSnapshots.first().accentColorId)
     }
 
     @Test
@@ -154,14 +164,14 @@ class SettingsViewModelTest {
     }
 }
 
-private class FakeSettingsRepository : NdiSettingsRepository {
-    private val flow = MutableStateFlow(
-        NdiSettingsSnapshot(
-            discoveryServerInput = null,
-            developerModeEnabled = false,
-            updatedAtEpochMillis = 0L,
-        ),
-    )
+private class FakeSettingsRepository(
+    initialSnapshot: NdiSettingsSnapshot = NdiSettingsSnapshot(
+        discoveryServerInput = null,
+        developerModeEnabled = false,
+        updatedAtEpochMillis = 0L,
+    ),
+) : NdiSettingsRepository {
+    private val flow = MutableStateFlow(initialSnapshot)
 
     val savedSnapshots = mutableListOf<NdiSettingsSnapshot>()
 

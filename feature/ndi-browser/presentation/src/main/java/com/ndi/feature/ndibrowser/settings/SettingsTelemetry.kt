@@ -1,6 +1,7 @@
 package com.ndi.feature.ndibrowser.settings
 
 import com.ndi.core.model.NdiOverlayMode
+import com.ndi.core.model.NdiThemeMode
 import com.ndi.core.model.TelemetryEvent
 
 object SettingsTelemetry {
@@ -61,6 +62,22 @@ object SettingsTelemetry {
             name = TelemetryEvent.OVERLAY_LOG_REDACTION_APPLIED,
             timestampEpochMillis = System.currentTimeMillis(),
             attributes = mapOf("linesRedacted" to linesRedacted.toString()),
+        )
+    }
+
+    fun themeModeSelected(themeMode: NdiThemeMode): TelemetryEvent {
+        return TelemetryEvent(
+            name = TelemetryEvent.THEME_MODE_SELECTED,
+            timestampEpochMillis = System.currentTimeMillis(),
+            attributes = mapOf("themeMode" to themeMode.name),
+        )
+    }
+
+    fun themeAccentSelected(accentColorId: String): TelemetryEvent {
+        return TelemetryEvent(
+            name = TelemetryEvent.THEME_ACCENT_SELECTED,
+            timestampEpochMillis = System.currentTimeMillis(),
+            attributes = mapOf("accentColorId" to accentColorId),
         )
     }
 }

@@ -130,18 +130,23 @@ class ViewerFragment : Fragment() {
                         }.getOrNull()
                     }
                 } else {
-                    val frame = viewModel.getLatestVideoFrame()
-                    if (frame == null) {
-                        null
-                    } else {
-                        runCatching {
-                            android.graphics.Bitmap.createBitmap(
-                                frame.argbPixels,
-                                frame.width,
-                                frame.height,
-                                android.graphics.Bitmap.Config.ARGB_8888,
-                            )
-                        }.getOrNull()
+                    // getLatestVideoFrame() calls native JNI methods (nativeGetLatestReceiverFrame*).
+                    // Running on the main thread causes ANR when stopReceiver() concurrently holds the
+                    // native NDI mutex on an IO thread. Always fetch frames on the IO dispatcher.
+                    withContext(Dispatchers.IO) {
+                        val frame = viewModel.getLatestVideoFrame()
+                        if (frame == null) {
+                            null
+                        } else {
+                            runCatching {
+                                android.graphics.Bitmap.createBitmap(
+                                    frame.argbPixels,
+                                    frame.width,
+                                    frame.height,
+                                    android.graphics.Bitmap.Config.ARGB_8888,
+                                )
+                            }.getOrNull()
+                        }
                     }
                 }
 

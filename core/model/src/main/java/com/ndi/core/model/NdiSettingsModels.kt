@@ -3,8 +3,12 @@ package com.ndi.core.model
 data class NdiSettingsSnapshot(
     val discoveryServerInput: String?,
     val developerModeEnabled: Boolean,
+    val themeMode: NdiThemeMode = NdiThemeMode.SYSTEM,
+    val accentColorId: String = "accent_teal",
     val updatedAtEpochMillis: Long,
 )
+
+enum class NdiThemeMode { LIGHT, DARK, SYSTEM }
 
 data class NdiDiscoveryEndpoint(
     val host: String,

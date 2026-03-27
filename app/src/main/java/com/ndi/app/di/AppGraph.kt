@@ -26,6 +26,11 @@ import com.ndi.feature.ndibrowser.domain.repository.StreamContinuityRepository
 import com.ndi.feature.ndibrowser.domain.repository.TopLevelNavigationRepository
 import com.ndi.feature.ndibrowser.domain.repository.UserSelectionRepository
 import com.ndi.feature.ndibrowser.domain.repository.ViewContinuityRepository
+import com.ndi.feature.themeeditor.data.repository.ThemeEditorRepositoryImpl
+import com.ndi.feature.themeeditor.domain.repository.ThemeEditorRepository
+import com.ndi.feature.themeeditor.ThemeEditorDependencies
+import com.ndi.feature.themeeditor.ThemeEditorTelemetryEmitter
+import com.ndi.app.theme.AppThemeCoordinator
 import com.ndi.app.navigation.NdiNavigation
 import com.ndi.feature.ndibrowser.data.repository.DeveloperDiagnosticsRepositoryImpl
 import com.ndi.feature.ndibrowser.data.repository.NdiDiscoveryConfigRepositoryImpl
@@ -66,6 +71,14 @@ class AppGraph private constructor(context: Context) {
 
     val settingsRepository: NdiSettingsRepository = NdiSettingsRepositoryImpl(
         settingsDao = database.settingsPreferenceDao(),
+    )
+
+    val themeEditorRepository: ThemeEditorRepository = ThemeEditorRepositoryImpl(
+        settingsDao = database.settingsPreferenceDao(),
+    )
+
+    val appThemeCoordinator: AppThemeCoordinator = AppThemeCoordinator(
+        themeEditorRepository = themeEditorRepository,
     )
 
     val discoveryConfigRepository: NdiDiscoveryConfigRepository = NdiDiscoveryConfigRepositoryImpl(
@@ -190,6 +203,11 @@ class AppGraph private constructor(context: Context) {
         SettingsDependencies.settingsRepositoryProvider = { settingsRepository }
         SettingsDependencies.developerDiagnosticsRepositoryProvider = { developerDiagnosticsRepository }
         SettingsDependencies.overlayStateProvider = { overlayDisplayStateFlow }
+
+        ThemeEditorDependencies.themeEditorRepositoryProvider = { themeEditorRepository }
+        ThemeEditorDependencies.telemetryEmitter = ThemeEditorTelemetryEmitter { event ->
+            SettingsDependencies.telemetryEmitter.emit(event)
+        }
     }
 
     companion object {

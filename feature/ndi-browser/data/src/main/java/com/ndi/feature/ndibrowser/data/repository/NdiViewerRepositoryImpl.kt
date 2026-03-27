@@ -11,7 +11,12 @@ import com.ndi.sdkbridge.NdiViewerBridge
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.withContext
 import java.util.UUID
 
 class NdiViewerRepositoryImpl(
@@ -19,6 +24,8 @@ class NdiViewerRepositoryImpl(
     private val viewerSessionDao: ViewerSessionDao,
     private val reconnectCoordinator: ViewerReconnectCoordinator = ViewerReconnectCoordinator(),
 ) : NdiViewerRepository {
+
+    private val operationMutex = Mutex()
 
     private val viewerSessionState = MutableStateFlow(
         ViewerSession(
@@ -30,36 +37,52 @@ class NdiViewerRepositoryImpl(
     )
 
     override suspend fun connectToSource(sourceId: String): ViewerSession {
-        val connectingSession = ViewerSession(
-            sessionId = UUID.randomUUID().toString(),
-            selectedSourceId = sourceId,
-            playbackState = PlaybackState.CONNECTING,
-            startedAtEpochMillis = System.currentTimeMillis(),
-        )
-        viewerSessionState.value = connectingSession
-
-        return runCatching {
-            bridge.startReceiver(sourceId)
-            waitForFirstFrame(sourceId)
-            val playingSession = connectingSession.copy(playbackState = PlaybackState.PLAYING)
-            viewerSessionState.value = playingSession
-            viewerSessionDao.upsert(playingSession.toEntity())
-            playingSession
-        }.getOrElse { error ->
-            if (error is UnsupportedOperationException) {
-                val interruptedSession = ViewerSession(
-                    sessionId = UUID.randomUUID().toString(),
-                    selectedSourceId = sourceId,
-                    playbackState = PlaybackState.INTERRUPTED,
-                    interruptionReason = error.message,
-                    retryWindowSeconds = 15,
-                    startedAtEpochMillis = System.currentTimeMillis(),
-                )
-                viewerSessionState.value = interruptedSession
-                viewerSessionDao.upsert(interruptedSession.toEntity())
-                return interruptedSession
+        return operationMutex.withLock {
+            // Ensure any stale receiver state is cleared before opening a new stream,
+            // especially when users reopen the same source immediately after backing out.
+            withContext(Dispatchers.IO) {
+                withTimeoutOrNull(1_500L) {
+                    bridge.stopReceiver()
+                }
             }
-            retryInternal(sourceId, 15, error.message ?: "Playback interrupted")
+
+            val connectingSession = ViewerSession(
+                sessionId = UUID.randomUUID().toString(),
+                selectedSourceId = sourceId,
+                playbackState = PlaybackState.CONNECTING,
+                startedAtEpochMillis = System.currentTimeMillis(),
+            )
+            viewerSessionState.value = connectingSession
+
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    bridge.startReceiver(sourceId)
+                    waitForFirstFrame(sourceId)
+                }
+                val playingSession = connectingSession.copy(playbackState = PlaybackState.PLAYING)
+                viewerSessionState.value = playingSession
+                withContext(Dispatchers.IO) {
+                    viewerSessionDao.upsert(playingSession.toEntity())
+                }
+                playingSession
+            }.getOrElse { error ->
+                if (error is UnsupportedOperationException) {
+                    val interruptedSession = ViewerSession(
+                        sessionId = UUID.randomUUID().toString(),
+                        selectedSourceId = sourceId,
+                        playbackState = PlaybackState.INTERRUPTED,
+                        interruptionReason = error.message,
+                        retryWindowSeconds = 15,
+                        startedAtEpochMillis = System.currentTimeMillis(),
+                    )
+                    viewerSessionState.value = interruptedSession
+                    withContext(Dispatchers.IO) {
+                        viewerSessionDao.upsert(interruptedSession.toEntity())
+                    }
+                    return@withLock interruptedSession
+                }
+                retryInternal(sourceId, 15, error.message ?: "Playback interrupted")
+            }
         }
     }
 
@@ -68,17 +91,28 @@ class NdiViewerRepositoryImpl(
     override fun getLatestVideoFrame(): ViewerVideoFrame? = bridge.getLatestReceiverFrame()
 
     override suspend fun retryReconnectWithinWindow(sourceId: String, windowSeconds: Int): ViewerSession {
-        return retryInternal(sourceId, windowSeconds, "Playback interrupted")
+        return operationMutex.withLock {
+            retryInternal(sourceId, windowSeconds, "Playback interrupted")
+        }
     }
 
     override suspend fun stopViewing() {
-        bridge.stopReceiver()
-        val stoppedSession = viewerSessionState.value.copy(
-            playbackState = PlaybackState.STOPPED,
-            endedAtEpochMillis = System.currentTimeMillis(),
-        )
-        viewerSessionState.value = stoppedSession
-        viewerSessionDao.upsert(stoppedSession.toEntity())
+        operationMutex.withLock {
+            val stoppedSession = withContext(Dispatchers.IO) {
+                // Native stop can occasionally stall; bound it so UI flows do not ANR.
+                withTimeoutOrNull(1_500L) {
+                    bridge.stopReceiver()
+                }
+                viewerSessionState.value.copy(
+                    playbackState = PlaybackState.STOPPED,
+                    endedAtEpochMillis = System.currentTimeMillis(),
+                )
+            }
+            viewerSessionState.value = stoppedSession
+            withContext(Dispatchers.IO) {
+                viewerSessionDao.upsert(stoppedSession.toEntity())
+            }
+        }
     }
 
     private fun ViewerSession.toEntity(): ViewerSessionEntity {
@@ -104,12 +138,16 @@ class NdiViewerRepositoryImpl(
             startedAtEpochMillis = System.currentTimeMillis(),
         )
         viewerSessionState.value = interruptedSession
-        viewerSessionDao.upsert(interruptedSession.toEntity())
+        withContext(Dispatchers.IO) {
+            viewerSessionDao.upsert(interruptedSession.toEntity())
+        }
 
         val retryResult = reconnectCoordinator.retryWithinWindow(windowSeconds) {
             runCatching {
-                bridge.startReceiver(sourceId)
-                waitForFirstFrame(sourceId)
+                withContext(Dispatchers.IO) {
+                    bridge.startReceiver(sourceId)
+                    waitForFirstFrame(sourceId)
+                }
                 true
             }.getOrDefault(false)
         }
@@ -120,7 +158,9 @@ class NdiViewerRepositoryImpl(
                 retryAttempts = retryResult.attempts,
             )
             viewerSessionState.value = recoveredSession
-            viewerSessionDao.upsert(recoveredSession.toEntity())
+            withContext(Dispatchers.IO) {
+                viewerSessionDao.upsert(recoveredSession.toEntity())
+            }
             recoveredSession
         } else {
             val stoppedSession = interruptedSession.copy(
@@ -129,7 +169,9 @@ class NdiViewerRepositoryImpl(
                 endedAtEpochMillis = System.currentTimeMillis(),
             )
             viewerSessionState.value = stoppedSession
-            viewerSessionDao.upsert(stoppedSession.toEntity())
+            withContext(Dispatchers.IO) {
+                viewerSessionDao.upsert(stoppedSession.toEntity())
+            }
             stoppedSession
         }
     }

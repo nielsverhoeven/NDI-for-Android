@@ -37,6 +37,7 @@ class ViewerViewModel(
     private val _settingsToggleEvents = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     val settingsToggleEvents: SharedFlow<Unit> = _settingsToggleEvents.asSharedFlow()
     private var settingsToggleInFlight: Boolean = false
+    private var connectInFlight: Boolean = false
 
     init {
         viewModelScope.launch {
@@ -56,22 +57,31 @@ class ViewerViewModel(
 
     fun onViewerOpened(sourceId: String) {
         if (sourceId.isBlank()) return
+        if (connectInFlight) return
+        connectInFlight = true
         viewModelScope.launch {
-            userSelectionRepository.saveLastSelectedSource(sourceId)
-            viewerRepository.connectToSource(sourceId)
-            telemetryEmitter.emit(ViewerTelemetry.playbackStarted(sourceId))
+            runCatching {
+                userSelectionRepository.saveLastSelectedSource(sourceId)
+                viewerRepository.connectToSource(sourceId)
+                telemetryEmitter.emit(ViewerTelemetry.playbackStarted(sourceId))
+            }
+            connectInFlight = false
         }
     }
 
     fun onBackToListPressed() {
         viewModelScope.launch {
+            stopViewingForBackNavigation()
+        }
+    }
+
+    suspend fun stopViewingForBackNavigation() {
             val sourceId = uiState.value.sourceId
             viewerRepository.stopViewing()
             if (sourceId.isNotBlank()) {
                 telemetryEmitter.emit(ViewerRecoveryTelemetry.returnToListRequested(sourceId))
                 telemetryEmitter.emit(ViewerTelemetry.playbackStopped(sourceId))
             }
-        }
     }
 
     fun onRetryPressed() {

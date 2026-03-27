@@ -12,6 +12,8 @@
     "tests/us3-source-loss.spec.ts",
     "tests/settings-developer-overlay.spec.ts",
     "tests/us1-view-source-filtering.spec.ts",
-    "tests/us2-us3-view-interactions.spec.ts"
+    "tests/us2-us3-view-interactions.spec.ts",
+    "tests/settings-theme-mode.spec.ts",
+    "tests/settings-theme-accent-persistence.spec.ts"
   ]
 }

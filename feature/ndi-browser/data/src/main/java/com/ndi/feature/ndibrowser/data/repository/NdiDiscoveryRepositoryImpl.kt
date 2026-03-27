@@ -15,6 +15,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.asStateFlow
 import java.util.UUID
 
@@ -46,7 +47,12 @@ class NdiDiscoveryRepositoryImpl(
             // Fetch and set the configured discovery endpoint on the bridge
             val endpoint = discoveryConfigRepository.getCurrentEndpoint()
             Log.d(TAG, "Discovery trigger=$trigger, endpoint=$endpoint")
-            bridge.setDiscoveryEndpoint(endpoint)
+                // setDiscoveryEndpoint calls nativeSetDiscoveryExtraIps (JNI), which
+                // acquires g_state_mutex.  Calling it on the main thread while the
+                // native mutex is contended causes an ANR.  Always run on IO.
+                withContext(Dispatchers.IO) {
+                    bridge.setDiscoveryEndpoint(endpoint)
+                }
             
             userSelectionDao.getSelection()
             val sources = sourceMapper.map(bridge.discoverSources())

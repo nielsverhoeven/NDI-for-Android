@@ -42,6 +42,7 @@
     <string name="settings_discovery_server_label">Discovery Server</string>
     <string name="settings_discovery_server_hint">hostname or hostname:port</string>
     <string name="settings_save_button">Save</string>
+    <string name="settings_open_theme_editor">Theme editor</string>
     <string name="settings_developer_mode_label">Developer Mode</string>
     <string name="settings_validation_invalid_format">Invalid server format. Use hostname or hostname:port.</string>
     <string name="settings_validation_saved">Settings saved.</string>

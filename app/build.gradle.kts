@@ -217,6 +217,9 @@ dependencies {
     implementation(project(":feature:ndi-browser:domain"))
     implementation(project(":feature:ndi-browser:data"))
     implementation(project(":feature:ndi-browser:presentation"))
+    implementation(project(":feature:theme-editor:domain"))
+    implementation(project(":feature:theme-editor:data"))
+    implementation(project(":feature:theme-editor:presentation"))
     implementation(project(":ndi:sdk-bridge"))
 
     implementation(libs.androidx.core.ktx)

@@ -1,7 +1,7 @@
 ﻿{
     "operation":  "Provision-DualEmulator",
     "status":  "FAILURE",
-    "timestamp":  "2026-03-26T19:24:24.9793564Z",
+    "timestamp":  "2026-03-27T15:57:15.5789793Z",
     "data":  {
                  "sourceEmulator":  null,
                  "receiverEmulator":  null
@@ -9,12 +9,12 @@
     "errors":  [
                    {
                        "code":  "SOURCE_PROVISION_FAILED",
-                       "message":  "error: device \u0027emulator-5554\u0027 not found",
+                       "message":  "* daemon not running; starting now at tcp:5037",
                        "details":  null
                    },
                    {
                        "code":  "RECEIVER_PROVISION_FAILED",
-                       "message":  "error: device \u0027emulator-5556\u0027 not found",
+                       "message":  "* daemon not running; starting now at tcp:5037",
                        "details":  null
                    }
                ],
