@@ -6,6 +6,11 @@
     <string name="ndi_discovery_error">Discovery failed. Try again.</string>
     <string name="ndi_source_highlighted">Previously selected</string>
     <string name="ndi_source_start_output">Start Output</string>
+    <string name="ndi_source_view_stream">View Stream</string>
+    <string name="ndi_source_view_stream_content_description">View stream action</string>
+    <string name="ndi_source_refresh_button_content_description">Refresh source list</string>
+    <string name="ndi_source_refresh_loading_content_description">Refresh in progress</string>
+    <string name="ndi_source_refresh_error_content_description">Refresh error</string>
     <string name="ndi_source_local_screen_endpoint">Local screen share (consent required)</string>
     <string name="ndi_viewer_title">Viewing %1$s</string>
     <string name="ndi_viewer_tablet_mode">Tablet layout active</string>

@@ -6,8 +6,14 @@ plugins {
     alias(libs.plugins.kotlin.android)
 }
 
+private data class VersionState(
+    val code: Int,
+    val name: String,
+    val lastFeatureKey: String?,
+)
+
 // Helper function to read version properties
-fun readVersionProperties(): Pair<Int, String> {
+private fun readVersionProperties(): VersionState {
     val versionPropsFile = rootProject.file("version.properties")
     val versionProps = Properties()
     if (versionPropsFile.exists()) {
@@ -15,29 +21,76 @@ fun readVersionProperties(): Pair<Int, String> {
     }
     val code = (versionProps.getProperty("versionCode", "1") as String).toInt()
     val name = versionProps.getProperty("versionName", "0.1.0") as String
-    return Pair(code, name)
+    val lastFeatureKey = versionProps.getProperty("lastFeatureKey")
+    return VersionState(code = code, name = name, lastFeatureKey = lastFeatureKey)
+}
+
+private fun readCurrentGitBranchOrNull(): String? {
+    return runCatching {
+        val process = ProcessBuilder("git", "rev-parse", "--abbrev-ref", "HEAD")
+            .directory(rootProject.rootDir)
+            .redirectErrorStream(true)
+            .start()
+        val output = process.inputStream.bufferedReader().use { it.readText().trim() }
+        val exitCode = process.waitFor()
+        if (exitCode == 0) output else null
+    }.getOrNull()
+}
+
+private fun extractFeatureKeyOrNull(branchName: String?): String? {
+    if (branchName.isNullOrBlank()) {
+        return null
+    }
+
+    val featureMatch = Regex("^(\\d+)-").find(branchName)
+    return featureMatch?.groupValues?.getOrNull(1)
+}
+
+private fun parseSemVerOrDefault(versionName: String): Triple<Int, Int, Int> {
+    val parts = versionName.split('.')
+    if (parts.size != 3) {
+        return Triple(0, 1, 0)
+    }
+
+    val major = parts[0].toIntOrNull() ?: 0
+    val minor = parts[1].toIntOrNull() ?: 1
+    val patch = parts[2].toIntOrNull() ?: 0
+    return Triple(major, minor, patch)
 }
 
 // Helper function to increment and write version
 fun incrementAndWriteVersion(): Pair<Int, String> {
     val versionPropsFile = rootProject.file("version.properties")
-    val (currentCode, currentName) = readVersionProperties()
-    val newCode = currentCode + 1
-    
-    // Increment patch version (0.1.0 → 0.1.1 → 0.1.2, etc.)
-    val nameParts = currentName.split(".")
-    val newName = if (nameParts.size == 3) {
-        val patch = nameParts[2].toIntOrNull() ?: 0
-        "${nameParts[0]}.${nameParts[1]}.${patch + 1}"
+    val current = readVersionProperties()
+    val newCode = current.code + 1
+
+    val (major, minor, patch) = parseSemVerOrDefault(current.name)
+    val currentFeatureKey = extractFeatureKeyOrNull(readCurrentGitBranchOrNull())
+    val shouldBumpMinor = !currentFeatureKey.isNullOrBlank() && currentFeatureKey != current.lastFeatureKey
+
+    val newName = if (shouldBumpMinor) {
+        "${major}.${minor + 1}.0"
     } else {
-        currentName
+        "${major}.${minor}.${patch + 1}"
     }
-    
+
     val newProps = Properties()
     newProps.setProperty("versionCode", newCode.toString())
     newProps.setProperty("versionName", newName)
+    if (!currentFeatureKey.isNullOrBlank()) {
+        newProps.setProperty("lastFeatureKey", currentFeatureKey)
+    } else if (!current.lastFeatureKey.isNullOrBlank()) {
+        newProps.setProperty("lastFeatureKey", current.lastFeatureKey)
+    }
+
     versionPropsFile.outputStream().use { newProps.store(it, "Version incremented before build") }
-    println("  ✓ Version incremented: versionCode $currentCode → $newCode, versionName $currentName → $newName")
+
+    val bumpReason = if (shouldBumpMinor) {
+        "(feature bump: ${current.lastFeatureKey ?: "none"} -> $currentFeatureKey)"
+    } else {
+        "(patch bump)"
+    }
+    println("  ✓ Version incremented: versionCode ${current.code} → $newCode, versionName ${current.name} → $newName $bumpReason")
     return Pair(newCode, newName)
 }
 

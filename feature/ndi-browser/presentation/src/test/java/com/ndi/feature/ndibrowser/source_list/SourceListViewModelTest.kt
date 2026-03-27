@@ -16,7 +16,9 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -54,20 +56,48 @@ class SourceListViewModelTest {
     }
 
     @Test
-    fun onOutputRequested_emitsOutputNavigation() = runTest(mainDispatcherRule.dispatcher.scheduler) {
+    fun onDiscoverySnapshot_filtersOutCurrentDeviceSource() = runTest(mainDispatcherRule.dispatcher.scheduler) {
         val repository = FakeDiscoveryRepository()
         val viewModel = SourceListViewModel(repository, InMemoryUserSelectionRepository(), SourceListTelemetryEmitter {})
 
-        var emitted: String? = null
-        val collector = launch {
-            emitted = viewModel.outputNavigationEvents.first()
-        }
-
-        viewModel.onOutputRequested("camera-output")
+        repository.emit(
+            snapshotWithSources(
+                status = DiscoveryStatus.SUCCESS,
+                sources = listOf(
+                    NdiSource(sourceId = "device-screen:local", displayName = "This Device", lastSeenAtEpochMillis = 1L),
+                    NdiSource(sourceId = "camera-1", displayName = "Camera 1", lastSeenAtEpochMillis = 2L),
+                ),
+            ),
+        )
         advanceUntilIdle()
 
-        assertEquals("camera-output", emitted)
-        collector.cancel()
+        assertEquals(listOf("camera-1"), viewModel.uiState.value.sources.map { it.sourceId })
+    }
+
+    @Test
+    fun inProgressRefresh_preservesPreviouslyVisibleList_andSetsRefreshing() = runTest(mainDispatcherRule.dispatcher.scheduler) {
+        val repository = FakeDiscoveryRepository()
+        val viewModel = SourceListViewModel(repository, InMemoryUserSelectionRepository(), SourceListTelemetryEmitter {})
+
+        repository.emit(
+            snapshotWithSources(
+                status = DiscoveryStatus.SUCCESS,
+                sources = listOf(NdiSource(sourceId = "camera-1", displayName = "Camera 1", lastSeenAtEpochMillis = 2L)),
+            ),
+        )
+        advanceUntilIdle()
+
+        repository.emit(
+            snapshotWithSources(
+                status = DiscoveryStatus.IN_PROGRESS,
+                sources = emptyList(),
+            ),
+        )
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.isRefreshing)
+        assertEquals(listOf("camera-1"), viewModel.uiState.value.sources.map { it.sourceId })
+        assertNull(viewModel.uiState.value.refreshErrorMessage)
     }
 
     @Test
@@ -97,6 +127,23 @@ class SourceListViewModelTest {
     }
 
     @Test
+    fun onSourceSelected_emitsViewerNavigationEvent() = runTest(mainDispatcherRule.dispatcher.scheduler) {
+        val repository = FakeDiscoveryRepository()
+        val viewModel = SourceListViewModel(repository, InMemoryUserSelectionRepository(), SourceListTelemetryEmitter {})
+
+        var emitted: String? = null
+        val collector = launch {
+            emitted = viewModel.navigationEvents.first()
+        }
+
+        viewModel.onSourceSelected("camera-42")
+        advanceUntilIdle()
+
+        assertEquals("camera-42", emitted)
+        collector.cancel()
+    }
+
+    @Test
     fun onSourceSelected_emitsViewSelectionOpenedViewerTelemetry() = runTest(mainDispatcherRule.dispatcher.scheduler) {
         val repository = FakeDiscoveryRepository()
         val emitted = mutableListOf<TelemetryEvent>()
@@ -118,20 +165,57 @@ class SourceListViewModelTest {
     }
 
     @Test
-    fun onOutputRequested_supportsReservedDeviceScreenIdentity() = runTest(mainDispatcherRule.dispatcher.scheduler) {
+    fun refreshFailure_preservesExistingList_andSetsInlineError() = runTest(mainDispatcherRule.dispatcher.scheduler) {
         val repository = FakeDiscoveryRepository()
         val viewModel = SourceListViewModel(repository, InMemoryUserSelectionRepository(), SourceListTelemetryEmitter {})
 
-        var emitted: String? = null
-        val collector = launch {
-            emitted = viewModel.outputNavigationEvents.first()
-        }
-
-        viewModel.onOutputRequested("device-screen:local")
+        repository.emit(
+            snapshotWithSources(
+                status = DiscoveryStatus.SUCCESS,
+                sources = listOf(NdiSource(sourceId = "camera-1", displayName = "Camera 1", lastSeenAtEpochMillis = 2L)),
+            ),
+        )
         advanceUntilIdle()
 
-        assertEquals("device-screen:local", emitted)
-        collector.cancel()
+        repository.emit(
+            snapshotWithSources(
+                status = DiscoveryStatus.FAILURE,
+                sources = emptyList(),
+                errorMessage = "Network unavailable",
+            ),
+        )
+        advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.value.isRefreshing)
+        assertEquals(listOf("camera-1"), viewModel.uiState.value.sources.map { it.sourceId })
+        assertEquals("Network unavailable", viewModel.uiState.value.refreshErrorMessage)
+    }
+
+    @Test
+    fun refreshSuccess_clearsInlineError_andReenablesRefresh() = runTest(mainDispatcherRule.dispatcher.scheduler) {
+        val repository = FakeDiscoveryRepository()
+        val viewModel = SourceListViewModel(repository, InMemoryUserSelectionRepository(), SourceListTelemetryEmitter {})
+
+        repository.emit(
+            snapshotWithSources(
+                status = DiscoveryStatus.FAILURE,
+                sources = emptyList(),
+                errorMessage = "Transient failure",
+            ),
+        )
+        advanceUntilIdle()
+
+        repository.emit(
+            snapshotWithSources(
+                status = DiscoveryStatus.SUCCESS,
+                sources = listOf(NdiSource(sourceId = "camera-2", displayName = "Camera 2", lastSeenAtEpochMillis = 3L)),
+            ),
+        )
+        advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.value.isRefreshing)
+        assertNull(viewModel.uiState.value.refreshErrorMessage)
+        assertEquals(listOf("camera-2"), viewModel.uiState.value.sources.map { it.sourceId })
     }
 
     @Test
@@ -212,5 +296,21 @@ private fun successSnapshot(): DiscoverySnapshot {
         status = DiscoveryStatus.SUCCESS,
         sourceCount = 1,
         sources = listOf(NdiSource("camera-1", "Camera 1", lastSeenAtEpochMillis = 2L)),
+    )
+}
+
+private fun snapshotWithSources(
+    status: DiscoveryStatus,
+    sources: List<NdiSource>,
+    errorMessage: String? = null,
+): DiscoverySnapshot {
+    return DiscoverySnapshot(
+        snapshotId = UUID.randomUUID().toString(),
+        startedAtEpochMillis = 1L,
+        completedAtEpochMillis = 2L,
+        status = status,
+        sourceCount = sources.size,
+        sources = sources,
+        errorMessage = errorMessage,
     )
 }

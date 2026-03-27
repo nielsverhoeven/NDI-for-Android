@@ -427,6 +427,13 @@ export async function waitForResourceIdSuffixSelected(
 }
 
 export function captureScreenshot(serial: string, destinationPath: string): void {
+  const screenshotBytes = execFileSync("adb", ["-s", serial, "exec-out", "screencap", "-p"], {
+    stdio: ["ignore", "pipe", "pipe"],
+    encoding: null,
+    maxBuffer: 16 * 1024 * 1024,
+  });
+  writeFileSync(destinationPath, screenshotBytes);
+}
 
 export async function waitForResourceIdSuffixAbsent(
   serial: string,
@@ -444,13 +451,6 @@ export async function waitForResourceIdSuffixAbsent(
   }
 
   throw new Error(`Timed out waiting for resource id suffix '${resourceIdSuffix}' to disappear on ${serial}`);
-}
-  const screenshotBytes = execFileSync("adb", ["-s", serial, "exec-out", "screencap", "-p"], {
-    stdio: ["ignore", "pipe", "pipe"],
-    encoding: null,
-    maxBuffer: 16 * 1024 * 1024,
-  });
-  writeFileSync(destinationPath, screenshotBytes);
 }
 
 export function dumpUi(serial: string): UiNode[] {
@@ -571,6 +571,14 @@ export async function tapByResourceIdSuffix(serial: string, resourceIdSuffix: st
   }
 
   throw new Error(`Timed out tapping resource id suffix '${resourceIdSuffix}' on ${serial}`);
+}
+
+export async function tapSourceViewStreamButton(serial: string, timeoutMs = 15_000): Promise<void> {
+  await tapByResourceIdSuffix(serial, "viewStreamButton", timeoutMs);
+}
+
+export async function tapSourceRowContainer(serial: string, timeoutMs = 15_000): Promise<void> {
+  await tapByResourceIdSuffix(serial, "sourceRowContainer", timeoutMs);
 }
 
 export async function tapFirstAvailableText(serial: string, candidates: string[], timeoutMs = 10_000): Promise<string> {
