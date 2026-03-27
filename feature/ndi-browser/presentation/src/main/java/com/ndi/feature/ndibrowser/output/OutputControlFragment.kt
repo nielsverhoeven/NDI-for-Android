@@ -15,6 +15,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.ndi.feature.ndibrowser.presentation.R
 import com.ndi.feature.ndibrowser.presentation.databinding.FragmentOutputControlBinding
+import com.ndi.sdkbridge.NativeNdiBridge
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 
@@ -33,8 +34,12 @@ class OutputControlFragment : Fragment() {
     private val screenCaptureLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult(),
     ) { result ->
-        val granted = result.resultCode == Activity.RESULT_OK
-        val tokenRef = if (granted) "media-projection" else null
+        val tokenRef = if (result.resultCode == Activity.RESULT_OK) {
+            NativeNdiBridge.registerScreenCapturePermissionResult(result.resultCode, result.data)
+        } else {
+            null
+        }
+        val granted = tokenRef != null
         viewModel.onScreenCaptureConsentResult(granted = granted, tokenRef = tokenRef)
     }
 

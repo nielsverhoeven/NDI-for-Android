@@ -32,6 +32,7 @@ kotlin {
 dependencies {
     implementation(project(":core:model"))
     implementation(project(":feature:ndi-browser:domain"))
+    implementation(project(":ndi:sdk-bridge"))
     implementation(libs.androidx.fragment.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.viewmodel.ktx)

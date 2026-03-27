@@ -5,8 +5,10 @@
 #include <cstdint>
 #include <cstring>
 #include <mutex>
+#include <stdexcept>
 #include <string>
 #include <thread>
+#include <unordered_map>
 #include <vector>
 
 #ifdef NDI_SDK_AVAILABLE
@@ -19,7 +21,15 @@ std::mutex g_state_mutex;
 std::atomic<bool> g_receiver_running{false};
 std::thread g_receiver_thread;
 
-std::vector<std::pair<std::string, std::string>> g_last_discovered_sources;
+struct DiscoveredSource {
+    std::string source_id;
+    std::string display_name;
+    std::string url_address;
+};
+
+std::vector<DiscoveredSource> g_last_discovered_sources;
+std::unordered_map<std::string, std::string> g_discovered_url_by_source_id;
+std::string g_discovery_extra_ips;
 
 std::vector<jint> g_latest_argb_frame;
 int g_latest_frame_width = 0;
@@ -27,6 +37,7 @@ int g_latest_frame_height = 0;
 
 #ifdef NDI_SDK_AVAILABLE
 NDIlib_recv_instance_t g_recv_instance = nullptr;
+NDIlib_send_instance_t g_send_instance = nullptr;
 #endif
 
 void clear_latest_frame_locked() {
@@ -68,7 +79,7 @@ bool ensure_ndi_initialized() {
     return initialized;
 }
 
-std::vector<std::pair<std::string, std::string>> discover_sources_native() {
+std::vector<DiscoveredSource> discover_sources_native() {
     if (!ensure_ndi_initialized()) {
         return {};
     }
@@ -77,15 +88,15 @@ std::vector<std::pair<std::string, std::string>> discover_sources_native() {
     std::memset(&create_description, 0, sizeof(create_description));
     create_description.show_local_sources = true;
     create_description.p_groups = nullptr;
-    create_description.p_extra_ips = nullptr;
+    create_description.p_extra_ips = g_discovery_extra_ips.empty() ? nullptr : g_discovery_extra_ips.c_str();
 
     NDIlib_find_instance_t find_instance = NDIlib_find_create_v2(&create_description);
     if (find_instance == nullptr) {
         return {};
     }
 
-    std::vector<std::pair<std::string, std::string>> discovered;
-    NDIlib_find_wait_for_sources(find_instance, 500);
+    std::vector<DiscoveredSource> discovered;
+    NDIlib_find_wait_for_sources(find_instance, 3000);
 
     uint32_t source_count = 0;
     const NDIlib_source_t* sources = NDIlib_find_get_current_sources(find_instance, &source_count);
@@ -96,15 +107,92 @@ std::vector<std::pair<std::string, std::string>> discover_sources_native() {
             const char* url_address = sources[index].p_url_address;
             const std::string source_id = ndi_name != nullptr ? ndi_name : (url_address != nullptr ? url_address : "");
             const std::string display_name = ndi_name != nullptr ? ndi_name : source_id;
+            const std::string url = url_address != nullptr ? url_address : "";
 
             if (!source_id.empty()) {
-                discovered.emplace_back(source_id, display_name);
+                discovered.push_back(DiscoveredSource {
+                    .source_id = source_id,
+                    .display_name = display_name,
+                    .url_address = url,
+                });
             }
         }
     }
 
     NDIlib_find_destroy(find_instance);
     return discovered;
+}
+
+void stop_sender_native_locked() {
+    if (g_send_instance != nullptr) {
+        NDIlib_send_destroy(g_send_instance);
+        g_send_instance = nullptr;
+    }
+}
+
+void start_local_screen_share_sender_native(const std::string& stream_name) {
+    if (!ensure_ndi_initialized()) {
+        throw std::runtime_error("NDI SDK failed to initialize");
+    }
+
+    std::lock_guard<std::mutex> lock(g_state_mutex);
+    stop_sender_native_locked();
+
+    NDIlib_send_create_t create_description;
+    std::memset(&create_description, 0, sizeof(create_description));
+    create_description.p_ndi_name = stream_name.c_str();
+    create_description.p_groups = nullptr;
+    create_description.clock_video = true;
+    create_description.clock_audio = false;
+
+    g_send_instance = NDIlib_send_create(&create_description);
+    if (g_send_instance == nullptr) {
+        throw std::runtime_error("Unable to create NDI sender");
+    }
+}
+
+void submit_local_screen_share_frame_native(JNIEnv* env, jint width, jint height, jintArray argb_pixels) {
+    if (width <= 0 || height <= 0 || argb_pixels == nullptr) {
+        throw std::runtime_error("Screen-share frame is invalid");
+    }
+
+    const jsize pixel_count = static_cast<jsize>(width * height);
+    if (env->GetArrayLength(argb_pixels) < pixel_count) {
+        throw std::runtime_error("Screen-share frame buffer is too small");
+    }
+
+    std::vector<jint> input(static_cast<size_t>(pixel_count));
+    env->GetIntArrayRegion(argb_pixels, 0, pixel_count, input.data());
+
+    std::vector<uint8_t> bgra(static_cast<size_t>(pixel_count) * 4);
+    for (jsize index = 0; index < pixel_count; ++index) {
+        const uint32_t pixel = static_cast<uint32_t>(input[static_cast<size_t>(index)]);
+        const size_t offset = static_cast<size_t>(index) * 4;
+        bgra[offset + 0] = static_cast<uint8_t>(pixel & 0xFF);
+        bgra[offset + 1] = static_cast<uint8_t>((pixel >> 8) & 0xFF);
+        bgra[offset + 2] = static_cast<uint8_t>((pixel >> 16) & 0xFF);
+        bgra[offset + 3] = static_cast<uint8_t>((pixel >> 24) & 0xFF);
+    }
+
+    std::lock_guard<std::mutex> lock(g_state_mutex);
+    if (g_send_instance == nullptr) {
+        throw std::runtime_error("NDI sender is not active");
+    }
+
+    NDIlib_video_frame_v2_t video_frame;
+    std::memset(&video_frame, 0, sizeof(video_frame));
+    video_frame.xres = width;
+    video_frame.yres = height;
+    video_frame.FourCC = NDIlib_FourCC_video_type_BGRA;
+    video_frame.frame_rate_N = 30;
+    video_frame.frame_rate_D = 1;
+    video_frame.picture_aspect_ratio = static_cast<float>(width) / static_cast<float>(height);
+    video_frame.frame_format_type = NDIlib_frame_format_type_progressive;
+    video_frame.timecode = NDIlib_send_timecode_synthesize;
+    video_frame.p_data = bgra.data();
+    video_frame.line_stride_in_bytes = width * 4;
+
+    NDIlib_send_send_video_v2(g_send_instance, &video_frame);
 }
 
 void stop_receiver_native_locked() {
@@ -132,9 +220,15 @@ void start_receiver_native(const std::string& source_id) {
     std::memset(&source_to_connect, 0, sizeof(source_to_connect));
 
     const bool looks_like_ndi_name = source_id.find(" (") != std::string::npos && !source_id.empty() && source_id.back() == ')';
+    std::string discovered_url;
+    auto discovered_it = g_discovered_url_by_source_id.find(source_id);
+    if (discovered_it != g_discovered_url_by_source_id.end()) {
+        discovered_url = discovered_it->second;
+    }
+
     if (looks_like_ndi_name) {
         source_to_connect.p_ndi_name = source_id.c_str();
-        source_to_connect.p_url_address = nullptr;
+        source_to_connect.p_url_address = discovered_url.empty() ? nullptr : discovered_url.c_str();
     } else {
         source_to_connect.p_ndi_name = nullptr;
         source_to_connect.p_url_address = source_id.c_str();
@@ -231,11 +325,20 @@ Java_com_ndi_sdkbridge_NativeNdiBridge_nativeDiscoverSourceIds(
     {
         std::lock_guard<std::mutex> lock(g_state_mutex);
         g_last_discovered_sources = discovered;
+        g_discovered_url_by_source_id.clear();
+        for (const auto& entry : discovered) {
+            if (!entry.url_address.empty()) {
+                g_discovered_url_by_source_id[entry.source_id] = entry.url_address;
+                if (entry.display_name != entry.source_id) {
+                    g_discovered_url_by_source_id[entry.display_name] = entry.url_address;
+                }
+            }
+        }
     }
     std::vector<std::string> source_ids;
     source_ids.reserve(discovered.size());
     for (const auto& entry : discovered) {
-        source_ids.push_back(entry.first);
+        source_ids.push_back(entry.source_id);
     }
     return to_java_string_array(env, source_ids);
 #else
@@ -257,12 +360,35 @@ Java_com_ndi_sdkbridge_NativeNdiBridge_nativeDiscoverDisplayNames(
         }
         display_names.reserve(g_last_discovered_sources.size());
         for (const auto& entry : g_last_discovered_sources) {
-            display_names.push_back(entry.second);
+            display_names.push_back(entry.display_name);
         }
     }
     return to_java_string_array(env, display_names);
 #else
     return env->NewObjectArray(0, env->FindClass("java/lang/String"), nullptr);
+#endif
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_ndi_sdkbridge_NativeNdiBridge_nativeSetDiscoveryExtraIps(
+    JNIEnv* env,
+    jobject /* this */,
+    jstring extra_ips_csv
+) {
+#ifdef NDI_SDK_AVAILABLE
+    const char* raw_value = extra_ips_csv != nullptr ? env->GetStringUTFChars(extra_ips_csv, nullptr) : nullptr;
+    {
+        std::lock_guard<std::mutex> lock(g_state_mutex);
+        g_discovery_extra_ips = raw_value != nullptr ? raw_value : "";
+        g_last_discovered_sources.clear();
+        g_discovered_url_by_source_id.clear();
+    }
+    if (raw_value != nullptr) {
+        env->ReleaseStringUTFChars(extra_ips_csv, raw_value);
+    }
+#else
+    (void)env;
+    (void)extra_ips_csv;
 #endif
 }
 
@@ -344,11 +470,12 @@ Java_com_ndi_sdkbridge_NativeNdiBridge_nativeGetLatestReceiverFrameHeight(
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_ndi_sdkbridge_NativeNdiBridge_nativeStartSender(
-    JNIEnv* /* env */,
+    JNIEnv* env,
     jobject /* this */,
     jstring /* sourceId */,
     jstring /* streamName */
 ) {
+    throw_java_runtime_exception(env, "Forwarding an existing NDI source is not implemented in this build");
 }
 
 extern "C" JNIEXPORT void JNICALL
@@ -356,14 +483,62 @@ Java_com_ndi_sdkbridge_NativeNdiBridge_nativeStopSender(
     JNIEnv* /* env */,
     jobject /* this */
 ) {
+#ifdef NDI_SDK_AVAILABLE
+    std::lock_guard<std::mutex> lock(g_state_mutex);
+    stop_sender_native_locked();
+#endif
 }
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_ndi_sdkbridge_NativeNdiBridge_nativeStartLocalScreenShareSender(
-    JNIEnv* /* env */,
+    JNIEnv* env,
     jobject /* this */,
-    jstring /* streamName */
+    jstring stream_name
 ) {
+#ifdef NDI_SDK_AVAILABLE
+    if (stream_name == nullptr) {
+        throw_java_runtime_exception(env, "Stream name is required");
+        return;
+    }
+
+    const char* raw_stream_name = env->GetStringUTFChars(stream_name, nullptr);
+    if (raw_stream_name == nullptr || std::strlen(raw_stream_name) == 0) {
+        if (raw_stream_name != nullptr) {
+            env->ReleaseStringUTFChars(stream_name, raw_stream_name);
+        }
+        throw_java_runtime_exception(env, "Stream name is empty");
+        return;
+    }
+
+    try {
+        start_local_screen_share_sender_native(raw_stream_name);
+    } catch (const std::exception& error) {
+        throw_java_runtime_exception(env, error.what());
+    }
+
+    env->ReleaseStringUTFChars(stream_name, raw_stream_name);
+#else
+    throw_java_runtime_exception(env, "NDI SDK is not linked in this build");
+#endif
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_ndi_sdkbridge_NativeNdiBridge_nativeSubmitLocalScreenShareFrameArgb(
+    JNIEnv* env,
+    jobject /* this */,
+    jint width,
+    jint height,
+    jintArray argb_pixels
+) {
+#ifdef NDI_SDK_AVAILABLE
+    try {
+        submit_local_screen_share_frame_native(env, width, height, argb_pixels);
+    } catch (const std::exception& error) {
+        throw_java_runtime_exception(env, error.what());
+    }
+#else
+    throw_java_runtime_exception(env, "NDI SDK is not linked in this build");
+#endif
 }
 
 extern "C" JNIEXPORT void JNICALL
@@ -371,5 +546,9 @@ Java_com_ndi_sdkbridge_NativeNdiBridge_nativeStopLocalScreenShareSender(
     JNIEnv* /* env */,
     jobject /* this */
 ) {
+#ifdef NDI_SDK_AVAILABLE
+    std::lock_guard<std::mutex> lock(g_state_mutex);
+    stop_sender_native_locked();
+#endif
 }
 

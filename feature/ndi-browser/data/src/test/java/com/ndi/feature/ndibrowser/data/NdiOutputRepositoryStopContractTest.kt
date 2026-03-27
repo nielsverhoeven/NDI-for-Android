@@ -85,10 +85,29 @@ class NdiOutputRepositoryStopContractTest {
         assertEquals(OutputQualityLevel.DEGRADED, health.qualityLevel)
         assertTrue(health.messageCode?.contains("stopped") == true)
     }
+
+    @Test
+    fun stopOutput_usesLocalStopForDeviceScreenSessions() = runTest {
+        val dao = StopContractOutputSessionDao()
+        val bridge = FakeStopBridge()
+        val repository = NdiOutputRepositoryImpl(
+            outputSessionDao = dao,
+            outputBridge = bridge,
+            screenCaptureConsentRepository = StopContractConsentRepository(granted = true),
+            mapper = OutputSessionMapper(),
+        )
+
+        repository.startOutput("device-screen:local", "Local")
+        repository.stopOutput()
+
+        assertEquals(0, bridge.stopCount)
+        assertEquals(1, bridge.localStopCount)
+    }
 }
 
 private class FakeStopBridge : NdiOutputBridge {
     var stopCount: Int = 0
+    var localStopCount: Int = 0
 
     override suspend fun isSourceReachable(sourceId: String): Boolean = true
 
@@ -100,7 +119,26 @@ private class FakeStopBridge : NdiOutputBridge {
 
     override fun startLocalScreenShareSender(streamName: String) = Unit
 
-    override fun stopLocalScreenShareSender() = Unit
+    override fun stopLocalScreenShareSender() {
+        localStopCount += 1
+    }
+}
+
+private class StopContractConsentRepository(
+    private val granted: Boolean,
+) : com.ndi.feature.ndibrowser.domain.repository.ScreenCaptureConsentRepository {
+    override suspend fun beginConsentRequest(inputSourceId: String) = Unit
+
+    override suspend fun registerConsentResult(
+        inputSourceId: String,
+        granted: Boolean,
+        tokenRef: String?,
+    ) = com.ndi.feature.ndibrowser.domain.repository.ScreenCaptureConsentState(inputSourceId, granted, tokenRef)
+
+    override suspend fun getConsentState(inputSourceId: String) =
+        com.ndi.feature.ndibrowser.domain.repository.ScreenCaptureConsentState(inputSourceId, granted = granted, tokenRef = "token")
+
+    override suspend fun clearConsent(inputSourceId: String) = Unit
 }
 
 private class StopContractOutputSessionDao : OutputSessionDao {

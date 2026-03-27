@@ -1,12 +1,14 @@
 package com.ndi.sdkbridge
 
 import android.content.Context
+import android.content.Intent
 import android.net.wifi.WifiManager
 import android.util.Log
 import com.ndi.core.model.NdiDiscoveryEndpoint
 import com.ndi.core.model.NdiSource
 import com.ndi.core.model.ViewerVideoFrame
 import java.net.HttpURLConnection
+import java.net.InetAddress
 import java.net.Inet4Address
 import java.net.NetworkInterface
 import java.net.URL
@@ -94,6 +96,9 @@ object NativeNdiBridge : NdiDiscoveryBridge, NdiViewerBridge, NdiOutputBridge {
     private var activeLocalSender: LocalRelaySender? = null
 
     @Volatile
+    private var pendingScreenCaptureTokenRef: String? = null
+
+    @Volatile
     private var activeLocalSenderHeartbeat = null as kotlinx.coroutines.Job?
 
     init {
@@ -104,31 +109,27 @@ object NativeNdiBridge : NdiDiscoveryBridge, NdiViewerBridge, NdiOutputBridge {
         appContext = context.applicationContext
     }
 
+    fun registerScreenCapturePermissionResult(resultCode: Int, data: Intent?): String? {
+        return ScreenCapturePermissionStore.register(resultCode, data)
+    }
+
+    fun setPendingLocalScreenShareToken(tokenRef: String?) {
+        pendingScreenCaptureTokenRef = tokenRef
+    }
+
     override fun setDiscoveryEndpoint(endpoint: NdiDiscoveryEndpoint?) {
         discoveryEndpoint = endpoint
-        Log.d("NdiDiscovery", "Endpoint set: $endpoint")
+        val extraIps = endpoint?.host
+            ?.takeIf { it.isNotBlank() }
+            ?.let(::resolveDiscoveryExtraIps)
+        nativeSetDiscoveryExtraIps(extraIps)
+        Log.d("NdiDiscovery", "Endpoint set: $endpoint, extraIps=$extraIps")
     }
 
     override suspend fun discoverSources(): List<NdiSource> = withContext(Dispatchers.IO) {
         val configuredEndpoint = discoveryEndpoint
         Log.d("NdiDiscovery", "discoverSources() called with endpoint: $configuredEndpoint")
-        
-        val configuredServerSources = if (configuredEndpoint != null) {
-            runCatching { discoverFromRemoteServer(configuredEndpoint) }
-                .onSuccess { sources -> Log.d("NdiDiscovery", "Remote server returned ${sources.size} sources") }
-                .onFailure { error -> Log.e("NdiDiscovery", "Remote server discovery failed: ${error.message}", error) }
-                .getOrDefault(emptyList())
-        } else {
-            Log.d("NdiDiscovery", "No configured endpoint, skipping remote server query")
-            emptyList()
-        }
-        
-        // If a configured discovery server is available and returns sources, use those
-        if (configuredServerSources.isNotEmpty()) {
-            Log.d("NdiDiscovery", "Using ${configuredServerSources.size} sources from remote server")
-            return@withContext configuredServerSources.distinctBy { it.sourceId }
-        }
-        
+
         val relaySources = runCatching { discoverRelaySources() }.getOrDefault(emptyList())
 
         val sourceIds = runCatching { nativeDiscoverSourceIds() }.getOrDefault(emptyArray())
@@ -154,6 +155,15 @@ object NativeNdiBridge : NdiDiscoveryBridge, NdiViewerBridge, NdiOutputBridge {
             addAll(nativeSources)
             addAll(mdnsSources)
         }.distinctBy { it.sourceId }
+    }
+
+    private fun resolveDiscoveryExtraIps(host: String): String {
+        val resolved = runCatching { InetAddress.getByName(host).hostAddress }
+            .getOrElse {
+                Log.w("NdiDiscovery", "Falling back to raw host for discovery extra IPs: $host", it)
+                host
+            }
+        return resolved.trim('[', ']')
     }
 
     private fun discoverMdnsSourcesCached(): List<NdiSource> {
@@ -314,7 +324,7 @@ object NativeNdiBridge : NdiDiscoveryBridge, NdiViewerBridge, NdiOutputBridge {
     }
 
     override fun startSender(sourceId: String, streamName: String) {
-        runCatching { nativeStartSender(sourceId, streamName) }
+        nativeStartSender(sourceId, streamName)
     }
 
     override fun stopSender() {
@@ -323,10 +333,16 @@ object NativeNdiBridge : NdiDiscoveryBridge, NdiViewerBridge, NdiOutputBridge {
 
     override fun startLocalScreenShareSender(streamName: String) {
         val normalizedName = streamName.trim().ifBlank { "NDI Output" }
+        val context = requireNotNull(appContext) { "App context is not initialized" }
+        val tokenRef = pendingScreenCaptureTokenRef
+        val permissionGrant = ScreenCapturePermissionStore.get(tokenRef)
+            ?: error("Screen capture permission is not available")
         val session = LocalRelaySender(
             sourceId = "relay-screen:$relayHostInstanceId",
             streamName = normalizedName,
         )
+
+        stopLocalScreenShareSender()
 
         activeLocalSenderHeartbeat?.cancel()
         activeLocalSender = session
@@ -337,7 +353,24 @@ object NativeNdiBridge : NdiDiscoveryBridge, NdiViewerBridge, NdiOutputBridge {
             }
         }
 
-        runCatching { nativeStartLocalScreenShareSender(normalizedName) }
+        try {
+            nativeStartLocalScreenShareSender(normalizedName)
+            ScreenShareController.start(context, permissionGrant) { width, height, pixels ->
+                nativeSubmitLocalScreenShareFrameArgb(width, height, pixels)
+            }
+        } catch (error: Throwable) {
+            Log.e("NdiDiscovery", "Unable to start local screen share sender", error)
+            runCatching { ScreenShareController.stop() }
+            runCatching { nativeStopLocalScreenShareSender() }
+            val activeSession = activeLocalSender
+            activeLocalSender = null
+            activeLocalSenderHeartbeat?.cancel()
+            activeLocalSenderHeartbeat = null
+            if (activeSession != null) {
+                runCatching { revokeRelaySource(activeSession.sourceId) }
+            }
+            throw error
+        }
     }
 
     override fun stopLocalScreenShareSender() {
@@ -345,6 +378,7 @@ object NativeNdiBridge : NdiDiscoveryBridge, NdiViewerBridge, NdiOutputBridge {
         activeLocalSender = null
         activeLocalSenderHeartbeat?.cancel()
         activeLocalSenderHeartbeat = null
+        runCatching { ScreenShareController.stop() }
         if (session != null) {
             runCatching { revokeRelaySource(session.sourceId) }
         }
@@ -377,55 +411,6 @@ object NativeNdiBridge : NdiDiscoveryBridge, NdiViewerBridge, NdiOutputBridge {
                     }
                 }
             }
-        } finally {
-            connection.disconnect()
-        }
-    }
-
-    private fun discoverFromRemoteServer(endpoint: NdiDiscoveryEndpoint): List<NdiSource> {
-        val url = "http://${endpoint.host}:${endpoint.resolvedPort}/sources"
-        Log.d("NdiDiscovery", "Querying remote server at: $url")
-        
-        val connection = (URL(url).openConnection() as HttpURLConnection).apply {
-            requestMethod = "GET"
-            connectTimeout = 2_000
-            readTimeout = 3_000
-        }
-        return try {
-            val responseCode = connection.responseCode
-            Log.d("NdiDiscovery", "Remote server response code: $responseCode")
-            
-            if (responseCode !in 200..299) {
-                Log.e("NdiDiscovery", "Remote server error: HTTP $responseCode")
-                return emptyList()
-            }
-            
-            val payload = connection.inputStream.bufferedReader().use { reader -> reader.readText() }
-            Log.d("NdiDiscovery", "Remote server response: $payload")
-            
-            val sources = JSONArray(payload)
-            val result = buildList {
-                for (index in 0 until sources.length()) {
-                    val item = sources.getJSONObject(index)
-                    val sourceId = item.optString("sourceId")
-                    val displayName = item.optString("displayName")
-                    if (sourceId.isNotBlank()) {
-                        add(
-                            NdiSource(
-                                sourceId = sourceId,
-                                displayName = displayName.ifBlank { sourceId },
-                                endpointAddress = item.optString("endpointAddress").takeIf { it.isNotBlank() },
-                                lastSeenAtEpochMillis = System.currentTimeMillis(),
-                            ),
-                        )
-                    }
-                }
-            }
-            Log.d("NdiDiscovery", "Parsed ${result.size} sources from remote server")
-            result
-        } catch (e: Exception) {
-            Log.e("NdiDiscovery", "Failed to query remote server: ${e.message}", e)
-            throw e
         } finally {
             connection.disconnect()
         }
@@ -467,6 +452,8 @@ object NativeNdiBridge : NdiDiscoveryBridge, NdiViewerBridge, NdiOutputBridge {
 
     private external fun nativeDiscoverDisplayNames(): Array<String>
 
+    private external fun nativeSetDiscoveryExtraIps(extraIpsCsv: String?)
+
     private external fun nativeStartReceiver(sourceId: String)
 
     private external fun nativeStopReceiver()
@@ -482,6 +469,8 @@ object NativeNdiBridge : NdiDiscoveryBridge, NdiViewerBridge, NdiOutputBridge {
     private external fun nativeStopSender()
 
     private external fun nativeStartLocalScreenShareSender(streamName: String)
+
+    private external fun nativeSubmitLocalScreenShareFrameArgb(width: Int, height: Int, argbPixels: IntArray)
 
     private external fun nativeStopLocalScreenShareSender()
 }
