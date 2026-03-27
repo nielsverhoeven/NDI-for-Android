@@ -1,18 +1,18 @@
 <!--
 Sync Impact Report
-Version change: 2.0.0 -> 2.1.0
+Version change: 2.1.0 -> 2.2.0
 Modified principles:
 - IV. Strict Test-Driven Development (NON-NEGOTIABLE) -> IV. Strict Test-Driven Development (NON-NEGOTIABLE)
-Added sections:
-- None
+Added principles:
+- XII. Execution-Ready Validation Environments
 Removed sections:
 - None
 Templates requiring updates:
-- ✅ .specify/templates/plan-template.md
-- ✅ .specify/templates/spec-template.md
-- ✅ .specify/templates/tasks-template.md
-- ⚠ pending: .specify/templates/commands/*.md (directory not present)
-- ✅ Runtime guidance currently does not contain constitution quality-gate references requiring update
+- updated: .specify/templates/plan-template.md
+- updated: .specify/templates/spec-template.md
+- updated: .specify/templates/tasks-template.md
+- pending: .specify/templates/commands/*.md (directory not present)
+- updated: docs/README.md
 Follow-up TODOs:
 - None
 -->
@@ -58,6 +58,9 @@ If existing Espresso tests are found when working on a feature, they must be con
 Any feature that introduces or changes visual behavior MUST add Playwright e2e
 coverage executed on emulator(s) for the new or changed user-visible flow and
 MUST verify that all existing Playwright e2e tests still pass.
+Any change that touches shared persistence models, settings save paths, or
+cross-screen state transfer MUST include regression tests that prove existing
+stored fields and behaviors are preserved.
 
 Rationale: Enforced TDD keeps scope controlled, prevents regressions, and
 creates executable documentation of expected behavior.
@@ -131,6 +134,21 @@ Rationale: Android platform lag accumulates security, compatibility, and store
 policy risk; enforcing current stable tooling keeps the app buildable and
 deployable on current Android standards.
 
+### XII. Execution-Ready Validation Environments
+
+Implementation and validation plans MUST include explicit runtime preflight
+checks for required environment dependencies (for example device availability,
+dual-emulator readiness, and script/tool prerequisites) before final quality
+gates are attempted. Build and install tasks MUST reference deterministic
+artifact paths or explicit artifact discovery steps when outputs can be renamed
+or versioned by build logic. If a gate is blocked by environment constraints,
+the block MUST be recorded with reproducible evidence and a concrete unblocking
+step.
+
+Rationale: Most schedule slips in this repository come from environment drift
+rather than code defects; preflight and deterministic execution rules reduce
+false failures and rework.
+
 ## Platform Baseline & Security Constraints
 
 - The minimum supported Android API level MUST be 24.
@@ -153,7 +171,7 @@ deployable on current Android standards.
 ## Delivery Workflow & Quality Gates
 
 1. Every spec and implementation plan MUST include a Constitution Check mapping
-  proposed work to all eleven core principles.
+  proposed work to all twelve core principles.
 2. Every pull request MUST include evidence of test-first workflow:
   failing-test commit or equivalent verifiable history.
 3. Pull requests that touch UI MUST include Material 3 compliance verification.
@@ -169,6 +187,12 @@ deployable on current Android standards.
 8. Each release cycle MUST include a toolchain currency review covering
   compileSdk, targetSdk, AGP, Gradle, Kotlin, JDK/JBR, AndroidX/Jetpack, NDK,
   CMake, and required proprietary SDK compatibility.
+9. Features with emulator/device-dependent tests MUST run and record preflight
+  checks before executing end-to-end gates.
+10. Validation reports MUST distinguish code failures from environment-blocked
+  gates and include explicit retry/unblock commands.
+11. Install and deployment validation steps MUST use deterministic APK artifact
+  selection when build tasks produce versioned filenames.
 
 ## Governance
 
@@ -198,4 +222,4 @@ Compliance review expectations:
 3. Periodic audits MUST be performed each release cycle to verify ongoing
   adherence and remove drift.
 
-**Version**: 2.1.0 | **Ratified**: 2026-03-15 | **Last Amended**: 2026-03-20
+**Version**: 2.2.0 | **Ratified**: 2026-03-15 | **Last Amended**: 2026-03-27

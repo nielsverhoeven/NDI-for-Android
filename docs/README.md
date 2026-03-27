@@ -39,7 +39,20 @@ pwsh ./scripts/verify-android-prereqs.ps1
 ./gradlew.bat connectedAndroidTest
 ```
 
-5. Run release hardening gate.
+5. For dual-emulator e2e, run preflight before full suite.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\testing\e2e\scripts\run-dual-emulator-e2e.ps1 -EmulatorASerial emulator-5554 -EmulatorBSerial emulator-5556 -PreflightOnly
+```
+
+6. Install latest debug APK on a connected phone/device.
+
+```powershell
+$apk = Get-ChildItem .\app\build\outputs\apk\debug\*.apk | Sort-Object LastWriteTime -Descending | Select-Object -First 1 -ExpandProperty FullName
+adb install -r $apk
+```
+
+7. Run release hardening gate.
 
 ```powershell
 ./gradlew.bat verifyReleaseHardening :app:assembleRelease
@@ -56,6 +69,9 @@ pwsh ./scripts/verify-android-prereqs.ps1
 | `:feature:ndi-browser:domain` | Repository interfaces and contracts used by feature presentation/data layers. |
 | `:feature:ndi-browser:data` | Repository implementations for discovery, viewer, output, settings, and diagnostics. |
 | `:feature:ndi-browser:presentation` | Fragments/screens/ViewModels for Source List, Viewer, Output, Settings, and overlay rendering. |
+| `:feature:theme-editor:domain` | Theme editor contracts and domain models. |
+| `:feature:theme-editor:data` | Theme preference mapping and repository implementation. |
+| `:feature:theme-editor:presentation` | Theme editor UI, ViewModel, dependency boundary, and screen tests. |
 | `:ndi:sdk-bridge` | Native bridge boundary for NDI discovery/viewer/output operations. |
 
 ## 3. Build and Test Commands
