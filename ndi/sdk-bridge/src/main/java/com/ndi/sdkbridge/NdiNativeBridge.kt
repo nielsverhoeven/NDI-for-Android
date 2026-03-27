@@ -2,6 +2,8 @@ package com.ndi.sdkbridge
 
 import android.content.Context
 import android.net.wifi.WifiManager
+import android.util.Log
+import com.ndi.core.model.NdiDiscoveryEndpoint
 import com.ndi.core.model.NdiSource
 import com.ndi.core.model.ViewerVideoFrame
 import java.net.HttpURLConnection
@@ -23,6 +25,8 @@ import org.json.JSONObject
 
 interface NdiDiscoveryBridge {
     suspend fun discoverSources(): List<NdiSource>
+    
+    fun setDiscoveryEndpoint(endpoint: NdiDiscoveryEndpoint?)
 }
 
 interface NdiViewerBridge {
@@ -74,6 +78,9 @@ object NativeNdiBridge : NdiDiscoveryBridge, NdiViewerBridge, NdiOutputBridge {
 
     @Volatile
     private var multicastLock: WifiManager.MulticastLock? = null
+    
+    @Volatile
+    private var discoveryEndpoint: NdiDiscoveryEndpoint? = null
 
     private val mdnsCacheLock = Any()
 
@@ -97,7 +104,31 @@ object NativeNdiBridge : NdiDiscoveryBridge, NdiViewerBridge, NdiOutputBridge {
         appContext = context.applicationContext
     }
 
+    override fun setDiscoveryEndpoint(endpoint: NdiDiscoveryEndpoint?) {
+        discoveryEndpoint = endpoint
+        Log.d("NdiDiscovery", "Endpoint set: $endpoint")
+    }
+
     override suspend fun discoverSources(): List<NdiSource> = withContext(Dispatchers.IO) {
+        val configuredEndpoint = discoveryEndpoint
+        Log.d("NdiDiscovery", "discoverSources() called with endpoint: $configuredEndpoint")
+        
+        val configuredServerSources = if (configuredEndpoint != null) {
+            runCatching { discoverFromRemoteServer(configuredEndpoint) }
+                .onSuccess { sources -> Log.d("NdiDiscovery", "Remote server returned ${sources.size} sources") }
+                .onFailure { error -> Log.e("NdiDiscovery", "Remote server discovery failed: ${error.message}", error) }
+                .getOrDefault(emptyList())
+        } else {
+            Log.d("NdiDiscovery", "No configured endpoint, skipping remote server query")
+            emptyList()
+        }
+        
+        // If a configured discovery server is available and returns sources, use those
+        if (configuredServerSources.isNotEmpty()) {
+            Log.d("NdiDiscovery", "Using ${configuredServerSources.size} sources from remote server")
+            return@withContext configuredServerSources.distinctBy { it.sourceId }
+        }
+        
         val relaySources = runCatching { discoverRelaySources() }.getOrDefault(emptyList())
 
         val sourceIds = runCatching { nativeDiscoverSourceIds() }.getOrDefault(emptyArray())
@@ -109,6 +140,7 @@ object NativeNdiBridge : NdiDiscoveryBridge, NdiViewerBridge, NdiOutputBridge {
                 lastSeenAtEpochMillis = System.currentTimeMillis(),
             )
         }
+        Log.d("NdiDiscovery", "Found ${relaySources.size} relay sources, ${nativeSources.size} native sources")
 
         // When native SDK discovery is available, prefer its canonical source identities for receiver connect.
         val mdnsSources = if (nativeSources.isEmpty()) {
@@ -345,6 +377,55 @@ object NativeNdiBridge : NdiDiscoveryBridge, NdiViewerBridge, NdiOutputBridge {
                     }
                 }
             }
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    private fun discoverFromRemoteServer(endpoint: NdiDiscoveryEndpoint): List<NdiSource> {
+        val url = "http://${endpoint.host}:${endpoint.resolvedPort}/sources"
+        Log.d("NdiDiscovery", "Querying remote server at: $url")
+        
+        val connection = (URL(url).openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"
+            connectTimeout = 2_000
+            readTimeout = 3_000
+        }
+        return try {
+            val responseCode = connection.responseCode
+            Log.d("NdiDiscovery", "Remote server response code: $responseCode")
+            
+            if (responseCode !in 200..299) {
+                Log.e("NdiDiscovery", "Remote server error: HTTP $responseCode")
+                return emptyList()
+            }
+            
+            val payload = connection.inputStream.bufferedReader().use { reader -> reader.readText() }
+            Log.d("NdiDiscovery", "Remote server response: $payload")
+            
+            val sources = JSONArray(payload)
+            val result = buildList {
+                for (index in 0 until sources.length()) {
+                    val item = sources.getJSONObject(index)
+                    val sourceId = item.optString("sourceId")
+                    val displayName = item.optString("displayName")
+                    if (sourceId.isNotBlank()) {
+                        add(
+                            NdiSource(
+                                sourceId = sourceId,
+                                displayName = displayName.ifBlank { sourceId },
+                                endpointAddress = item.optString("endpointAddress").takeIf { it.isNotBlank() },
+                                lastSeenAtEpochMillis = System.currentTimeMillis(),
+                            ),
+                        )
+                    }
+                }
+            }
+            Log.d("NdiDiscovery", "Parsed ${result.size} sources from remote server")
+            result
+        } catch (e: Exception) {
+            Log.e("NdiDiscovery", "Failed to query remote server: ${e.message}", e)
+            throw e
         } finally {
             connection.disconnect()
         }

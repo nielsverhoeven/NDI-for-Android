@@ -1,11 +1,13 @@
 package com.ndi.feature.ndibrowser.data.repository
 
+import android.util.Log
 import com.ndi.core.database.UserSelectionDao
 import com.ndi.core.model.DiscoverySnapshot
 import com.ndi.core.model.DiscoveryStatus
 import com.ndi.core.model.DiscoveryTrigger
 import com.ndi.feature.ndibrowser.data.DiscoveryRefreshCoordinator
 import com.ndi.feature.ndibrowser.data.mapper.NdiSourceMapper
+import com.ndi.feature.ndibrowser.domain.repository.NdiDiscoveryConfigRepository
 import com.ndi.feature.ndibrowser.domain.repository.NdiDiscoveryRepository
 import com.ndi.sdkbridge.NdiDiscoveryBridge
 import kotlinx.coroutines.CoroutineScope
@@ -19,6 +21,7 @@ import java.util.UUID
 class NdiDiscoveryRepositoryImpl(
     private val bridge: NdiDiscoveryBridge,
     private val userSelectionDao: UserSelectionDao,
+    private val discoveryConfigRepository: NdiDiscoveryConfigRepository,
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
     private val sourceMapper: NdiSourceMapper = NdiSourceMapper(),
     private val refreshCoordinator: DiscoveryRefreshCoordinator = DiscoveryRefreshCoordinator(scope),
@@ -27,6 +30,7 @@ class NdiDiscoveryRepositoryImpl(
     private companion object {
         const val LOCAL_SCREEN_SOURCE_ID = "device-screen:local"
         const val LOCAL_SCREEN_DISPLAY_NAME = "This Device Screen"
+        const val TAG = "NdiDiscoveryRepo"
     }
 
     private val discoveryState = MutableStateFlow(emptySnapshot())
@@ -39,6 +43,11 @@ class NdiDiscoveryRepositoryImpl(
         )
 
         return runCatching {
+            // Fetch and set the configured discovery endpoint on the bridge
+            val endpoint = discoveryConfigRepository.getCurrentEndpoint()
+            Log.d(TAG, "Discovery trigger=$trigger, endpoint=$endpoint")
+            bridge.setDiscoveryEndpoint(endpoint)
+            
             userSelectionDao.getSelection()
             val sources = sourceMapper.map(bridge.discoverSources())
                 .distinctBy { it.sourceId }  // Deduplicate by canonical source ID

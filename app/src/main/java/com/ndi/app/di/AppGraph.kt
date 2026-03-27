@@ -62,9 +62,20 @@ class AppGraph private constructor(context: Context) {
 
     private val database = NdiDatabase.getInstance(context)
 
+    // ---- Spec 006: Settings Menu repositories ----
+
+    val settingsRepository: NdiSettingsRepository = NdiSettingsRepositoryImpl(
+        settingsDao = database.settingsPreferenceDao(),
+    )
+
+    val discoveryConfigRepository: NdiDiscoveryConfigRepository = NdiDiscoveryConfigRepositoryImpl(
+        settingsRepository = settingsRepository,
+    )
+
     val discoveryRepository: NdiDiscoveryRepository = NdiDiscoveryRepositoryImpl(
         bridge = NativeNdiBridge,
         userSelectionDao = database.userSelectionDao(),
+        discoveryConfigRepository = discoveryConfigRepository,
     )
 
     val userSelectionRepository: UserSelectionRepository = UserSelectionRepositoryImpl(
@@ -108,16 +119,6 @@ class AppGraph private constructor(context: Context) {
     val viewContinuityRepository: ViewContinuityRepository = ViewContinuityRepositoryImpl(
         viewerRepository = viewerRepository,
         userSelectionRepository = userSelectionRepository,
-    )
-
-    // ---- Spec 006: Settings Menu repositories ----
-
-    val settingsRepository: NdiSettingsRepository = NdiSettingsRepositoryImpl(
-        settingsDao = database.settingsPreferenceDao(),
-    )
-
-    val discoveryConfigRepository: NdiDiscoveryConfigRepository = NdiDiscoveryConfigRepositoryImpl(
-        settingsRepository = settingsRepository,
     )
 
     val developerDiagnosticsRepository: DeveloperDiagnosticsRepository = DeveloperDiagnosticsRepositoryImpl(

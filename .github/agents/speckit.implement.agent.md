@@ -150,6 +150,7 @@ You **MUST** consider the user input before proceeding (if not empty).
 
    | Task Type | Delegate To | When |
    |-----------|-------------|------|
+  | NDI SDK integration contracts, bridge behavior, and protocol correctness | `ndi.expert` (with `android.app-builder`) | Any task that changes NDI behavior, SDK usage, source discovery/streaming semantics, or `ndi/sdk-bridge` contracts |
    | Core Android implementation (models, repositories, ViewModels, DI wiring, architecture) | `android.app-builder` | Any task touching `core/*`, `feature/*/data`, `feature/*/domain`, `ndi/sdk-bridge`, or `app/di` |
    | UI screens, layouts, Compose, navigation, accessibility | `frontend-dev` | Any task touching `feature/*/presentation`, layouts, navigation graphs, or screen-level UX |
    | Test writing/validation, build verification, instrumentation, e2e | `tester` | After every implementation phase and before marking a phase complete |
@@ -158,10 +159,10 @@ You **MUST** consider the user input before proceeding (if not empty).
 
    **Collaboration Workflow Per Phase**:
 
-   1. **Implement** — Delegate code tasks to `android.app-builder` (core/data/domain) and `frontend-dev` (UI/presentation) as appropriate for the tasks in that phase.
+  1. **Implement** — Delegate NDI SDK integration requirements to `ndi.expert`, then execute code tasks with `android.app-builder` (core/data/domain) and `frontend-dev` (UI/presentation) as appropriate for the tasks in that phase.
    2. **Review** — After implementation tasks in a phase are done, invoke `reviewer` to assess architecture compliance, module boundary correctness, and quality gaps.
    3. **Test** — Invoke `tester` to run the applicable test stages (unit, instrumentation, e2e) and validate the phase output. Do not advance to the next phase until the tester signals a pass.
-   4. **Fix loop** — If `reviewer` or `tester` surface issues, hand back to `android.app-builder` or `frontend-dev` to apply targeted fixes, then re-run review and test.
+  4. **Fix loop** — If `reviewer` or `tester` surface issues, route NDI-specific findings through `ndi.expert` and hand implementation fixes back to `android.app-builder` or `frontend-dev`, then re-run review and test.
    5. **Commit** — Once the phase passes review and test, create a git commit for the completed user story. See **User Story Commit Rules** below.
 
    **User Story Commit Rules**:
@@ -190,9 +191,9 @@ You **MUST** consider the user input before proceeding (if not empty).
 7. Implementation execution rules:
    - **Setup first**: Initialize project structure, dependencies, configuration — handle directly or via `android.app-builder`
    - **Tests before code**: Write contract/entity/integration tests first — delegate to `tester` for test scaffolding guidance
-   - **Core development**: Implement models, services, repositories, ViewModels — delegate to `android.app-builder`
+  - **Core development**: Implement models, services, repositories, ViewModels — delegate to `android.app-builder` and include `ndi.expert` whenever NDI SDK behavior is involved
    - **UI development**: Implement screens, navigation, accessibility — delegate to `frontend-dev`
-   - **Integration work**: Database connections, DI wiring, NDI bridge integration — delegate to `android.app-builder`
+  - **Integration work**: Database connections, DI wiring, NDI bridge integration — delegate NDI-specific integration details to `ndi.expert` and implementation to `android.app-builder`
    - **Polish and validation**: Final test run, performance checks, release hardening — delegate to `tester`, then `reviewer` for final sign-off
 
 8. Progress tracking and error handling:
