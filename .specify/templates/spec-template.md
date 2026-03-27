@@ -76,6 +76,15 @@
 - If no visual behavior changes are included, state "No visual change" with a
   short justification.
 
+### Test Environment & Preconditions *(mandatory)*
+
+- The spec MUST list required runtime dependencies for validation (for example:
+  emulator serials, physical devices, network fixtures, SDK prerequisites).
+- The spec MUST define at least one preflight command/check that confirms the
+  environment is ready before end-to-end validation begins.
+- If an external dependency can block execution, the spec MUST define how to
+  record a blocked result and the concrete unblocking step.
+
 ### Edge Cases
 
 <!--
@@ -104,11 +113,15 @@
   Playwright e2e coverage for new/updated functionality.
 - **FR-007**: For visual additions/changes, system MUST execute and keep
   passing all existing Playwright e2e tests.
+- **FR-008**: For environment-dependent validations, system MUST run and record
+  preflight checks before executing end-to-end or release gates.
+- **FR-009**: Validation reporting MUST classify each failed/blocked gate as
+  code failure or environment blocker with reproduction details.
 
 *Example of marking unclear requirements:*
 
-- **FR-008**: System MUST authenticate users via [NEEDS CLARIFICATION: auth method not specified - email/password, SSO, OAuth?]
-- **FR-009**: System MUST retain user data for [NEEDS CLARIFICATION: retention period not specified]
+- **FR-010**: System MUST authenticate users via [NEEDS CLARIFICATION: auth method not specified - email/password, SSO, OAuth?]
+- **FR-011**: System MUST retain user data for [NEEDS CLARIFICATION: retention period not specified]
 
 ### Key Entities *(include if feature involves data)*
 

@@ -39,12 +39,15 @@
 - [ ] Playwright e2e scope defined for end-to-end flows
 - [ ] For visual UI additions/changes: emulator Playwright e2e tests are explicitly planned
 - [ ] For visual UI additions/changes: existing Playwright e2e regression run is explicitly planned
+- [ ] For shared persistence/settings changes: regression tests for state-preservation are explicitly planned
 - [ ] Material 3 compliance verification planned for UI changes
 - [ ] Battery/background execution impact evaluated
 - [ ] Offline-first and Room persistence constraints respected (if applicable)
 - [ ] Least-permission/security implications documented
 - [ ] Feature-module boundary compliance documented
 - [ ] Release hardening validation planned (R8/ProGuard + shrink resources)
+- [ ] Runtime preflight checks are defined for required emulators/devices/tools before quality gates
+- [ ] Environment-blocked gate handling and evidence capture plan is defined
 
 ## Project Structure
 
