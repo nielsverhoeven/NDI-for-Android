@@ -23,6 +23,8 @@ data class SourceListUiState(
     val sources: List<NdiSource> = emptyList(),
     val highlightedSourceId: String? = null,
     val errorMessage: String? = null,
+    val refreshErrorMessage: String? = null,
+    val isRefreshing: Boolean = false,
     val fallbackWarning: String? = null,
     val layoutMode: SourceListLayoutMode = SourceListLayoutMode.COMPACT,
     val overlayDisplayState: com.ndi.feature.ndibrowser.settings.OverlayDisplayState? = null,
@@ -34,6 +36,10 @@ class SourceListViewModel(
     private val telemetryEmitter: SourceListTelemetryEmitter = SourceListDependencies.telemetryEmitter,
 ) : ViewModel() {
 
+    companion object {
+        private const val CURRENT_DEVICE_SOURCE_ID = "device-screen:local"
+    }
+
     private val preselectionController = SourcePreselectionController(userSelectionRepository)
 
     private val _uiState = MutableStateFlow(SourceListUiState())
@@ -41,9 +47,6 @@ class SourceListViewModel(
 
     private val _navigationEvents = MutableSharedFlow<String>(extraBufferCapacity = 1)
     val navigationEvents: SharedFlow<String> = _navigationEvents.asSharedFlow()
-
-    private val _outputNavigationEvents = MutableSharedFlow<String>(extraBufferCapacity = 1)
-    val outputNavigationEvents: SharedFlow<String> = _outputNavigationEvents.asSharedFlow()
 
     private val _settingsToggleEvents = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     val settingsToggleEvents: SharedFlow<Unit> = _settingsToggleEvents.asSharedFlow()
@@ -83,14 +86,6 @@ class SourceListViewModel(
         }
     }
 
-    fun onOutputRequested(sourceId: String) {
-        viewModelScope.launch {
-            preselectionController.rememberSelection(sourceId)
-            _uiState.update { current -> current.copy(highlightedSourceId = sourceId) }
-            _outputNavigationEvents.emit(sourceId)
-        }
-    }
-
     fun onLayoutMeasured(widthDp: Int) {
         _uiState.update { current ->
             current.copy(layoutMode = SourceListAdaptiveLayout.resolve(widthDp))
@@ -119,13 +114,53 @@ class SourceListViewModel(
 
     private fun onDiscoverySnapshot(snapshot: DiscoverySnapshot) {
         _uiState.update {
-            it.copy(
-                discoveryStatus = snapshot.status,
-                sources = snapshot.sources,
-                errorMessage = snapshot.errorMessage,
-            )
+            when (snapshot.status) {
+                DiscoveryStatus.IN_PROGRESS -> {
+                    // Keep the last visible list while refresh is running.
+                    it.copy(
+                        discoveryStatus = snapshot.status,
+                        isRefreshing = true,
+                        refreshErrorMessage = null,
+                    )
+                }
+
+                DiscoveryStatus.SUCCESS,
+                DiscoveryStatus.EMPTY,
+                -> {
+                    val filteredSources = filterViewableSources(snapshot.sources)
+                    val highlightedSourceId = it.highlightedSourceId?.takeIf { selected ->
+                        filteredSources.any { source -> source.sourceId == selected }
+                    }
+                    it.copy(
+                        discoveryStatus = snapshot.status,
+                        sources = filteredSources,
+                        highlightedSourceId = highlightedSourceId,
+                        errorMessage = snapshot.errorMessage,
+                        refreshErrorMessage = null,
+                        isRefreshing = false,
+                    )
+                }
+
+                DiscoveryStatus.FAILURE -> {
+                    // Preserve the last visible list and show non-blocking inline refresh feedback.
+                    it.copy(
+                        discoveryStatus = snapshot.status,
+                        errorMessage = snapshot.errorMessage,
+                        refreshErrorMessage = snapshot.errorMessage,
+                        isRefreshing = false,
+                    )
+                }
+            }
         }
         telemetryEmitter.emit(SourceListTelemetry.fromSnapshot(snapshot))
+    }
+
+    private fun filterViewableSources(sources: List<NdiSource>): List<NdiSource> {
+        return sources.filterNot(::isCurrentDeviceSource)
+    }
+
+    private fun isCurrentDeviceSource(source: NdiSource): Boolean {
+        return source.sourceId == CURRENT_DEVICE_SOURCE_ID
     }
 
     class Factory(

@@ -44,7 +44,6 @@ class SourceListFragment : Fragment() {
             binding = fragmentBinding,
             onManualRefresh = viewModel::onManualRefresh,
             onSourceClicked = viewModel::onSourceSelected,
-            onOutputClicked = viewModel::onOutputRequested,
         )
         return fragmentBinding.root
     }
@@ -67,13 +66,6 @@ class SourceListFragment : Fragment() {
                 }
                 launch {
                     viewModel.navigationEvents.collect(::navigateToViewerForSourceSelection)
-                }
-                launch {
-                    viewModel.outputNavigationEvents.collect { sourceId ->
-                        runCatching {
-                            findNavController().navigate(SourceListDependencies.outputNavigationRequest(sourceId))
-                        }
-                    }
                 }
                 SourceListDependencies.fallbackWarningFlowOrNull()?.let { fallbackWarningFlow ->
                     launch {
@@ -112,14 +104,22 @@ class SourceListScreen(
     private val binding: FragmentSourceListBinding,
     onManualRefresh: () -> Unit,
     onSourceClicked: (String) -> Unit,
-    onOutputClicked: (String) -> Unit,
 ) {
 
-    private val adapter = SourceAdapter(onSourceClicked, onOutputClicked)
+    companion object {
+        const val REFRESH_BUTTON_TEST_TAG = "source-list-refresh-button"
+        const val LOADING_ICON_TEST_TAG = "source-list-loading-indicator"
+        const val REFRESH_ERROR_TEST_TAG = "source-list-refresh-error"
+    }
+
+    private val adapter = SourceAdapter(onSourceClicked)
 
     init {
         binding.sourceRecyclerView.adapter = adapter
         binding.refreshButton.setOnClickListener { onManualRefresh() }
+        binding.refreshButton.tag = REFRESH_BUTTON_TEST_TAG
+        binding.progressIndicator.tag = LOADING_ICON_TEST_TAG
+        binding.refreshInlineErrorText.tag = REFRESH_ERROR_TEST_TAG
         binding.topAppBar.inflateMenu(R.menu.source_list_menu)
     }
 
@@ -130,13 +130,16 @@ class SourceListScreen(
             binding.sourceRecyclerView.layoutManager = GridLayoutManager(binding.root.context, spanCount)
         }
 
-        val orderedSources = state.sources.sortedByDescending { it.sourceId.startsWith("device-screen:") }
-        adapter.submitList(orderedSources, state.highlightedSourceId)
-        binding.progressIndicator.isVisible = state.discoveryStatus == com.ndi.core.model.DiscoveryStatus.IN_PROGRESS
+        adapter.submitList(state.sources, state.highlightedSourceId)
+        binding.progressIndicator.isVisible = state.isRefreshing
+        binding.refreshButton.isEnabled = !state.isRefreshing
         binding.sourceRecyclerView.isVisible = state.sources.isNotEmpty()
         binding.emptyStateText.isVisible = state.discoveryStatus == com.ndi.core.model.DiscoveryStatus.EMPTY
-        binding.errorStateText.isVisible = state.discoveryStatus == com.ndi.core.model.DiscoveryStatus.FAILURE
+        val isBlockingFailure = state.discoveryStatus == com.ndi.core.model.DiscoveryStatus.FAILURE && state.sources.isEmpty()
+        binding.errorStateText.isVisible = isBlockingFailure
         binding.errorStateText.text = state.errorMessage ?: binding.root.context.getString(R.string.ndi_discovery_error)
+        binding.refreshInlineErrorText.isVisible = !state.refreshErrorMessage.isNullOrBlank()
+        binding.refreshInlineErrorText.text = state.refreshErrorMessage.orEmpty()
         binding.discoveryFallbackWarning.isVisible = state.fallbackWarning != null
         binding.discoveryFallbackWarning.text = state.fallbackWarning.orEmpty()
         DeveloperOverlayRenderer.render(

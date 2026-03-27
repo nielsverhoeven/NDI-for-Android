@@ -1,6 +1,7 @@
 package com.ndi.feature.ndibrowser.viewer
 
 import com.ndi.core.model.PlaybackState
+import com.ndi.core.model.ViewerVideoFrame
 import com.ndi.core.model.ViewerSession
 import com.ndi.feature.ndibrowser.testutil.MainDispatcherRule
 import com.ndi.feature.ndibrowser.domain.repository.NdiViewerRepository
@@ -59,6 +60,8 @@ private class RecoveringStateViewerRepository : NdiViewerRepository {
     }
 
     override fun observeViewerSession(): Flow<ViewerSession> = sessions
+
+    override fun getLatestVideoFrame(): ViewerVideoFrame? = null
 
     override suspend fun retryReconnectWithinWindow(sourceId: String, windowSeconds: Int): ViewerSession = sessions.value
 

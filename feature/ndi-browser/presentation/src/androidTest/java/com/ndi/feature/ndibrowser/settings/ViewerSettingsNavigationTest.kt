@@ -8,6 +8,7 @@ import androidx.test.espresso.matcher.ViewMatchers.isDisplayed
 import androidx.test.espresso.matcher.ViewMatchers.withId
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.ndi.core.model.PlaybackState
+import com.ndi.core.model.ViewerVideoFrame
 import com.ndi.core.model.ViewerSession
 import com.ndi.feature.ndibrowser.domain.repository.NdiViewerRepository
 import com.ndi.feature.ndibrowser.domain.repository.UserSelectionRepository
@@ -53,6 +54,7 @@ private class StubViewerRepo : NdiViewerRepository {
 
     override suspend fun connectToSource(sourceId: String): ViewerSession = session.value
     override fun observeViewerSession(): Flow<ViewerSession> = session
+    override fun getLatestVideoFrame(): ViewerVideoFrame? = null
     override suspend fun retryReconnectWithinWindow(sourceId: String, windowSeconds: Int): ViewerSession = session.value
     override suspend fun stopViewing(): Unit = Unit
 }

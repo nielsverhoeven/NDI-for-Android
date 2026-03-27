@@ -15,20 +15,6 @@
         android:id="@+id/developerOverlay"
         layout="@layout/include_developer_overlay" />
 
-    <com.google.android.material.button.MaterialButton
-        android:id="@+id/refreshButton"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="12dp"
-        android:text="@string/ndi_source_list_refresh" />
-
-    <com.google.android.material.progressindicator.CircularProgressIndicator
-        android:id="@+id/progressIndicator"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="16dp"
-        android:visibility="gone" />
-
     <TextView
         android:id="@+id/emptyStateText"
         android:layout_width="wrap_content"
@@ -62,5 +48,45 @@
         android:layout_weight="1"
         android:clipToPadding="false"
         android:paddingBottom="24dp" />
+
+    <LinearLayout
+        android:id="@+id/refreshControlsContainer"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:orientation="vertical">
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/refreshButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:contentDescription="@string/ndi_source_refresh_button_content_description"
+                android:text="@string/ndi_source_list_refresh" />
+
+            <com.google.android.material.progressindicator.CircularProgressIndicator
+                android:id="@+id/progressIndicator"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="12dp"
+                android:contentDescription="@string/ndi_source_refresh_loading_content_description"
+                android:visibility="gone" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/refreshInlineErrorText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:contentDescription="@string/ndi_source_refresh_error_content_description"
+            android:textColor="?attr/colorError"
+            android:textAppearance="@style/TextAppearance.Material3.BodySmall"
+            android:visibility="gone" />
+    </LinearLayout>
 
 </LinearLayout>

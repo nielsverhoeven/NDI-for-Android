@@ -9,16 +9,20 @@ import com.ndi.feature.ndibrowser.presentation.R
 import com.ndi.feature.ndibrowser.presentation.databinding.ItemNdiSourceBinding
 
 class SourceAdapter(
-    private val onSourceClicked: (String) -> Unit,
-    private val onOutputClicked: (String) -> Unit,
+    private val onViewStreamClicked: (String) -> Unit,
 ) : RecyclerView.Adapter<SourceViewHolder>() {
+
+    companion object {
+        const val SOURCE_ROW_CONTAINER_TEST_TAG = "source-list-row-container"
+        const val VIEW_STREAM_BUTTON_TEST_TAG = "source-list-view-stream-button"
+    }
 
     private var items: List<NdiSource> = emptyList()
     private var highlightedSourceId: String? = null
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): SourceViewHolder {
         val binding = ItemNdiSourceBinding.inflate(LayoutInflater.from(parent.context), parent, false)
-        return SourceViewHolder(binding, onSourceClicked, onOutputClicked)
+        return SourceViewHolder(binding, onViewStreamClicked)
     }
 
     override fun onBindViewHolder(holder: SourceViewHolder, position: Int) {
@@ -36,8 +40,7 @@ class SourceAdapter(
 
 class SourceViewHolder(
     private val binding: ItemNdiSourceBinding,
-    private val onSourceClicked: (String) -> Unit,
-    private val onOutputClicked: (String) -> Unit,
+    private val onViewStreamClicked: (String) -> Unit,
 ) : RecyclerView.ViewHolder(binding.root) {
 
     fun bind(source: NdiSource, isHighlighted: Boolean) {
@@ -48,7 +51,11 @@ class SourceViewHolder(
             source.endpointAddress ?: source.sourceId
         }
         binding.highlightBadge.isVisible = isHighlighted
-        binding.root.setOnClickListener { onSourceClicked(source.sourceId) }
-        binding.outputButton.setOnClickListener { onOutputClicked(source.sourceId) }
+        binding.root.setOnClickListener(null)
+        binding.root.isClickable = false
+        binding.root.isFocusable = false
+        binding.root.tag = SourceAdapter.SOURCE_ROW_CONTAINER_TEST_TAG
+        binding.viewStreamButton.tag = SourceAdapter.VIEW_STREAM_BUTTON_TEST_TAG
+        binding.viewStreamButton.setOnClickListener { onViewStreamClicked(source.sourceId) }
     }
 }
