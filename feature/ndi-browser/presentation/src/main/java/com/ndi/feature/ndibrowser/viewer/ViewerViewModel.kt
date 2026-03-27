@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.ndi.core.model.PlaybackState
+import com.ndi.core.model.ViewerVideoFrame
 import com.ndi.feature.ndibrowser.domain.repository.NdiViewerRepository
 import com.ndi.feature.ndibrowser.domain.repository.UserSelectionRepository
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -85,6 +86,8 @@ class ViewerViewModel(
     fun onLayoutMeasured(widthDp: Int) {
         _uiState.update { current -> current.copy(layoutMode = ViewerAdaptiveLayout.resolve(widthDp)) }
     }
+
+    fun getLatestVideoFrame(): ViewerVideoFrame? = viewerRepository.getLatestVideoFrame()
 
     fun onSettingsTogglePressed() {
         if (settingsToggleInFlight) return

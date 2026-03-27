@@ -94,8 +94,8 @@ class ViewerFragment : Fragment() {
 
     private fun renderRelayPreview(sourceId: String, playbackState: PlaybackState) {
         val fragmentBinding = binding ?: return
-        val canRenderRelay = sourceId.startsWith("relay-screen:") && playbackState == PlaybackState.PLAYING
-        if (!canRenderRelay) {
+        val canRenderPreview = playbackState == PlaybackState.PLAYING
+        if (!canRenderPreview) {
             relayPreviewJob?.cancel()
             relayPreviewJob = null
             relayPreviewSourceId = null
@@ -111,22 +111,38 @@ class ViewerFragment : Fragment() {
         relayPreviewSourceId = sourceId
         relayPreviewJob = viewLifecycleOwner.lifecycleScope.launch {
             while (isActive) {
-                val bitmap = withContext(Dispatchers.IO) {
-                    runCatching {
-                        val encodedSourceId = java.net.URLEncoder.encode(sourceId, Charsets.UTF_8.name())
-                        val url = URL("http://localhost:17455/frame/$encodedSourceId")
-                        val connection = (url.openConnection() as HttpURLConnection).apply {
-                            requestMethod = "GET"
-                            connectTimeout = 1_000
-                            readTimeout = 1_500
-                        }
-                        try {
-                            if (connection.responseCode !in 200..299) return@runCatching null
-                            connection.inputStream.use { input -> BitmapFactory.decodeStream(input) }
-                        } finally {
-                            connection.disconnect()
-                        }
-                    }.getOrNull()
+                val bitmap = if (sourceId.startsWith("relay-screen:")) {
+                    withContext(Dispatchers.IO) {
+                        runCatching {
+                            val encodedSourceId = java.net.URLEncoder.encode(sourceId, Charsets.UTF_8.name())
+                            val url = URL("http://localhost:17455/frame/$encodedSourceId")
+                            val connection = (url.openConnection() as HttpURLConnection).apply {
+                                requestMethod = "GET"
+                                connectTimeout = 1_000
+                                readTimeout = 1_500
+                            }
+                            try {
+                                if (connection.responseCode !in 200..299) return@runCatching null
+                                connection.inputStream.use { input -> BitmapFactory.decodeStream(input) }
+                            } finally {
+                                connection.disconnect()
+                            }
+                        }.getOrNull()
+                    }
+                } else {
+                    val frame = viewModel.getLatestVideoFrame()
+                    if (frame == null) {
+                        null
+                    } else {
+                        runCatching {
+                            android.graphics.Bitmap.createBitmap(
+                                frame.argbPixels,
+                                frame.width,
+                                frame.height,
+                                android.graphics.Bitmap.Config.ARGB_8888,
+                            )
+                        }.getOrNull()
+                    }
                 }
 
                 if (bitmap != null) {

@@ -3,6 +3,7 @@ package com.ndi.sdkbridge
 import android.content.Context
 import android.net.wifi.WifiManager
 import com.ndi.core.model.NdiSource
+import com.ndi.core.model.ViewerVideoFrame
 import java.net.HttpURLConnection
 import java.net.Inet4Address
 import java.net.NetworkInterface
@@ -28,6 +29,8 @@ interface NdiViewerBridge {
     fun startReceiver(sourceId: String)
 
     fun stopReceiver()
+
+    fun getLatestReceiverFrame(): ViewerVideoFrame?
 }
 
 interface NdiOutputBridge {
@@ -48,6 +51,7 @@ object NativeNdiBridge : NdiDiscoveryBridge, NdiViewerBridge, NdiOutputBridge {
     private const val HEARTBEAT_INTERVAL_MS = 1_000L
     private const val MDNS_QUERY_TIMEOUT_MS = 1_200L
     private const val MDNS_CACHE_WINDOW_MS = 3_000L
+    private const val NATIVE_RECEIVER_IMPLEMENTED = true
 
     private val MDNS_SERVICE_TYPES = arrayOf(
         "_ndi._tcp.local.",
@@ -106,7 +110,12 @@ object NativeNdiBridge : NdiDiscoveryBridge, NdiViewerBridge, NdiOutputBridge {
             )
         }
 
-        val mdnsSources = runCatching { discoverMdnsSourcesCached() }.getOrDefault(emptyList())
+        // When native SDK discovery is available, prefer its canonical source identities for receiver connect.
+        val mdnsSources = if (nativeSources.isEmpty()) {
+            runCatching { discoverMdnsSourcesCached() }.getOrDefault(emptyList())
+        } else {
+            emptyList()
+        }
 
         buildList {
             addAll(relaySources)
@@ -236,11 +245,36 @@ object NativeNdiBridge : NdiDiscoveryBridge, NdiViewerBridge, NdiOutputBridge {
     }
 
     override fun startReceiver(sourceId: String) {
+        if (sourceId.startsWith("relay-screen:")) {
+            // Relay-backed preview is rendered in ViewerFragment from /frame endpoint.
+            return
+        }
+        if (!NATIVE_RECEIVER_IMPLEMENTED) {
+            throw UnsupportedOperationException(
+                "NDI receiver pipeline is not available in this build. " +
+                    "Integrate the NDI native SDK receiver implementation to play network streams.",
+            )
+        }
         runCatching { nativeStartReceiver(sourceId) }
     }
 
     override fun stopReceiver() {
         runCatching { nativeStopReceiver() }
+    }
+
+    override fun getLatestReceiverFrame(): ViewerVideoFrame? {
+        val width = runCatching { nativeGetLatestReceiverFrameWidth() }.getOrDefault(0)
+        val height = runCatching { nativeGetLatestReceiverFrameHeight() }.getOrDefault(0)
+        if (width <= 0 || height <= 0) return null
+
+        val pixels = runCatching { nativeGetLatestReceiverFrameArgb() }.getOrNull() ?: return null
+        if (pixels.size < width * height) return null
+
+        return ViewerVideoFrame(
+            width = width,
+            height = height,
+            argbPixels = pixels,
+        )
     }
 
     override suspend fun isSourceReachable(sourceId: String): Boolean = withContext(Dispatchers.IO) {
@@ -355,6 +389,12 @@ object NativeNdiBridge : NdiDiscoveryBridge, NdiViewerBridge, NdiOutputBridge {
     private external fun nativeStartReceiver(sourceId: String)
 
     private external fun nativeStopReceiver()
+
+    private external fun nativeGetLatestReceiverFrameArgb(): IntArray?
+
+    private external fun nativeGetLatestReceiverFrameWidth(): Int
+
+    private external fun nativeGetLatestReceiverFrameHeight(): Int
 
     private external fun nativeStartSender(sourceId: String, streamName: String)
 

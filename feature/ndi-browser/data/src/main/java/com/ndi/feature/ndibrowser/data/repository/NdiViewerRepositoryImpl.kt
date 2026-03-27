@@ -3,6 +3,7 @@ package com.ndi.feature.ndibrowser.data.repository
 import com.ndi.core.database.ViewerSessionDao
 import com.ndi.core.database.ViewerSessionEntity
 import com.ndi.core.model.PlaybackState
+import com.ndi.core.model.ViewerVideoFrame
 import com.ndi.core.model.ViewerSession
 import com.ndi.feature.ndibrowser.data.ViewerReconnectCoordinator
 import com.ndi.feature.ndibrowser.domain.repository.NdiViewerRepository
@@ -10,6 +11,7 @@ import com.ndi.sdkbridge.NdiViewerBridge
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.delay
 import java.util.UUID
 
 class NdiViewerRepositoryImpl(
@@ -38,16 +40,32 @@ class NdiViewerRepositoryImpl(
 
         return runCatching {
             bridge.startReceiver(sourceId)
+            waitForFirstFrame(sourceId)
             val playingSession = connectingSession.copy(playbackState = PlaybackState.PLAYING)
             viewerSessionState.value = playingSession
             viewerSessionDao.upsert(playingSession.toEntity())
             playingSession
         }.getOrElse { error ->
+            if (error is UnsupportedOperationException) {
+                val interruptedSession = ViewerSession(
+                    sessionId = UUID.randomUUID().toString(),
+                    selectedSourceId = sourceId,
+                    playbackState = PlaybackState.INTERRUPTED,
+                    interruptionReason = error.message,
+                    retryWindowSeconds = 15,
+                    startedAtEpochMillis = System.currentTimeMillis(),
+                )
+                viewerSessionState.value = interruptedSession
+                viewerSessionDao.upsert(interruptedSession.toEntity())
+                return interruptedSession
+            }
             retryInternal(sourceId, 15, error.message ?: "Playback interrupted")
         }
     }
 
     override fun observeViewerSession(): Flow<ViewerSession> = viewerSessionState.asStateFlow()
+
+    override fun getLatestVideoFrame(): ViewerVideoFrame? = bridge.getLatestReceiverFrame()
 
     override suspend fun retryReconnectWithinWindow(sourceId: String, windowSeconds: Int): ViewerSession {
         return retryInternal(sourceId, windowSeconds, "Playback interrupted")
@@ -89,7 +107,11 @@ class NdiViewerRepositoryImpl(
         viewerSessionDao.upsert(interruptedSession.toEntity())
 
         val retryResult = reconnectCoordinator.retryWithinWindow(windowSeconds) {
-            runCatching { bridge.startReceiver(sourceId) }.isSuccess
+            runCatching {
+                bridge.startReceiver(sourceId)
+                waitForFirstFrame(sourceId)
+                true
+            }.getOrDefault(false)
         }
 
         return if (retryResult.recovered) {
@@ -110,5 +132,20 @@ class NdiViewerRepositoryImpl(
             viewerSessionDao.upsert(stoppedSession.toEntity())
             stoppedSession
         }
+    }
+
+    private suspend fun waitForFirstFrame(sourceId: String, timeoutMillis: Long = 5_000L) {
+        if (sourceId.startsWith("relay-screen:")) {
+            return
+        }
+        val deadline = System.currentTimeMillis() + timeoutMillis
+        while (System.currentTimeMillis() < deadline) {
+            val frame = bridge.getLatestReceiverFrame()
+            if (frame != null && frame.width > 0 && frame.height > 0 && frame.argbPixels.isNotEmpty()) {
+                return
+            }
+            delay(100)
+        }
+        throw IllegalStateException("No video frames received from selected NDI source")
     }
 }
