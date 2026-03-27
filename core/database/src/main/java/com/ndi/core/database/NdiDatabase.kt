@@ -105,6 +105,8 @@ data class SettingsPreferenceEntity(
     val id: Int = 1,
     val discoveryServerInput: String?,
     val developerModeEnabled: Boolean,
+    val themeMode: String = "SYSTEM",
+    val accentColorId: String = "accent_teal",
     val updatedAtEpochMillis: Long,
 )
 
@@ -125,7 +127,7 @@ interface SettingsPreferenceDao {
         OutputSessionEntity::class,
         SettingsPreferenceEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = false,
 )
 abstract class NdiDatabase : RoomDatabase() {
@@ -223,11 +225,25 @@ abstract class NdiDatabase : RoomDatabase() {
                         id INTEGER NOT NULL,
                         discoveryServerInput TEXT,
                         developerModeEnabled INTEGER NOT NULL DEFAULT 0,
+                        themeMode TEXT NOT NULL DEFAULT 'SYSTEM',
+                        accentColorId TEXT NOT NULL DEFAULT 'accent_teal',
                         updatedAtEpochMillis INTEGER NOT NULL DEFAULT 0,
                         PRIMARY KEY(id)
                     )
                     """.trimIndent(),
                 )
+            }
+        }
+
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                if (!hasColumn(database, "settings_preference", "themeMode")) {
+                    database.execSQL("ALTER TABLE settings_preference ADD COLUMN themeMode TEXT NOT NULL DEFAULT 'SYSTEM'")
+                }
+
+                if (!hasColumn(database, "settings_preference", "accentColorId")) {
+                    database.execSQL("ALTER TABLE settings_preference ADD COLUMN accentColorId TEXT NOT NULL DEFAULT 'accent_teal'")
+                }
             }
         }
 
@@ -241,7 +257,7 @@ abstract class NdiDatabase : RoomDatabase() {
                     NdiDatabase::class.java,
                     "ndi_database",
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                     .build()
                     .also { instance = it }
             }

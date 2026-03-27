@@ -166,10 +166,12 @@ class MainActivity : AppCompatActivity(), HomeNavigationCallback {
 
     override fun onStart() {
         super.onStart()
+        appGraph.appThemeCoordinator.start()
         continuityViewModel.onAppForegrounded()
     }
 
     override fun onStop() {
+        appGraph.appThemeCoordinator.stop()
         continuityViewModel.onAppBackgrounded(isChangingConfigurations)
         super.onStop()
     }

@@ -58,10 +58,13 @@ class SettingsViewModel(
         }
 
         viewModelScope.launch {
+            val currentSettings = settingsRepository.getSettings()
             settingsRepository.saveSettings(
                 NdiSettingsSnapshot(
                     discoveryServerInput = state.discoveryServerInput.takeIf { it.isNotBlank() },
                     developerModeEnabled = state.developerModeEnabled,
+                    themeMode = currentSettings.themeMode,
+                    accentColorId = currentSettings.accentColorId,
                     updatedAtEpochMillis = System.currentTimeMillis(),
                 ),
             )

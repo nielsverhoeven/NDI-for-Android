@@ -1,3 +1,42 @@
+# Feature 016: Theme Editor Settings - Phase 2 Foundational Gate Check (2026-03-27)
+
+## 1) Scope
+- Branch/commit: working tree validation run (commit hash not captured in this run).
+- Validation intent: assess whether targeted compilation and unit-test evidence is sufficient for foundational tasks T008-T018 before US1 in `specs/016-json-shortname-settings/tasks.md`.
+- Changed/impacted modules for foundational scope: `:core:model`, `:core:database`, `:feature:theme-editor:domain`, `:feature:theme-editor:data`, `:feature:theme-editor:presentation`, `:app`, and telemetry touchpoint in `:feature:ndi-browser:presentation`.
+- Module graph confirmed from `settings.gradle.kts`: `:app`, `:core:model`, `:core:database`, `:core:testing`, `:feature:ndi-browser:domain`, `:feature:ndi-browser:data`, `:feature:ndi-browser:presentation`, `:feature:theme-editor:domain`, `:feature:theme-editor:data`, `:feature:theme-editor:presentation`, `:ndi:sdk-bridge`.
+
+## 2) Stage Results
+| Stage | Status | Executed Commands | Result |
+|---|---|---|---|
+| Prerequisite gate | FAIL | `./scripts/verify-android-prereqs.ps1` | Failed with environment blockers: `JAVA_HOME` unset and `ANDROID_SDK_ROOT` unset. Per tester workflow, no further staged execution is valid until fixed. |
+| Wrapper/toolchain capture | PASS | `./gradlew.bat --version` | Gradle 9.2.1, Java 21 launcher detected. |
+| Targeted compile + data unit evidence (workspace context) | PASS (context-only) | `.\gradlew.bat :core:model:compileKotlin :core:database:compileDebugKotlin :feature:theme-editor:domain:compileDebugKotlin :feature:theme-editor:data:testDebugUnitTest :app:compileDebugKotlin` | Reported exit code 0 in active workspace terminal context; not re-run in this cycle because prereq gate failed. |
+| Stage 1 full assemble sweep | NOT RUN | N/A | Blocked by failed prerequisite gate. |
+| Stage 2 module-aware unit suite sweep | NOT RUN | N/A | Blocked by failed prerequisite gate. |
+| Stage 3 instrumentation/UI | NOT RUN | N/A | Out of scope for foundational-only evidence, and blocked by prerequisite gate in this run. |
+| Stage 4 dual-emulator e2e | NOT RUN | N/A | Not required for foundational-only acceptance in this check. |
+| Stage 6 release checks | NOT RUN | N/A | Not required before US1 but still not executed in this run. |
+
+## 3) Issues Found & Fixes
+| Defect/Issue | Root Cause | Fix Applied | Verification |
+|---|---|---|---|
+| Foundational gate evidence cannot be considered complete | Mandatory prereq script failed before staged Gradle validation | No code fix applied in this run | Prereq script output explicitly reports unset `JAVA_HOME` and `ANDROID_SDK_ROOT`. |
+
+## 4) E2E Evidence
+- Not executed for this foundational gate check.
+
+## 5) Release Gate Status
+- [x] Prerequisite gate executed
+- [ ] Prerequisite gate passed
+- [x] Wrapper/toolchain validated (`./gradlew.bat --version`)
+- [x] Targeted compilation and one targeted unit test command observed as passing in workspace context
+- [ ] Stage 1 full foundational assemble sweep executed and passing for impacted modules
+- [ ] Stage 2 foundational module-aware unit sweep executed and passing
+- [ ] US1-required failing-test-first tasks (T019-T022) implemented/executed
+
+Final disposition for feature 016 Phase 2 foundational gate check: **FAIL/BLOCKED** (environment prereq blockers prevent a valid pass decision, and targeted compile + single module unit evidence is not yet sufficient on its own).
+
 # Feature 014: Bottom Nav Settings - Phase 3 US1 Red-Phase Credibility (2026-03-26)
 
 ## 1) Scope

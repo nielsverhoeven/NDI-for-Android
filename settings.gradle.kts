@@ -24,5 +24,8 @@ include(
     ":feature:ndi-browser:domain",
     ":feature:ndi-browser:data",
     ":feature:ndi-browser:presentation",
+    ":feature:theme-editor:domain",
+    ":feature:theme-editor:data",
+    ":feature:theme-editor:presentation",
     ":ndi:sdk-bridge",
 )

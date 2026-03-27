@@ -59,3 +59,13 @@ Guarantees:
 - No new runtime permissions introduced.
 - Theme behavior changes remain within MVVM and repository boundaries.
 - No direct persistence calls from fragment/view layers.
+
+## Verification Notes
+
+- Implemented dedicated `feature/theme-editor/{domain,data,presentation}` module path for theme editor behavior.
+- Implemented mode selection flow with app-wide night mode application via `AppThemeCoordinator`.
+- Implemented curated 6-option accent palette selection and persistence mapping.
+- Implemented repository default/normalization behavior for invalid accent tokens.
+- Added unit and instrumentation coverage for mode/accent/persistence state paths.
+- Added Playwright specs for mode flow and accent/persistence scenarios.
+- Full dual-emulator regression run remains environment-dependent and must be executed when emulator pair is online.

@@ -48,5 +48,7 @@ data class TelemetryEvent(
         const val DEVELOPER_MODE_TOGGLED = "developer_mode_toggled"
         const val DEVELOPER_OVERLAY_STATE_CHANGED = "developer_overlay_state_changed"
         const val OVERLAY_LOG_REDACTION_APPLIED = "overlay_log_redaction_applied"
+        const val THEME_MODE_SELECTED = "theme_mode_selected"
+        const val THEME_ACCENT_SELECTED = "theme_accent_selected"
     }
 }

@@ -55,3 +55,12 @@ powershell -ExecutionPolicy Bypass -File .\testing\e2e\scripts\run-dual-emulator
 ```
 
 Record outcomes and evidence in feature validation artifacts during implementation.
+
+## 6. Maintainer Notes
+
+- Added modules: `:feature:theme-editor:domain`, `:feature:theme-editor:data`, `:feature:theme-editor:presentation`.
+- Verified touched-module JVM + Android-test compile gate:
+   - `./gradlew.bat :feature:theme-editor:data:testDebugUnitTest :feature:theme-editor:presentation:testDebugUnitTest :feature:theme-editor:presentation:compileDebugAndroidTestKotlin :app:testDebugUnitTest`
+- Verified release hardening gate:
+   - `./gradlew.bat verifyReleaseHardening :app:assembleRelease`
+- Full Playwright regression (`run-dual-emulator-e2e.ps1`) requires two running visible emulators and is currently blocked when emulator devices are offline.

@@ -80,9 +80,19 @@
         android:label="@string/settings_title">
         <deepLink app:uri="ndi://settings" />
         <action
+            android:id="@+id/action_settingsFragment_to_themeEditorFragment"
+            app:destination="@id/themeEditorFragment" />
+        <action
             android:id="@+id/action_settingsFragment_to_previous"
             app:popUpTo="@id/main_nav_graph"
             app:popUpToInclusive="false" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/themeEditorFragment"
+        android:name="com.ndi.feature.themeeditor.ThemeEditorFragment"
+        android:label="Theme Editor">
+        <deepLink app:uri="ndi://theme-editor" />
     </fragment>
 
 </navigation>
