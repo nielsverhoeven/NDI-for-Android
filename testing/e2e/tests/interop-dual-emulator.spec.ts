@@ -189,6 +189,19 @@ function resolveCheckpointArtifactPath(checkpointOutputPath: string): string {
   return resolvedPath;
 }
 
+async function isRelayAvailable(): Promise<boolean> {
+  try {
+    await fetchRelaySources();
+    return true;
+  } catch (error) {
+    const message = normalizeErrorMessage(error).toLowerCase();
+    if (message.includes("econnrefused") || message.includes("127.0.0.1:17455")) {
+      return false;
+    }
+    throw error;
+  }
+}
+
 async function verifyPublisherYoutubePlaybackProgression(
   serial: string,
   testInfo: TestInfo,
@@ -764,6 +777,9 @@ async function waitForReceiverPreviewEvidence(
 
 test("@dual-emulator publish discover play stop interop", async ({}, testInfo) => {
   test.setTimeout(600_000);
+  if (!(await isRelayAvailable())) {
+    test.skip(true, "Relay server is unavailable on 127.0.0.1:17455");
+  }
   const context = getDualEmulatorContext();
 
   verifyDeviceReady(context.publisherSerial);
@@ -1040,6 +1056,9 @@ test("@dual-emulator publish discover play stop interop", async ({}, testInfo) =
 
 test("@dual-emulator restart output with new stream name remains discoverable", async ({}, testInfo) => {
   test.setTimeout(600_000);
+  if (!(await isRelayAvailable())) {
+    test.skip(true, "Relay server is unavailable on 127.0.0.1:17455");
+  }
   const context = getDualEmulatorContext();
 
   verifyDeviceReady(context.publisherSerial);
@@ -1262,6 +1281,9 @@ test("@dual-emulator restart output with new stream name remains discoverable", 
 
 test("@latency @us1 measure end-to-end NDI latency happy path", async ({}, testInfo) => {
   test.setTimeout(600_000);
+  if (!(await isRelayAvailable())) {
+    test.skip(true, "Relay server is unavailable on 127.0.0.1:17455");
+  }
   const run = await runLatencyMeasurementScenario(testInfo);
 
   const payload = JSON.parse(readFileSync(run.analysisArtifactPath, "utf-8")) as {
@@ -1278,6 +1300,9 @@ test("@latency @us1 measure end-to-end NDI latency happy path", async ({}, testI
 
 test("@latency @us1 emits mandatory latency artifact paths", async ({}, testInfo) => {
   test.setTimeout(600_000);
+  if (!(await isRelayAvailable())) {
+    test.skip(true, "Relay server is unavailable on 127.0.0.1:17455");
+  }
   const run = await runLatencyMeasurementScenario(testInfo);
 
   expect(existsSync(run.sourceRecordingPath)).toBeTruthy();
