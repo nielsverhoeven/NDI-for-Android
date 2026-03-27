@@ -1,9 +1,15 @@
 package com.ndi.sdkbridge
 
+import android.content.Context
+import android.net.wifi.WifiManager
 import com.ndi.core.model.NdiSource
 import java.net.HttpURLConnection
+import java.net.Inet4Address
+import java.net.NetworkInterface
 import java.net.URL
+import java.util.Collections
 import java.util.UUID
+import javax.jmdns.JmDNS
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -38,8 +44,16 @@ interface NdiOutputBridge {
 
 object NativeNdiBridge : NdiDiscoveryBridge, NdiViewerBridge, NdiOutputBridge {
 
-    private const val RELAY_BASE_URL = "http://10.0.2.2:17455"
+    private const val RELAY_BASE_URL = "http://localhost:17455"
     private const val HEARTBEAT_INTERVAL_MS = 1_000L
+    private const val MDNS_QUERY_TIMEOUT_MS = 1_200L
+    private const val MDNS_CACHE_WINDOW_MS = 3_000L
+
+    private val MDNS_SERVICE_TYPES = arrayOf(
+        "_ndi._tcp.local.",
+        "_ndi-source._tcp.local.",
+        "_ndi._udp.local.",
+    )
 
     private data class LocalRelaySender(
         val sourceId: String,
@@ -52,6 +66,20 @@ object NativeNdiBridge : NdiDiscoveryBridge, NdiViewerBridge, NdiOutputBridge {
     private val relayScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     @Volatile
+    private var appContext: Context? = null
+
+    @Volatile
+    private var multicastLock: WifiManager.MulticastLock? = null
+
+    private val mdnsCacheLock = Any()
+
+    @Volatile
+    private var cachedMdnsSources: List<NdiSource> = emptyList()
+
+    @Volatile
+    private var cachedMdnsUpdatedAtEpochMillis: Long = 0L
+
+    @Volatile
     private var activeLocalSender: LocalRelaySender? = null
 
     @Volatile
@@ -61,21 +89,149 @@ object NativeNdiBridge : NdiDiscoveryBridge, NdiViewerBridge, NdiOutputBridge {
         runCatching { System.loadLibrary("ndi_bridge") }
     }
 
+    fun initialize(context: Context) {
+        appContext = context.applicationContext
+    }
+
     override suspend fun discoverSources(): List<NdiSource> = withContext(Dispatchers.IO) {
         val relaySources = runCatching { discoverRelaySources() }.getOrDefault(emptyList())
-        if (relaySources.isNotEmpty()) {
-            return@withContext relaySources
-        }
 
         val sourceIds = runCatching { nativeDiscoverSourceIds() }.getOrDefault(emptyArray())
         val displayNames = runCatching { nativeDiscoverDisplayNames() }.getOrDefault(emptyArray())
-
-        sourceIds.mapIndexed { index, sourceId ->
+        val nativeSources = sourceIds.mapIndexed { index, sourceId ->
             NdiSource(
                 sourceId = sourceId,
                 displayName = displayNames.getOrNull(index) ?: sourceId,
                 lastSeenAtEpochMillis = System.currentTimeMillis(),
             )
+        }
+
+        val mdnsSources = runCatching { discoverMdnsSourcesCached() }.getOrDefault(emptyList())
+
+        buildList {
+            addAll(relaySources)
+            addAll(nativeSources)
+            addAll(mdnsSources)
+        }.distinctBy { it.sourceId }
+    }
+
+    private fun discoverMdnsSourcesCached(): List<NdiSource> {
+        val now = System.currentTimeMillis()
+        if (now - cachedMdnsUpdatedAtEpochMillis <= MDNS_CACHE_WINDOW_MS) {
+            return cachedMdnsSources
+        }
+
+        synchronized(mdnsCacheLock) {
+            val refreshedNow = System.currentTimeMillis()
+            if (refreshedNow - cachedMdnsUpdatedAtEpochMillis <= MDNS_CACHE_WINDOW_MS) {
+                return cachedMdnsSources
+            }
+
+            val discovered = discoverMdnsSources()
+            cachedMdnsSources = discovered
+            cachedMdnsUpdatedAtEpochMillis = refreshedNow
+            return discovered
+        }
+    }
+
+    private fun discoverMdnsSources(): List<NdiSource> {
+        val now = System.currentTimeMillis()
+        return withMulticastLock {
+            val allDiscovered = mutableListOf<NdiSource>()
+            for (localAddress in discoverMulticastAddresses()) {
+                val jmdns = runCatching {
+                    JmDNS.create(localAddress, "ndi-android-${localAddress.hostAddress}")
+                }.getOrNull() ?: continue
+
+                try {
+                    for (serviceType in MDNS_SERVICE_TYPES) {
+                        val serviceInfos = runCatching {
+                            jmdns.list(serviceType, MDNS_QUERY_TIMEOUT_MS)
+                        }.getOrDefault(emptyArray())
+
+                        for (serviceInfo in serviceInfos) {
+                            val displayName = serviceInfo.name
+                                ?.trim()
+                                ?.takeIf { it.isNotEmpty() }
+                                ?: serviceInfo.qualifiedName
+
+                            val host = serviceInfo.inet4Addresses
+                                .firstOrNull()
+                                ?.hostAddress
+                                ?: serviceInfo.server
+                                    ?.trimEnd('.')
+                                    ?.takeIf { it.isNotBlank() }
+
+                            val endpointAddress = if (host != null && serviceInfo.port > 0) {
+                                "$host:${serviceInfo.port}"
+                            } else {
+                                null
+                            }
+
+                            val sourceId = endpointAddress ?: "mdns:${serviceType}:${displayName}"
+
+                            allDiscovered += NdiSource(
+                                sourceId = sourceId,
+                                displayName = displayName,
+                                endpointAddress = endpointAddress,
+                                lastSeenAtEpochMillis = now,
+                            )
+                        }
+                    }
+                } finally {
+                    runCatching { jmdns.close() }
+                }
+            }
+
+            allDiscovered
+                .filter { it.sourceId.isNotBlank() }
+                .distinctBy { it.sourceId }
+        }
+    }
+
+    private fun discoverMulticastAddresses(): List<Inet4Address> {
+        val interfaces = runCatching {
+            val values = NetworkInterface.getNetworkInterfaces() ?: return emptyList()
+            Collections.list(values)
+        }.getOrDefault(emptyList())
+
+        return interfaces.asSequence()
+            .filter { networkInterface ->
+                runCatching {
+                    networkInterface.isUp &&
+                        !networkInterface.isLoopback &&
+                        networkInterface.supportsMulticast()
+                }.getOrDefault(false)
+            }
+            .flatMap { networkInterface ->
+                runCatching {
+                    Collections.list(networkInterface.inetAddresses)
+                }.getOrDefault(emptyList()).asSequence()
+            }
+            .filterIsInstance<Inet4Address>()
+            .filterNot { it.isLoopbackAddress }
+            .distinctBy { it.hostAddress }
+            .toList()
+    }
+
+    private inline fun <T> withMulticastLock(block: () -> T): T {
+        val wifiManager = appContext?.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+        val lock = wifiManager?.let {
+            multicastLock ?: it.createMulticastLock("ndi-mdns-discovery").apply {
+                setReferenceCounted(true)
+                multicastLock = this
+            }
+        }
+        val acquiredHere = lock != null && !lock.isHeld
+        if (acquiredHere) {
+            runCatching { lock.acquire() }
+        }
+        return try {
+            block()
+        } finally {
+            if (acquiredHere) {
+                runCatching { lock?.release() }
+            }
         }
     }
 

@@ -56,6 +56,10 @@ class AppGraph private constructor(context: Context) {
 
     private val appScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
+    init {
+        NativeNdiBridge.initialize(context.applicationContext)
+    }
+
     private val database = NdiDatabase.getInstance(context)
 
     val discoveryRepository: NdiDiscoveryRepository = NdiDiscoveryRepositoryImpl(

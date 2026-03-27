@@ -114,7 +114,7 @@ class ViewerFragment : Fragment() {
                 val bitmap = withContext(Dispatchers.IO) {
                     runCatching {
                         val encodedSourceId = java.net.URLEncoder.encode(sourceId, Charsets.UTF_8.name())
-                        val url = URL("http://10.0.2.2:17455/frame/$encodedSourceId")
+                        val url = URL("http://localhost:17455/frame/$encodedSourceId")
                         val connection = (url.openConnection() as HttpURLConnection).apply {
                             requestMethod = "GET"
                             connectTimeout = 1_000
