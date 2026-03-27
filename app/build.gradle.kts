@@ -1,7 +1,48 @@
+import java.util.Properties
+import java.io.File
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
 }
+
+// Helper function to read version properties
+fun readVersionProperties(): Pair<Int, String> {
+    val versionPropsFile = rootProject.file("version.properties")
+    val versionProps = Properties()
+    if (versionPropsFile.exists()) {
+        versionPropsFile.inputStream().use { versionProps.load(it) }
+    }
+    val code = (versionProps.getProperty("versionCode", "1") as String).toInt()
+    val name = versionProps.getProperty("versionName", "0.1.0") as String
+    return Pair(code, name)
+}
+
+// Helper function to increment and write version
+fun incrementAndWriteVersion(): Pair<Int, String> {
+    val versionPropsFile = rootProject.file("version.properties")
+    val (currentCode, currentName) = readVersionProperties()
+    val newCode = currentCode + 1
+    
+    // Increment patch version (0.1.0 → 0.1.1 → 0.1.2, etc.)
+    val nameParts = currentName.split(".")
+    val newName = if (nameParts.size == 3) {
+        val patch = nameParts[2].toIntOrNull() ?: 0
+        "${nameParts[0]}.${nameParts[1]}.${patch + 1}"
+    } else {
+        currentName
+    }
+    
+    val newProps = Properties()
+    newProps.setProperty("versionCode", newCode.toString())
+    newProps.setProperty("versionName", newName)
+    versionPropsFile.outputStream().use { newProps.store(it, "Version incremented before build") }
+    println("  ✓ Version incremented: versionCode $currentCode → $newCode, versionName $currentName → $newName")
+    return Pair(newCode, newName)
+}
+
+// Increment version at the START of each build
+val (appVersionCode, appVersionName) = incrementAndWriteVersion()
 
 android {
     namespace = "com.ndi.app"
@@ -11,8 +52,8 @@ android {
         applicationId = "com.ndi.app"
         minSdk = 24
         targetSdk = 34
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = appVersionCode
+        versionName = appVersionName
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -57,6 +98,7 @@ kotlin {
 afterEvaluate {
     val androidExtension = project.extensions.getByType<com.android.build.api.dsl.ApplicationExtension>()
     val versionName = androidExtension.defaultConfig.versionName ?: "dev"
+    val exportDir = rootProject.file("exports")
 
     val renameDebugApk = tasks.register("renameDebugApk") {
         doLast {
@@ -65,6 +107,14 @@ afterEvaluate {
             val renamedApk = File(apkDir, "ndi-for-android-${versionName}.apk")
             if (originalApk.exists()) {
                 originalApk.renameTo(renamedApk)
+            }
+            
+            // Copy to export folder
+            if (renamedApk.exists()) {
+                exportDir.mkdirs()
+                val exportedApk = File(exportDir, renamedApk.name)
+                renamedApk.copyTo(exportedApk, overwrite = true)
+                println("  ✓ APK exported to ${exportedApk.absolutePath}")
             }
         }
     }
@@ -76,6 +126,14 @@ afterEvaluate {
             val renamedApk = File(apkDir, "ndi-for-android-${versionName}.apk")
             if (originalApk.exists()) {
                 originalApk.renameTo(renamedApk)
+            }
+            
+            // Copy to export folder
+            if (renamedApk.exists()) {
+                exportDir.mkdirs()
+                val exportedApk = File(exportDir, renamedApk.name)
+                renamedApk.copyTo(exportedApk, overwrite = true)
+                println("  ✓ APK exported to ${exportedApk.absolutePath}")
             }
         }
     }

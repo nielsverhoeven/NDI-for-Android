@@ -10,6 +10,7 @@
     <string name="nav_home">Home</string>
     <string name="nav_stream">Stream</string>
     <string name="nav_view">View</string>
+    <string name="nav_settings">Settings</string>
     <string name="home_title">Home</string>
     <string name="stream_title">Stream</string>
     <string name="view_title">View</string>
@@ -23,4 +24,9 @@
     <string name="home_view_status_stopped">Stopped</string>
     <string name="home_view_status_playing">Playing</string>
     <string name="home_selected_source_label">Last selected source</string>
+    
+    <!-- Settings accessibility -->
+    <string name="settings_tab_label">Settings</string>
+    <string name="settings_open_content_description">Open settings</string>
+    <string name="settings_close_content_description">Close settings</string>
 </resources>

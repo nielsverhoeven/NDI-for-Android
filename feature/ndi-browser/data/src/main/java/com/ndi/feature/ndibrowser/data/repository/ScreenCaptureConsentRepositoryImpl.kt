@@ -2,6 +2,7 @@ package com.ndi.feature.ndibrowser.data.repository
 
 import com.ndi.feature.ndibrowser.domain.repository.ScreenCaptureConsentRepository
 import com.ndi.feature.ndibrowser.domain.repository.ScreenCaptureConsentState
+import com.ndi.sdkbridge.NativeNdiBridge
 import java.util.concurrent.ConcurrentHashMap
 
 class ScreenCaptureConsentRepositoryImpl : ScreenCaptureConsentRepository {
@@ -21,6 +22,7 @@ class ScreenCaptureConsentRepositoryImpl : ScreenCaptureConsentRepository {
         granted: Boolean,
         tokenRef: String?,
     ): ScreenCaptureConsentState {
+        NativeNdiBridge.setPendingLocalScreenShareToken(if (granted) tokenRef else null)
         val state = ScreenCaptureConsentState(
             sourceId = inputSourceId,
             granted = granted,
@@ -35,6 +37,7 @@ class ScreenCaptureConsentRepositoryImpl : ScreenCaptureConsentRepository {
     }
 
     override suspend fun clearConsent(inputSourceId: String) {
+        NativeNdiBridge.setPendingLocalScreenShareToken(null)
         states.remove(inputSourceId)
     }
 }

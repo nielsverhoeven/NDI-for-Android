@@ -162,7 +162,11 @@ class NdiOutputRepositoryImpl(
 
         if (current.state != OutputState.STOPPING) {
             withContext(Dispatchers.IO) {
-                outputBridge.stopSender()
+                if (current.inputSourceKind == OutputInputKind.DEVICE_SCREEN) {
+                    outputBridge.stopLocalScreenShareSender()
+                } else {
+                    outputBridge.stopSender()
+                }
             }
         }
 
@@ -192,7 +196,11 @@ class NdiOutputRepositoryImpl(
             val result = recoveryCoordinator.retryWithinWindow(windowSeconds) {
                 runCatching {
                     withContext(Dispatchers.IO) {
-                        outputBridge.startSender(retrying.inputSourceId, retrying.outboundStreamName)
+                        if (retrying.inputSourceKind == OutputInputKind.DEVICE_SCREEN) {
+                            outputBridge.startLocalScreenShareSender(retrying.outboundStreamName)
+                        } else {
+                            outputBridge.startSender(retrying.inputSourceId, retrying.outboundStreamName)
+                        }
                     }
                 }.isSuccess
             }

@@ -50,6 +50,13 @@ data class ViewerSession(
     val endedAtEpochMillis: Long? = null,
 )
 
+data class ViewerVideoFrame(
+    val width: Int,
+    val height: Int,
+    val argbPixels: IntArray,
+    val capturedAtEpochMillis: Long = System.currentTimeMillis(),
+)
+
 data class UserSelectionState(
     val lastSelectedSourceId: String? = null,
     val lastSelectedAtEpochMillis: Long? = null,

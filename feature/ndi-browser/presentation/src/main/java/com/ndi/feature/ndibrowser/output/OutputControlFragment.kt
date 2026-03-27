@@ -8,15 +8,14 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.core.net.toUri
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
-import androidx.navigation.fragment.findNavController
 import com.ndi.feature.ndibrowser.presentation.R
 import com.ndi.feature.ndibrowser.presentation.databinding.FragmentOutputControlBinding
+import com.ndi.sdkbridge.NativeNdiBridge
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 
@@ -35,8 +34,12 @@ class OutputControlFragment : Fragment() {
     private val screenCaptureLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult(),
     ) { result ->
-        val granted = result.resultCode == Activity.RESULT_OK
-        val tokenRef = if (granted) "media-projection" else null
+        val tokenRef = if (result.resultCode == Activity.RESULT_OK) {
+            NativeNdiBridge.registerScreenCapturePermissionResult(result.resultCode, result.data)
+        } else {
+            null
+        }
+        val granted = tokenRef != null
         viewModel.onScreenCaptureConsentResult(granted = granted, tokenRef = tokenRef)
     }
 
@@ -63,14 +66,6 @@ class OutputControlFragment : Fragment() {
             },
         )
         fragmentBinding.outputTopAppBar.inflateMenu(R.menu.output_menu)
-        fragmentBinding.outputTopAppBar.setOnMenuItemClickListener { item ->
-            if (item.itemId == R.id.action_settings) {
-                viewModel.onSettingsTogglePressed()
-                true
-            } else {
-                false
-            }
-        }
         return fragmentBinding.root
     }
 
@@ -95,13 +90,6 @@ class OutputControlFragment : Fragment() {
                     }
                 }
                 launch {
-                    viewModel.settingsToggleEvents.collect {
-                        runCatching {
-                            findNavController().navigate("ndi://settings".toUri())
-                        }
-                    }
-                }
-                launch {
                     viewModel.consentPromptEvents.collect {
                         val projectionManager = requireContext().getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
                         screenCaptureLauncher.launch(projectionManager.createScreenCaptureIntent())
@@ -118,6 +106,5 @@ class OutputControlFragment : Fragment() {
 
     override fun onResume() {
         super.onResume()
-        viewModel.onSettingsToggleSettled()
     }
 }

@@ -10,7 +10,6 @@ import androidx.fragment.app.viewModels
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
-import androidx.core.net.toUri
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.navigation.fragment.findNavController
@@ -46,7 +45,6 @@ class SourceListFragment : Fragment() {
             onManualRefresh = viewModel::onManualRefresh,
             onSourceClicked = viewModel::onSourceSelected,
             onOutputClicked = viewModel::onOutputRequested,
-            onSettingsClicked = viewModel::onSettingsTogglePressed,
         )
         return fragmentBinding.root
     }
@@ -74,13 +72,6 @@ class SourceListFragment : Fragment() {
                     viewModel.outputNavigationEvents.collect { sourceId ->
                         runCatching {
                             findNavController().navigate(SourceListDependencies.outputNavigationRequest(sourceId))
-                        }
-                    }
-                }
-                launch {
-                    viewModel.settingsToggleEvents.collect {
-                        runCatching {
-                            findNavController().navigate("ndi://settings".toUri())
                         }
                     }
                 }
@@ -122,7 +113,6 @@ class SourceListScreen(
     onManualRefresh: () -> Unit,
     onSourceClicked: (String) -> Unit,
     onOutputClicked: (String) -> Unit,
-    onSettingsClicked: () -> Unit = {},
 ) {
 
     private val adapter = SourceAdapter(onSourceClicked, onOutputClicked)
@@ -131,14 +121,6 @@ class SourceListScreen(
         binding.sourceRecyclerView.adapter = adapter
         binding.refreshButton.setOnClickListener { onManualRefresh() }
         binding.topAppBar.inflateMenu(R.menu.source_list_menu)
-        binding.topAppBar.setOnMenuItemClickListener { item ->
-            if (item.itemId == R.id.action_settings) {
-                onSettingsClicked()
-                true
-            } else {
-                false
-            }
-        }
     }
 
     fun render(state: SourceListUiState) {

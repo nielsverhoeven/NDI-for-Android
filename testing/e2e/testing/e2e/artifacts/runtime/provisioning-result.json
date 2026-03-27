@@ -1,31 +1,22 @@
 ﻿{
     "operation":  "Provision-DualEmulator",
-    "status":  "SUCCESS",
-    "timestamp":  "2026-03-26T16:11:57.0544748Z",
+    "status":  "FAILURE",
+    "timestamp":  "2026-03-26T19:24:24.9793564Z",
     "data":  {
-                 "sourceEmulator":  {
-                                        "id":  "emulator-5554",
-                                        "apiLevel":  36,
-                                        "state":  "RUNNING",
-                                        "bootTimeMs":  0,
-                                        "adbPort":  5554,
-                                        "ndiSdkApkInstalled":  false,
-                                        "relayPort":  15004,
-                                        "lastBootTime":  "2026-03-26T16:11:56.3561821Z"
-                                    },
-                 "receiverEmulator":  {
-                                          "id":  "emulator-5556",
-                                          "apiLevel":  36,
-                                          "state":  "RUNNING",
-                                          "bootTimeMs":  0,
-                                          "adbPort":  5556,
-                                          "ndiSdkApkInstalled":  false,
-                                          "relayPort":  15006,
-                                          "lastBootTime":  "2026-03-26T16:11:57.0440331Z"
-                                      }
+                 "sourceEmulator":  null,
+                 "receiverEmulator":  null
              },
     "errors":  [
-
+                   {
+                       "code":  "SOURCE_PROVISION_FAILED",
+                       "message":  "error: device \u0027emulator-5554\u0027 not found",
+                       "details":  null
+                   },
+                   {
+                       "code":  "RECEIVER_PROVISION_FAILED",
+                       "message":  "error: device \u0027emulator-5556\u0027 not found",
+                       "details":  null
+                   }
                ],
     "warnings":  [
 

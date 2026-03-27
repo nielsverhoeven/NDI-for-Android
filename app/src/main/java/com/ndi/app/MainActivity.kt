@@ -93,6 +93,7 @@ class MainActivity : AppCompatActivity(), HomeNavigationCallback {
                 R.id.viewFragment,
                 R.id.viewerHostFragment,
                 -> TopLevelDestination.VIEW
+                R.id.settingsFragment -> TopLevelDestination.SETTINGS
                 else -> null
             }
 
@@ -190,6 +191,8 @@ class MainActivity : AppCompatActivity(), HomeNavigationCallback {
                 navHost.navigateTo(TopLevelDestination.STREAM, NavigationTrigger.BOTTOM_NAV)
             is TopLevelNavEvent.NavigateToView ->
                 navHost.navigateTo(TopLevelDestination.VIEW, NavigationTrigger.BOTTOM_NAV)
+            is TopLevelNavEvent.NavigateToSettings ->
+                navHost.navigateTo(TopLevelDestination.SETTINGS, NavigationTrigger.BOTTOM_NAV)
             is TopLevelNavEvent.NavigationFailure -> Unit // already emitted to telemetry
         }
     }

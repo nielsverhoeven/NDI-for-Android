@@ -49,6 +49,8 @@ export type UiNode = {
   text: string;
   resourceId: string;
   bounds: string;
+  selected: boolean;
+  checked: boolean;
 };
 
 export type RectBounds = {
@@ -66,7 +68,9 @@ function parseNodes(xml: string): UiNode[] {
     const text = /\btext="([^"]*)"/.exec(match)?.[1] ?? "";
     const resourceId = /\bresource-id="([^"]*)"/.exec(match)?.[1] ?? "";
     const bounds = /\bbounds="([^"]*)"/.exec(match)?.[1] ?? "";
-    nodes.push({ text, resourceId, bounds });
+    const selected = /\bselected="([^"]*)"/.exec(match)?.[1] === "true";
+    const checked = /\bchecked="([^"]*)"/.exec(match)?.[1] === "true";
+    nodes.push({ text, resourceId, bounds, selected, checked });
   }
 
   return nodes;
@@ -387,7 +391,60 @@ export async function closeSettingsFromSettingsSurface(serial: string, timeoutMs
   });
 }
 
+export async function selectSettingsBottomNav(serial: string, timeoutMs = 15_000): Promise<void> {
+  // Find and click the Settings bottom nav item using text "Settings" or resource id pattern
+  console.log(`[android-ui-driver] selectSettingsBottomNav serial=${serial} timeoutMs=${timeoutMs}`);
+  await tapByResourceIdSuffix(serial, "settingsFragment", timeoutMs).catch(async () => {
+    // Fallback: find Settings text in bottom nav area
+    await tapText(serial, "Settings", timeoutMs);
+  });
+}
+
+export function isResourceIdSuffixSelected(serial: string, resourceIdSuffix: string): boolean {
+  const nodes = dumpUi(serial);
+  const match = nodes.find((node) => node.resourceId.endsWith(resourceIdSuffix));
+  if (!match) {
+    throw new Error(`Could not find UI node with resource id suffix '${resourceIdSuffix}' on ${serial}`);
+  }
+
+  return match.selected || match.checked;
+}
+
+export async function waitForResourceIdSuffixSelected(
+  serial: string,
+  resourceIdSuffix: string,
+  timeoutMs: number,
+): Promise<void> {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    if (isResourceIdSuffixSelected(serial, resourceIdSuffix)) {
+      return;
+    }
+    await delay(300);
+  }
+
+  throw new Error(`Timed out waiting for selected resource id suffix '${resourceIdSuffix}' on ${serial}`);
+}
+
 export function captureScreenshot(serial: string, destinationPath: string): void {
+
+export async function waitForResourceIdSuffixAbsent(
+  serial: string,
+  resourceIdSuffix: string,
+  timeoutMs: number,
+): Promise<void> {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const nodes = dumpUi(serial);
+    const match = nodes.find((node) => node.resourceId.endsWith(resourceIdSuffix));
+    if (!match) {
+      return;
+    }
+    await delay(300);
+  }
+
+  throw new Error(`Timed out waiting for resource id suffix '${resourceIdSuffix}' to disappear on ${serial}`);
+}
   const screenshotBytes = execFileSync("adb", ["-s", serial, "exec-out", "screencap", "-p"], {
     stdio: ["ignore", "pipe", "pipe"],
     encoding: null,
@@ -710,6 +767,18 @@ export async function pressBack(serial: string): Promise<void> {
 export async function pressHome(serial: string): Promise<void> {
   runAdb(serial, ["shell", "input", "keyevent", "3"]);
   await delay(200);
+}
+
+export async function rotateToPortrait(serial: string): Promise<void> {
+  runAdb(serial, ["shell", "settings", "put", "system", "accelerometer_rotation", "0"]);
+  runAdb(serial, ["shell", "settings", "put", "system", "user_rotation", "0"]);
+  await delay(400);
+}
+
+export async function rotateToLandscape(serial: string): Promise<void> {
+  runAdb(serial, ["shell", "settings", "put", "system", "accelerometer_rotation", "0"]);
+  runAdb(serial, ["shell", "settings", "put", "system", "user_rotation", "1"]);
+  await delay(400);
 }
 
 export function launchChrome(serial: string): void {

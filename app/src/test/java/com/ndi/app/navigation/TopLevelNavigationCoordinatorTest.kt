@@ -1,5 +1,6 @@
 package com.ndi.app.navigation
 
+import com.ndi.app.R
 import com.ndi.core.model.navigation.LaunchContext
 import com.ndi.core.model.navigation.NavigationLayoutProfile
 import com.ndi.core.model.navigation.NavigationTrigger
@@ -130,6 +131,28 @@ class TopLevelNavigationCoordinatorTest {
             isViewerVisible = false,
         )
         assertNull(streamResolved)
+    }
+
+    @Test
+    fun settingsRoute_resolvesToSettingsFragmentId() {
+        assertEquals(R.id.settingsFragment, NdiNavigation.topLevelDestinationId(TopLevelDestination.SETTINGS))
+    }
+
+    @Test
+    fun settings_isRecognizedAsTopLevelDestination() {
+        assertTrue(TopLevelNavigationHost.isTopLevelDestination(R.id.settingsFragment))
+    }
+
+    @Test
+    fun navOptions_forBottomNav_enablesSingleTopAndRestoreState() {
+        val opts = coordinator.navOptions(R.id.settingsFragment, NavigationTrigger.BOTTOM_NAV)
+        assertTrue(opts.launchSingleTop)
+        assertTrue(opts.restoreState)
+    }
+
+    @Test
+    fun isNoOp_returnsTrueForSettingsReselect() {
+        assertTrue(coordinator.isNoOp(TopLevelDestination.SETTINGS, TopLevelDestination.SETTINGS))
     }
 }
 

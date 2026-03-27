@@ -10,6 +10,7 @@ import com.ndi.core.model.NdiSettingsSnapshot
 import com.ndi.core.model.OutputConfiguration
 import com.ndi.core.model.OutputHealthSnapshot
 import com.ndi.core.model.OutputSession
+import com.ndi.core.model.ViewerVideoFrame
 import com.ndi.core.model.ViewerSession
 import com.ndi.core.model.navigation.HomeDashboardSnapshot
 import com.ndi.core.model.navigation.NavigationTransitionRecord
@@ -35,6 +36,8 @@ interface NdiViewerRepository {
     suspend fun connectToSource(sourceId: String): ViewerSession
 
     fun observeViewerSession(): Flow<ViewerSession>
+
+    fun getLatestVideoFrame(): ViewerVideoFrame?
 
     suspend fun retryReconnectWithinWindow(sourceId: String, windowSeconds: Int = 15): ViewerSession
 

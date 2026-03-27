@@ -30,6 +30,10 @@
 ## Housekeeping
 - Use the `cleaner` agent (`.github/agents/cleaner.agent.md`) for dead code removal, unused resource pruning, redundant test deduplication, and dev-environment housekeeping. It collaborates with `reviewer` (sign-off), `tester` (regression gate), and `speckit.constitution` (principle updates) automatically.
 
+## Agent Collaboration for NDI
+- Use the `ndi.expert` agent (`.github/agents/ndi.expert.agent.md`) for NDI SDK integration decisions grounded in `https://docs.ndi.video/`.
+- For feature execution, pair `ndi.expert` (NDI protocol/SDK correctness) with `android.app-builder` (Android implementation) under `speckit.implement` orchestration.
+
 ## Conventions That Prevent Regressions
 - Keep telemetry emission patterns in place (`SourceListTelemetry.kt`, `ViewerTelemetry.kt`, `ViewerRecoveryTelemetry.kt`, `OutputTelemetry.kt`).
 - Keep retry semantics bounded to 15 seconds (`ViewerViewModel.kt`, `NdiViewerRepositoryImpl.kt`, `ViewerReconnectCoordinator.kt`, `OutputControlViewModel.kt`, `NdiOutputRepositoryImpl.kt`, `OutputRecoveryCoordinator.kt`).

@@ -5,7 +5,6 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import androidx.core.net.toUri
 import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
@@ -53,14 +52,6 @@ class ViewerFragment : Fragment() {
             runCatching { findNavController().popBackStack() }
         }
         fragmentBinding.viewerTopAppBar.inflateMenu(R.menu.viewer_menu)
-        fragmentBinding.viewerTopAppBar.setOnMenuItemClickListener { item ->
-            if (item.itemId == R.id.action_settings) {
-                viewModel.onSettingsTogglePressed()
-                true
-            } else {
-                false
-            }
-        }
         return fragmentBinding.root
     }
 
@@ -71,13 +62,6 @@ class ViewerFragment : Fragment() {
 
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                launch {
-                    viewModel.settingsToggleEvents.collect {
-                        runCatching {
-                            findNavController().navigate("ndi://settings".toUri())
-                        }
-                    }
-                }
                 val overlayFlow = ViewerDependencies.overlayStateFlowOrNull()
                 val stateFlow = if (overlayFlow == null) {
                     viewModel.uiState
@@ -110,8 +94,8 @@ class ViewerFragment : Fragment() {
 
     private fun renderRelayPreview(sourceId: String, playbackState: PlaybackState) {
         val fragmentBinding = binding ?: return
-        val canRenderRelay = sourceId.startsWith("relay-screen:") && playbackState == PlaybackState.PLAYING
-        if (!canRenderRelay) {
+        val canRenderPreview = playbackState == PlaybackState.PLAYING
+        if (!canRenderPreview) {
             relayPreviewJob?.cancel()
             relayPreviewJob = null
             relayPreviewSourceId = null
@@ -127,22 +111,38 @@ class ViewerFragment : Fragment() {
         relayPreviewSourceId = sourceId
         relayPreviewJob = viewLifecycleOwner.lifecycleScope.launch {
             while (isActive) {
-                val bitmap = withContext(Dispatchers.IO) {
-                    runCatching {
-                        val encodedSourceId = java.net.URLEncoder.encode(sourceId, Charsets.UTF_8.name())
-                        val url = URL("http://10.0.2.2:17455/frame/$encodedSourceId")
-                        val connection = (url.openConnection() as HttpURLConnection).apply {
-                            requestMethod = "GET"
-                            connectTimeout = 1_000
-                            readTimeout = 1_500
-                        }
-                        try {
-                            if (connection.responseCode !in 200..299) return@runCatching null
-                            connection.inputStream.use { input -> BitmapFactory.decodeStream(input) }
-                        } finally {
-                            connection.disconnect()
-                        }
-                    }.getOrNull()
+                val bitmap = if (sourceId.startsWith("relay-screen:")) {
+                    withContext(Dispatchers.IO) {
+                        runCatching {
+                            val encodedSourceId = java.net.URLEncoder.encode(sourceId, Charsets.UTF_8.name())
+                            val url = URL("http://localhost:17455/frame/$encodedSourceId")
+                            val connection = (url.openConnection() as HttpURLConnection).apply {
+                                requestMethod = "GET"
+                                connectTimeout = 1_000
+                                readTimeout = 1_500
+                            }
+                            try {
+                                if (connection.responseCode !in 200..299) return@runCatching null
+                                connection.inputStream.use { input -> BitmapFactory.decodeStream(input) }
+                            } finally {
+                                connection.disconnect()
+                            }
+                        }.getOrNull()
+                    }
+                } else {
+                    val frame = viewModel.getLatestVideoFrame()
+                    if (frame == null) {
+                        null
+                    } else {
+                        runCatching {
+                            android.graphics.Bitmap.createBitmap(
+                                frame.argbPixels,
+                                frame.width,
+                                frame.height,
+                                android.graphics.Bitmap.Config.ARGB_8888,
+                            )
+                        }.getOrNull()
+                    }
                 }
 
                 if (bitmap != null) {
@@ -166,6 +166,5 @@ class ViewerFragment : Fragment() {
 
     override fun onResume() {
         super.onResume()
-        viewModel.onSettingsToggleSettled()
     }
 }

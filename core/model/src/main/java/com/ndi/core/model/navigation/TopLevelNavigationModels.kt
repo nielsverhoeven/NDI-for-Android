@@ -3,8 +3,8 @@ package com.ndi.core.model.navigation
 import com.ndi.core.model.OutputState
 import com.ndi.core.model.PlaybackState
 
-/** The three reachable top-level destinations. */
-enum class TopLevelDestination { HOME, STREAM, VIEW }
+/** The four reachable top-level destinations. */
+enum class TopLevelDestination { HOME, STREAM, VIEW, SETTINGS }
 
 /** How the app was opened or navigation initiated. */
 enum class LaunchContext {

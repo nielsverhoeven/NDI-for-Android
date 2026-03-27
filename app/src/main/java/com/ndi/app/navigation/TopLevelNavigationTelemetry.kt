@@ -13,6 +13,27 @@ fun interface NavigationTelemetryEmitter {
  */
 object TopLevelNavigationTelemetry {
 
+    fun homeToSettingsSelected(trigger: String): TelemetryEvent =
+        destinationSelected(
+            from = TopLevelDestination.HOME,
+            to = TopLevelDestination.SETTINGS,
+            trigger = trigger,
+        )
+
+    fun streamToSettingsSelected(trigger: String): TelemetryEvent =
+        destinationSelected(
+            from = TopLevelDestination.STREAM,
+            to = TopLevelDestination.SETTINGS,
+            trigger = trigger,
+        )
+
+    fun viewToSettingsSelected(trigger: String): TelemetryEvent =
+        destinationSelected(
+            from = TopLevelDestination.VIEW,
+            to = TopLevelDestination.SETTINGS,
+            trigger = trigger,
+        )
+
     fun destinationSelected(
         from: TopLevelDestination,
         to: TopLevelDestination,

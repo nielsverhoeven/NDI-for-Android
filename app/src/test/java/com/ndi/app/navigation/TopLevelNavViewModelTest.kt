@@ -16,6 +16,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 
@@ -166,6 +167,61 @@ class TopLevelNavViewModelTest {
             assertEquals(1, selectedCount)
             assertEquals(TopLevelDestination.STREAM, vm.uiState.value.selectedDestination)
         }
+
+    @Test
+    fun settingsToNonSettingsTransitions_emitDeterministicEventsAndSelection() =
+        runTest(mainDispatcherRule.dispatcher.scheduler) {
+            val vm = TopLevelNavViewModel(FakeNavigationRepository())
+            val events = mutableListOf<TopLevelNavEvent>()
+            val job = launch { vm.events.collect { events.add(it) } }
+
+            vm.onAppLaunch(LaunchContext.LAUNCHER)
+            advanceUntilIdle()
+            vm.onDestinationSelected(TopLevelDestination.SETTINGS, NavigationTrigger.BOTTOM_NAV)
+            vm.onDestinationSelected(TopLevelDestination.HOME, NavigationTrigger.BOTTOM_NAV)
+            vm.onDestinationSelected(TopLevelDestination.STREAM, NavigationTrigger.BOTTOM_NAV)
+            vm.onDestinationSelected(TopLevelDestination.VIEW, NavigationTrigger.BOTTOM_NAV)
+            advanceUntilIdle()
+
+            assertEquals(TopLevelDestination.VIEW, vm.uiState.value.selectedDestination)
+            assertTrue(events.any { it is TopLevelNavEvent.NavigateToSettings })
+            assertTrue(events.any { it is TopLevelNavEvent.NavigateToHome })
+            assertTrue(events.any { it is TopLevelNavEvent.NavigateToStream })
+            assertTrue(events.any { it is TopLevelNavEvent.NavigateToView })
+
+            job.cancel()
+        }
+
+    @Test
+    fun rapidSwitch_settingsAndOtherTabs_keepsSingleSelectedItemInSync() =
+        runTest(mainDispatcherRule.dispatcher.scheduler) {
+            val vm = TopLevelNavViewModel(FakeNavigationRepository())
+
+            vm.onAppLaunch(LaunchContext.LAUNCHER)
+            advanceUntilIdle()
+
+            vm.onDestinationSelected(TopLevelDestination.SETTINGS, NavigationTrigger.BOTTOM_NAV)
+            vm.onDestinationSelected(TopLevelDestination.STREAM, NavigationTrigger.BOTTOM_NAV)
+            vm.onDestinationSelected(TopLevelDestination.SETTINGS, NavigationTrigger.BOTTOM_NAV)
+            vm.onDestinationSelected(TopLevelDestination.HOME, NavigationTrigger.BOTTOM_NAV)
+            vm.onDestinationSelected(TopLevelDestination.SETTINGS, NavigationTrigger.BOTTOM_NAV)
+            vm.onDestinationSelected(TopLevelDestination.VIEW, NavigationTrigger.BOTTOM_NAV)
+            advanceUntilIdle()
+
+            assertEquals(TopLevelDestination.VIEW, vm.uiState.value.selectedDestination)
+            assertEquals(1, vm.uiState.value.destinationItems.count { it.selected })
+            assertTrue(vm.uiState.value.destinationItems.single { it.selected }.destination == TopLevelDestination.VIEW)
+        }
+
+    @Test
+    fun destinationItems_includesSettingsWithExpectedIcon() = runTest(mainDispatcherRule.dispatcher.scheduler) {
+        val vm = TopLevelNavViewModel(FakeNavigationRepository())
+
+        val items = vm.uiState.value.destinationItems.associateBy { it.destination }
+
+        assertTrue(items.containsKey(TopLevelDestination.SETTINGS))
+        assertEquals(R.drawable.ic_nav_settings, items[TopLevelDestination.SETTINGS]?.iconResId)
+    }
 }
 
 private class FakeNavigationRepository(

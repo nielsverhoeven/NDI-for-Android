@@ -1,9 +1,20 @@
 package com.ndi.sdkbridge
 
+import android.content.Context
+import android.content.Intent
+import android.net.wifi.WifiManager
+import android.util.Log
+import com.ndi.core.model.NdiDiscoveryEndpoint
 import com.ndi.core.model.NdiSource
+import com.ndi.core.model.ViewerVideoFrame
 import java.net.HttpURLConnection
+import java.net.InetAddress
+import java.net.Inet4Address
+import java.net.NetworkInterface
 import java.net.URL
+import java.util.Collections
 import java.util.UUID
+import javax.jmdns.JmDNS
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -16,12 +27,16 @@ import org.json.JSONObject
 
 interface NdiDiscoveryBridge {
     suspend fun discoverSources(): List<NdiSource>
+    
+    fun setDiscoveryEndpoint(endpoint: NdiDiscoveryEndpoint?)
 }
 
 interface NdiViewerBridge {
     fun startReceiver(sourceId: String)
 
     fun stopReceiver()
+
+    fun getLatestReceiverFrame(): ViewerVideoFrame?
 }
 
 interface NdiOutputBridge {
@@ -38,8 +53,17 @@ interface NdiOutputBridge {
 
 object NativeNdiBridge : NdiDiscoveryBridge, NdiViewerBridge, NdiOutputBridge {
 
-    private const val RELAY_BASE_URL = "http://10.0.2.2:17455"
+    private const val RELAY_BASE_URL = "http://localhost:17455"
     private const val HEARTBEAT_INTERVAL_MS = 1_000L
+    private const val MDNS_QUERY_TIMEOUT_MS = 1_200L
+    private const val MDNS_CACHE_WINDOW_MS = 3_000L
+    private const val NATIVE_RECEIVER_IMPLEMENTED = true
+
+    private val MDNS_SERVICE_TYPES = arrayOf(
+        "_ndi._tcp.local.",
+        "_ndi-source._tcp.local.",
+        "_ndi._udp.local.",
+    )
 
     private data class LocalRelaySender(
         val sourceId: String,
@@ -52,7 +76,27 @@ object NativeNdiBridge : NdiDiscoveryBridge, NdiViewerBridge, NdiOutputBridge {
     private val relayScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     @Volatile
+    private var appContext: Context? = null
+
+    @Volatile
+    private var multicastLock: WifiManager.MulticastLock? = null
+    
+    @Volatile
+    private var discoveryEndpoint: NdiDiscoveryEndpoint? = null
+
+    private val mdnsCacheLock = Any()
+
+    @Volatile
+    private var cachedMdnsSources: List<NdiSource> = emptyList()
+
+    @Volatile
+    private var cachedMdnsUpdatedAtEpochMillis: Long = 0L
+
+    @Volatile
     private var activeLocalSender: LocalRelaySender? = null
+
+    @Volatile
+    private var pendingScreenCaptureTokenRef: String? = null
 
     @Volatile
     private var activeLocalSenderHeartbeat = null as kotlinx.coroutines.Job?
@@ -61,25 +105,198 @@ object NativeNdiBridge : NdiDiscoveryBridge, NdiViewerBridge, NdiOutputBridge {
         runCatching { System.loadLibrary("ndi_bridge") }
     }
 
+    fun initialize(context: Context) {
+        appContext = context.applicationContext
+    }
+
+    fun registerScreenCapturePermissionResult(resultCode: Int, data: Intent?): String? {
+        return ScreenCapturePermissionStore.register(resultCode, data)
+    }
+
+    fun setPendingLocalScreenShareToken(tokenRef: String?) {
+        pendingScreenCaptureTokenRef = tokenRef
+    }
+
+    override fun setDiscoveryEndpoint(endpoint: NdiDiscoveryEndpoint?) {
+        discoveryEndpoint = endpoint
+        val extraIps = endpoint?.host
+            ?.takeIf { it.isNotBlank() }
+            ?.let(::resolveDiscoveryExtraIps)
+        nativeSetDiscoveryExtraIps(extraIps)
+        Log.d("NdiDiscovery", "Endpoint set: $endpoint, extraIps=$extraIps")
+    }
+
     override suspend fun discoverSources(): List<NdiSource> = withContext(Dispatchers.IO) {
+        val configuredEndpoint = discoveryEndpoint
+        Log.d("NdiDiscovery", "discoverSources() called with endpoint: $configuredEndpoint")
+
         val relaySources = runCatching { discoverRelaySources() }.getOrDefault(emptyList())
-        if (relaySources.isNotEmpty()) {
-            return@withContext relaySources
-        }
 
         val sourceIds = runCatching { nativeDiscoverSourceIds() }.getOrDefault(emptyArray())
         val displayNames = runCatching { nativeDiscoverDisplayNames() }.getOrDefault(emptyArray())
-
-        sourceIds.mapIndexed { index, sourceId ->
+        val nativeSources = sourceIds.mapIndexed { index, sourceId ->
             NdiSource(
                 sourceId = sourceId,
                 displayName = displayNames.getOrNull(index) ?: sourceId,
                 lastSeenAtEpochMillis = System.currentTimeMillis(),
             )
         }
+        Log.d("NdiDiscovery", "Found ${relaySources.size} relay sources, ${nativeSources.size} native sources")
+
+        // When native SDK discovery is available, prefer its canonical source identities for receiver connect.
+        val mdnsSources = if (nativeSources.isEmpty()) {
+            runCatching { discoverMdnsSourcesCached() }.getOrDefault(emptyList())
+        } else {
+            emptyList()
+        }
+
+        buildList {
+            addAll(relaySources)
+            addAll(nativeSources)
+            addAll(mdnsSources)
+        }.distinctBy { it.sourceId }
+    }
+
+    private fun resolveDiscoveryExtraIps(host: String): String {
+        val resolved = runCatching { InetAddress.getByName(host).hostAddress }
+            .getOrElse {
+                Log.w("NdiDiscovery", "Falling back to raw host for discovery extra IPs: $host", it)
+                host
+            }
+        return resolved.trim('[', ']')
+    }
+
+    private fun discoverMdnsSourcesCached(): List<NdiSource> {
+        val now = System.currentTimeMillis()
+        if (now - cachedMdnsUpdatedAtEpochMillis <= MDNS_CACHE_WINDOW_MS) {
+            return cachedMdnsSources
+        }
+
+        synchronized(mdnsCacheLock) {
+            val refreshedNow = System.currentTimeMillis()
+            if (refreshedNow - cachedMdnsUpdatedAtEpochMillis <= MDNS_CACHE_WINDOW_MS) {
+                return cachedMdnsSources
+            }
+
+            val discovered = discoverMdnsSources()
+            cachedMdnsSources = discovered
+            cachedMdnsUpdatedAtEpochMillis = refreshedNow
+            return discovered
+        }
+    }
+
+    private fun discoverMdnsSources(): List<NdiSource> {
+        val now = System.currentTimeMillis()
+        return withMulticastLock {
+            val allDiscovered = mutableListOf<NdiSource>()
+            for (localAddress in discoverMulticastAddresses()) {
+                val jmdns = runCatching {
+                    JmDNS.create(localAddress, "ndi-android-${localAddress.hostAddress}")
+                }.getOrNull() ?: continue
+
+                try {
+                    for (serviceType in MDNS_SERVICE_TYPES) {
+                        val serviceInfos = runCatching {
+                            jmdns.list(serviceType, MDNS_QUERY_TIMEOUT_MS)
+                        }.getOrDefault(emptyArray())
+
+                        for (serviceInfo in serviceInfos) {
+                            val displayName = serviceInfo.name
+                                ?.trim()
+                                ?.takeIf { it.isNotEmpty() }
+                                ?: serviceInfo.qualifiedName
+
+                            val host = serviceInfo.inet4Addresses
+                                .firstOrNull()
+                                ?.hostAddress
+                                ?: serviceInfo.server
+                                    ?.trimEnd('.')
+                                    ?.takeIf { it.isNotBlank() }
+
+                            val endpointAddress = if (host != null && serviceInfo.port > 0) {
+                                "$host:${serviceInfo.port}"
+                            } else {
+                                null
+                            }
+
+                            val sourceId = endpointAddress ?: "mdns:${serviceType}:${displayName}"
+
+                            allDiscovered += NdiSource(
+                                sourceId = sourceId,
+                                displayName = displayName,
+                                endpointAddress = endpointAddress,
+                                lastSeenAtEpochMillis = now,
+                            )
+                        }
+                    }
+                } finally {
+                    runCatching { jmdns.close() }
+                }
+            }
+
+            allDiscovered
+                .filter { it.sourceId.isNotBlank() }
+                .distinctBy { it.sourceId }
+        }
+    }
+
+    private fun discoverMulticastAddresses(): List<Inet4Address> {
+        val interfaces = runCatching {
+            val values = NetworkInterface.getNetworkInterfaces() ?: return emptyList()
+            Collections.list(values)
+        }.getOrDefault(emptyList())
+
+        return interfaces.asSequence()
+            .filter { networkInterface ->
+                runCatching {
+                    networkInterface.isUp &&
+                        !networkInterface.isLoopback &&
+                        networkInterface.supportsMulticast()
+                }.getOrDefault(false)
+            }
+            .flatMap { networkInterface ->
+                runCatching {
+                    Collections.list(networkInterface.inetAddresses)
+                }.getOrDefault(emptyList()).asSequence()
+            }
+            .filterIsInstance<Inet4Address>()
+            .filterNot { it.isLoopbackAddress }
+            .distinctBy { it.hostAddress }
+            .toList()
+    }
+
+    private inline fun <T> withMulticastLock(block: () -> T): T {
+        val wifiManager = appContext?.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+        val lock = wifiManager?.let {
+            multicastLock ?: it.createMulticastLock("ndi-mdns-discovery").apply {
+                setReferenceCounted(true)
+                multicastLock = this
+            }
+        }
+        val acquiredHere = lock != null && !lock.isHeld
+        if (acquiredHere) {
+            runCatching { lock.acquire() }
+        }
+        return try {
+            block()
+        } finally {
+            if (acquiredHere) {
+                runCatching { lock?.release() }
+            }
+        }
     }
 
     override fun startReceiver(sourceId: String) {
+        if (sourceId.startsWith("relay-screen:")) {
+            // Relay-backed preview is rendered in ViewerFragment from /frame endpoint.
+            return
+        }
+        if (!NATIVE_RECEIVER_IMPLEMENTED) {
+            throw UnsupportedOperationException(
+                "NDI receiver pipeline is not available in this build. " +
+                    "Integrate the NDI native SDK receiver implementation to play network streams.",
+            )
+        }
         runCatching { nativeStartReceiver(sourceId) }
     }
 
@@ -87,12 +304,27 @@ object NativeNdiBridge : NdiDiscoveryBridge, NdiViewerBridge, NdiOutputBridge {
         runCatching { nativeStopReceiver() }
     }
 
+    override fun getLatestReceiverFrame(): ViewerVideoFrame? {
+        val width = runCatching { nativeGetLatestReceiverFrameWidth() }.getOrDefault(0)
+        val height = runCatching { nativeGetLatestReceiverFrameHeight() }.getOrDefault(0)
+        if (width <= 0 || height <= 0) return null
+
+        val pixels = runCatching { nativeGetLatestReceiverFrameArgb() }.getOrNull() ?: return null
+        if (pixels.size < width * height) return null
+
+        return ViewerVideoFrame(
+            width = width,
+            height = height,
+            argbPixels = pixels,
+        )
+    }
+
     override suspend fun isSourceReachable(sourceId: String): Boolean = withContext(Dispatchers.IO) {
         discoverSources().any { it.sourceId == sourceId }
     }
 
     override fun startSender(sourceId: String, streamName: String) {
-        runCatching { nativeStartSender(sourceId, streamName) }
+        nativeStartSender(sourceId, streamName)
     }
 
     override fun stopSender() {
@@ -101,10 +333,16 @@ object NativeNdiBridge : NdiDiscoveryBridge, NdiViewerBridge, NdiOutputBridge {
 
     override fun startLocalScreenShareSender(streamName: String) {
         val normalizedName = streamName.trim().ifBlank { "NDI Output" }
+        val context = requireNotNull(appContext) { "App context is not initialized" }
+        val tokenRef = pendingScreenCaptureTokenRef
+        val permissionGrant = ScreenCapturePermissionStore.get(tokenRef)
+            ?: error("Screen capture permission is not available")
         val session = LocalRelaySender(
             sourceId = "relay-screen:$relayHostInstanceId",
             streamName = normalizedName,
         )
+
+        stopLocalScreenShareSender()
 
         activeLocalSenderHeartbeat?.cancel()
         activeLocalSender = session
@@ -115,7 +353,24 @@ object NativeNdiBridge : NdiDiscoveryBridge, NdiViewerBridge, NdiOutputBridge {
             }
         }
 
-        runCatching { nativeStartLocalScreenShareSender(normalizedName) }
+        try {
+            nativeStartLocalScreenShareSender(normalizedName)
+            ScreenShareController.start(context, permissionGrant) { width, height, pixels ->
+                nativeSubmitLocalScreenShareFrameArgb(width, height, pixels)
+            }
+        } catch (error: Throwable) {
+            Log.e("NdiDiscovery", "Unable to start local screen share sender", error)
+            runCatching { ScreenShareController.stop() }
+            runCatching { nativeStopLocalScreenShareSender() }
+            val activeSession = activeLocalSender
+            activeLocalSender = null
+            activeLocalSenderHeartbeat?.cancel()
+            activeLocalSenderHeartbeat = null
+            if (activeSession != null) {
+                runCatching { revokeRelaySource(activeSession.sourceId) }
+            }
+            throw error
+        }
     }
 
     override fun stopLocalScreenShareSender() {
@@ -123,6 +378,7 @@ object NativeNdiBridge : NdiDiscoveryBridge, NdiViewerBridge, NdiOutputBridge {
         activeLocalSender = null
         activeLocalSenderHeartbeat?.cancel()
         activeLocalSenderHeartbeat = null
+        runCatching { ScreenShareController.stop() }
         if (session != null) {
             runCatching { revokeRelaySource(session.sourceId) }
         }
@@ -196,15 +452,25 @@ object NativeNdiBridge : NdiDiscoveryBridge, NdiViewerBridge, NdiOutputBridge {
 
     private external fun nativeDiscoverDisplayNames(): Array<String>
 
+    private external fun nativeSetDiscoveryExtraIps(extraIpsCsv: String?)
+
     private external fun nativeStartReceiver(sourceId: String)
 
     private external fun nativeStopReceiver()
+
+    private external fun nativeGetLatestReceiverFrameArgb(): IntArray?
+
+    private external fun nativeGetLatestReceiverFrameWidth(): Int
+
+    private external fun nativeGetLatestReceiverFrameHeight(): Int
 
     private external fun nativeStartSender(sourceId: String, streamName: String)
 
     private external fun nativeStopSender()
 
     private external fun nativeStartLocalScreenShareSender(streamName: String)
+
+    private external fun nativeSubmitLocalScreenShareFrameArgb(width: Int, height: Int, argbPixels: IntArray)
 
     private external fun nativeStopLocalScreenShareSender()
 }
