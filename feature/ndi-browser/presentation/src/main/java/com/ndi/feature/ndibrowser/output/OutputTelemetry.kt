@@ -65,6 +65,14 @@ object OutputTelemetry {
         )
     }
 
+    fun screenShareConsentReset(sourceId: String): TelemetryEvent {
+        return TelemetryEvent(
+            name = TelemetryEvent.OUTPUT_SCREEN_SHARE_CONSENT_RESET,
+            timestampEpochMillis = System.currentTimeMillis(),
+            attributes = mapOf("sourceId" to sourceId),
+        )
+    }
+
     fun outputStartRequested(sourceId: String): TelemetryEvent {
         return TelemetryEvent(
             name = TelemetryEvent.OUTPUT_START_REQUESTED,

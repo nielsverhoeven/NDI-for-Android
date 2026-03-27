@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { platform } from "node:os";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 
 type PreFlightReport = {
   buildArtifact?: {
@@ -57,6 +57,42 @@ export function isReusablePreinstallReport(reportPath: string, expectedVersionId
   }
 }
 
+function findLatestApkPath(): string | null {
+  const apkRoot = resolve(__dirname, "../../../../app/build/outputs/apk");
+  if (!existsSync(apkRoot)) {
+    return null;
+  }
+
+  const stack = [apkRoot];
+  const apkCandidates: Array<{ path: string; mtimeMs: number }> = [];
+
+  while (stack.length > 0) {
+    const current = stack.pop();
+    if (!current) {
+      continue;
+    }
+
+    for (const entry of readdirSync(current, { withFileTypes: true })) {
+      const fullPath = join(current, entry.name);
+      if (entry.isDirectory()) {
+        stack.push(fullPath);
+        continue;
+      }
+
+      if (entry.isFile() && entry.name.toLowerCase().endsWith(".apk")) {
+        apkCandidates.push({ path: fullPath, mtimeMs: statSync(fullPath).mtimeMs });
+      }
+    }
+  }
+
+  if (apkCandidates.length === 0) {
+    return null;
+  }
+
+  apkCandidates.sort((a, b) => b.mtimeMs - a.mtimeMs);
+  return apkCandidates[0].path;
+}
+
 async function globalSetup(): Promise<void> {
   if (process.env.DUAL_EMULATOR_AUTOMATION === "0") {
     return;
@@ -65,12 +101,16 @@ async function globalSetup(): Promise<void> {
   runPowerShellScript("../../../../scripts/verify-e2e-dual-emulator-prereqs.ps1", ["-AllowMissingNdiSdk"]);
   runPowerShellScript("../../scripts/provision-dual-emulator.ps1", ["-Action", "provision-dual", "-InstallNdiSdk", "-SkipBootIfAlreadyRunning"]);
   const reportPath = resolve(__dirname, "../../artifacts/runtime/preinstall-report.json");
-  const apkPath = resolve(__dirname, "../../../../app/build/outputs/apk/debug/app-debug.apk");
+  const apkPath = findLatestApkPath();
   const serials = [process.env.EMULATOR_A_SERIAL ?? "emulator-5554", process.env.EMULATOR_B_SERIAL ?? "emulator-5556"];
-  const expectedVersionIdentifier = readExpectedVersionIdentifier(apkPath);
-  if (!isReusablePreinstallReport(reportPath, expectedVersionIdentifier, serials)) {
-    runPowerShellScript("../../scripts/install-app-preinstall.ps1");
-  }
+  const expectedVersionIdentifier = apkPath ? readExpectedVersionIdentifier(apkPath) : null;
+
+  // Always execute preinstall before tests to validate and enforce latest APK install.
+  const installArgs = apkPath ? ["-ApkPath", apkPath] : [];
+  runPowerShellScript("../../scripts/install-app-preinstall.ps1", installArgs);
+
+  // Keep a sanity check against previous report metadata for troubleshooting.
+  isReusablePreinstallReport(reportPath, expectedVersionIdentifier, serials);
   runPowerShellScript("../../scripts/start-relay-server.ps1", ["-Action", "start"]);
 }
 

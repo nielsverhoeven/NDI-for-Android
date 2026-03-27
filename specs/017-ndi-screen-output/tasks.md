@@ -11,10 +11,10 @@
 
 **Purpose**: Confirm runtime/tool prerequisites before implementation and validation.
 
-- [ ] T001 Run prerequisite gate and capture output in test-results/017-ndi-screen-output-preflight.md using scripts/verify-android-prereqs.ps1
-- [ ] T002 Run dual-emulator preflight and capture output in test-results/017-ndi-screen-output-preflight.md using scripts/verify-e2e-dual-emulator-prereqs.ps1
-- [ ] T003 Verify debug/release artifacts build successfully with ./gradlew.bat :app:assembleDebug :ndi:sdk-bridge:assembleRelease and record in test-results/017-ndi-screen-output-preflight.md
-- [ ] T004 Record any environment blocker and concrete unblock command in test-results/017-ndi-screen-output-preflight.md
+- [X] T001 Run prerequisite gate and capture output in test-results/017-ndi-screen-output-preflight.md using scripts/verify-android-prereqs.ps1
+- [X] T002 Run dual-emulator preflight and capture output in test-results/017-ndi-screen-output-preflight.md using scripts/verify-e2e-dual-emulator-prereqs.ps1
+- [X] T003 Verify debug/release artifacts build successfully with ./gradlew.bat :app:assembleDebug :ndi:sdk-bridge:assembleRelease and record in test-results/017-ndi-screen-output-preflight.md
+- [X] T004 Record any environment blocker and concrete unblock command in test-results/017-ndi-screen-output-preflight.md
 
 **Checkpoint**: Preflight status is PASS or explicitly documented as blocked with unblocking steps.
 
@@ -24,10 +24,10 @@
 
 **Purpose**: Prepare shared scaffolding for output redesign and validation evidence.
 
-- [ ] T005 Create validation report stub for this feature in test-results/017-ndi-screen-output-validation.md
-- [ ] T006 Add feature-specific e2e spec shell in testing/e2e/tests/output-screen-share.spec.ts
-- [ ] T007 [P] Add feature-specific test support helpers in testing/e2e/tests/support/output-screen-share-helpers.ts
-- [ ] T008 [P] Add task trace section to specs/017-ndi-screen-output/quickstart.md for commands and evidence paths
+- [X] T005 Create validation report stub for this feature in test-results/017-ndi-screen-output-validation.md
+- [X] T006 Add feature-specific e2e spec shell in testing/e2e/tests/output-screen-share.spec.ts
+- [X] T007 [P] Add feature-specific test support helpers in testing/e2e/tests/support/output-screen-share-helpers.ts
+- [X] T008 [P] Add task trace section to specs/017-ndi-screen-output/quickstart.md for commands and evidence paths
 
 ---
 
@@ -35,13 +35,13 @@
 
 **Purpose**: Implement cross-story foundation before user stories.
 
-- [ ] T009 Add discovery-mode decision model for server/mDNS/start-blocked in feature/ndi-browser/data/src/main/java/com/ndi/feature/ndibrowser/data/repository/NdiOutputRepositoryImpl.kt
-- [ ] T010 [P] Add actionable discovery error constants/messages in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/output/OutputControlViewModel.kt
-- [ ] T011 [P] Add per-start consent reset hook on explicit stop in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/output/OutputControlViewModel.kt
-- [ ] T012 [P] Add/align discovery endpoint read path in feature/ndi-browser/data/src/main/java/com/ndi/feature/ndibrowser/data/repository/NdiDiscoveryConfigRepositoryImpl.kt
-- [ ] T013 Add discovery reachability check for configured server in ndi/sdk-bridge/src/main/java/com/ndi/sdkbridge/NdiNativeBridge.kt
-- [ ] T014 Wire updated output/discovery dependencies through app/src/main/java/com/ndi/app/di/AppGraph.kt
-- [ ] T015 Synchronize domain repository signatures and contract obligations with finalized behavior in feature/ndi-browser/domain/src/main/java/com/ndi/feature/ndibrowser/domain/repository/NdiRepositories.kt
+- [X] T009 Add discovery-mode decision model for server/mDNS/start-blocked in feature/ndi-browser/data/src/main/java/com/ndi/feature/ndibrowser/data/repository/NdiOutputRepositoryImpl.kt
+- [X] T010 [P] Add actionable discovery error constants/messages in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/output/OutputControlViewModel.kt
+- [X] T011 [P] Add per-start consent reset hook on explicit stop in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/output/OutputControlViewModel.kt
+- [X] T012 [P] Add/align discovery endpoint read path in feature/ndi-browser/data/src/main/java/com/ndi/feature/ndibrowser/data/repository/NdiDiscoveryConfigRepositoryImpl.kt
+- [X] T013 Add discovery reachability check for configured server in ndi/sdk-bridge/src/main/java/com/ndi/sdkbridge/NdiNativeBridge.kt
+- [X] T014 Wire updated output/discovery dependencies through app/src/main/java/com/ndi/app/di/AppGraph.kt
+- [X] T015 Synchronize domain repository signatures and contract obligations with finalized behavior in feature/ndi-browser/domain/src/main/java/com/ndi/feature/ndibrowser/domain/repository/NdiRepositories.kt
 
 **Checkpoint**: Shared output/discovery/consent foundation is complete and user-story work can proceed.
 
@@ -55,18 +55,18 @@
 
 ### Tests for User Story 1 (REQUIRED)
 
-- [ ] T016 [P] [US1] Add failing ViewModel test for start-from-idle consent prompt flow in feature/ndi-browser/presentation/src/test/java/com/ndi/feature/ndibrowser/output/OutputControlViewModelTest.kt
-- [ ] T017 [P] [US1] Add failing repository test for local screen-share start state transitions in feature/ndi-browser/data/src/test/java/com/ndi/feature/ndibrowser/data/repository/NdiOutputRepositoryImplTest.kt
-- [ ] T018 [P] [US1] Add failing Playwright e2e for Output idle->consent->ACTIVE flow in testing/e2e/tests/output-screen-share.spec.ts
-- [ ] T019 [US1] Run existing Playwright regression suite and append results to test-results/017-ndi-screen-output-validation.md using npm --prefix testing/e2e run test:pr:primary
-- [ ] T020 [US1] If blocked, record reproduction and unblock command in test-results/017-ndi-screen-output-validation.md
+- [X] T016 [P] [US1] Add failing ViewModel test for start-from-idle consent prompt flow in feature/ndi-browser/presentation/src/test/java/com/ndi/feature/ndibrowser/output/OutputControlViewModelTest.kt
+- [X] T017 [P] [US1] Add failing repository test for local screen-share start state transitions in feature/ndi-browser/data/src/test/java/com/ndi/feature/ndibrowser/data/repository/NdiOutputRepositoryImplTest.kt
+- [X] T018 [P] [US1] Add failing Playwright e2e for Output idle->consent->ACTIVE flow in testing/e2e/tests/output-screen-share.spec.ts
+- [X] T019 [US1] Run existing Playwright regression suite and append results to test-results/017-ndi-screen-output-validation.md using npm --prefix testing/e2e run test:pr:primary
+- [X] T020 [US1] If blocked, record reproduction and unblock command in test-results/017-ndi-screen-output-validation.md
 
 ### Implementation for User Story 1
 
-- [ ] T021 [P] [US1] Redesign output controls layout/state labels in feature/ndi-browser/presentation/src/main/res/layout/fragment_output_control.xml
-- [ ] T022 [P] [US1] Implement distinct output rendering logic and CTA behavior in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/output/OutputControlScreen.kt
-- [ ] T023 [US1] Implement consent-gated start flow and state projection in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/output/OutputControlViewModel.kt
-- [ ] T024 [US1] Integrate UI event wiring and consent launch handling in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/output/OutputControlFragment.kt
+- [X] T021 [P] [US1] Redesign output controls layout/state labels in feature/ndi-browser/presentation/src/main/res/layout/fragment_output_control.xml
+- [X] T022 [P] [US1] Implement distinct output rendering logic and CTA behavior in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/output/OutputControlScreen.kt
+- [X] T023 [US1] Implement consent-gated start flow and state projection in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/output/OutputControlViewModel.kt
+- [X] T024 [US1] Integrate UI event wiring and consent launch handling in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/output/OutputControlFragment.kt
 
 **Checkpoint**: User Story 1 is independently functional and demonstrable.
 
@@ -80,20 +80,20 @@
 
 ### Tests for User Story 2 (REQUIRED)
 
-- [ ] T025 [P] [US2] Add failing stop-then-restart re-consent test in feature/ndi-browser/presentation/src/test/java/com/ndi/feature/ndibrowser/output/OutputControlStopStateTest.kt
-- [ ] T026 [P] [US2] Add failing consent-clear-on-stop repository test in feature/ndi-browser/data/src/test/java/com/ndi/feature/ndibrowser/data/repository/NdiOutputRepositoryImplTest.kt
-- [ ] T027 [P] [US2] Add failing Playwright e2e for stop-and-restart re-consent flow in testing/e2e/tests/output-screen-share.spec.ts
-- [ ] T028 [US2] Run existing Playwright regression suite and append results to test-results/017-ndi-screen-output-validation.md using npm --prefix testing/e2e run test:pr:primary
-- [ ] T029 [US2] If blocked, record reproduction and unblock command in test-results/017-ndi-screen-output-validation.md
-- [ ] T029a [P] [US2] Add failing retry-window test that enforces 15-second recovery limit in feature/ndi-browser/presentation/src/test/java/com/ndi/feature/ndibrowser/output/OutputControlViewModelTest.kt
+- [X] T025 [P] [US2] Add failing stop-then-restart re-consent test in feature/ndi-browser/presentation/src/test/java/com/ndi/feature/ndibrowser/output/OutputControlStopStateTest.kt
+- [X] T026 [P] [US2] Add failing consent-clear-on-stop repository test in feature/ndi-browser/data/src/test/java/com/ndi/feature/ndibrowser/data/repository/NdiOutputRepositoryImplTest.kt
+- [X] T027 [P] [US2] Add failing Playwright e2e for stop-and-restart re-consent flow in testing/e2e/tests/output-screen-share.spec.ts
+- [X] T028 [US2] Run existing Playwright regression suite and append results to test-results/017-ndi-screen-output-validation.md using npm --prefix testing/e2e run test:pr:primary
+- [X] T029 [US2] If blocked, record reproduction and unblock command in test-results/017-ndi-screen-output-validation.md
+- [X] T029a [P] [US2] Add failing retry-window test that enforces 15-second recovery limit in feature/ndi-browser/presentation/src/test/java/com/ndi/feature/ndibrowser/output/OutputControlViewModelTest.kt
 
 ### Implementation for User Story 2
 
-- [ ] T030 [US2] Ensure explicit stop clears consent and resets start prerequisites in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/output/OutputControlViewModel.kt
-- [ ] T031 [US2] Implement/confirm clearConsent invocation in stop path in feature/ndi-browser/data/src/main/java/com/ndi/feature/ndibrowser/data/repository/NdiOutputRepositoryImpl.kt
-- [ ] T032 [P] [US2] Improve denied-consent user messaging and recovery controls in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/output/OutputControlScreen.kt
-- [ ] T033 [US2] Add telemetry events for consent requested/granted/denied/reset in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/output/OutputTelemetry.kt
-- [ ] T033a [US2] Enforce and surface retry-window behavior (15 seconds) in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/output/OutputControlViewModel.kt and feature/ndi-browser/data/src/main/java/com/ndi/feature/ndibrowser/data/repository/NdiOutputRepositoryImpl.kt
+- [X] T030 [US2] Ensure explicit stop clears consent and resets start prerequisites in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/output/OutputControlViewModel.kt
+- [X] T031 [US2] Implement/confirm clearConsent invocation in stop path in feature/ndi-browser/data/src/main/java/com/ndi/feature/ndibrowser/data/repository/NdiOutputRepositoryImpl.kt
+- [X] T032 [P] [US2] Improve denied-consent user messaging and recovery controls in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/output/OutputControlScreen.kt
+- [X] T033 [US2] Add telemetry events for consent requested/granted/denied/reset in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/output/OutputTelemetry.kt
+- [X] T033a [US2] Enforce and surface retry-window behavior (15 seconds) in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/output/OutputControlViewModel.kt and feature/ndi-browser/data/src/main/java/com/ndi/feature/ndibrowser/data/repository/NdiOutputRepositoryImpl.kt
 
 **Checkpoint**: User Story 2 works independently without relying on later stories.
 
@@ -109,10 +109,10 @@
 
 - [ ] T034 [P] [US3] Add failing continuity state test for background transitions in feature/ndi-browser/presentation/src/test/java/com/ndi/feature/ndibrowser/output/OutputControlViewModelTopLevelNavTest.kt
 - [ ] T035 [P] [US3] Add failing repository continuity/reconnect test in feature/ndi-browser/data/src/test/java/com/ndi/feature/ndibrowser/data/repository/StreamContinuityRepositoryImplTest.kt
-- [ ] T036 [P] [US3] Add failing Playwright e2e for background continuity and notification stop action in testing/e2e/tests/output-screen-share.spec.ts
-- [ ] T037 [US3] Run existing Playwright regression suite and append results to test-results/017-ndi-screen-output-validation.md using npm --prefix testing/e2e run test:pr:primary
-- [ ] T038 [US3] If blocked, record reproduction and unblock command in test-results/017-ndi-screen-output-validation.md
-- [ ] T038a [P] [US3] Add timing assertion for receiver visibility within 10 seconds in testing/e2e/tests/output-screen-share.spec.ts and record evidence in test-results/017-ndi-screen-output-validation.md
+- [X] T036 [P] [US3] Add failing Playwright e2e for background continuity and notification stop action in testing/e2e/tests/output-screen-share.spec.ts
+- [X] T037 [US3] Run existing Playwright regression suite and append results to test-results/017-ndi-screen-output-validation.md using npm --prefix testing/e2e run test:pr:primary
+- [X] T038 [US3] If blocked, record reproduction and unblock command in test-results/017-ndi-screen-output-validation.md
+- [X] T038a [P] [US3] Add timing assertion for receiver visibility within 10 seconds in testing/e2e/tests/output-screen-share.spec.ts and record evidence in test-results/017-ndi-screen-output-validation.md
 
 ### Implementation for User Story 3
 
@@ -133,19 +133,19 @@
 
 ### Tests for User Story 4 (REQUIRED)
 
-- [ ] T043 [P] [US4] Add failing repository test for configured reachable server registration path in feature/ndi-browser/data/src/test/java/com/ndi/feature/ndibrowser/data/repository/NdiOutputRepositoryImplTest.kt
-- [ ] T044 [P] [US4] Add failing repository test for no-config mDNS path in feature/ndi-browser/data/src/test/java/com/ndi/feature/ndibrowser/data/repository/NdiOutputRepositoryImplTest.kt
-- [ ] T045 [P] [US4] Add failing repository test for unreachable configured server start failure in feature/ndi-browser/data/src/test/java/com/ndi/feature/ndibrowser/data/repository/NdiOutputRepositoryImplTest.kt
-- [ ] T046 [P] [US4] Add failing Playwright e2e coverage for all three discovery modes in testing/e2e/tests/output-screen-share.spec.ts
-- [ ] T047 [US4] Run existing Playwright regression suite and append results to test-results/017-ndi-screen-output-validation.md using npm --prefix testing/e2e run test:pr:primary
-- [ ] T048 [US4] If blocked, record reproduction and unblock command in test-results/017-ndi-screen-output-validation.md
+- [X] T043 [P] [US4] Add failing repository test for configured reachable server registration path in feature/ndi-browser/data/src/test/java/com/ndi/feature/ndibrowser/data/repository/NdiOutputRepositoryImplTest.kt
+- [X] T044 [P] [US4] Add failing repository test for no-config mDNS path in feature/ndi-browser/data/src/test/java/com/ndi/feature/ndibrowser/data/repository/NdiOutputRepositoryImplTest.kt
+- [X] T045 [P] [US4] Add failing repository test for unreachable configured server start failure in feature/ndi-browser/data/src/test/java/com/ndi/feature/ndibrowser/data/repository/NdiOutputRepositoryImplTest.kt
+- [X] T046 [P] [US4] Add failing Playwright e2e coverage for all three discovery modes in testing/e2e/tests/output-screen-share.spec.ts
+- [X] T047 [US4] Run existing Playwright regression suite and append results to test-results/017-ndi-screen-output-validation.md using npm --prefix testing/e2e run test:pr:primary
+- [X] T048 [US4] If blocked, record reproduction and unblock command in test-results/017-ndi-screen-output-validation.md
 - [ ] T048a [P] [US4] Add failing test for full-device capture initiation path when Android APIs permit pre-selection in feature/ndi-browser/presentation/src/test/java/com/ndi/feature/ndibrowser/output/OutputControlViewModelTest.kt
 
 ### Implementation for User Story 4
 
-- [ ] T049 [US4] Implement configured-server reachability gating and start-block behavior in feature/ndi-browser/data/src/main/java/com/ndi/feature/ndibrowser/data/repository/NdiOutputRepositoryImpl.kt
+- [X] T049 [US4] Implement configured-server reachability gating and start-block behavior in feature/ndi-browser/data/src/main/java/com/ndi/feature/ndibrowser/data/repository/NdiOutputRepositoryImpl.kt
 - [ ] T050 [US4] Implement/align discovery endpoint application and reachability probe in ndi/sdk-bridge/src/main/java/com/ndi/sdkbridge/NdiNativeBridge.kt
-- [ ] T051 [US4] Surface actionable discovery errors in output UI state and rendering in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/output/OutputControlViewModel.kt
+- [X] T051 [US4] Surface actionable discovery errors in output UI state and rendering in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/output/OutputControlViewModel.kt
 - [ ] T052 [US4] Add persisted settings/discovery regression coverage in feature/ndi-browser/presentation/src/androidTest/java/com/ndi/feature/ndibrowser/settings/OutputSettingsNavigationTest.kt
 - [ ] T052a [US4] Implement full-device capture initiation preference and platform-fallback handling in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/output/OutputControlFragment.kt and ndi/sdk-bridge/src/main/java/com/ndi/sdkbridge/NdiNativeBridge.kt
 
@@ -159,10 +159,10 @@
 
 - [ ] T053 [P] Update feature notes and operator guidance in docs/ndi-feature.md
 - [ ] T054 [P] Add final manual validation narrative and gate outcomes in test-results/017-ndi-screen-output-validation.md
-- [ ] T055 Run unit test suites and capture outputs for touched modules in test-results/017-ndi-screen-output-validation.md using ./gradlew.bat :feature:ndi-browser:data:testDebugUnitTest :feature:ndi-browser:presentation:testDebugUnitTest
-- [ ] T056 Run dual-emulator Playwright scenario and record artifacts in test-results/017-ndi-screen-output-validation.md using npm --prefix testing/e2e run test:dual-emulator
+- [X] T055 Run unit test suites and capture outputs for touched modules in test-results/017-ndi-screen-output-validation.md using ./gradlew.bat :feature:ndi-browser:data:testDebugUnitTest :feature:ndi-browser:presentation:testDebugUnitTest
+- [X] T056 Run dual-emulator Playwright scenario and record artifacts in test-results/017-ndi-screen-output-validation.md using npm --prefix testing/e2e run test:dual-emulator
 - [ ] T057 Run release hardening validation and record results in test-results/017-ndi-screen-output-validation.md using ./gradlew.bat :app:verifyReleaseHardening :app:assembleRelease
-- [ ] T058 If any gate is blocked, classify blocker vs code failure and record explicit unblock steps in test-results/017-ndi-screen-output-validation.md
+- [X] T058 If any gate is blocked, classify blocker vs code failure and record explicit unblock steps in test-results/017-ndi-screen-output-validation.md
 - [ ] T059 Perform and record Material 3 compliance verification for Output screen updates in test-results/017-ndi-screen-output-validation.md
 
 ---

@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 import {
   assertAllowedStaticDelay,
   getSettingsEntryCandidates,
+  OUTPUT_START_TEXT_CANDIDATES,
   resolveConsentFlowVariant,
   startScreenRecording,
   STATIC_DELAY_MAX_MS,
@@ -38,7 +39,7 @@ test("@settings @us1 viewer settings candidates include playback-safe fallback",
 test("@settings @us1 output settings candidates include output-state controls", () => {
   const candidates = getSettingsEntryCandidates("output");
 
-  expect(candidates).toContain("Start Output");
+  expect(candidates).toEqual(expect.arrayContaining(OUTPUT_START_TEXT_CANDIDATES));
   expect(candidates).toContain("Stop Output");
 });
 

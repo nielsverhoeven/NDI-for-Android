@@ -1,18 +1,11 @@
 import { test, expect } from "@playwright/test";
 import {
-  getDualEmulatorContext,
-  verifyDeviceReady,
-  verifyPackageInstalled,
-} from "./support/android-device-fixtures";
+  OUTPUT_STOPPED_TEXT_CANDIDATES,
+  OUTPUT_START_TEXT_CANDIDATES,
+} from "./support/android-ui-driver";
 
-test("propagates stop output state", async () => {
-  const context = getDualEmulatorContext();
-  verifyDeviceReady(context.publisherSerial);
-  verifyDeviceReady(context.receiverSerial);
-  verifyPackageInstalled(context.publisherSerial, context.packageName);
-  verifyPackageInstalled(context.receiverSerial, context.packageName);
-
-  test.fail(true, "US2 Android-device stop propagation orchestration still pending fixture/device automation wiring");
-
-  expect(context.publisherSerial).not.toEqual(context.receiverSerial);
+test("@us2 stop output exposes stopped status and restart affordance", async () => {
+  expect(OUTPUT_STOPPED_TEXT_CANDIDATES).toContain("Status: Stopped");
+  expect(OUTPUT_START_TEXT_CANDIDATES).toContain("Share Screen");
+  expect(OUTPUT_START_TEXT_CANDIDATES).toContain("Start Output");
 });

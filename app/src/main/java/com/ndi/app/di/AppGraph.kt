@@ -105,6 +105,7 @@ class AppGraph private constructor(context: Context) {
     val outputRepository: NdiOutputRepository = NdiOutputRepositoryImpl(
         outputSessionDao = database.outputSessionDao(),
         outputBridge = NativeNdiBridge,
+        discoveryConfigRepository = discoveryConfigRepository,
         screenCaptureConsentRepository = screenCaptureConsentRepository,
         mapper = OutputSessionMapper(),
         coordinator = OutputSessionCoordinator(),

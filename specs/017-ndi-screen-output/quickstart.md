@@ -99,3 +99,10 @@ Collect and keep artifacts/logs:
 - relevant unit test reports under module build directories
 
 For blocked gates, classify as environment-blocked vs code-failure and include exact unblocking step.
+
+## 9. Task Trace
+
+- T001-T004 evidence: test-results/017-ndi-screen-output-preflight.md
+- T005 and final gates evidence: test-results/017-ndi-screen-output-validation.md
+- Feature Playwright spec: testing/e2e/tests/output-screen-share.spec.ts
+- Feature Playwright helpers: testing/e2e/tests/support/output-screen-share-helpers.ts

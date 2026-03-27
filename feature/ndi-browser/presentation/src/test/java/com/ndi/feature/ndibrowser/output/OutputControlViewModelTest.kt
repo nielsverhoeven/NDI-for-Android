@@ -20,6 +20,7 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertFalse
 import org.junit.Rule
 import org.junit.Test
 import java.util.UUID
@@ -185,6 +186,63 @@ class OutputControlViewModelTest {
 
         collector.cancel()
     }
+
+    @Test
+    fun onRetryOutputPressed_usesFifteenSecondWindow() = runTest(mainDispatcherRule.dispatcher.scheduler) {
+        val repository = FakeOutputRepository()
+        val viewModel = OutputControlViewModel(
+            repository,
+            InMemoryOutputConfigurationRepository(),
+            InMemoryScreenCaptureConsentRepository(),
+            OutputTelemetryEmitter {},
+        )
+
+        repository.emitState(OutputState.INTERRUPTED, sourceId = "device-screen:local")
+        advanceUntilIdle()
+
+        viewModel.onRetryOutputPressed()
+        advanceUntilIdle()
+
+        assertEquals(15, repository.lastRetryWindowSeconds)
+        assertEquals(OutputState.ACTIVE, viewModel.uiState.value.outputState)
+    }
+
+    @Test
+    fun stopThenStartDeviceScreen_requiresConsentAgain() = runTest(mainDispatcherRule.dispatcher.scheduler) {
+        val repository = FakeOutputRepository()
+        val consentRepository = InMemoryScreenCaptureConsentRepository(granted = false)
+        val viewModel = OutputControlViewModel(
+            repository,
+            InMemoryOutputConfigurationRepository(),
+            consentRepository,
+            OutputTelemetryEmitter {},
+        )
+
+        // First run with granted consent and active stream.
+        viewModel.onOutputScreenVisible("device-screen:local")
+        advanceUntilIdle()
+        viewModel.onScreenCaptureConsentResult(granted = true, tokenRef = "token-1")
+        advanceUntilIdle()
+        assertEquals(OutputState.ACTIVE, viewModel.uiState.value.outputState)
+
+        // Explicit stop should clear consent state.
+        viewModel.onStopOutputPressed()
+        advanceUntilIdle()
+        assertEquals(OutputState.STOPPED, viewModel.uiState.value.outputState)
+        assertFalse(consentRepository.peekGranted("device-screen:local"))
+
+        var promptSourceId: String? = null
+        val collector = launch {
+            promptSourceId = viewModel.consentPromptEvents.first()
+        }
+
+        viewModel.onStartOutputPressed()
+        advanceUntilIdle()
+
+        assertEquals("device-screen:local", promptSourceId)
+        assertEquals(1, repository.startCalls)
+        collector.cancel()
+    }
 }
 
 private class FakeOutputRepository(
@@ -211,6 +269,7 @@ private class FakeOutputRepository(
     )
 
     var startCalls: Int = 0
+    var lastRetryWindowSeconds: Int = 0
 
     override suspend fun startOutput(inputSourceId: String, streamName: String): OutputSession {
         startCalls += 1
@@ -235,12 +294,21 @@ private class FakeOutputRepository(
     override fun observeOutputSession(): Flow<OutputSession> = sessions
 
     override suspend fun retryInterruptedOutputWithinWindow(windowSeconds: Int): OutputSession {
+        lastRetryWindowSeconds = windowSeconds
         val session = sessions.value.copy(state = OutputState.ACTIVE)
         sessions.value = session
         return session
     }
 
     override fun observeOutputHealth(): Flow<OutputHealthSnapshot> = health
+
+    fun emitState(state: OutputState, sourceId: String) {
+        sessions.value = sessions.value.copy(
+            inputSourceId = sourceId,
+            outboundStreamName = "NDI Output",
+            state = state,
+        )
+    }
 }
 
 private class InMemoryOutputConfigurationRepository : OutputConfigurationRepository {
@@ -290,6 +358,10 @@ private class InMemoryScreenCaptureConsentRepository(
         if (state.sourceId == inputSourceId) {
             state = state.copy(granted = false, tokenRef = null)
         }
+    }
+
+    fun peekGranted(inputSourceId: String): Boolean {
+        return state.sourceId == inputSourceId && state.granted
     }
 }
 

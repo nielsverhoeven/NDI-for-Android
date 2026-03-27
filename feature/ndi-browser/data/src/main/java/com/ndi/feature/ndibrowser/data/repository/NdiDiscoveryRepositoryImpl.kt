@@ -46,7 +46,7 @@ class NdiDiscoveryRepositoryImpl(
         return runCatching {
             // Fetch and set the configured discovery endpoint on the bridge
             val endpoint = discoveryConfigRepository.getCurrentEndpoint()
-            Log.d(TAG, "Discovery trigger=$trigger, endpoint=$endpoint")
+            runCatching { Log.d(TAG, "Discovery trigger=$trigger, endpoint=$endpoint") }
                 // setDiscoveryEndpoint calls nativeSetDiscoveryExtraIps (JNI), which
                 // acquires g_state_mutex.  Calling it on the main thread while the
                 // native mutex is contended causes an ANR.  Always run on IO.

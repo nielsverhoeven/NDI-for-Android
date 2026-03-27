@@ -2,6 +2,8 @@ package com.ndi.feature.ndibrowser.data.repository
 
 import com.ndi.core.database.OutputSessionDao
 import com.ndi.core.database.OutputSessionEntity
+import com.ndi.core.model.NdiDiscoveryApplyResult
+import com.ndi.core.model.NdiDiscoveryEndpoint
 import com.ndi.core.model.OutputHealthSnapshot
 import com.ndi.core.model.OutputConsentState
 import com.ndi.core.model.OutputInputKind
@@ -11,6 +13,7 @@ import com.ndi.core.model.OutputState
 import com.ndi.feature.ndibrowser.data.OutputRecoveryCoordinator
 import com.ndi.feature.ndibrowser.data.OutputSessionCoordinator
 import com.ndi.feature.ndibrowser.data.mapper.OutputSessionMapper
+import com.ndi.feature.ndibrowser.domain.repository.NdiDiscoveryConfigRepository
 import com.ndi.feature.ndibrowser.domain.repository.NdiOutputRepository
 import com.ndi.feature.ndibrowser.domain.repository.ScreenCaptureConsentRepository
 import com.ndi.feature.ndibrowser.domain.repository.ScreenCaptureConsentState
@@ -27,11 +30,17 @@ import kotlinx.coroutines.withContext
 class NdiOutputRepositoryImpl(
     private val outputSessionDao: OutputSessionDao,
     private val outputBridge: NdiOutputBridge,
+    private val discoveryConfigRepository: NdiDiscoveryConfigRepository = NoopNdiDiscoveryConfigRepository(),
     private val screenCaptureConsentRepository: ScreenCaptureConsentRepository = NoopScreenCaptureConsentRepository(),
     private val mapper: OutputSessionMapper = OutputSessionMapper(),
     private val coordinator: OutputSessionCoordinator = OutputSessionCoordinator(),
     private val recoveryCoordinator: OutputRecoveryCoordinator = OutputRecoveryCoordinator(),
 ) : NdiOutputRepository {
+
+    private companion object {
+        const val DISCOVERY_SERVER_UNREACHABLE_MESSAGE =
+            "Configured discovery server is unreachable. Check discovery settings or network connectivity."
+    }
 
     private val startMutex = Mutex()
 
@@ -89,6 +98,29 @@ class NdiOutputRepositoryImpl(
                 OutputConsentState.GRANTED
             } else {
                 OutputConsentState.NOT_REQUIRED
+            }
+
+            val configuredEndpoint = discoveryConfigRepository.getCurrentEndpoint()
+            if (configuredEndpoint != null) {
+                val discoveryReachable = withContext(Dispatchers.IO) {
+                    outputBridge.isDiscoveryServerReachable(
+                        host = configuredEndpoint.host,
+                        port = configuredEndpoint.port,
+                    )
+                }
+                if (!discoveryReachable) {
+                    val interrupted = current.copy(
+                        inputSourceId = inputSourceId,
+                        inputSourceKind = inputKind,
+                        outboundStreamName = streamName.ifBlank { current.outboundStreamName },
+                        consentState = consentState,
+                        state = OutputState.INTERRUPTED,
+                        interruptionReason = DISCOVERY_SERVER_UNREACHABLE_MESSAGE,
+                    )
+                    outputSessionState.value = interrupted
+                    outputHealthState.value = coordinator.nextHealthForState(interrupted)
+                    throw IllegalStateException(DISCOVERY_SERVER_UNREACHABLE_MESSAGE)
+                }
             }
 
             val isReachable = if (inputKind == OutputInputKind.DEVICE_SCREEN) {
@@ -171,6 +203,9 @@ class NdiOutputRepositoryImpl(
         }
 
         val stopped = coordinator.nextOnStopped(stopping)
+        if (current.inputSourceKind == OutputInputKind.DEVICE_SCREEN && current.inputSourceId.isNotBlank()) {
+            screenCaptureConsentRepository.clearConsent(current.inputSourceId)
+        }
         outputSessionState.value = stopped
         outputHealthState.value = coordinator.nextHealthForState(stopped)
         outputSessionDao.upsert(stopped.toEntity())
@@ -262,5 +297,24 @@ private class NoopScreenCaptureConsentRepository : ScreenCaptureConsentRepositor
     override suspend fun getConsentState(inputSourceId: String): ScreenCaptureConsentState? = null
 
     override suspend fun clearConsent(inputSourceId: String) = Unit
+}
+
+private class NoopNdiDiscoveryConfigRepository : NdiDiscoveryConfigRepository {
+    private val endpointState = MutableStateFlow<NdiDiscoveryEndpoint?>(null)
+
+    override fun observeDiscoveryEndpoint(): Flow<NdiDiscoveryEndpoint?> = endpointState.asStateFlow()
+
+    override suspend fun applyDiscoveryEndpoint(endpoint: NdiDiscoveryEndpoint?): NdiDiscoveryApplyResult {
+        endpointState.value = endpoint
+        return NdiDiscoveryApplyResult(
+            applyId = UUID.randomUUID().toString(),
+            endpoint = endpoint,
+            interruptedActiveStream = false,
+            fallbackTriggered = false,
+            appliedAtEpochMillis = System.currentTimeMillis(),
+        )
+    }
+
+    override suspend fun getCurrentEndpoint(): NdiDiscoveryEndpoint? = endpointState.value
 }
 

@@ -97,6 +97,7 @@ private class DashboardFakeViewerRepository : NdiViewerRepository {
 
     override suspend fun connectToSource(sourceId: String) = session.value
     override fun observeViewerSession(): Flow<ViewerSession> = session
+    override fun getLatestVideoFrame() = null
     override suspend fun retryReconnectWithinWindow(sourceId: String, windowSeconds: Int) = session.value
     override suspend fun stopViewing() = Unit
 }

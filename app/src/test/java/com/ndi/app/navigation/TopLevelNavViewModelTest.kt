@@ -46,6 +46,24 @@ class TopLevelNavViewModelTest {
         }
 
     @Test
+    fun deepLinkLaunch_doesNotEmitFallbackTopLevelNavigationEvent() =
+        runTest(mainDispatcherRule.dispatcher.scheduler) {
+            val repo = FakeNavigationRepository(lastSaved = TopLevelDestination.HOME)
+            val vm = TopLevelNavViewModel(repo)
+            val events = mutableListOf<TopLevelNavEvent>()
+
+            val job = launch { vm.events.collect { events.add(it) } }
+
+            vm.onAppLaunch(LaunchContext.DEEP_LINK)
+            advanceUntilIdle()
+
+            assertTrue(events.isEmpty())
+            assertEquals(TopLevelDestination.HOME, vm.uiState.value.selectedDestination)
+
+            job.cancel()
+        }
+
+    @Test
     fun onDestinationSelected_updatesSelectedDestination() =
         runTest(mainDispatcherRule.dispatcher.scheduler) {
             val repo = FakeNavigationRepository()
