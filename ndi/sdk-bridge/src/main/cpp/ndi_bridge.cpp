@@ -195,23 +195,35 @@ void submit_local_screen_share_frame_native(JNIEnv* env, jint width, jint height
     NDIlib_send_send_video_v2(g_send_instance, &video_frame);
 }
 
-void stop_receiver_native_locked() {
-    g_receiver_running = false;
+// Stops the receiver thread without holding g_state_mutex during join().
+// Holding the mutex while calling join() causes a deadlock: this thread owns
+// g_state_mutex and waits for the receiver thread to exit, while the receiver
+// thread is blocked trying to acquire g_state_mutex to store a video frame.
+void stop_receiver_safe() {
+    g_receiver_running = false;          // atomic write, no lock needed
     if (g_receiver_thread.joinable()) {
-        g_receiver_thread.join();
+        g_receiver_thread.join();        // join WITHOUT g_state_mutex held
     }
-    if (g_recv_instance != nullptr) {
-        NDIlib_recv_destroy(g_recv_instance);
-        g_recv_instance = nullptr;
+    // Receiver thread is done; clean up NDI handle and frame buffer.
+#ifdef NDI_SDK_AVAILABLE
+    {
+        std::lock_guard<std::mutex> lock(g_state_mutex);
+        if (g_recv_instance != nullptr) {
+            NDIlib_recv_destroy(g_recv_instance);
+            g_recv_instance = nullptr;
+        }
+        clear_latest_frame_locked();
     }
-    clear_latest_frame_locked();
+#else
+    clear_latest_frame();
+#endif
 }
 
 void start_receiver_native(const std::string& source_id) {
+    // Stop old receiver BEFORE acquiring g_state_mutex to avoid deadlock.
+    stop_receiver_safe();
+
     std::lock_guard<std::mutex> lock(g_state_mutex);
-
-    stop_receiver_native_locked();
-
     if (!ensure_ndi_initialized()) {
         return;
     }
@@ -352,12 +364,23 @@ Java_com_ndi_sdkbridge_NativeNdiBridge_nativeDiscoverDisplayNames(
     jobject /* this */
 ) {
 #ifdef NDI_SDK_AVAILABLE
+    // Do NOT call discover_sources_native() while holding g_state_mutex: the
+    // network scan takes up to 3 seconds and would block concurrent frame reads.
+    bool needs_discovery = false;
+    {
+        std::lock_guard<std::mutex> check_lock(g_state_mutex);
+        needs_discovery = g_last_discovered_sources.empty();
+    }
+    if (needs_discovery) {
+        auto discovered = discover_sources_native();   // slow scan - NO mutex
+        std::lock_guard<std::mutex> store_lock(g_state_mutex);
+        if (g_last_discovered_sources.empty()) {
+            g_last_discovered_sources = std::move(discovered);
+        }
+    }
     std::vector<std::string> display_names;
     {
-        std::lock_guard<std::mutex> lock(g_state_mutex);
-        if (g_last_discovered_sources.empty()) {
-            g_last_discovered_sources = discover_sources_native();
-        }
+        std::lock_guard<std::mutex> read_lock(g_state_mutex);
         display_names.reserve(g_last_discovered_sources.size());
         for (const auto& entry : g_last_discovered_sources) {
             display_names.push_back(entry.display_name);
@@ -428,8 +451,7 @@ Java_com_ndi_sdkbridge_NativeNdiBridge_nativeStopReceiver(
     jobject /* this */
 ) {
 #ifdef NDI_SDK_AVAILABLE
-    std::lock_guard<std::mutex> lock(g_state_mutex);
-    stop_receiver_native_locked();
+    stop_receiver_safe();
 #else
     clear_latest_frame();
 #endif

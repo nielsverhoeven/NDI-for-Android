@@ -168,22 +168,43 @@ class MainActivity : AppCompatActivity(), HomeNavigationCallback {
 
         onBackPressedDispatcher.addCallback(this) {
             val currentDestinationId = navHostFragment.navController.currentDestination?.id
-            val consumed = when (currentDestinationId) {
-                R.id.viewerHostFragment -> navViewModel.onBackPressed(
-                    currentTopLevelDestination = TopLevelDestination.VIEW,
-                    isViewerVisible = true,
-                )
-                R.id.viewFragment -> navViewModel.onBackPressed(
-                    currentTopLevelDestination = TopLevelDestination.VIEW,
-                    isViewerVisible = false,
-                )
-                else -> false
-            }
-
-            if (!consumed) {
-                isEnabled = false
-                onBackPressedDispatcher.onBackPressed()
-                isEnabled = true
+            when (currentDestinationId) {
+                R.id.viewerHostFragment -> {
+                    // Use the predefined nav-graph action to pop only the viewer,
+                    // leaving the source-list fragment intact.  This avoids the
+                    // popUpTo(home) + restoreState path that can race with
+                    // ViewerFragment teardown and crash.
+                    val popped = runCatching {
+                        navHostFragment.navController.navigate(
+                            R.id.action_viewerHostFragment_to_viewFragment,
+                        )
+                        true
+                    }.getOrDefault(false)
+                    if (!popped) {
+                        // Fallback: let the system handle it.
+                        isEnabled = false
+                        onBackPressedDispatcher.onBackPressed()
+                        isEnabled = true
+                    }
+                    // Keep ViewModel in sync; no nav event needed since we handled navigation.
+                    navViewModel.onNavDestinationObserved(TopLevelDestination.VIEW)
+                }
+                R.id.viewFragment -> {
+                    val consumed = navViewModel.onBackPressed(
+                        currentTopLevelDestination = TopLevelDestination.VIEW,
+                        isViewerVisible = false,
+                    )
+                    if (!consumed) {
+                        isEnabled = false
+                        onBackPressedDispatcher.onBackPressed()
+                        isEnabled = true
+                    }
+                }
+                else -> {
+                    isEnabled = false
+                    onBackPressedDispatcher.onBackPressed()
+                    isEnabled = true
+                }
             }
         }
     }
