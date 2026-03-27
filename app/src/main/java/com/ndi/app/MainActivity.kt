@@ -11,6 +11,9 @@ import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.fragment.NavHostFragment
 import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.google.android.material.navigationrail.NavigationRailView
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import com.ndi.app.databinding.ActivityMainBinding
 import com.ndi.app.di.AppGraph
 import com.ndi.app.navigation.LaunchContextResolver
@@ -22,6 +25,7 @@ import com.ndi.app.navigation.TopLevelNavigationHost
 import com.ndi.core.model.navigation.NavigationLayoutProfile
 import com.ndi.core.model.navigation.NavigationTrigger
 import com.ndi.core.model.navigation.TopLevelDestination
+import com.ndi.feature.themeeditor.domain.model.ThemeAccentPalette
 import com.ndi.feature.ndibrowser.home.HomeNavigationCallback
 import com.ndi.feature.ndibrowser.home.HomeNavigationEvent
 import kotlinx.coroutines.launch
@@ -30,6 +34,7 @@ class MainActivity : AppCompatActivity(), HomeNavigationCallback {
 
     private lateinit var appGraph: AppGraph
     private lateinit var binding: ActivityMainBinding
+    private var appliedAccentColorId: String? = null
     private lateinit var navViewModel: TopLevelNavViewModel
     private lateinit var continuityViewModel: AppContinuityViewModel
     private lateinit var navHost: TopLevelNavigationHost
@@ -37,7 +42,15 @@ class MainActivity : AppCompatActivity(), HomeNavigationCallback {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         appGraph = AppGraph.initialize(applicationContext)
-        AppGraph.initialize(applicationContext)
+
+        // Read accent synchronously (single-row DB read) and apply M3 theme overlay
+        // BEFORE view inflation so every Material3 component picks up colorPrimary etc.
+        appliedAccentColorId = runBlocking {
+            withContext(Dispatchers.IO) {
+                appGraph.themeEditorRepository.getThemePreference().accentColorId
+            }
+        }
+        theme.applyStyle(accentThemeOverlayResId(appliedAccentColorId), true)
 
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
@@ -133,6 +146,17 @@ class MainActivity : AppCompatActivity(), HomeNavigationCallback {
                         handleNavEvent(event)
                     }
                 }
+
+                launch {
+                    // When the accent changes after the initial view inflation, recreate
+                    // the activity so all Material3 components inherit the new colorPrimary.
+                    appGraph.appThemeCoordinator.activeAccentColorId.collect { accentColorId ->
+                        if (accentColorId != null && accentColorId != appliedAccentColorId) {
+                            appliedAccentColorId = accentColorId
+                            recreate()
+                        }
+                    }
+                }
             }
         }
 
@@ -197,5 +221,14 @@ class MainActivity : AppCompatActivity(), HomeNavigationCallback {
                 navHost.navigateTo(TopLevelDestination.SETTINGS, NavigationTrigger.BOTTOM_NAV)
             is TopLevelNavEvent.NavigationFailure -> Unit // already emitted to telemetry
         }
+    }
+
+    private fun accentThemeOverlayResId(accentColorId: String?): Int = when (accentColorId) {
+        ThemeAccentPalette.ACCENT_BLUE -> R.style.ThemeOverlay_NdiApp_AccentBlue
+        ThemeAccentPalette.ACCENT_GREEN -> R.style.ThemeOverlay_NdiApp_AccentGreen
+        ThemeAccentPalette.ACCENT_ORANGE -> R.style.ThemeOverlay_NdiApp_AccentOrange
+        ThemeAccentPalette.ACCENT_RED -> R.style.ThemeOverlay_NdiApp_AccentRed
+        ThemeAccentPalette.ACCENT_PINK -> R.style.ThemeOverlay_NdiApp_AccentPink
+        else -> R.style.ThemeOverlay_NdiApp_AccentTeal
     }
 }

@@ -1,12 +1,12 @@
 ﻿{
     "operation":  "Reset-EmulatorState",
     "status":  "FAILURE",
-    "timestamp":  "2026-03-26T19:24:25.8254563Z",
+    "timestamp":  "2026-03-27T15:57:18.5261496Z",
     "data":  null,
     "errors":  [
                    {
                        "code":  "RESET_FAILED",
-                       "message":  "adb.exe: device \u0027emulator-5554\u0027 not found",
+                       "message":  "* daemon not running; starting now at tcp:5037",
                        "details":  null
                    }
                ],

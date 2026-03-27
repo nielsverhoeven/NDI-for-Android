@@ -16,6 +16,8 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 
@@ -36,19 +38,20 @@ class ThemeEditorViewModelTest {
     }
 
     @Test
-    fun onThemeModeSelected_savesSingleSelectedMode() = runTest(scheduler) {
+    fun onThemeModeSelected_updatesDraftWithoutSaving() = runTest(scheduler) {
         val repository = FakeThemeEditorRepository()
         val viewModel = ThemeEditorViewModel(repository)
 
         viewModel.onThemeModeSelected(NdiThemeMode.DARK)
         advanceUntilIdle()
 
-        assertEquals(NdiThemeMode.DARK, repository.state.value.themeMode)
+        assertEquals(NdiThemeMode.SYSTEM, repository.state.value.themeMode)
         assertEquals(NdiThemeMode.DARK, viewModel.uiState.value.selectedThemeMode)
+        assertTrue(viewModel.uiState.value.hasUnsavedChanges)
     }
 
     @Test
-    fun onThemeModeSelected_switchesBetweenModes() = runTest(scheduler) {
+    fun onThemeModeSelected_switchesDraftModes() = runTest(scheduler) {
         val repository = FakeThemeEditorRepository()
         val viewModel = ThemeEditorViewModel(repository)
 
@@ -58,18 +61,35 @@ class ThemeEditorViewModelTest {
 
         assertEquals(NdiThemeMode.SYSTEM, repository.state.value.themeMode)
         assertEquals(NdiThemeMode.SYSTEM, viewModel.uiState.value.selectedThemeMode)
+        assertFalse(viewModel.uiState.value.hasUnsavedChanges)
     }
 
     @Test
-    fun onAccentColorSelected_updatesSingleSelectedAccent() = runTest(scheduler) {
+    fun onAccentColorSelected_updatesDraftWithoutSaving() = runTest(scheduler) {
         val repository = FakeThemeEditorRepository()
         val viewModel = ThemeEditorViewModel(repository)
 
         viewModel.onAccentColorSelected(ThemeAccentPalette.ACCENT_RED)
         advanceUntilIdle()
 
-        assertEquals(ThemeAccentPalette.ACCENT_RED, repository.state.value.accentColorId)
+        assertEquals(ThemeAccentPalette.defaultAccentColorId, repository.state.value.accentColorId)
         assertEquals(ThemeAccentPalette.ACCENT_RED, viewModel.uiState.value.selectedAccentColorId)
+        assertTrue(viewModel.uiState.value.hasUnsavedChanges)
+    }
+
+    @Test
+    fun onApplyClicked_persistsDraftAndClearsUnsavedFlag() = runTest(scheduler) {
+        val repository = FakeThemeEditorRepository()
+        val viewModel = ThemeEditorViewModel(repository)
+
+        viewModel.onThemeModeSelected(NdiThemeMode.DARK)
+        viewModel.onAccentColorSelected(ThemeAccentPalette.ACCENT_RED)
+        viewModel.onApplyClicked()
+        advanceUntilIdle()
+
+        assertEquals(NdiThemeMode.DARK, repository.state.value.themeMode)
+        assertEquals(ThemeAccentPalette.ACCENT_RED, repository.state.value.accentColorId)
+        assertFalse(viewModel.uiState.value.hasUnsavedChanges)
     }
 
     @Test
@@ -87,6 +107,7 @@ class ThemeEditorViewModelTest {
 
         assertEquals(NdiThemeMode.DARK, viewModel.uiState.value.selectedThemeMode)
         assertEquals(ThemeAccentPalette.ACCENT_ORANGE, viewModel.uiState.value.selectedAccentColorId)
+        assertFalse(viewModel.uiState.value.hasUnsavedChanges)
     }
 
     private class FakeThemeEditorRepository(

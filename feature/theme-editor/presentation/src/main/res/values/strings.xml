@@ -12,4 +12,5 @@
     <string name="theme_accent_orange">Orange</string>
     <string name="theme_accent_red">Red</string>
     <string name="theme_accent_pink">Pink</string>
+    <string name="theme_editor_apply">Apply</string>
 </resources>

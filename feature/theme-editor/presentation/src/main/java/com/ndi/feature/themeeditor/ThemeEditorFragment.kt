@@ -1,6 +1,7 @@
 package com.ndi.feature.themeeditor
 
 import android.os.Bundle
+import android.net.Uri
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -9,6 +10,7 @@ import androidx.fragment.app.viewModels
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import androidx.navigation.fragment.findNavController
 import com.ndi.core.model.NdiThemeMode
 import com.ndi.feature.themeeditor.domain.model.ThemeAccentPalette
 import com.ndi.feature.themeeditor.presentation.databinding.FragmentThemeEditorBinding
@@ -56,6 +58,22 @@ class ThemeEditorFragment : Fragment() {
                             else -> currentBinding.accentTeal.id
                         },
                     )
+                    currentBinding.applyThemeButton.isEnabled = state.hasUnsavedChanges
+                }
+            }
+        }
+
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.events.collect { event ->
+                    when (event) {
+                        ThemeEditorEvent.NavigateBackToSettings -> {
+                            val popped = runCatching { findNavController().popBackStack() }.getOrDefault(false)
+                            if (!popped) {
+                                findNavController().navigate(Uri.parse("ndi://settings"))
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -89,6 +107,9 @@ class ThemeEditorFragment : Fragment() {
         }
         binding.accentPink.setOnClickListener {
             viewModel.onAccentColorSelected(ThemeAccentPalette.ACCENT_PINK)
+        }
+        binding.applyThemeButton.setOnClickListener {
+            viewModel.onApplyClicked()
         }
     }
 

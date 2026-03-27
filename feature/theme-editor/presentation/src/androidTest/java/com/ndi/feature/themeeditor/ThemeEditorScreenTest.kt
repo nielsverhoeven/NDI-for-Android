@@ -41,6 +41,7 @@ class ThemeEditorScreenTest {
             assertNotNull(fragment.view?.findViewById<android.view.View>(R.id.accentOrange))
             assertNotNull(fragment.view?.findViewById<android.view.View>(R.id.accentRed))
             assertNotNull(fragment.view?.findViewById<android.view.View>(R.id.accentPink))
+            assertNotNull(fragment.view?.findViewById<android.view.View>(R.id.applyThemeButton))
         }
     }
 
