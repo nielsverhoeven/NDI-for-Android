@@ -26,7 +26,6 @@ externalNativeBuild/
 captures/
 /.kotlin/
 exports/*.apk
-testing/e2e/testing/e2e/artifacts/runtime/relay-metrics.json
 crash_capture.txt
 live_log.txt
 testing/e2e/testing/e2e/
