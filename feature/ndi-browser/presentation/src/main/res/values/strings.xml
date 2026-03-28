@@ -53,7 +53,12 @@
     <string name="settings_discovery_server_label">Discovery Server</string>
     <string name="settings_discovery_server_hint">hostname or hostname:port</string>
     <string name="settings_save_button">Save</string>
+    <string name="settings_apply_button">Apply</string>
     <string name="settings_open_theme_editor">Theme editor</string>
+    <string name="settings_theme_mode_light">Light</string>
+    <string name="settings_theme_mode_dark">Dark</string>
+    <string name="settings_theme_mode_system">System default</string>
+    <string name="settings_detail_general_hint">Adjust settings in each category, then click Apply to save.</string>
     <string name="settings_developer_mode_label">Developer Mode</string>
     <string name="settings_validation_invalid_format">Invalid server format. Use hostname or hostname:port.</string>
     <string name="settings_validation_saved">Settings saved.</string>

@@ -19,6 +19,8 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.ndi.feature.ndibrowser.presentation.R
 import com.ndi.core.model.TelemetryEvent
+import com.google.android.material.button.MaterialButton
+import com.ndi.core.model.NdiThemeMode
 import com.ndi.core.model.SettingsCategoryState
 import com.ndi.core.model.SettingsDetailState
 import com.ndi.core.model.SettingsLayoutMode
@@ -28,6 +30,9 @@ import kotlinx.coroutines.launch
 data class SettingsUiState(
     val developerModeEnabled: Boolean = false,
     val fallbackWarning: String? = null,
+    val themeMode: NdiThemeMode = NdiThemeMode.SYSTEM,
+    val isDirty: Boolean = false,
+    val savedConfirmationVisible: Boolean = false,
     val layoutMode: SettingsLayoutMode = SettingsLayoutMode.COMPACT,
     val settingsCategoryState: SettingsCategoryState = SettingsCategoryState(
         categories = emptyList(),
@@ -53,6 +58,9 @@ class SettingsFragment : Fragment() {
     }
     private lateinit var screen: SettingsScreen
     private lateinit var settingsCategoryAdapter: SettingsCategoryAdapter
+    private companion object {
+        const val DISCOVERY_FRAGMENT_TAG = "discovery_inline"
+    }
     private var detailRenderer: SettingsDetailRenderer? = null
 
     override fun onCreateView(
@@ -78,15 +86,11 @@ class SettingsFragment : Fragment() {
             detailTitle = fragmentBinding.root.findViewById<TextView>(R.id.settingsDetailTitle),
             detailContent = fragmentBinding.root.findViewById<LinearLayout>(R.id.settingsDetailContent),
             detailEmptyState = fragmentBinding.root.findViewById<TextView>(R.id.settingsDetailEmptyState),
-            onSave = viewModel::onSaveSettings,
-            onOpenThemeEditor = {
-                findNavController().navigate(Uri.parse("ndi://theme-editor"))
-            },
-            onOpenDiscoveryServers = {
-                findNavController().navigate(Uri.parse("ndi://settings/discovery-servers"))
-            },
             onDeveloperModeToggled = viewModel::onDeveloperModeToggled,
+            onThemeModeChanged = viewModel::onThemeModeChanged,
         )
+        fragmentBinding.root.findViewById<MaterialButton>(R.id.settingsApplyButton)
+            .setOnClickListener { viewModel.onSaveSettings() }
         fragmentBinding.openDiscoveryServersButton.setOnClickListener {
             findNavController().navigate(Uri.parse("ndi://settings/discovery-servers"))
         }
@@ -152,13 +156,39 @@ class SettingsFragment : Fragment() {
         val showWide = state.layoutMode == SettingsLayoutMode.WIDE
         fragmentBinding.settingsCompactContainer.isVisible = !showWide
         fragmentBinding.root.findViewById<View>(R.id.settingsTwoColumnContainer).isVisible = showWide
-        if (!showWide) return
+        if (!showWide) {
+            removeDiscoveryChildFragment()
+            return
+        }
 
         settingsCategoryAdapter.submitCategories(state.settingsCategoryState.categories)
-        detailRenderer?.render(
-            state = state.settingsDetailState,
-            developerModeEnabled = state.developerModeEnabled,
-        )
+
+        val isDiscovery = state.settingsCategoryState.selectedCategoryId == SettingsViewModel.CATEGORY_DISCOVERY
+        fragmentBinding.root.findViewById<View>(R.id.settingsDetailNormalContent).isVisible = !isDiscovery
+        fragmentBinding.root.findViewById<View>(R.id.settingsDiscoveryContainer).isVisible = isDiscovery
+
+        if (isDiscovery) {
+            if (childFragmentManager.findFragmentByTag(DISCOVERY_FRAGMENT_TAG) == null) {
+                childFragmentManager.beginTransaction()
+                    .replace(R.id.settingsDiscoveryContainer, DiscoveryServerSettingsFragment(), DISCOVERY_FRAGMENT_TAG)
+                    .commitAllowingStateLoss()
+            }
+        } else {
+            removeDiscoveryChildFragment()
+            detailRenderer?.render(
+                state = state.settingsDetailState,
+                developerModeEnabled = state.developerModeEnabled,
+                themeMode = state.themeMode,
+            )
+            fragmentBinding.root.findViewById<MaterialButton>(R.id.settingsApplyButton).isEnabled = state.isDirty
+            fragmentBinding.root.findViewById<TextView>(R.id.settingsSavedConfirmation).isVisible = state.savedConfirmationVisible
+        }
+    }
+
+    private fun removeDiscoveryChildFragment() {
+        childFragmentManager.findFragmentByTag(DISCOVERY_FRAGMENT_TAG)?.let { existing ->
+            childFragmentManager.beginTransaction().remove(existing).commitAllowingStateLoss()
+        }
     }
 }
 
@@ -183,5 +213,7 @@ class SettingsScreen(
         if (binding.developerModeSwitch.isChecked != state.developerModeEnabled) {
             binding.developerModeSwitch.isChecked = state.developerModeEnabled
         }
+        binding.saveSettingsButton.isEnabled = state.isDirty
+        binding.settingsCompactSavedConfirmation.isVisible = state.savedConfirmationVisible
     }
 }

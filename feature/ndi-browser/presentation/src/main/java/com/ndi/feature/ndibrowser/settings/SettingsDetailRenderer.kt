@@ -1,10 +1,14 @@
 package com.ndi.feature.ndibrowser.settings
 
+import android.view.View
 import android.widget.LinearLayout
+import android.widget.RadioGroup
 import android.widget.TextView
 import androidx.core.view.isVisible
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.materialswitch.MaterialSwitch
+import com.google.android.material.radiobutton.MaterialRadioButton
+import com.ndi.core.model.NdiThemeMode
 import com.ndi.core.model.SettingsDetailState
 import com.ndi.feature.ndibrowser.presentation.R
 
@@ -12,15 +16,14 @@ class SettingsDetailRenderer(
     private val detailTitle: TextView,
     private val detailContent: LinearLayout,
     private val detailEmptyState: TextView,
-    private val onSave: () -> Unit,
-    private val onOpenThemeEditor: () -> Unit,
-    private val onOpenDiscoveryServers: () -> Unit,
     private val onDeveloperModeToggled: (Boolean) -> Unit,
+    private val onThemeModeChanged: (NdiThemeMode) -> Unit,
 ) {
 
     fun render(
         state: SettingsDetailState,
         developerModeEnabled: Boolean,
+        themeMode: NdiThemeMode,
     ) {
         detailContent.removeAllViews()
         detailEmptyState.isVisible = state.emptyStateMessage != null
@@ -36,25 +39,39 @@ class SettingsDetailRenderer(
 
         when (state.selectedCategoryId) {
             SettingsViewModel.CATEGORY_GENERAL -> {
-                val button = MaterialButton(context).apply {
-                    text = context.getString(R.string.settings_save_button)
-                    setOnClickListener { onSave() }
+                val hint = TextView(context).apply {
+                    text = context.getString(R.string.settings_detail_general_hint)
+                    setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_BodyMedium)
                 }
-                detailContent.addView(button)
+                detailContent.addView(hint)
             }
             SettingsViewModel.CATEGORY_APPEARANCE -> {
-                val button = MaterialButton(context).apply {
-                    text = context.getString(R.string.settings_open_theme_editor)
-                    setOnClickListener { onOpenThemeEditor() }
+                val radioGroup = RadioGroup(context)
+                val modeIds = mapOf(
+                    NdiThemeMode.LIGHT to View.generateViewId(),
+                    NdiThemeMode.DARK to View.generateViewId(),
+                    NdiThemeMode.SYSTEM to View.generateViewId(),
+                )
+                val idsToMode = modeIds.entries.associate { it.value to it.key }
+                listOf(
+                    NdiThemeMode.LIGHT to context.getString(R.string.settings_theme_mode_light),
+                    NdiThemeMode.DARK to context.getString(R.string.settings_theme_mode_dark),
+                    NdiThemeMode.SYSTEM to context.getString(R.string.settings_theme_mode_system),
+                ).forEach { (mode, label) ->
+                    val radio = MaterialRadioButton(context).apply {
+                        text = label
+                        id = modeIds[mode]!!
+                    }
+                    radioGroup.addView(radio)
                 }
-                detailContent.addView(button)
+                radioGroup.check(modeIds[themeMode]!!)
+                radioGroup.setOnCheckedChangeListener { _, checkedId ->
+                    idsToMode[checkedId]?.let { onThemeModeChanged(it) }
+                }
+                detailContent.addView(radioGroup)
             }
             SettingsViewModel.CATEGORY_DISCOVERY -> {
-                val button = MaterialButton(context).apply {
-                    text = context.getString(R.string.discovery_servers_open_button)
-                    setOnClickListener { onOpenDiscoveryServers() }
-                }
-                detailContent.addView(button)
+                // Discovery servers are managed inline via an embedded fragment.
             }
             SettingsViewModel.CATEGORY_DEVELOPER -> {
                 val toggle = MaterialSwitch(context).apply {

@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.ndi.core.model.NdiSettingsSnapshot
+import com.ndi.core.model.NdiThemeMode
 import com.ndi.core.model.SettingsCategory
 import com.ndi.core.model.SettingsCategorySelectionSource
 import com.ndi.core.model.SettingsCategoryState
@@ -40,13 +41,15 @@ class SettingsViewModel(
 
     private var closeSettingsInFlight: Boolean = false
     private var lastSelectedCategoryId: String = CATEGORY_GENERAL
+    private var baselineSettings: NdiSettingsSnapshot? = null
 
     init {
         viewModelScope.launch {
-            // Load initial settings once, but don't overwrite local state changes like validation errors
             val initialSettings = settingsRepository.getSettings()
+            baselineSettings = initialSettings
             _uiState.value = _uiState.value.copy(
                 developerModeEnabled = initialSettings.developerModeEnabled,
+                themeMode = initialSettings.themeMode,
                 settingsDetailState = buildDetailState(lastSelectedCategoryId),
             )
         }
@@ -76,8 +79,20 @@ class SettingsViewModel(
         )
     }
 
+    fun onThemeModeChanged(mode: NdiThemeMode) {
+        _uiState.value = _uiState.value.copy(
+            themeMode = mode,
+            isDirty = computeIsDirty(themeMode = mode, developerModeEnabled = _uiState.value.developerModeEnabled),
+            savedConfirmationVisible = false,
+        )
+    }
+
     fun onDeveloperModeToggled(enabled: Boolean) {
-        _uiState.value = _uiState.value.copy(developerModeEnabled = enabled)
+        _uiState.value = _uiState.value.copy(
+            developerModeEnabled = enabled,
+            isDirty = computeIsDirty(themeMode = _uiState.value.themeMode, developerModeEnabled = enabled),
+            savedConfirmationVisible = false,
+        )
         SettingsDependencies.telemetryEmitter.emit(SettingsTelemetry.developerModeToggled(enabled))
     }
 
@@ -91,10 +106,18 @@ class SettingsViewModel(
                     // Discovery endpoint is now controlled exclusively by Discovery Servers submenu.
                     discoveryServerInput = currentSettings.discoveryServerInput,
                     developerModeEnabled = state.developerModeEnabled,
-                    themeMode = currentSettings.themeMode,
+                    themeMode = state.themeMode,
                     accentColorId = currentSettings.accentColorId,
                     updatedAtEpochMillis = System.currentTimeMillis(),
                 ),
+            )
+            baselineSettings = baselineSettings?.copy(
+                developerModeEnabled = state.developerModeEnabled,
+                themeMode = state.themeMode,
+            )
+            _uiState.value = _uiState.value.copy(
+                isDirty = false,
+                savedConfirmationVisible = true,
             )
         }
     }
@@ -174,9 +197,17 @@ class SettingsViewModel(
     private fun defaultUiState(): SettingsUiState {
         val selectedCategory = CATEGORY_GENERAL
         return SettingsUiState(
+            themeMode = NdiThemeMode.SYSTEM,
+            isDirty = false,
+            savedConfirmationVisible = false,
             layoutMode = SettingsLayoutMode.COMPACT,
             settingsCategoryState = buildCategoryState(selectedCategory, SettingsCategorySelectionSource.DEFAULT),
             settingsDetailState = buildDetailState(selectedCategory),
         )
+    }
+
+    private fun computeIsDirty(themeMode: NdiThemeMode, developerModeEnabled: Boolean): Boolean {
+        val baseline = baselineSettings ?: return false
+        return themeMode != baseline.themeMode || developerModeEnabled != baseline.developerModeEnabled
     }
 }
