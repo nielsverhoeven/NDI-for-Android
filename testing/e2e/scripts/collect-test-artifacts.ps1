@@ -58,13 +58,36 @@ function Generate-ArtifactManifest {
         artifacts = @()
     }
 
+    function Get-ChecksumSha256 {
+        param([Parameter(Mandatory = $true)][string]$LiteralPath)
+
+        if (Get-Command Get-FileHash -ErrorAction SilentlyContinue) {
+            return (Get-FileHash -LiteralPath $LiteralPath -Algorithm SHA256).Hash
+        }
+
+        $stream = [System.IO.File]::OpenRead($LiteralPath)
+        try {
+            $sha = [System.Security.Cryptography.SHA256]::Create()
+            try {
+                $bytes = $sha.ComputeHash($stream)
+                return ([System.BitConverter]::ToString($bytes) -replace '-', '').ToLowerInvariant()
+            }
+            finally {
+                $sha.Dispose()
+            }
+        }
+        finally {
+            $stream.Dispose()
+        }
+    }
+
     foreach ($path in $Paths) {
         $item = Get-Item -LiteralPath $path
-        $hash = Get-FileHash -LiteralPath $path -Algorithm SHA256
+        $hash = Get-ChecksumSha256 -LiteralPath $path
         $manifest.artifacts += [PSCustomObject]@{
             path = $path
             sizeBytes = $item.Length
-            checksumSha256 = $hash.Hash
+            checksumSha256 = $hash
         }
     }
 

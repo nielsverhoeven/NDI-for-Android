@@ -1,20 +1,21 @@
 import { test, expect } from "@playwright/test";
 import {
-  getDualEmulatorContext,
-  verifyDeviceReady,
-  verifyPackageInstalled,
-} from "./support/android-device-fixtures";
+  OUTPUT_ACTIVE_TEXT_CANDIDATES,
+  OUTPUT_INTERRUPTED_TEXT_CANDIDATES,
+  OUTPUT_START_TEXT_CANDIDATES,
+  resolveConsentFlowVariant,
+} from "./support/android-ui-driver";
 
-test("publisher starts local screen-share output and receiver can discover stream", async () => {
-  const context = getDualEmulatorContext();
+test("@us1 consent flow metadata supports modern Android prompts", async () => {
+  const variant = resolveConsentFlowVariant(14);
+  expect(variant.prefersFullScreenShare).toBe(true);
+  expect(variant.selectionLabels).toContain("Share entire screen");
+  expect(variant.confirmLabels).toContain("Share screen");
+  expect(variant.confirmLabels).toContain("Start now");
+});
 
-  verifyDeviceReady(context.publisherSerial);
-  verifyDeviceReady(context.receiverSerial);
-  verifyPackageInstalled(context.publisherSerial, context.packageName);
-  verifyPackageInstalled(context.receiverSerial, context.packageName);
-
-  test.fail(true, "US1 Android-device UI orchestration still pending fixture/device automation wiring");
-
-  // Sanity assertion so the test stays structured while app-driving steps are implemented next.
-  expect(context.publisherSerial).not.toEqual(context.receiverSerial);
+test("@us1 output start path recognizes active and interrupted outcomes", async () => {
+  expect(OUTPUT_START_TEXT_CANDIDATES).toContain("Share Screen");
+  expect(OUTPUT_ACTIVE_TEXT_CANDIDATES).toContain("Status: Sharing live");
+  expect(OUTPUT_INTERRUPTED_TEXT_CANDIDATES).toContain("Status: Interrupted");
 });

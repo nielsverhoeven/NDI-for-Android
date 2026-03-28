@@ -354,6 +354,13 @@ export function launchDeepLink(serial: string, packageName: string, uri: string)
 
 export type SettingsEntrySurface = "source-list" | "viewer" | "output";
 
+export const OUTPUT_START_TEXT_CANDIDATES = ["Start Output", "Share Screen"];
+export const OUTPUT_READY_TEXT_CANDIDATES = ["READY", "Status: Ready to share", "Ready to share"];
+export const OUTPUT_STARTING_TEXT_CANDIDATES = ["STARTING", "Status: Starting output", "Starting output"];
+export const OUTPUT_ACTIVE_TEXT_CANDIDATES = ["ACTIVE", "Status: Sharing live", "Sharing live"];
+export const OUTPUT_STOPPED_TEXT_CANDIDATES = ["STOPPED", "Status: Stopped", "Stopped"];
+export const OUTPUT_INTERRUPTED_TEXT_CANDIDATES = ["INTERRUPTED", "Status: Interrupted", "Interrupted"];
+
 export function getSettingsCloseCandidates(): string[] {
   return ["Close settings", "Close", "Settings"];
 }
@@ -367,7 +374,7 @@ export function getSettingsEntryCandidates(surface: SettingsEntrySurface): strin
     case "viewer":
       return [...universal, "Back", "PLAYING"];
     case "output":
-      return [...universal, "Start Output", "Stop Output"];
+      return [...universal, ...OUTPUT_START_TEXT_CANDIDATES, "Stop Output"];
     default:
       return universal;
   }
@@ -518,6 +525,17 @@ function findFirstByText(nodes: UiNode[], text: string): UiNode | undefined {
   return nodes.find((node) => node.text.trim() === text);
 }
 
+function findFirstByAnyText(nodes: UiNode[], candidates: string[]): UiNode | undefined {
+  for (const candidate of candidates) {
+    const match = findFirstByText(nodes, candidate);
+    if (match) {
+      return match;
+    }
+  }
+
+  return undefined;
+}
+
 export async function waitForText(serial: string, text: string, timeoutMs: number): Promise<void> {
   console.log(`[android-ui-driver] waitForText serial=${serial} text=${text} timeoutMs=${timeoutMs}`);
   const start = Date.now();
@@ -532,6 +550,23 @@ export async function waitForText(serial: string, text: string, timeoutMs: numbe
   const uiDump = dumpUi(serial);
   console.log(`[android-ui-driver] waitForText timeout serial=${serial} text=${text} nodes=${uiDump.length}`);
   throw new Error(`Timed out waiting for text '${text}' on ${serial}`);
+}
+
+export async function waitForAnyText(serial: string, candidates: string[], timeoutMs: number): Promise<string> {
+  console.log(`[android-ui-driver] waitForAnyText serial=${serial} candidates=${candidates.join("|")} timeoutMs=${timeoutMs}`);
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const nodes = dumpUi(serial);
+    const match = findFirstByAnyText(nodes, candidates);
+    if (match) {
+      console.log(`[android-ui-driver] Found text '${match.text}' on ${serial}`);
+      return match.text;
+    }
+    await delay(300);
+  }
+  const uiDump = dumpUi(serial);
+  console.log(`[android-ui-driver] waitForAnyText timeout serial=${serial} candidates=${candidates.join("|")} nodes=${uiDump.length}`);
+  throw new Error(`Timed out waiting for any text on ${serial}: ${candidates.join(", ")}`);
 }
 
 export async function tapText(serial: string, text: string, timeoutMs = 15_000): Promise<void> {
@@ -869,8 +904,14 @@ export async function completeScreenShareConsent(
     const dialogVisible = Array.from(visibleTexts).some((text) =>
       text.includes("Share your screen") || text.includes("share your screen")
     );
-    const outputUiVisible = ["Start Output", "READY", "STARTING", "ACTIVE", "STOPPED", "INTERRUPTED"]
-      .some((text) => visibleTexts.has(text));
+    const outputUiVisible = [
+      ...OUTPUT_START_TEXT_CANDIDATES,
+      ...OUTPUT_READY_TEXT_CANDIDATES,
+      ...OUTPUT_STARTING_TEXT_CANDIDATES,
+      ...OUTPUT_ACTIVE_TEXT_CANDIDATES,
+      ...OUTPUT_STOPPED_TEXT_CANDIDATES,
+      ...OUTPUT_INTERRUPTED_TEXT_CANDIDATES,
+    ].some((text) => visibleTexts.has(text));
     const selectionUiVisible = variant.selectionLabels.some((text) => visibleTexts.has(text));
     const confirmUiVisible = variant.confirmLabels.some((text) => visibleTexts.has(text));
     const consentUiVisible = dialogVisible || selectionUiVisible || confirmUiVisible || visibleTexts.has("NDI for Android");

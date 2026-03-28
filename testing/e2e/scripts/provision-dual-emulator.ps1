@@ -8,6 +8,7 @@ param(
     [int]$BootTimeoutSeconds = 90,
     [string]$NdiSdkApkPath = "ndi/sdk-bridge/build/outputs/apk/release/ndi-sdk-bridge-release.apk",
     [switch]$InstallNdiSdk,
+    [switch]$AutoStartIfMissing,
     [switch]$SkipBootIfAlreadyRunning,
     [string]$OutputPath = "testing/e2e/artifacts/runtime/provisioning-result.json"
 )
@@ -17,6 +18,96 @@ $ErrorActionPreference = "Stop"
 . "$PSScriptRoot/helpers/result-handler.ps1"
 . "$PSScriptRoot/helpers/emulator-adb.ps1"
 . "$PSScriptRoot/helpers/entity-validator.ps1"
+
+function Test-AutoStartEnabled {
+    if ($PSBoundParameters.ContainsKey("AutoStartIfMissing")) {
+        return [bool]$AutoStartIfMissing
+    }
+
+    # Default behavior: auto-start emulators when missing.
+    return $true
+}
+
+function Get-EmulatorExecutable {
+    if ($env:ANDROID_SDK_ROOT) {
+        $candidateExe = Join-Path $env:ANDROID_SDK_ROOT "emulator/emulator.exe"
+        if (Test-Path -LiteralPath $candidateExe) {
+            return $candidateExe
+        }
+
+        $candidate = Join-Path $env:ANDROID_SDK_ROOT "emulator/emulator"
+        if (Test-Path -LiteralPath $candidate) {
+            return $candidate
+        }
+    }
+
+    return "emulator"
+}
+
+function Get-AvailableAvdNames {
+    $emulatorExe = Get-EmulatorExecutable
+    $lines = & $emulatorExe "-list-avds" 2>$null
+    return @($lines | Where-Object { $_ -and $_.Trim() } | ForEach-Object { $_.Trim() })
+}
+
+function Resolve-PreferredAvdName {
+    param([Parameter(Mandatory = $true)][string]$EmulatorSerial)
+
+    if ($EmulatorSerial -eq $SourceEmulatorId) {
+        if ($env:EMULATOR_A_AVD) {
+            return $env:EMULATOR_A_AVD
+        }
+        return "Emulator-A"
+    }
+
+    if ($EmulatorSerial -eq $ReceiverEmulatorId) {
+        if ($env:EMULATOR_B_AVD) {
+            return $env:EMULATOR_B_AVD
+        }
+        return "Emulator-B"
+    }
+
+    return $null
+}
+
+function Resolve-AvdNameForSerial {
+    param([Parameter(Mandatory = $true)][string]$EmulatorSerial)
+
+    $available = @(Get-AvailableAvdNames)
+    if ($available.Count -eq 0) {
+        throw "No Android Virtual Devices are available. Create AVDs first (for example Emulator-A and Emulator-B)."
+    }
+
+    $preferred = Resolve-PreferredAvdName -EmulatorSerial $EmulatorSerial
+    if ($preferred -and $available -contains $preferred) {
+        return $preferred
+    }
+
+    if ($EmulatorSerial -eq $SourceEmulatorId) {
+        return $available[0]
+    }
+
+    if ($EmulatorSerial -eq $ReceiverEmulatorId -and $available.Count -ge 2) {
+        return $available[1]
+    }
+
+    return $available[0]
+}
+
+function Start-EmulatorForSerial {
+    param([Parameter(Mandatory = $true)][string]$EmulatorSerial)
+
+    if ($EmulatorSerial -notmatch "^emulator-(\d+)$") {
+        throw "Unsupported emulator serial format: $EmulatorSerial"
+    }
+
+    $port = [int]$Matches[1]
+    $emulatorExe = Get-EmulatorExecutable
+    $avdName = Resolve-AvdNameForSerial -EmulatorSerial $EmulatorSerial
+
+    Write-Host "Starting emulator $EmulatorSerial using AVD '$avdName' on port $port"
+    Start-Process -FilePath $emulatorExe -ArgumentList @("-avd", $avdName, "-port", "$port", "-feature", "WindowsHypervisorPlatform") -WindowStyle Normal | Out-Null
+}
 
 function Get-RelayPortFromSerial {
     param([Parameter(Mandatory = $true)][string]$Serial)
@@ -59,10 +150,21 @@ function Provision-Emulator {
 
     $started = Get-Date
     $alreadyRunning = Test-AdbDeviceConnected -Serial $EmulatorSerial
+    $autoStartEnabled = Test-AutoStartEnabled
+    Write-Host "Provisioning $EmulatorSerial (alreadyRunning=$alreadyRunning, autoStartIfMissing=$autoStartEnabled, allowReuse=$AllowReuse)"
+
     if ($alreadyRunning -and $AllowReuse) {
         $instance = Get-EmulatorState -EmulatorSerial $EmulatorSerial
         Assert-EmulatorInstance -Instance $instance
         return $instance
+    }
+
+    if (-not $alreadyRunning -and $autoStartEnabled) {
+        Start-EmulatorForSerial -EmulatorSerial $EmulatorSerial
+        Start-Sleep -Seconds 3
+    }
+    elseif (-not $alreadyRunning) {
+        throw "Device $EmulatorSerial is not running and auto-start is disabled."
     }
 
     if (-not (Wait-EmulatorBoot -Serial $EmulatorSerial -TimeoutSeconds $TimeoutSeconds)) {

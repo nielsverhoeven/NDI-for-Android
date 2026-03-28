@@ -12,6 +12,7 @@ data class TelemetryEvent(
         const val OUTPUT_SCREEN_SHARE_CONSENT_REQUESTED = "output_screen_share_consent_requested"
         const val OUTPUT_SCREEN_SHARE_CONSENT_GRANTED = "output_screen_share_consent_granted"
         const val OUTPUT_SCREEN_SHARE_CONSENT_DENIED = "output_screen_share_consent_denied"
+        const val OUTPUT_SCREEN_SHARE_CONSENT_RESET = "output_screen_share_consent_reset"
         const val OUTPUT_STOP_IGNORED_DUPLICATE = "output_stop_ignored_duplicate"
         const val OUTPUT_STOPPED = "output_stopped"
         const val OUTPUT_INTERRUPTED = "output_interrupted"

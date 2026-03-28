@@ -46,6 +46,27 @@ function Resolve-AbsolutePath {
     return [System.IO.Path]::GetFullPath((Join-Path $RepoRoot $Path))
 }
 
+function Resolve-LatestApkArtifactPath {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$RepoRoot
+    )
+
+    $apkRoot = Join-Path $RepoRoot "app/build/outputs/apk"
+    if (-not (Test-Path -LiteralPath $apkRoot)) {
+        return $null
+    }
+
+    $candidates = Get-ChildItem -LiteralPath $apkRoot -Recurse -File -Filter "*.apk" |
+        Sort-Object LastWriteTimeUtc -Descending
+
+    if (-not $candidates -or $candidates.Count -eq 0) {
+        return $null
+    }
+
+    return $candidates[0].FullName
+}
+
 function New-BuildArtifact {
     param(
         [Parameter(Mandatory = $true)]
@@ -177,6 +198,12 @@ $expectedVersionIdentifier = "missing"
 
 try {
     $apkAbsolutePath = Resolve-AbsolutePath -Path $effectiveApkPath -RepoRoot $repoRoot
+    $latestApkPath = Resolve-LatestApkArtifactPath -RepoRoot $repoRoot
+
+    if (-not (Test-Path -LiteralPath $apkAbsolutePath) -and $latestApkPath) {
+        Write-Output "PRE-FLIGHT INFO: configured APK path not found ($effectiveApkPath). Using latest discovered APK: $latestApkPath"
+        $apkAbsolutePath = $latestApkPath
+    }
     $exists = Test-Path -LiteralPath $apkAbsolutePath
 
     if (-not $exists) {

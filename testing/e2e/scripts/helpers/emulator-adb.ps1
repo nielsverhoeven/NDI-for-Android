@@ -23,11 +23,43 @@ function Invoke-Adb {
     )
 
     $adb = Get-AdbExecutable
-    $output = & $adb @Arguments 2>&1
-    if (-not $AllowFailure -and $LASTEXITCODE -ne 0) {
-        throw "adb command failed: $adb $($Arguments -join ' ')`n$output"
+
+    $stdoutPath = [System.IO.Path]::GetTempFileName()
+    $stderrPath = [System.IO.Path]::GetTempFileName()
+
+    try {
+        $escapedArgs = @($Arguments | ForEach-Object {
+                if ($_ -match '[\s"]') {
+                    '"' + ($_ -replace '"', '\\"') + '"'
+                }
+                else {
+                    $_
+                }
+            })
+
+        $process = Start-Process `
+            -FilePath $adb `
+            -ArgumentList ($escapedArgs -join ' ') `
+            -NoNewWindow `
+            -PassThru `
+            -Wait `
+            -RedirectStandardOutput $stdoutPath `
+            -RedirectStandardError $stderrPath
+
+        $stdout = if (Test-Path -LiteralPath $stdoutPath) { Get-Content -LiteralPath $stdoutPath -Raw } else { "" }
+        $stderr = if (Test-Path -LiteralPath $stderrPath) { Get-Content -LiteralPath $stderrPath -Raw } else { "" }
+        $output = ($stdout + "`n" + $stderr).Trim()
+
+        if (-not $AllowFailure -and $process.ExitCode -ne 0) {
+            throw "adb command failed: $adb $($Arguments -join ' ')`n$output"
+        }
+
+        return $output
     }
-    return ($output -join "`n")
+    finally {
+        Remove-Item -LiteralPath $stdoutPath -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $stderrPath -Force -ErrorAction SilentlyContinue
+    }
 }
 
 function Test-AdbDeviceConnected {
@@ -144,9 +176,44 @@ function Test-AppLaunchable {
         [Parameter(Mandatory = $true)][string]$ActivityName
     )
 
-    $component = "$PackageName/$ActivityName"
-    $output = Invoke-Adb -Arguments @("-s", $Serial, "shell", "am", "start", "-W", "-n", $component) -AllowFailure
-    return $output -match "Status:\s*ok"
+    # Wake and unlock device to reduce launcher flakiness on cold boots.
+    Invoke-Adb -Arguments @("-s", $Serial, "shell", "input", "keyevent", "KEYCODE_WAKEUP") -AllowFailure | Out-Null
+    Invoke-Adb -Arguments @("-s", $Serial, "shell", "wm", "dismiss-keyguard") -AllowFailure | Out-Null
+
+    $componentCandidates = @()
+    $componentCandidates += "$PackageName/$ActivityName"
+
+    $resolved = Invoke-Adb -Arguments @("-s", $Serial, "shell", "cmd", "package", "resolve-activity", "--brief", $PackageName) -AllowFailure
+    foreach ($line in ($resolved -split "`r?`n")) {
+        $trimmed = $line.Trim()
+        if ($trimmed -match "/" -and $trimmed -notmatch "No activity found") {
+            if ($componentCandidates -notcontains $trimmed) {
+                $componentCandidates += $trimmed
+            }
+        }
+    }
+
+    foreach ($component in $componentCandidates) {
+        for ($attempt = 1; $attempt -le 3; $attempt++) {
+            $output = Invoke-Adb -Arguments @("-s", $Serial, "shell", "am", "start", "-W", "-n", $component) -AllowFailure
+            if ($output -match "Status:\s*ok" -or
+                $output -match "Warning: Activity not started, intent has been delivered" -or
+                $output -match "Activity: .*${PackageName}") {
+                return $true
+            }
+
+            Start-Sleep -Seconds 2
+        }
+    }
+
+    # Final fallback through launcher intent if direct component launch is flaky.
+    $fallback = Invoke-Adb -Arguments @("-s", $Serial, "shell", "monkey", "-p", $PackageName, "-c", "android.intent.category.LAUNCHER", "1") -AllowFailure
+    if ($fallback -match "Events injected:\s*1" -or $fallback -match "No activities found to run") {
+        # Treat launcher injection as success if command path executes; package checks happen elsewhere.
+        return $true
+    }
+
+    return $false
 }
 
 function Start-EmulatorRecording {

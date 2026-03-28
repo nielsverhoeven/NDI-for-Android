@@ -27,13 +27,19 @@ class OutputControlScreen(
             binding.root.context.getString(R.string.ndi_output_default_stream_name)
         }
         binding.outputTitle.text = binding.root.context.getString(R.string.ndi_output_title, sourceTitle)
-        binding.outputState.text = when (state.outputState) {
-            OutputState.ACTIVE -> "ACTIVE"
-            OutputState.STARTING -> "STARTING"
-            OutputState.STOPPING -> "STOPPING"
-            OutputState.STOPPED -> "STOPPED"
-            OutputState.INTERRUPTED -> "INTERRUPTED"
-            OutputState.READY -> "READY"
+        val statusText = when (state.outputState) {
+            OutputState.ACTIVE -> binding.root.context.getString(R.string.ndi_output_status_active)
+            OutputState.STARTING -> binding.root.context.getString(R.string.ndi_output_status_starting)
+            OutputState.STOPPING -> binding.root.context.getString(R.string.ndi_output_status_stopping)
+            OutputState.STOPPED -> binding.root.context.getString(R.string.ndi_output_status_stopped)
+            OutputState.INTERRUPTED -> binding.root.context.getString(R.string.ndi_output_status_interrupted)
+            OutputState.READY -> binding.root.context.getString(R.string.ndi_output_status_ready)
+        }
+        binding.outputState.text = binding.root.context.getString(R.string.ndi_output_status_label, statusText)
+        binding.startButton.text = if (state.isLocalScreenSource) {
+            binding.root.context.getString(R.string.ndi_output_share_screen)
+        } else {
+            binding.root.context.getString(R.string.ndi_output_start)
         }
         binding.startButton.isEnabled = state.canStart
         binding.stopButton.isEnabled = state.canStop
@@ -51,7 +57,16 @@ class OutputControlScreen(
         }
 
         if (state.outputState == OutputState.INTERRUPTED) {
-            binding.streamNameInputLayout.error = state.errorMessage
+            val errorText = if (state.errorMessage?.contains("discovery server", ignoreCase = true) == true) {
+                binding.root.context.getString(R.string.ndi_output_discovery_unreachable_help)
+            } else if (state.errorMessage?.contains("consent", ignoreCase = true) == true ||
+                state.errorMessage?.contains("denied", ignoreCase = true) == true
+            ) {
+                binding.root.context.getString(R.string.ndi_output_consent_denied_help)
+            } else {
+                state.errorMessage
+            }
+            binding.streamNameInputLayout.error = errorText
         } else {
             binding.streamNameInputLayout.error = null
         }

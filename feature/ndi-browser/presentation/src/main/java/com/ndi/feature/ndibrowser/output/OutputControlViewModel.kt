@@ -64,6 +64,11 @@ class OutputControlViewModel(
         OutputDependencies.streamContinuityRepositoryProvider?.invoke() ?: NoOpStreamContinuityRepository(),
 ) : ViewModel() {
 
+    private companion object {
+        const val DISCOVERY_SERVER_UNREACHABLE_MESSAGE =
+            "Configured discovery server is unreachable. Check discovery settings or network connectivity."
+    }
+
     private val retryWindowSeconds = 15
     private var lastObservedState: OutputState = OutputState.READY
 
@@ -159,7 +164,7 @@ class OutputControlViewModel(
                         canStart = true,
                         canStop = false,
                         consentRequired = snapshot.sourceId.startsWith("device-screen:"),
-                        errorMessage = error.message ?: "Unable to start output",
+                        errorMessage = normalizeStartError(error.message),
                     )
                 }
             }
@@ -215,6 +220,10 @@ class OutputControlViewModel(
             runCatching {
                 telemetryEmitter.emit(OutputTelemetry.outputStopRequested(snapshot.sourceId))
                 outputRepository.stopOutput()
+                if (snapshot.sourceId.startsWith("device-screen:")) {
+                    screenCaptureConsentRepository.clearConsent(snapshot.sourceId)
+                    telemetryEmitter.emit(OutputTelemetry.screenShareConsentReset(snapshot.sourceId))
+                }
                 streamContinuityRepository.clearTransientStateOnExplicitStop()
                 telemetryEmitter.emit(OutputTelemetry.outputStopped(snapshot.sourceId))
             }.onFailure { error ->
@@ -282,6 +291,16 @@ class OutputControlViewModel(
 
     fun onSettingsToggleSettled() {
         settingsToggleInFlight = false
+    }
+
+    private fun normalizeStartError(rawMessage: String?): String {
+        val message = rawMessage?.trim().orEmpty()
+        if (message.contains("discovery server", ignoreCase = true) &&
+            message.contains("unreachable", ignoreCase = true)
+        ) {
+            return DISCOVERY_SERVER_UNREACHABLE_MESSAGE
+        }
+        return if (message.isBlank()) "Unable to start output" else message
     }
 
     class Factory(

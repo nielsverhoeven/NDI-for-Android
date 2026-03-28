@@ -88,6 +88,8 @@ private class RecoveryBridge(
         return true
     }
 
+    override suspend fun isDiscoveryServerReachable(host: String, port: Int?): Boolean = true
+
     override fun startSender(sourceId: String, streamName: String) {
         startCalls += 1
         if (startCalls <= failuresBeforeSuccess) {

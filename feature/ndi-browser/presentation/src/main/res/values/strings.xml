@@ -23,6 +23,17 @@
     <string name="ndi_output_retry">Retry Output</string>
     <string name="ndi_output_default_stream_name">NDI Output</string>
     <string name="ndi_output_screen_share_consent_required">Screen capture consent is required before starting.</string>
+    <string name="ndi_output_share_screen">Share Screen</string>
+    <string name="ndi_output_status_label">Status: %1$s</string>
+    <string name="ndi_output_status_ready">Ready to share</string>
+    <string name="ndi_output_status_starting">Starting output</string>
+    <string name="ndi_output_status_active">Sharing live</string>
+    <string name="ndi_output_status_stopping">Stopping output</string>
+    <string name="ndi_output_status_stopped">Stopped</string>
+    <string name="ndi_output_status_interrupted">Interrupted</string>
+    <string name="ndi_output_share_hint">Your device screen will be published as an NDI output after consent.</string>
+    <string name="ndi_output_discovery_unreachable_help">Update discovery settings or reconnect to the configured discovery server, then try again.</string>
+    <string name="ndi_output_consent_denied_help">Screen sharing needs capture permission. Tap Share Screen to request consent again.</string>
 
     <!-- Home dashboard strings (spec 003) -->
     <string name="home_title">Home</string>

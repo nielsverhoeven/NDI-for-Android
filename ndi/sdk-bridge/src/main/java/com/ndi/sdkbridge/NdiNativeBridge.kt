@@ -10,7 +10,9 @@ import com.ndi.core.model.ViewerVideoFrame
 import java.net.HttpURLConnection
 import java.net.InetAddress
 import java.net.Inet4Address
+import java.net.InetSocketAddress
 import java.net.NetworkInterface
+import java.net.Socket
 import java.net.URL
 import java.util.Collections
 import java.util.UUID
@@ -41,6 +43,8 @@ interface NdiViewerBridge {
 
 interface NdiOutputBridge {
     suspend fun isSourceReachable(sourceId: String): Boolean
+
+    suspend fun isDiscoveryServerReachable(host: String, port: Int?): Boolean
 
     fun startSender(sourceId: String, streamName: String)
 
@@ -323,6 +327,19 @@ object NativeNdiBridge : NdiDiscoveryBridge, NdiViewerBridge, NdiOutputBridge {
         discoverSources().any { it.sourceId == sourceId }
     }
 
+    override suspend fun isDiscoveryServerReachable(host: String, port: Int?): Boolean = withContext(Dispatchers.IO) {
+        val targetHost = host.trim()
+        if (targetHost.isBlank()) return@withContext false
+
+        val targetPort = port ?: 5960
+        runCatching {
+            Socket().use { socket ->
+                socket.connect(InetSocketAddress(targetHost, targetPort), 1500)
+            }
+            true
+        }.getOrDefault(false)
+    }
+
     override fun startSender(sourceId: String, streamName: String) {
         nativeStartSender(sourceId, streamName)
     }
@@ -354,10 +371,10 @@ object NativeNdiBridge : NdiDiscoveryBridge, NdiViewerBridge, NdiOutputBridge {
         }
 
         try {
-            nativeStartLocalScreenShareSender(normalizedName)
-            ScreenShareController.start(context, permissionGrant) { width, height, pixels ->
+            ScreenShareController.start(context, permissionGrant, normalizedName) { width, height, pixels ->
                 nativeSubmitLocalScreenShareFrameArgb(width, height, pixels)
             }
+            nativeStartLocalScreenShareSender(normalizedName)
         } catch (error: Throwable) {
             Log.e("NdiDiscovery", "Unable to start local screen share sender", error)
             runCatching { ScreenShareController.stop() }

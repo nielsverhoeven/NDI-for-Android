@@ -48,56 +48,86 @@ internal object ScreenShareController {
     private var imageReader: ImageReader? = null
     private var virtualDisplay: VirtualDisplay? = null
     private var mediaProjection: MediaProjection? = null
+    private var mediaProjectionCallback: MediaProjection.Callback? = null
+    private var appContext: Context? = null
 
     fun start(
         context: Context,
         grant: ScreenCapturePermissionGrant,
+        streamName: String,
         onFrame: (width: Int, height: Int, argbPixels: IntArray) -> Unit,
     ) {
         synchronized(lock) {
             stopLocked()
+            val applicationContext = context.applicationContext
+            appContext = applicationContext
+            var startupPhase = "startForegroundService"
+            ScreenShareForegroundService.start(applicationContext, streamName)
 
             val projectionManager = context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as? MediaProjectionManager
                 ?: error("MediaProjectionManager is unavailable")
-            val projection = projectionManager.getMediaProjection(grant.resultCode, Intent(grant.data))
-                ?: error("Unable to obtain MediaProjection")
+            try {
+                startupPhase = "getMediaProjection"
+                val projection = projectionManager.getMediaProjection(grant.resultCode, Intent(grant.data))
+                    ?: error("Unable to obtain MediaProjection")
 
-            val metrics = context.resources.displayMetrics
-            val width = metrics.widthPixels.coerceAtLeast(1)
-            val height = metrics.heightPixels.coerceAtLeast(1)
-            val densityDpi = metrics.densityDpi.coerceAtLeast(1)
+                val metrics = context.resources.displayMetrics
+                val width = metrics.widthPixels.coerceAtLeast(1)
+                val height = metrics.heightPixels.coerceAtLeast(1)
+                val densityDpi = metrics.densityDpi.coerceAtLeast(1)
 
-            val captureThread = HandlerThread("ndi-screen-share").apply { start() }
-            val handler = Handler(captureThread.looper)
-            val reader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2)
+                startupPhase = "startCaptureThread"
+                val captureThread = HandlerThread("ndi-screen-share").apply { start() }
+                val handler = Handler(captureThread.looper)
 
-            reader.setOnImageAvailableListener({ source ->
-                val image = source.acquireLatestImage() ?: return@setOnImageAvailableListener
-                try {
-                    val pixels = image.toArgbPixels() ?: return@setOnImageAvailableListener
-                    onFrame(width, height, pixels)
-                } catch (error: Throwable) {
-                    Log.e(TAG, "Failed to process screen capture frame", error)
-                } finally {
-                    image.close()
+                startupPhase = "createImageReader"
+                val reader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2)
+                val projectionCallback = object : MediaProjection.Callback() {
+                    override fun onStop() {
+                        Log.i(TAG, "MediaProjection stopped by the system")
+                        stop()
+                    }
                 }
-            }, handler)
 
-            val display = projection.createVirtualDisplay(
-                "ndi-screen-share",
-                width,
-                height,
-                densityDpi,
-                DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
-                reader.surface,
-                null,
-                handler,
-            ) ?: error("Unable to create virtual display")
+                startupPhase = "registerCallback"
+                projection.registerCallback(projectionCallback, handler)
 
-            mediaProjection = projection
-            virtualDisplay = display
-            imageReader = reader
-            handlerThread = captureThread
+                startupPhase = "setImageListener"
+                reader.setOnImageAvailableListener({ source ->
+                    val image = source.acquireLatestImage() ?: return@setOnImageAvailableListener
+                    try {
+                        val pixels = image.toArgbPixels() ?: return@setOnImageAvailableListener
+                        onFrame(width, height, pixels)
+                    } catch (error: Throwable) {
+                        Log.e(TAG, "Failed to process screen capture frame", error)
+                    } finally {
+                        image.close()
+                    }
+                }, handler)
+
+                startupPhase = "createVirtualDisplay"
+                val display = projection.createVirtualDisplay(
+                    "ndi-screen-share",
+                    width,
+                    height,
+                    densityDpi,
+                    DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
+                    reader.surface,
+                    null,
+                    handler,
+                ) ?: error("Unable to create virtual display")
+
+                mediaProjection = projection
+                mediaProjectionCallback = projectionCallback
+                virtualDisplay = display
+                imageReader = reader
+                handlerThread = captureThread
+                Log.i(TAG, "Screen share capture started successfully")
+            } catch (error: Throwable) {
+                Log.e(TAG, "Failed during screen share startup phase: $startupPhase", error)
+                stopLocked()
+                throw error
+            }
         }
     }
 
@@ -115,8 +145,22 @@ internal object ScreenShareController {
         runCatching { imageReader?.close() }
         imageReader = null
 
+        runCatching {
+            val projection = mediaProjection
+            val callback = mediaProjectionCallback
+            if (projection != null && callback != null) {
+                projection.unregisterCallback(callback)
+            }
+        }
+        mediaProjectionCallback = null
+
         runCatching { mediaProjection?.stop() }
         mediaProjection = null
+
+        appContext?.let { context ->
+            runCatching { ScreenShareForegroundService.stop(context) }
+        }
+        appContext = null
 
         handlerThread?.quitSafely()
         handlerThread = null

@@ -70,7 +70,13 @@ class TopLevelNavViewModel(
                 )
             }
             navigationRepository.saveLastTopLevelDestination(initial)
-            emitNavigationEvent(initial)
+
+            // Deep links already target a concrete nav destination. Emitting a top-level
+            // fallback event here can race the deep-link route and bounce the user back
+            // to a persisted top-level screen during activity recreation.
+            if (launchContext != LaunchContext.DEEP_LINK) {
+                emitNavigationEvent(initial)
+            }
         }
     }
 

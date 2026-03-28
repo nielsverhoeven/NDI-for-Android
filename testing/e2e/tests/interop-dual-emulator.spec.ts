@@ -15,6 +15,10 @@ import {
   clearAppData,
   clearLogcat,
   completeScreenShareConsent,
+  OUTPUT_ACTIVE_TEXT_CANDIDATES,
+  OUTPUT_INTERRUPTED_TEXT_CANDIDATES,
+  OUTPUT_START_TEXT_CANDIDATES,
+  OUTPUT_STOPPED_TEXT_CANDIDATES,
   pressHome,
   forceStopApp,
   editTextTailByResourceIdSuffix,
@@ -32,6 +36,7 @@ import {
   tapFirstAvailableText,
   tapText,
   tapTextContaining,
+  waitForAnyText,
   waitForText,
   waitForTextAbsent,
   waitForTextContaining,
@@ -80,6 +85,11 @@ type LatencyScenarioRunResult = {
   receiverSnapshotPaths: string[];
 };
 
+const OUTPUT_START_RESULT_TEXT_CANDIDATES = [
+  ...OUTPUT_ACTIVE_TEXT_CANDIDATES,
+  ...OUTPUT_INTERRUPTED_TEXT_CANDIDATES,
+];
+
 function mirrorScreenshotIfConfigured(fileName: string, sourcePath: string): void {
   if (!externalScreenshotDir || !existsSync(sourcePath)) {
     return;
@@ -111,6 +121,22 @@ function mirrorLatencyArtifactIfConfigured(relativePath: string, sourcePath: str
 
 async function sleep(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitForOutputActiveOrThrowInterrupted(
+  serial: string,
+  timeoutMs: number,
+): Promise<void> {
+  const stateText = await waitForAnyText(serial, OUTPUT_START_RESULT_TEXT_CANDIDATES, timeoutMs);
+  if (OUTPUT_INTERRUPTED_TEXT_CANDIDATES.includes(stateText)) {
+    let errorText = "unknown interruption";
+    try {
+      errorText = getTextByResourceIdSuffix(serial, ":id/errorMessage") || errorText;
+    } catch {
+      // Best effort to improve failure diagnosis.
+    }
+    throw new Error(`Output entered interrupted state on ${serial}: ${errorText}`);
+  }
 }
 
 function computeSeriesSpread(values: number[]): { range: number; stddev: number } {
@@ -161,6 +187,19 @@ function resolveCheckpointArtifactPath(checkpointOutputPath: string): string {
   const resolvedPath = resolve(checkpointArtifactPath);
   mkdirSync(dirname(resolvedPath), { recursive: true });
   return resolvedPath;
+}
+
+async function isRelayAvailable(): Promise<boolean> {
+  try {
+    await fetchRelaySources();
+    return true;
+  } catch (error) {
+    const message = normalizeErrorMessage(error).toLowerCase();
+    if (message.includes("econnrefused") || message.includes("127.0.0.1:17455")) {
+      return false;
+    }
+    throw error;
+  }
 }
 
 async function verifyPublisherYoutubePlaybackProgression(
@@ -263,9 +302,9 @@ async function runLatencyMeasurementScenario(testInfo: TestInfo): Promise<Latenc
 
     await ensureOutputScreen(context.publisherSerial, context.packageName, publisherAndroid.majorVersion);
     const streamConfig = await configureDiscoverableName(context.publisherSerial, "Latency Session");
-    await tapText(context.publisherSerial, "Start Output", 20_000);
+    await tapFirstAvailableText(context.publisherSerial, OUTPUT_START_TEXT_CANDIDATES, 20_000);
     await handleMediaProjectionConsent(context.publisherSerial, publisherAndroid.majorVersion, false);
-    await waitForText(context.publisherSerial, "ACTIVE", 45_000);
+    await waitForOutputActiveOrThrowInterrupted(context.publisherSerial, 45_000);
     passStep();
 
     beginStep("OPEN_VIEWER_B");
@@ -617,14 +656,14 @@ async function ensureOutputScreen(
   await tapFirstAvailableText(serial, ["Open Stream"], 8_000).catch(() => undefined);
 
   try {
-    await waitForText(serial, "Start Output", 20_000);
+    await waitForAnyText(serial, OUTPUT_START_TEXT_CANDIDATES, 20_000);
     return;
   } catch {
     // Consent prompts can appear slightly after navigation; clear them before retrying.
     await handleMediaProjectionConsent(serial, majorVersion, true).catch(() => undefined);
     await tapFirstAvailableText(serial, ["Open Stream"], 8_000).catch(() => undefined);
     try {
-      await waitForText(serial, "Start Output", 15_000);
+      await waitForAnyText(serial, OUTPUT_START_TEXT_CANDIDATES, 15_000);
       return;
     } catch {
       // Continue to deep-link relaunch fallback below.
@@ -634,7 +673,7 @@ async function ensureOutputScreen(
     launchDeepLink(serial, packageName, "ndi://output/device-screen:local");
     await handleMediaProjectionConsent(serial, majorVersion, true).catch(() => undefined);
     await tapFirstAvailableText(serial, ["Open Stream"], 8_000).catch(() => undefined);
-    await waitForText(serial, "Start Output", 20_000);
+    await waitForAnyText(serial, OUTPUT_START_TEXT_CANDIDATES, 20_000);
   }
 }
 
@@ -737,6 +776,10 @@ async function waitForReceiverPreviewEvidence(
 }
 
 test("@dual-emulator publish discover play stop interop", async ({}, testInfo) => {
+  test.setTimeout(600_000);
+  if (!(await isRelayAvailable())) {
+    test.skip(true, "Relay server is unavailable on 127.0.0.1:17455");
+  }
   const context = getDualEmulatorContext();
 
   verifyDeviceReady(context.publisherSerial);
@@ -795,11 +838,11 @@ test("@dual-emulator publish discover play stop interop", async ({}, testInfo) =
 
     await ensureOutputScreen(context.publisherSerial, context.packageName, publisherAndroid.majorVersion);
     const firstConfig = await configureDiscoverableName(context.publisherSerial, baselineName);
-    await tapText(context.publisherSerial, "Start Output", 20_000);
+    await tapFirstAvailableText(context.publisherSerial, OUTPUT_START_TEXT_CANDIDATES, 20_000);
 
     // Additional consent may still appear after pressing Start Output on some Android builds.
     await handleMediaProjectionConsent(context.publisherSerial, publisherAndroid.majorVersion, false);
-    await waitForText(context.publisherSerial, "ACTIVE", 45_000);
+    await waitForOutputActiveOrThrowInterrupted(context.publisherSerial, 45_000);
     captureScreenshot(context.publisherSerial, publisherActiveScreenshotPath);
     mirrorScreenshotIfConfigured("publisher-active.png", publisherActiveScreenshotPath);
     const relaySourceId = await uploadPublisherFrameToRelay(
@@ -916,7 +959,7 @@ test("@dual-emulator publish discover play stop interop", async ({}, testInfo) =
     await tapFirstAvailableText(context.publisherSerial, ["Open Stream"], 8_000).catch(() => undefined);
     await waitForText(context.publisherSerial, "Stop Output", 30_000);
     await tapText(context.publisherSerial, "Stop Output", 20_000);
-    await waitForText(context.publisherSerial, "STOPPED", 30_000);
+    await waitForAnyText(context.publisherSerial, OUTPUT_STOPPED_TEXT_CANDIDATES, 30_000);
 
     expect(context.publisherSerial).not.toEqual(context.receiverSerial);
     passStep();
@@ -1012,6 +1055,10 @@ test("@dual-emulator publish discover play stop interop", async ({}, testInfo) =
 });
 
 test("@dual-emulator restart output with new stream name remains discoverable", async ({}, testInfo) => {
+  test.setTimeout(600_000);
+  if (!(await isRelayAvailable())) {
+    test.skip(true, "Relay server is unavailable on 127.0.0.1:17455");
+  }
   const context = getDualEmulatorContext();
 
   verifyDeviceReady(context.publisherSerial);
@@ -1053,9 +1100,9 @@ test("@dual-emulator restart output with new stream name remains discoverable", 
 
     await ensureOutputScreen(context.publisherSerial, context.packageName, publisherAndroid.majorVersion);
     const firstConfig = await configureDiscoverableName(context.publisherSerial, firstName);
-    await tapText(context.publisherSerial, "Start Output", 20_000);
+    await tapFirstAvailableText(context.publisherSerial, OUTPUT_START_TEXT_CANDIDATES, 20_000);
     await handleMediaProjectionConsent(context.publisherSerial, publisherAndroid.majorVersion, false);
-    await waitForText(context.publisherSerial, "ACTIVE", 45_000);
+    await waitForOutputActiveOrThrowInterrupted(context.publisherSerial, 45_000);
     captureScreenshot(context.publisherSerial, publisherFirstPath);
     mirrorScreenshotIfConfigured("restart-publisher-first-active.png", publisherFirstPath);
     await uploadPublisherFrameToRelay(firstConfig.discoverableName, publisherFirstPath, testInfo);
@@ -1111,7 +1158,7 @@ test("@dual-emulator restart output with new stream name remains discoverable", 
     expect(firstChanged.meanAbsoluteDelta).toBeGreaterThan(10);
 
     await tapText(context.publisherSerial, "Stop Output", 20_000);
-    await waitForText(context.publisherSerial, "STOPPED", 30_000);
+    await waitForAnyText(context.publisherSerial, OUTPUT_STOPPED_TEXT_CANDIDATES, 30_000);
 
     await tapText(context.receiverSerial, "Back to list", 20_000);
     await tapFirstAvailableText(context.receiverSerial, ["Open Stream"], 8_000).catch(() => undefined);
@@ -1126,9 +1173,9 @@ test("@dual-emulator restart output with new stream name remains discoverable", 
       expectedSecondDiscoverName = firstConfig.discoverableName;
     }
 
-    await tapText(context.publisherSerial, "Start Output", 20_000);
+    await tapFirstAvailableText(context.publisherSerial, OUTPUT_START_TEXT_CANDIDATES, 20_000);
     await handleMediaProjectionConsent(context.publisherSerial, publisherAndroid.majorVersion, false);
-    await waitForText(context.publisherSerial, "ACTIVE", 45_000);
+    await waitForOutputActiveOrThrowInterrupted(context.publisherSerial, 45_000);
     captureScreenshot(context.publisherSerial, publisherSecondPath);
     mirrorScreenshotIfConfigured("restart-publisher-second-active.png", publisherSecondPath);
     await uploadPublisherFrameToRelay(expectedSecondDiscoverName, publisherSecondPath, testInfo);
@@ -1234,6 +1281,9 @@ test("@dual-emulator restart output with new stream name remains discoverable", 
 
 test("@latency @us1 measure end-to-end NDI latency happy path", async ({}, testInfo) => {
   test.setTimeout(600_000);
+  if (!(await isRelayAvailable())) {
+    test.skip(true, "Relay server is unavailable on 127.0.0.1:17455");
+  }
   const run = await runLatencyMeasurementScenario(testInfo);
 
   const payload = JSON.parse(readFileSync(run.analysisArtifactPath, "utf-8")) as {
@@ -1250,6 +1300,9 @@ test("@latency @us1 measure end-to-end NDI latency happy path", async ({}, testI
 
 test("@latency @us1 emits mandatory latency artifact paths", async ({}, testInfo) => {
   test.setTimeout(600_000);
+  if (!(await isRelayAvailable())) {
+    test.skip(true, "Relay server is unavailable on 127.0.0.1:17455");
+  }
   const run = await runLatencyMeasurementScenario(testInfo);
 
   expect(existsSync(run.sourceRecordingPath)).toBeTruthy();

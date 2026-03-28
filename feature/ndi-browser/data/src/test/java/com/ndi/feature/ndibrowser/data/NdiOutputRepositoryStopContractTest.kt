@@ -90,10 +90,11 @@ class NdiOutputRepositoryStopContractTest {
     fun stopOutput_usesLocalStopForDeviceScreenSessions() = runTest {
         val dao = StopContractOutputSessionDao()
         val bridge = FakeStopBridge()
+        val consentRepository = StopContractConsentRepository(granted = true)
         val repository = NdiOutputRepositoryImpl(
             outputSessionDao = dao,
             outputBridge = bridge,
-            screenCaptureConsentRepository = StopContractConsentRepository(granted = true),
+            screenCaptureConsentRepository = consentRepository,
             mapper = OutputSessionMapper(),
         )
 
@@ -102,6 +103,7 @@ class NdiOutputRepositoryStopContractTest {
 
         assertEquals(0, bridge.stopCount)
         assertEquals(1, bridge.localStopCount)
+        assertEquals("device-screen:local", consentRepository.lastClearedSourceId)
     }
 }
 
@@ -110,6 +112,8 @@ private class FakeStopBridge : NdiOutputBridge {
     var localStopCount: Int = 0
 
     override suspend fun isSourceReachable(sourceId: String): Boolean = true
+
+    override suspend fun isDiscoveryServerReachable(host: String, port: Int?): Boolean = true
 
     override fun startSender(sourceId: String, streamName: String) = Unit
 
@@ -127,6 +131,8 @@ private class FakeStopBridge : NdiOutputBridge {
 private class StopContractConsentRepository(
     private val granted: Boolean,
 ) : com.ndi.feature.ndibrowser.domain.repository.ScreenCaptureConsentRepository {
+    var lastClearedSourceId: String? = null
+
     override suspend fun beginConsentRequest(inputSourceId: String) = Unit
 
     override suspend fun registerConsentResult(
@@ -138,7 +144,9 @@ private class StopContractConsentRepository(
     override suspend fun getConsentState(inputSourceId: String) =
         com.ndi.feature.ndibrowser.domain.repository.ScreenCaptureConsentState(inputSourceId, granted = granted, tokenRef = "token")
 
-    override suspend fun clearConsent(inputSourceId: String) = Unit
+    override suspend fun clearConsent(inputSourceId: String) {
+        lastClearedSourceId = inputSourceId
+    }
 }
 
 private class StopContractOutputSessionDao : OutputSessionDao {
