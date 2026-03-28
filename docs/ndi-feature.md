@@ -45,8 +45,8 @@ Recommended validation commands:
 
 Settings e2e gate references:
 
-4. `npm --prefix testing/e2e run test:pr:primary`
-5. `npm --prefix testing/e2e run test:matrix`
+1. `npm --prefix testing/e2e run test:pr:primary`
+2. `npm --prefix testing/e2e run test:matrix`
 
 Release hardening policy remains mandatory:
 
@@ -244,3 +244,29 @@ DeveloperOverlayRenderer.render(
 - Feature spec: `specs/006-settings-menu/spec.md`
 - Discovery server management spec: `specs/018-manage-discovery-servers/spec.md`
 - Manual test quickstart: `specs/006-settings-menu/quickstart.md`
+
+## 8. Three-Pane Settings Workspace (Spec 019)
+
+Implemented behavior summary:
+
+- Wide-layout settings now support a three-pane workspace:
+	- column 1: main navigation actions (Home, Stream, View, Settings)
+	- column 2: settings category list with selected-state highlighting
+	- column 3: in-place detail panel that updates when category changes
+- Compact settings fallback remains active when wide-layout criteria are not met.
+- Selected category context is preserved across compact/wide transitions.
+- Empty categories render explicit empty-state feedback in the detail panel.
+
+Primary implementation files:
+
+- `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/SettingsFragment.kt`
+- `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/SettingsViewModel.kt`
+- `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/SettingsLayoutResolver.kt`
+- `feature/ndi-browser/presentation/src/main/res/layout/fragment_settings_three_pane.xml`
+- `feature/ndi-browser/presentation/src/main/res/layout/view_settings_main_navigation_panel.xml`
+
+Validation snapshot for spec 019:
+
+- Unit test and release-hardening gates passed.
+- Playwright validation commands executed but classified as `BLOCKED-ENV` due emulator UIAutomator dump instability.
+- See `test-results/019-settings-three-pane-validation.md` for command logs and unblock steps.

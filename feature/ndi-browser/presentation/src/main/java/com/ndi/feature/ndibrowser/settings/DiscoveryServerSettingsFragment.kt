@@ -51,7 +51,8 @@ class DiscoveryServerSettingsFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
         val b = binding ?: return
 
-        // Toolbar back navigation
+        // Toolbar back navigation (hidden when embedded as a child fragment in the two-column layout)
+        b.discoveryServersTopAppBar.isVisible = parentFragment == null
         b.discoveryServersTopAppBar.setNavigationOnClickListener {
             findNavController().popBackStack()
         }
