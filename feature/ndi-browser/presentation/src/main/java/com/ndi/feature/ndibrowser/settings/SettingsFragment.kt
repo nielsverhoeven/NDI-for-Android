@@ -5,7 +5,6 @@ import android.net.Uri
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import androidx.core.widget.addTextChangedListener
 import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
@@ -19,9 +18,7 @@ import com.ndi.feature.ndibrowser.presentation.databinding.FragmentSettingsBindi
 import kotlinx.coroutines.launch
 
 data class SettingsUiState(
-    val discoveryServerInput: String = "",
     val developerModeEnabled: Boolean = false,
-    val validationError: String? = null,
     val fallbackWarning: String? = null,
 )
 
@@ -43,15 +40,14 @@ class SettingsFragment : Fragment() {
         screen = SettingsScreen(
             binding = fragmentBinding,
             onSave = viewModel::onSaveSettings,
-            onDiscoveryChanged = viewModel::onDiscoveryServerChanged,
             onDeveloperModeToggled = viewModel::onDeveloperModeToggled,
             onOpenThemeEditor = {
                 findNavController().navigate(Uri.parse("ndi://theme-editor"))
             },
         )
-            fragmentBinding.openDiscoveryServersButton.setOnClickListener {
-                findNavController().navigate(Uri.parse("ndi://settings/discovery-servers"))
-            }
+        fragmentBinding.openDiscoveryServersButton.setOnClickListener {
+            findNavController().navigate(Uri.parse("ndi://settings/discovery-servers"))
+        }
         return fragmentBinding.root
     }
 
@@ -104,7 +100,6 @@ class SettingsFragment : Fragment() {
 class SettingsScreen(
     private val binding: FragmentSettingsBinding,
     onSave: () -> Unit,
-    onDiscoveryChanged: (String) -> Unit,
     onDeveloperModeToggled: (Boolean) -> Unit,
     onOpenThemeEditor: () -> Unit,
 ) {
@@ -115,22 +110,13 @@ class SettingsScreen(
         binding.developerModeSwitch.setOnCheckedChangeListener { _, isChecked ->
             onDeveloperModeToggled(isChecked)
         }
-        binding.discoveryServerEditText.addTextChangedListener {
-            onDiscoveryChanged(it?.toString().orEmpty())
-        }
     }
 
     fun render(state: SettingsUiState) {
-        binding.validationMessage.isVisible = state.validationError != null
-        binding.validationMessage.text = state.validationError.orEmpty()
         binding.fallbackWarningMessage.isVisible = state.fallbackWarning != null
         binding.fallbackWarningMessage.text = state.fallbackWarning.orEmpty()
         if (binding.developerModeSwitch.isChecked != state.developerModeEnabled) {
             binding.developerModeSwitch.isChecked = state.developerModeEnabled
-        }
-        val currentInput = binding.discoveryServerInput.editText?.text?.toString().orEmpty()
-        if (currentInput != state.discoveryServerInput) {
-            binding.discoveryServerInput.editText?.setText(state.discoveryServerInput)
         }
     }
 }

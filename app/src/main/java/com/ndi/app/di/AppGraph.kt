@@ -89,7 +89,7 @@ class AppGraph private constructor(context: Context) {
     )
 
     val discoveryConfigRepository: NdiDiscoveryConfigRepository = NdiDiscoveryConfigRepositoryImpl(
-        settingsRepository = settingsRepository,
+        discoveryServerRepository = discoveryServerRepository,
     )
 
     val discoveryRepository: NdiDiscoveryRepository = NdiDiscoveryRepositoryImpl(
