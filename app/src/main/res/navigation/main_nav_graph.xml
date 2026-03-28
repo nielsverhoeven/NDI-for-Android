@@ -83,6 +83,9 @@
             android:id="@+id/action_settingsFragment_to_themeEditorFragment"
             app:destination="@id/themeEditorFragment" />
         <action
+            android:id="@+id/action_settingsFragment_to_discoveryServerSettingsFragment"
+            app:destination="@id/discoveryServerSettingsFragment" />
+        <action
             android:id="@+id/action_settingsFragment_to_previous"
             app:popUpTo="@id/main_nav_graph"
             app:popUpToInclusive="false" />
@@ -93,6 +96,15 @@
         android:name="com.ndi.feature.themeeditor.ThemeEditorFragment"
         android:label="Theme Editor">
         <deepLink app:uri="ndi://theme-editor" />
+    </fragment>
+
+    <!-- ====== Discovery Servers Settings destination (spec 018) ====== -->
+
+    <fragment
+        android:id="@+id/discoveryServerSettingsFragment"
+        android:name="com.ndi.feature.ndibrowser.settings.DiscoveryServerSettingsFragment"
+        android:label="@string/discovery_servers_title">
+        <deepLink app:uri="ndi://settings/discovery-servers" />
     </fragment>
 
 </navigation>

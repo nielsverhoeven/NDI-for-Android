@@ -49,6 +49,9 @@ class SettingsFragment : Fragment() {
                 findNavController().navigate(Uri.parse("ndi://theme-editor"))
             },
         )
+            fragmentBinding.openDiscoveryServersButton.setOnClickListener {
+                findNavController().navigate(Uri.parse("ndi://settings/discovery-servers"))
+            }
         return fragmentBinding.root
     }
 

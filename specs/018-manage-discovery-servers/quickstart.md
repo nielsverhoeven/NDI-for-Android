@@ -97,3 +97,17 @@ Collect and retain:
 - module unit test reports under `**/build/reports/tests/**`
 
 For blocked gates, classify as environment blocker and include exact retry/unblock commands.
+
+---
+
+## 10. Task Trace — Command Evidence Paths (T008)
+
+| Task Phase     | Command | Evidence Path |
+|----------------|---------|---------------|
+| Phase 0 T001   | `pwsh -ExecutionPolicy Bypass -File scripts/verify-android-prereqs.ps1` | `test-results/018-manage-discovery-servers-preflight.md` |
+| Phase 0 T002   | `pwsh -ExecutionPolicy Bypass -File scripts/verify-e2e-dual-emulator-prereqs.ps1 -AllowMissingNdiSdk` | `test-results/018-manage-discovery-servers-preflight.md` |
+| Phase 0 T003   | `./gradlew.bat :app:assembleDebug` | `test-results/018-manage-discovery-servers-preflight.md` |
+| Phase 6 T050   | `./gradlew.bat :core:database:testDebugUnitTest :feature:ndi-browser:data:testDebugUnitTest :feature:ndi-browser:presentation:testDebugUnitTest :app:testDebugUnitTest` | `test-results/018-manage-discovery-servers-validation.md` |
+| Phase 6 T051   | `npm --prefix testing/e2e run test -- tests/settings-discovery-submenu.spec.ts` | `test-results/018-manage-discovery-servers-validation.md` |
+| Phase 6 T052   | `./gradlew.bat :app:verifyReleaseHardening :app:assembleRelease` | `test-results/018-manage-discovery-servers-validation.md` |
+| US1–US4 regressions | `npm --prefix testing/e2e run test:pr:primary` | `test-results/018-manage-discovery-servers-validation.md` |

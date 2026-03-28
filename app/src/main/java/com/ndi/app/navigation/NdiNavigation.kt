@@ -91,4 +91,17 @@ object NdiNavigation {
     fun shouldCloseSettings(currentDestinationId: Int): Boolean {
         return resolveSettingsToggleAction(currentDestinationId) == SettingsToggleAction.CLOSE
     }
+
+    // ---- Spec 018: Discovery Server Settings navigation helpers ----
+
+    fun discoveryServerSettingsRequest(): NavDeepLinkRequest {
+        return NavDeepLinkRequest.Builder
+            .fromUri("ndi://settings/discovery-servers".toUri())
+            .build()
+    }
+
+    fun discoveryServerSettingsDestinationId(): Int = R.id.discoveryServerSettingsFragment
+
+    fun settingsToDiscoveryServerSettingsActionId(): Int =
+        R.id.action_settingsFragment_to_discoveryServerSettingsFragment
 }

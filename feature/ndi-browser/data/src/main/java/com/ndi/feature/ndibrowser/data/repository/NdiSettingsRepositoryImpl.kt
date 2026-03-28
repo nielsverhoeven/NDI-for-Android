@@ -1,7 +1,11 @@
 package com.ndi.feature.ndibrowser.data.repository
 
+import com.ndi.core.database.DiscoveryServerDao
+import com.ndi.core.database.DiscoveryServerEntity
 import com.ndi.core.database.SettingsPreferenceDao
 import com.ndi.core.database.SettingsPreferenceEntity
+import com.ndi.core.model.DEFAULT_DISCOVERY_SERVER_PORT
+import com.ndi.core.model.NdiDiscoveryEndpoint
 import com.ndi.core.model.NdiSettingsSnapshot
 import com.ndi.core.model.NdiThemeMode
 import com.ndi.feature.ndibrowser.domain.repository.NdiSettingsRepository
@@ -12,9 +16,12 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.launch
+import java.util.UUID
 
 class NdiSettingsRepositoryImpl(
     private val settingsDao: SettingsPreferenceDao,
+    /** Optional: provide to enable one-time legacy single-endpoint → discovery-server migration on init. */
+    private val discoveryServerDao: DiscoveryServerDao? = null,
 ) : NdiSettingsRepository {
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
@@ -22,7 +29,9 @@ class NdiSettingsRepositoryImpl(
 
     init {
         scope.launch {
-            _settings.value = settingsDao.get()?.toSnapshot() ?: defaultSnapshot()
+            val snapshot = settingsDao.get()?.toSnapshot() ?: defaultSnapshot()
+            _settings.value = snapshot
+            migrateLegacyEndpointIfNeeded(snapshot)
         }
     }
 
@@ -39,6 +48,33 @@ class NdiSettingsRepositoryImpl(
     }
 
     override fun observeSettings(): Flow<NdiSettingsSnapshot> = _settings.filterNotNull()
+
+    /**
+     * One-time migration: if the legacy single-endpoint is configured and no discovery server
+     * entries exist yet, import the legacy endpoint as the first enabled entry (index 0).
+     * This preserves backward compatibility per spec 018 requirements.
+     */
+    private suspend fun migrateLegacyEndpointIfNeeded(snapshot: NdiSettingsSnapshot) {
+        val dao = discoveryServerDao ?: return
+        val legacyInput = snapshot.discoveryServerInput?.trim()?.takeIf { it.isNotBlank() } ?: return
+
+        // Only migrate if the collection is empty (first-run after upgrade)
+        if (dao.getAll().isNotEmpty()) return
+
+        val parsed = NdiDiscoveryEndpoint.parse(legacyInput) ?: return
+        val now = System.currentTimeMillis()
+        dao.insert(
+            DiscoveryServerEntity(
+                id = UUID.randomUUID().toString(),
+                hostOrIp = parsed.host,
+                port = parsed.resolvedPort.takeIf { it > 0 } ?: DEFAULT_DISCOVERY_SERVER_PORT,
+                enabled = true,
+                orderIndex = 0,
+                createdAtEpochMillis = now,
+                updatedAtEpochMillis = now,
+            ),
+        )
+    }
 
     private fun defaultSnapshot() = NdiSettingsSnapshot(
         discoveryServerInput = null,
@@ -65,3 +101,4 @@ private fun NdiSettingsSnapshot.toEntity(): SettingsPreferenceEntity = SettingsP
     accentColorId = accentColorId,
     updatedAtEpochMillis = updatedAtEpochMillis,
 )
+

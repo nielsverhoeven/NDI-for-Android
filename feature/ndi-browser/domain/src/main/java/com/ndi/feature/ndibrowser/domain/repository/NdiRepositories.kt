@@ -2,6 +2,8 @@ package com.ndi.feature.ndibrowser.domain.repository
 
 import com.ndi.core.model.DiscoverySnapshot
 import com.ndi.core.model.DiscoveryTrigger
+import com.ndi.core.model.DiscoverySelectionResult
+import com.ndi.core.model.DiscoveryServerEntry
 import com.ndi.core.model.NdiDeveloperOverlayState
 import com.ndi.core.model.NdiDiscoveryApplyResult
 import com.ndi.core.model.NdiDiscoveryEndpoint
@@ -167,5 +169,52 @@ interface NdiDiscoveryConfigRepository {
 interface DeveloperDiagnosticsRepository {
     fun observeOverlayState(): Flow<NdiDeveloperOverlayState>
     fun observeRecentLogs(): Flow<List<NdiRedactedLogEntry>>
+}
+
+// ---- Spec 018: Discovery Server Management ----
+
+/**
+ * Manages the ordered collection of user-configured discovery server entries.
+ * All mutations are persisted in Room and survive app restart.
+ */
+interface DiscoveryServerRepository {
+    /** Emits ordered list of all entries whenever any entry changes. */
+    fun observeServers(): Flow<List<DiscoveryServerEntry>>
+
+    /**
+     * Add a new server. Trims hostOrIp, applies default port 5959 when portInput is blank.
+     * @throws IllegalArgumentException on invalid hostOrIp, invalid port, or duplicate (host+port).
+     */
+    suspend fun addServer(hostOrIp: String, portInput: String): DiscoveryServerEntry
+
+    /**
+     * Update an existing entry. Trims hostOrIp, applies default port when portInput is blank.
+     * @throws IllegalArgumentException on invalid values or duplicate (host+port) conflicts.
+     * @throws NoSuchElementException when id does not exist.
+     */
+    suspend fun updateServer(id: String, hostOrIp: String, portInput: String): DiscoveryServerEntry
+
+    /**
+     * Remove an entry by id. No-op if id does not exist.
+     */
+    suspend fun removeServer(id: String)
+
+    /**
+     * Persist the enabled/disabled state of an entry.
+     * @throws NoSuchElementException when id does not exist.
+     */
+    suspend fun setServerEnabled(id: String, enabled: Boolean): DiscoveryServerEntry
+
+    /**
+     * Reorder entries according to the supplied id list.
+     * Returns the new ordered list.
+     */
+    suspend fun reorderServers(idsInOrder: List<String>): List<DiscoveryServerEntry>
+
+    /**
+     * Attempt ordered, sequential failover across enabled entries.
+     * Returns the first reachable entry or an appropriate error outcome.
+     */
+    suspend fun resolveActiveDiscoveryTarget(): DiscoverySelectionResult
 }
 

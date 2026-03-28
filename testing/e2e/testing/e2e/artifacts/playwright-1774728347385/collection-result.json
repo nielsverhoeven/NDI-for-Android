@@ -1,0 +1,24 @@
+﻿{
+    "operation":  "Collect-TestArtifacts",
+    "status":  "SUCCESS",
+    "timestamp":  "2026-03-28T20:05:59.8126343Z",
+    "data":  {
+                 "sessionId":  "playwright-1774728347385",
+                 "artifactDirectory":  "testing\\e2e\\artifacts\\playwright-1774728347385",
+                 "artifacts":  [
+                                   "testing\\e2e\\artifacts\\playwright-1774728347385\\logcat-emulator-5554.log",
+                                   "testing\\e2e\\artifacts\\playwright-1774728347385\\screenrecord-emulator-5554.mp4",
+                                   "testing\\e2e\\artifacts\\playwright-1774728347385\\logcat-emulator-5556.log",
+                                   "testing\\e2e\\artifacts\\playwright-1774728347385\\screenrecord-emulator-5556.mp4",
+                                   "testing\\e2e\\artifacts\\playwright-1774728347385\\diagnostics.json",
+                                   "testing\\e2e\\artifacts\\playwright-1774728347385\\manifest.json"
+                               ],
+                 "manifestPath":  "testing\\e2e\\artifacts\\playwright-1774728347385\\manifest.json"
+             },
+    "errors":  [
+
+               ],
+    "warnings":  [
+
+                 ]
+}

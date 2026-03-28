@@ -11,10 +11,10 @@
 
 **Purpose**: Confirm runtime and tool prerequisites before implementation and emulator validation.
 
-- [ ] T001 Run prerequisite gate and capture output in test-results/018-manage-discovery-servers-preflight.md using scripts/verify-android-prereqs.ps1
-- [ ] T002 Run dual-emulator preflight and capture output in test-results/018-manage-discovery-servers-preflight.md using scripts/verify-e2e-dual-emulator-prereqs.ps1 -AllowMissingNdiSdk
-- [ ] T003 Verify debug artifact build succeeds and record output in test-results/018-manage-discovery-servers-preflight.md using ./gradlew.bat :app:assembleDebug
-- [ ] T004 Record any environment blocker and concrete unblock command in test-results/018-manage-discovery-servers-preflight.md
+- [x] T001 Run prerequisite gate and capture output in test-results/018-manage-discovery-servers-preflight.md using scripts/verify-android-prereqs.ps1
+- [x] T002 Run dual-emulator preflight and capture output in test-results/018-manage-discovery-servers-preflight.md using scripts/verify-e2e-dual-emulator-prereqs.ps1 -AllowMissingNdiSdk
+- [x] T003 Verify debug artifact build succeeds and record output in test-results/018-manage-discovery-servers-preflight.md using ./gradlew.bat :app:assembleDebug
+- [x] T004 Record any environment blocker and concrete unblock command in test-results/018-manage-discovery-servers-preflight.md
 
 **Checkpoint**: Preflight status is PASS or explicitly documented as blocked with unblocking steps.
 
@@ -24,10 +24,10 @@
 
 **Purpose**: Prepare shared validation artifacts and feature-specific test scaffolding.
 
-- [ ] T005 Create validation report stub in test-results/018-manage-discovery-servers-validation.md
-- [ ] T006 Create feature Playwright spec shell in testing/e2e/tests/settings-discovery-submenu.spec.ts
-- [ ] T007 [P] Create feature Playwright helper scaffold in testing/e2e/tests/support/discovery-server-helpers.ts
-- [ ] T008 [P] Add quickstart task trace section for commands and evidence paths in specs/018-manage-discovery-servers/quickstart.md
+- [x] T005 Create validation report stub in test-results/018-manage-discovery-servers-validation.md
+- [x] T006 Create feature Playwright spec shell in testing/e2e/tests/settings-discovery-submenu.spec.ts
+- [x] T007 [P] Create feature Playwright helper scaffold in testing/e2e/tests/support/discovery-server-helpers.ts
+- [x] T008 [P] Add quickstart task trace section for commands and evidence paths in specs/018-manage-discovery-servers/quickstart.md
 
 ---
 
@@ -37,13 +37,14 @@
 
 **⚠️ CRITICAL**: No user story implementation begins until this phase is complete.
 
-- [ ] T009 Extend discovery-server repository contracts in feature/ndi-browser/domain/src/main/java/com/ndi/feature/ndibrowser/domain/repository/NdiRepositories.kt
-- [ ] T010 [P] Add discovery-server collection model types in core/model/src/main/java/com/ndi/core/model/NdiSettingsModels.kt
-- [ ] T011 Add discovery-server entities, DAO methods, and migration in core/database/src/main/java/com/ndi/core/database/NdiDatabase.kt
-- [ ] T012 [P] Implement ordered discovery-server persistence baseline in feature/ndi-browser/data/src/main/java/com/ndi/feature/ndibrowser/data/repository/DiscoveryServerRepositoryImpl.kt
-- [ ] T013 [P] Preserve legacy settings compatibility and migration mapping in feature/ndi-browser/data/src/main/java/com/ndi/feature/ndibrowser/data/repository/NdiSettingsRepositoryImpl.kt
-- [ ] T014 [P] Wire discovery-server repository providers in app/src/main/java/com/ndi/app/di/AppGraph.kt and feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/SettingsDependencies.kt
-- [ ] T015 Add discovery-server submenu destination and deep-link helpers in app/src/main/res/navigation/main_nav_graph.xml and app/src/main/java/com/ndi/app/navigation/NdiNavigation.kt
+- [x] T009 Extend discovery-server repository contracts in feature/ndi-browser/domain/src/main/java/com/ndi/feature/ndibrowser/domain/repository/NdiRepositories.kt
+- [x] T009 Extend discovery-server repository contracts in feature/ndi-browser/domain/src/main/java/com/ndi/feature/ndibrowser/domain/repository/NdiRepositories.kt
+- [x] T010 [P] Add discovery-server collection model types in core/model/src/main/java/com/ndi/core/model/NdiSettingsModels.kt
+- [x] T011 Add discovery-server entities, DAO methods, and migration in core/database/src/main/java/com/ndi/core/database/NdiDatabase.kt
+- [x] T012 [P] Implement ordered discovery-server persistence baseline in feature/ndi-browser/data/src/main/java/com/ndi/feature/ndibrowser/data/repository/DiscoveryServerRepositoryImpl.kt
+- [x] T013 [P] Preserve legacy settings compatibility and migration mapping in feature/ndi-browser/data/src/main/java/com/ndi/feature/ndibrowser/data/repository/NdiSettingsRepositoryImpl.kt
+- [x] T014 [P] Wire discovery-server repository providers in app/src/main/java/com/ndi/app/di/AppGraph.kt and feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/SettingsDependencies.kt
+- [x] T015 Add discovery-server submenu destination and deep-link helpers in app/src/main/res/navigation/main_nav_graph.xml and app/src/main/java/com/ndi/app/navigation/NdiNavigation.kt
 
 **Checkpoint**: Foundation is complete and user-story work can start.
 
@@ -57,21 +58,21 @@
 
 ### Tests for User Story 1 (REQUIRED)
 
-- [ ] T016 [P] [US1] Add failing ViewModel tests for required-host validation and blank-port defaulting in feature/ndi-browser/presentation/src/test/java/com/ndi/feature/ndibrowser/settings/DiscoveryServerSettingsViewModelTest.kt
-- [ ] T017 [P] [US1] Add failing repository tests for add-server normalization and default-port persistence in feature/ndi-browser/data/src/test/java/com/ndi/feature/ndibrowser/data/repository/DiscoveryServerRepositoryImplTest.kt
-- [ ] T018 [P] [US1] Add failing instrumentation test for opening the submenu and saving a host-only server in feature/ndi-browser/presentation/src/androidTest/java/com/ndi/feature/ndibrowser/settings/DiscoveryServerSettingsNavigationTest.kt
-- [ ] T019 [P] [US1] Add failing Playwright e2e for settings submenu open and host-only save defaulting to 5959 in testing/e2e/tests/settings-discovery-submenu.spec.ts
-- [ ] T020 [US1] Run existing Playwright regression suite and append results to test-results/018-manage-discovery-servers-validation.md using npm --prefix testing/e2e run test:pr:primary
-- [ ] T021 [US1] If blocked, record reproduction details and unblock command in test-results/018-manage-discovery-servers-validation.md
+- [x] T016 [P] [US1] Add failing ViewModel tests for required-host validation and blank-port defaulting in feature/ndi-browser/presentation/src/test/java/com/ndi/feature/ndibrowser/settings/DiscoveryServerSettingsViewModelTest.kt
+- [x] T017 [P] [US1] Add failing repository tests for add-server normalization and default-port persistence in feature/ndi-browser/data/src/test/java/com/ndi/feature/ndibrowser/data/repository/DiscoveryServerRepositoryImplTest.kt
+- [x] T018 [P] [US1] Add failing instrumentation test for opening the submenu and saving a host-only server in feature/ndi-browser/presentation/src/androidTest/java/com/ndi/feature/ndibrowser/settings/DiscoveryServerSettingsNavigationTest.kt
+- [x] T019 [P] [US1] Add failing Playwright e2e for settings submenu open and host-only save defaulting to 5959 in testing/e2e/tests/settings-discovery-submenu.spec.ts
+- [x] T020 [US1] Run existing Playwright regression suite and append results to test-results/018-manage-discovery-servers-validation.md using npm --prefix testing/e2e run test:pr:primary
+- [x] T021 [US1] If blocked, record reproduction details and unblock command in test-results/018-manage-discovery-servers-validation.md
 
 ### Implementation for User Story 1
 
-- [ ] T022 [P] [US1] Add discovery-server submenu strings and button labels in feature/ndi-browser/presentation/src/main/res/values/strings.xml
-- [ ] T023 [P] [US1] Create discovery-server submenu layout and add-form UI in feature/ndi-browser/presentation/src/main/res/layout/fragment_discovery_server_settings.xml
-- [ ] T024 [US1] Add Settings entry-point affordance for the submenu in feature/ndi-browser/presentation/src/main/res/layout/fragment_settings.xml and feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/SettingsFragment.kt
-- [ ] T025 [US1] Implement discovery-server submenu screen controller in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/DiscoveryServerSettingsFragment.kt
-- [ ] T026 [US1] Implement add-server form state, validation, and save flow in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/DiscoveryServerSettingsViewModel.kt
-- [ ] T027 [US1] Implement add-server persistence and legacy-endpoint import behavior in feature/ndi-browser/data/src/main/java/com/ndi/feature/ndibrowser/data/repository/DiscoveryServerRepositoryImpl.kt and feature/ndi-browser/data/src/main/java/com/ndi/feature/ndibrowser/data/repository/NdiSettingsRepositoryImpl.kt
+- [x] T022 [P] [US1] Add discovery-server submenu strings and button labels in feature/ndi-browser/presentation/src/main/res/values/strings.xml
+- [x] T023 [P] [US1] Create discovery-server submenu layout and add-form UI in feature/ndi-browser/presentation/src/main/res/layout/fragment_discovery_server_settings.xml
+- [x] T024 [US1] Add Settings entry-point affordance for the submenu in feature/ndi-browser/presentation/src/main/res/layout/fragment_settings.xml and feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/SettingsFragment.kt
+- [x] T025 [US1] Implement discovery-server submenu screen controller in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/DiscoveryServerSettingsFragment.kt
+- [x] T026 [US1] Implement add-server form state, validation, and save flow in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/DiscoveryServerSettingsViewModel.kt
+- [x] T027 [US1] Implement add-server persistence and legacy-endpoint import behavior in feature/ndi-browser/data/src/main/java/com/ndi/feature/ndibrowser/data/repository/DiscoveryServerRepositoryImpl.kt and feature/ndi-browser/data/src/main/java/com/ndi/feature/ndibrowser/data/repository/NdiSettingsRepositoryImpl.kt
 
 **Checkpoint**: User Story 1 is independently functional and demoable.
 
@@ -85,19 +86,19 @@
 
 ### Tests for User Story 2 (REQUIRED)
 
-- [ ] T028 [P] [US2] Add failing repository tests for duplicate rejection and ordered multi-entry persistence in feature/ndi-browser/data/src/test/java/com/ndi/feature/ndibrowser/data/repository/DiscoveryServerRepositoryImplTest.kt
-- [ ] T029 [P] [US2] Add failing database migration and DAO round-trip regression tests in core/database/src/test/java/com/ndi/core/database/DiscoveryServerDaoMigrationTest.kt
-- [ ] T030 [P] [US2] Add failing instrumentation test for multi-server persistence across restart in feature/ndi-browser/presentation/src/androidTest/java/com/ndi/feature/ndibrowser/settings/DiscoveryServerSettingsPersistenceTest.kt
-- [ ] T031 [P] [US2] Add failing Playwright e2e for adding multiple servers and verifying persistence after relaunch in testing/e2e/tests/settings-discovery-submenu.spec.ts
-- [ ] T032 [US2] Run existing Playwright regression suite and append results to test-results/018-manage-discovery-servers-validation.md using npm --prefix testing/e2e run test:pr:primary
-- [ ] T033 [US2] If blocked, record reproduction details and unblock command in test-results/018-manage-discovery-servers-validation.md
+- [x] T028 [P] [US2] Add failing repository tests for duplicate rejection and ordered multi-entry persistence in feature/ndi-browser/data/src/test/java/com/ndi/feature/ndibrowser/data/repository/DiscoveryServerRepositoryImplTest.kt
+- [x] T029 [P] [US2] Add failing database migration and DAO round-trip regression tests in core/database/src/test/java/com/ndi/core/database/DiscoveryServerDaoMigrationTest.kt
+- [x] T030 [P] [US2] Add failing instrumentation test for multi-server persistence across restart in feature/ndi-browser/presentation/src/androidTest/java/com/ndi/feature/ndibrowser/settings/DiscoveryServerSettingsPersistenceTest.kt
+- [x] T031 [P] [US2] Add failing Playwright e2e for adding multiple servers and verifying persistence after relaunch in testing/e2e/tests/settings-discovery-submenu.spec.ts
+- [x] T032 [US2] Run existing Playwright regression suite and append results to test-results/018-manage-discovery-servers-validation.md using npm --prefix testing/e2e run test:pr:primary
+- [x] T033 [US2] If blocked, record reproduction details and unblock command in test-results/018-manage-discovery-servers-validation.md
 
 ### Implementation for User Story 2
 
-- [ ] T034 [P] [US2] Create discovery-server row layout in feature/ndi-browser/presentation/src/main/res/layout/item_discovery_server.xml
-- [ ] T035 [US2] Render ordered server rows, duplicate validation feedback, and empty-state handling in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/DiscoveryServerSettingsFragment.kt
-- [ ] T036 [US2] Implement ordered collection queries, insert or update behavior, delete support, and duplicate protection in feature/ndi-browser/data/src/main/java/com/ndi/feature/ndibrowser/data/repository/DiscoveryServerRepositoryImpl.kt and core/database/src/main/java/com/ndi/core/database/NdiDatabase.kt
-- [ ] T037 [US2] Expose ordered collection UI state and duplicate-error mapping in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/DiscoveryServerSettingsViewModel.kt
+- [x] T034 [P] [US2] Create discovery-server row layout in feature/ndi-browser/presentation/src/main/res/layout/item_discovery_server.xml
+- [x] T035 [US2] Render ordered server rows, duplicate validation feedback, and empty-state handling in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/DiscoveryServerSettingsFragment.kt
+- [x] T036 [US2] Implement ordered collection queries, insert or update behavior, delete support, and duplicate protection in feature/ndi-browser/data/src/main/java/com/ndi/feature/ndibrowser/data/repository/DiscoveryServerRepositoryImpl.kt and core/database/src/main/java/com/ndi/core/database/NdiDatabase.kt
+- [x] T037 [US2] Expose ordered collection UI state and duplicate-error mapping in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/DiscoveryServerSettingsViewModel.kt
 
 **Checkpoint**: User Story 2 is independently functional and testable.
 
@@ -111,20 +112,20 @@
 
 ### Tests for User Story 4 (REQUIRED)
 
-- [ ] T055 [P] [US4] Add failing ViewModel tests for edit-server validation (including duplicate-update check) and delete-server state transition in feature/ndi-browser/presentation/src/test/java/com/ndi/feature/ndibrowser/settings/DiscoveryServerSettingsViewModelTest.kt
-- [ ] T056 [P] [US4] Add failing repository tests for updateServer, removeServer, and reorderServers persistence in feature/ndi-browser/data/src/test/java/com/ndi/feature/ndibrowser/data/repository/DiscoveryServerRepositoryImplTest.kt
-- [ ] T057 [P] [US4] Add failing instrumentation test for edit, delete, and drag-reorder interactions and persistence in feature/ndi-browser/presentation/src/androidTest/java/com/ndi/feature/ndibrowser/settings/DiscoveryServerSettingsEditDeleteTest.kt
-- [ ] T058 [P] [US4] Add failing Playwright e2e for edit, delete, and reorder flows with persistence verification in testing/e2e/tests/settings-discovery-submenu.spec.ts
-- [ ] T059 [US4] Run existing Playwright regression suite and append results to test-results/018-manage-discovery-servers-validation.md using npm --prefix testing/e2e run test:pr:primary
-- [ ] T060 [US4] If blocked, record reproduction details and unblock command in test-results/018-manage-discovery-servers-validation.md
+- [x] T055 [P] [US4] Add failing ViewModel tests for edit-server validation (including duplicate-update check) and delete-server state transition in feature/ndi-browser/presentation/src/test/java/com/ndi/feature/ndibrowser/settings/DiscoveryServerSettingsViewModelTest.kt
+- [x] T056 [P] [US4] Add failing repository tests for updateServer, removeServer, and reorderServers persistence in feature/ndi-browser/data/src/test/java/com/ndi/feature/ndibrowser/data/repository/DiscoveryServerRepositoryImplTest.kt
+- [x] T057 [P] [US4] Add failing instrumentation test for edit, delete, and drag-reorder interactions and persistence in feature/ndi-browser/presentation/src/androidTest/java/com/ndi/feature/ndibrowser/settings/DiscoveryServerSettingsEditDeleteTest.kt
+- [x] T058 [P] [US4] Add failing Playwright e2e for edit, delete, and reorder flows with persistence verification in testing/e2e/tests/settings-discovery-submenu.spec.ts
+- [x] T059 [US4] Run existing Playwright regression suite and append results to test-results/018-manage-discovery-servers-validation.md using npm --prefix testing/e2e run test:pr:primary
+- [x] T060 [US4] If blocked, record reproduction details and unblock command in test-results/018-manage-discovery-servers-validation.md
 
 ### Implementation for User Story 4
 
-- [ ] T061 [P] [US4] Add edit-form controls, delete affordance, and drag handles to discovery-server row layout and submenu screen in feature/ndi-browser/presentation/src/main/res/layout/item_discovery_server.xml and fragment_discovery_server_settings.xml
-- [ ] T062 [P] [US4] Add edit/delete/reorder string resources in feature/ndi-browser/presentation/src/main/res/values/strings.xml
-- [ ] T063 [US4] Implement updateServer, removeServer, and reorderServers in feature/ndi-browser/data/src/main/java/com/ndi/feature/ndibrowser/data/repository/DiscoveryServerRepositoryImpl.kt and DAO methods in core/database/src/main/java/com/ndi/core/database/NdiDatabase.kt
-- [ ] T064 [US4] Implement edit-form state machine, delete flow, drag-drop ordering, and duplicate-update rejection in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/DiscoveryServerSettingsViewModel.kt
-- [ ] T065 [US4] Wire edit affordance, delete confirmation, and drag-drop gesture handler in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/DiscoveryServerSettingsFragment.kt
+- [x] T061 [P] [US4] Add edit-form controls, delete affordance, and drag handles to discovery-server row layout and submenu screen in feature/ndi-browser/presentation/src/main/res/layout/item_discovery_server.xml and fragment_discovery_server_settings.xml
+- [x] T062 [P] [US4] Add edit/delete/reorder string resources in feature/ndi-browser/presentation/src/main/res/values/strings.xml
+- [x] T063 [US4] Implement updateServer, removeServer, and reorderServers in feature/ndi-browser/data/src/main/java/com/ndi/feature/ndibrowser/data/repository/DiscoveryServerRepositoryImpl.kt and DAO methods in core/database/src/main/java/com/ndi/core/database/NdiDatabase.kt
+- [x] T064 [US4] Implement edit-form state machine, delete flow, drag-drop ordering, and duplicate-update rejection in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/DiscoveryServerSettingsViewModel.kt
+- [x] T065 [US4] Wire edit affordance, delete confirmation, and drag-drop gesture handler in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/DiscoveryServerSettingsFragment.kt
 
 **Checkpoint**: User Story 4 is independently functional and testable; edit, delete, and reorder all persist after restart.
 
@@ -138,19 +139,19 @@
 
 ### Tests for User Story 3 (REQUIRED)
 
-- [ ] T038 [P] [US3] Add failing ViewModel tests for per-server toggle state and no-enabled-server messaging in feature/ndi-browser/presentation/src/test/java/com/ndi/feature/ndibrowser/settings/DiscoveryServerSettingsViewModelTest.kt
-- [ ] T039 [P] [US3] Add failing runtime selection and ordered failover tests in feature/ndi-browser/data/src/test/java/com/ndi/feature/ndibrowser/data/repository/NdiDiscoveryConfigRepositoryImplTest.kt
-- [ ] T040 [P] [US3] Add failing instrumentation test for per-server toggle persistence after restart in feature/ndi-browser/presentation/src/androidTest/java/com/ndi/feature/ndibrowser/settings/DiscoveryServerSettingsTogglePersistenceTest.kt
-- [ ] T041 [P] [US3] Add failing Playwright e2e for per-server toggles and persisted enabled-state behavior in testing/e2e/tests/settings-discovery-submenu.spec.ts
-- [ ] T042 [US3] Run existing Playwright regression suite and append results to test-results/018-manage-discovery-servers-validation.md using npm --prefix testing/e2e run test:pr:primary
-- [ ] T043 [US3] If blocked, record reproduction details and unblock command in test-results/018-manage-discovery-servers-validation.md
+- [x] T038 [P] [US3] Add failing ViewModel tests for per-server toggle state and no-enabled-server messaging in feature/ndi-browser/presentation/src/test/java/com/ndi/feature/ndibrowser/settings/DiscoveryServerSettingsViewModelTest.kt
+- [x] T039 [P] [US3] Add failing runtime selection and ordered failover tests in feature/ndi-browser/data/src/test/java/com/ndi/feature/ndibrowser/data/repository/NdiDiscoveryConfigRepositoryImplTest.kt
+- [x] T040 [P] [US3] Add failing instrumentation test for per-server toggle persistence after restart in feature/ndi-browser/presentation/src/androidTest/java/com/ndi/feature/ndibrowser/settings/DiscoveryServerSettingsTogglePersistenceTest.kt
+- [x] T041 [P] [US3] Add failing Playwright e2e for per-server toggles and persisted enabled-state behavior in testing/e2e/tests/settings-discovery-submenu.spec.ts
+- [x] T042 [US3] Run existing Playwright regression suite and append results to test-results/018-manage-discovery-servers-validation.md using npm --prefix testing/e2e run test:pr:primary
+- [x] T043 [US3] If blocked, record reproduction details and unblock command in test-results/018-manage-discovery-servers-validation.md
 
 ### Implementation for User Story 3
 
-- [ ] T044 [P] [US3] Add enabled-toggle controls and status rendering in feature/ndi-browser/presentation/src/main/res/layout/item_discovery_server.xml and feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/DiscoveryServerSettingsFragment.kt
-- [ ] T045 [US3] Implement toggle persistence and ordered enabled-entry selection in feature/ndi-browser/data/src/main/java/com/ndi/feature/ndibrowser/data/repository/DiscoveryServerRepositoryImpl.kt and feature/ndi-browser/data/src/main/java/com/ndi/feature/ndibrowser/data/repository/NdiDiscoveryConfigRepositoryImpl.kt
-- [ ] T046 [US3] Apply sequential failover and all-enabled-unreachable result handling in feature/ndi-browser/data/src/main/java/com/ndi/feature/ndibrowser/data/repository/NdiOutputRepositoryImpl.kt and ndi/sdk-bridge/src/main/java/com/ndi/sdkbridge/NdiNativeBridge.kt
-- [ ] T047 [US3] Surface enabled-state actions, no-enabled-server feedback, and all-unreachable messaging in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/DiscoveryServerSettingsViewModel.kt and feature/ndi-browser/presentation/src/main/res/values/strings.xml
+- [x] T044 [P] [US3] Add enabled-toggle controls and status rendering in feature/ndi-browser/presentation/src/main/res/layout/item_discovery_server.xml and feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/DiscoveryServerSettingsFragment.kt
+- [x] T045 [US3] Implement toggle persistence and ordered enabled-entry selection in feature/ndi-browser/data/src/main/java/com/ndi/feature/ndibrowser/data/repository/DiscoveryServerRepositoryImpl.kt and feature/ndi-browser/data/src/main/java/com/ndi/feature/ndibrowser/data/repository/NdiDiscoveryConfigRepositoryImpl.kt
+- [x] T046 [US3] Apply sequential failover and all-enabled-unreachable result handling in feature/ndi-browser/data/src/main/java/com/ndi/feature/ndibrowser/data/repository/NdiOutputRepositoryImpl.kt and ndi/sdk-bridge/src/main/java/com/ndi/sdkbridge/NdiNativeBridge.kt
+- [x] T047 [US3] Surface enabled-state actions, no-enabled-server feedback, and all-unreachable messaging in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/DiscoveryServerSettingsViewModel.kt and feature/ndi-browser/presentation/src/main/res/values/strings.xml
 
 **Checkpoint**: User Story 3 is independently functional and testable.
 
@@ -160,13 +161,13 @@
 
 **Purpose**: Final hardening, documentation, and quality gates across all stories.
 
-- [ ] T048 [P] Update discovery-server operator guidance in docs/ndi-feature.md and docs/006-settings-menu-release-notes.md
-- [ ] T049 [P] Add final manual validation narrative and gate outcomes in test-results/018-manage-discovery-servers-validation.md
-- [ ] T050 Run unit test suites for touched modules and capture outputs in test-results/018-manage-discovery-servers-validation.md using ./gradlew.bat :core:database:testDebugUnitTest :feature:ndi-browser:data:testDebugUnitTest :feature:ndi-browser:presentation:testDebugUnitTest :app:testDebugUnitTest
-- [ ] T051 Run feature Playwright coverage and capture artifacts in test-results/018-manage-discovery-servers-validation.md using npm --prefix testing/e2e run test -- tests/settings-discovery-submenu.spec.ts
-- [ ] T052 Run release hardening validation and record results in test-results/018-manage-discovery-servers-validation.md using ./gradlew.bat :app:verifyReleaseHardening :app:assembleRelease
-- [ ] T053 Perform and record Material 3 compliance verification for settings and discovery-server submenu updates in test-results/018-manage-discovery-servers-validation.md
-- [ ] T054 If any final gate is blocked, classify blocker vs code failure and record explicit unblock steps in test-results/018-manage-discovery-servers-validation.md
+- [x] T048 [P] Update discovery-server operator guidance in docs/ndi-feature.md and docs/006-settings-menu-release-notes.md
+- [x] T049 [P] Add final manual validation narrative and gate outcomes in test-results/018-manage-discovery-servers-validation.md
+- [x] T050 Run unit test suites for touched modules and capture outputs in test-results/018-manage-discovery-servers-validation.md using ./gradlew.bat :core:database:testDebugUnitTest :feature:ndi-browser:data:testDebugUnitTest :feature:ndi-browser:presentation:testDebugUnitTest :app:testDebugUnitTest
+- [x] T051 Run feature Playwright coverage and capture artifacts in test-results/018-manage-discovery-servers-validation.md using npm --prefix testing/e2e run test -- tests/settings-discovery-submenu.spec.ts
+- [x] T052 Run release hardening validation and record results in test-results/018-manage-discovery-servers-validation.md using ./gradlew.bat :app:verifyReleaseHardening :app:assembleRelease
+- [x] T053 Perform and record Material 3 compliance verification for settings and discovery-server submenu updates in test-results/018-manage-discovery-servers-validation.md
+- [x] T054 If any final gate is blocked, classify blocker vs code failure and record explicit unblock steps in test-results/018-manage-discovery-servers-validation.md
 
 ---
 

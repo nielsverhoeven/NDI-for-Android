@@ -67,4 +67,27 @@
     <string name="overlay_stream_source">Source: %1$s</string>
     <string name="overlay_no_active_stream">No active stream</string>
     <string name="overlay_log_entry_redacted">[redacted]</string>
+
+    <!-- Discovery Server Settings strings (spec 018) -->
+    <string name="discovery_servers_title">Discovery Servers</string>
+    <string name="discovery_servers_subtitle">Manage NDI discovery server endpoints</string>
+    <string name="discovery_servers_open_button">Discovery Servers</string>
+    <string name="discovery_host_hint">Hostname or IP address</string>
+    <string name="discovery_port_hint">Port (default 5959)</string>
+    <string name="discovery_add_server_button">Add Server</string>
+    <string name="discovery_save_edit_button">Save</string>
+    <string name="discovery_cancel_button">Cancel</string>
+    <string name="discovery_empty_state">No discovery servers configured. Add one above.</string>
+    <string name="discovery_server_enabled_label">Enabled</string>
+    <string name="discovery_edit_server_button_description">Edit server</string>
+    <string name="discovery_delete_server_button_description">Delete server</string>
+    <string name="discovery_drag_handle_description">Drag to reorder</string>
+    <string name="discovery_delete_confirm_title">Remove server?</string>
+    <string name="discovery_delete_confirm_message">This server will be permanently removed.</string>
+    <string name="discovery_delete_confirm_positive">Delete</string>
+    <string name="discovery_delete_confirm_negative">Cancel</string>
+    <string name="discovery_validation_host_required">Hostname or IP address is required.</string>
+    <string name="discovery_validation_invalid_port">Port must be a number between 1 and 65535.</string>
+    <string name="discovery_validation_duplicate">A server with this hostname and port already exists.</string>
+    <string name="discovery_no_enabled_servers_warning">No discovery servers are enabled. Enable at least one for discovery to work.</string>
 </resources>
