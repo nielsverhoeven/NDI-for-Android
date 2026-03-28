@@ -10,8 +10,10 @@ import androidx.room.PrimaryKey
 import androidx.room.Query
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.Update
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import kotlinx.coroutines.flow.Flow
 
 @Entity(tableName = "user_selection_state")
 data class UserSelectionEntity(
@@ -119,6 +121,52 @@ interface SettingsPreferenceDao {
     suspend fun upsert(entity: SettingsPreferenceEntity)
 }
 
+// ---- Spec 018: Discovery server persistence ----
+
+@Entity(tableName = "discovery_servers")
+data class DiscoveryServerEntity(
+    @PrimaryKey
+    val id: String,
+    val hostOrIp: String,
+    val port: Int,
+    val enabled: Boolean,
+    val orderIndex: Int,
+    val createdAtEpochMillis: Long,
+    val updatedAtEpochMillis: Long,
+)
+
+@Dao
+interface DiscoveryServerDao {
+    /** Observe all servers ordered by orderIndex. Emits on every change. */
+    @Query("SELECT * FROM discovery_servers ORDER BY orderIndex ASC")
+    fun observeAll(): Flow<List<DiscoveryServerEntity>>
+
+    /** Return all servers ordered by orderIndex (suspend, one-shot). */
+    @Query("SELECT * FROM discovery_servers ORDER BY orderIndex ASC")
+    suspend fun getAll(): List<DiscoveryServerEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(entity: DiscoveryServerEntity)
+
+    @Update
+    suspend fun update(entity: DiscoveryServerEntity)
+
+    @Query("DELETE FROM discovery_servers WHERE id = :id")
+    suspend fun deleteById(id: String)
+
+    @Query("SELECT * FROM discovery_servers WHERE id = :id LIMIT 1")
+    suspend fun getById(id: String): DiscoveryServerEntity?
+
+    /** Check for duplicate (hostOrIp + port) excluding a specific id (useful for update). */
+    @Query(
+        "SELECT COUNT(*) FROM discovery_servers WHERE hostOrIp = :hostOrIp AND port = :port AND id != :excludeId"
+    )
+    suspend fun countDuplicates(hostOrIp: String, port: Int, excludeId: String = ""): Int
+
+    @Query("SELECT MAX(orderIndex) FROM discovery_servers")
+    suspend fun getMaxOrderIndex(): Int?
+}
+
 @Database(
     entities = [
         UserSelectionEntity::class,
@@ -126,8 +174,9 @@ interface SettingsPreferenceDao {
         OutputConfigurationEntity::class,
         OutputSessionEntity::class,
         SettingsPreferenceEntity::class,
+        DiscoveryServerEntity::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = false,
 )
 abstract class NdiDatabase : RoomDatabase() {
@@ -141,6 +190,8 @@ abstract class NdiDatabase : RoomDatabase() {
     abstract fun outputSessionDao(): OutputSessionDao
 
     abstract fun settingsPreferenceDao(): SettingsPreferenceDao
+
+    abstract fun discoveryServerDao(): DiscoveryServerDao
 
     companion object {
         private fun hasColumn(database: SupportSQLiteDatabase, tableName: String, columnName: String): Boolean {
@@ -247,6 +298,25 @@ abstract class NdiDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS discovery_servers (
+                        id TEXT NOT NULL,
+                        hostOrIp TEXT NOT NULL,
+                        port INTEGER NOT NULL,
+                        enabled INTEGER NOT NULL DEFAULT 1,
+                        orderIndex INTEGER NOT NULL DEFAULT 0,
+                        createdAtEpochMillis INTEGER NOT NULL DEFAULT 0,
+                        updatedAtEpochMillis INTEGER NOT NULL DEFAULT 0,
+                        PRIMARY KEY(id)
+                    )
+                    """.trimIndent(),
+                )
+            }
+        }
+
         @Volatile
         private var instance: NdiDatabase? = null
 
@@ -257,7 +327,7 @@ abstract class NdiDatabase : RoomDatabase() {
                     NdiDatabase::class.java,
                     "ndi_database",
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
                     .build()
                     .also { instance = it }
             }

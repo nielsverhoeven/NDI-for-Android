@@ -10,8 +10,9 @@ This document describes the implemented NDI feature set in this repository, incl
 2. [Validation Baseline](#2-validation-baseline)
 3. [Settings Menu, Discovery Configuration, and Developer Mode Overlay](#3-settings-menu-discovery-configuration-and-developer-mode-overlay)
 4. [NDI SDK Integration Notes for Discovery Configuration](#4-ndi-sdk-integration-notes-for-discovery-configuration)
-5. [Copy-Paste Integration Patterns](#5-copy-paste-integration-patterns)
-6. [Related Documents](#6-related-documents)
+5. [Discovery Server Submenu Pattern](#5-discovery-server-submenu-pattern)
+6. [Copy-Paste Integration Patterns](#6-copy-paste-integration-patterns)
+7. [Related Documents](#7-related-documents)
 
 ## 1. Feature Areas
 
@@ -25,6 +26,9 @@ Implemented areas:
 - Settings destination reachable from Source List, Viewer, and Output screens.
 - Discovery endpoint persistence and validation (hostname, IPv4, or bracketed IPv6 with optional port).
 - Developer mode toggle plus shared diagnostics overlay rendering on Source, Viewer, and Output screens.
+- Discovery server management: add, edit, remove, enable/disable, and drag-to-reorder multiple discovery servers from a dedicated Settings submenu.
+- Discovery servers persist in Room `discovery_servers` (DB version 6) with deterministic list order for runtime failover.
+- Discovery server add/edit forms default blank port input to 5959 and prevent duplicate host+port entries.
 
 ## 2. Validation Baseline
 
@@ -142,6 +146,12 @@ Validation comes from `NdiDiscoveryEndpoint.parse` in `core/model/src/main/java/
 - Default port is `5960` when omitted
 - Input is trimmed before validation
 
+Discovery server submenu behavior (`DiscoveryServerRepository`) uses a separate default for the managed multi-server list:
+
+- Blank discovery server port input defaults to `5959`
+- Duplicate normalized `hostOrIp + port` entries are rejected
+- Enabled servers are selected in persisted order with sequential failover
+
 ### 4.2 Persistence and Apply Path
 
 Implemented:
@@ -162,7 +172,24 @@ Current implementation note:
 
 - Active stream interruption on endpoint change is not currently executed by `SettingsViewModel` or discovery repository wiring in this codebase snapshot.
 
-## 5. Copy-Paste Integration Patterns
+## 5. Discovery Server Submenu Pattern
+
+Primary files:
+
+- `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/DiscoveryServerSettingsFragment.kt`
+- `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/DiscoveryServerSettingsViewModel.kt`
+- `feature/ndi-browser/data/src/main/java/com/ndi/feature/ndibrowser/data/repository/DiscoveryServerRepositoryImpl.kt`
+- `core/database/src/main/java/com/ndi/core/database/NdiDatabase.kt`
+
+Operator behavior summary:
+
+- Discovery Servers submenu is reachable from Settings via deep link `ndi://settings/discovery-servers`.
+- Users can add, edit, delete, reorder, and toggle individual entries.
+- Runtime target resolution iterates enabled entries in persisted order.
+- If all enabled entries are unreachable, the runtime returns an explicit failure result.
+
+
+## 6. Copy-Paste Integration Patterns
 
 ### 5.1 Add a New Settings Screen Using Existing Pattern
 
@@ -208,11 +235,12 @@ DeveloperOverlayRenderer.render(
 )
 ```
 
-## 6. Related Documents
+## 7. Related Documents
 
 - Developer setup and command index: `docs/README.md`
 - Architecture and dependency/data-flow diagrams: `docs/architecture.md`
 - Testing strategy and commands: `docs/testing.md`
 - 006 release/operator notes: `docs/006-settings-menu-release-notes.md`
 - Feature spec: `specs/006-settings-menu/spec.md`
+- Discovery server management spec: `specs/018-manage-discovery-servers/spec.md`
 - Manual test quickstart: `specs/006-settings-menu/quickstart.md`

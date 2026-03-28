@@ -1,0 +1,21 @@
+﻿{
+    "capturedAt":  "2026-03-28T20:00:06.8609522Z",
+    "devices":  [
+                    {
+                        "serial":  "emulator-5554",
+                        "adbState":  "device",
+                        "bootCompleted":  true,
+                        "apiLevel":  34,
+                        "sampledAt":  "2026-03-28T20:00:10.1538175Z"
+                    },
+                    {
+                        "serial":  "emulator-5556",
+                        "adbState":  "device",
+                        "bootCompleted":  true,
+                        "apiLevel":  34,
+                        "sampledAt":  "2026-03-28T20:00:13.3887635Z"
+                    }
+                ],
+    "relayMetricsPath":  "testing/e2e/artifacts/runtime/relay-metrics.json",
+    "relayMetricsExists":  true
+}

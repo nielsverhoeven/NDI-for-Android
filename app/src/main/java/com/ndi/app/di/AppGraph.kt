@@ -33,9 +33,11 @@ import com.ndi.feature.themeeditor.ThemeEditorTelemetryEmitter
 import com.ndi.app.theme.AppThemeCoordinator
 import com.ndi.app.navigation.NdiNavigation
 import com.ndi.feature.ndibrowser.data.repository.DeveloperDiagnosticsRepositoryImpl
+import com.ndi.feature.ndibrowser.data.repository.DiscoveryServerRepositoryImpl
 import com.ndi.feature.ndibrowser.data.repository.NdiDiscoveryConfigRepositoryImpl
 import com.ndi.feature.ndibrowser.data.repository.NdiSettingsRepositoryImpl
 import com.ndi.feature.ndibrowser.domain.repository.DeveloperDiagnosticsRepository
+import com.ndi.feature.ndibrowser.domain.repository.DiscoveryServerRepository
 import com.ndi.feature.ndibrowser.domain.repository.NdiDiscoveryConfigRepository
 import com.ndi.feature.ndibrowser.domain.repository.NdiSettingsRepository
 import com.ndi.feature.ndibrowser.home.HomeDependencies
@@ -71,6 +73,11 @@ class AppGraph private constructor(context: Context) {
 
     val settingsRepository: NdiSettingsRepository = NdiSettingsRepositoryImpl(
         settingsDao = database.settingsPreferenceDao(),
+        discoveryServerDao = database.discoveryServerDao(),
+    )
+
+    val discoveryServerRepository: DiscoveryServerRepository = DiscoveryServerRepositoryImpl(
+        discoveryServerDao = database.discoveryServerDao(),
     )
 
     val themeEditorRepository: ThemeEditorRepository = ThemeEditorRepositoryImpl(
@@ -82,7 +89,7 @@ class AppGraph private constructor(context: Context) {
     )
 
     val discoveryConfigRepository: NdiDiscoveryConfigRepository = NdiDiscoveryConfigRepositoryImpl(
-        settingsRepository = settingsRepository,
+        discoveryServerRepository = discoveryServerRepository,
     )
 
     val discoveryRepository: NdiDiscoveryRepository = NdiDiscoveryRepositoryImpl(
@@ -204,6 +211,8 @@ class AppGraph private constructor(context: Context) {
         SettingsDependencies.settingsRepositoryProvider = { settingsRepository }
         SettingsDependencies.developerDiagnosticsRepositoryProvider = { developerDiagnosticsRepository }
         SettingsDependencies.overlayStateProvider = { overlayDisplayStateFlow }
+        // Spec 018: Discovery server dependencies
+        SettingsDependencies.discoveryServerRepositoryProvider = { discoveryServerRepository }
 
         ThemeEditorDependencies.themeEditorRepositoryProvider = { themeEditorRepository }
         ThemeEditorDependencies.telemetryEmitter = ThemeEditorTelemetryEmitter { event ->

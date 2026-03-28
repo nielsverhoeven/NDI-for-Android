@@ -10,6 +10,83 @@ data class NdiSettingsSnapshot(
 
 enum class NdiThemeMode { LIGHT, DARK, SYSTEM }
 
+// ---- Spec 018: Discovery server collection model types ----
+
+/**
+ * Default NDI discovery port for the new multi-server feature.
+ * NOTE: The legacy single-endpoint constant DEFAULT_NDI_DISCOVERY_PORT (5960) is preserved
+ * for backward compatibility in NdiDiscoveryEndpoint.
+ */
+const val DEFAULT_DISCOVERY_SERVER_PORT = 5959
+
+/**
+ * A single persisted discovery server entry managed by the discovery server settings submenu.
+ */
+data class DiscoveryServerEntry(
+    val id: String,
+    val hostOrIp: String,
+    val port: Int,
+    val enabled: Boolean,
+    val orderIndex: Int,
+    val createdAtEpochMillis: Long,
+    val updatedAtEpochMillis: Long,
+) {
+    /** Display label shown in the settings list. */
+    val displayLabel: String get() = "$hostOrIp:$port"
+}
+
+/**
+ * Complete ordered collection of discovery server entries.
+ */
+data class DiscoveryServerCollection(
+    val entries: List<DiscoveryServerEntry>,
+) {
+    val enabledEntries: List<DiscoveryServerEntry>
+        get() = entries.filter { it.enabled }.sortedBy { it.orderIndex }
+}
+
+/** Modes for the add/edit form. */
+enum class DiscoveryServerDraftMode { ADD, EDIT }
+
+/**
+ * In-progress add/edit form state for the discovery server settings UI.
+ */
+data class DiscoveryServerDraft(
+    val hostInput: String = "",
+    val portInput: String = "",
+    val validationError: String? = null,
+    val mode: DiscoveryServerDraftMode = DiscoveryServerDraftMode.ADD,
+    val editingEntryId: String? = null,
+) {
+    /** Effective port: parsed from portInput or defaulted to 5959 when blank. */
+    val resolvedPort: Int
+        get() = if (portInput.isBlank()) {
+            DEFAULT_DISCOVERY_SERVER_PORT
+        } else {
+            portInput.trim().toIntOrNull() ?: DEFAULT_DISCOVERY_SERVER_PORT
+        }
+
+    val isSaveEnabled: Boolean
+        get() = hostInput.isNotBlank() && validationError == null
+}
+
+/** Selection outcome when querying for an active discovery target at runtime. */
+enum class DiscoverySelectionOutcome {
+    SUCCESS,
+    ALL_ENABLED_UNREACHABLE,
+    NO_ENABLED_SERVERS,
+}
+
+/**
+ * Result object returned by DiscoveryServerRepository.resolveActiveDiscoveryTarget().
+ */
+data class DiscoverySelectionResult(
+    val attemptedEntryIds: List<String>,
+    val selectedEntryId: String?,
+    val result: DiscoverySelectionOutcome,
+    val errorMessage: String?,
+)
+
 data class NdiDiscoveryEndpoint(
     val host: String,
     val port: Int?,

@@ -1,6 +1,5 @@
 package com.ndi.feature.ndibrowser.settings
 
-import androidx.lifecycle.viewModelScope
 import com.ndi.core.model.NdiSettingsSnapshot
 import com.ndi.feature.ndibrowser.domain.repository.NdiSettingsRepository
 import kotlinx.coroutines.Dispatchers
@@ -17,7 +16,6 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -42,60 +40,10 @@ class SettingsViewModelTest {
     }
 
     @Test
-    fun onDiscoveryServerChanged_emptyInput_isValid() = runTest(scheduler) {
-        val viewModel = SettingsViewModel(FakeSettingsRepository())
-
-        viewModel.onDiscoveryServerChanged("")
-        advanceUntilIdle()
-
-        assertNull(viewModel.uiState.value.validationError)
-    }
-
-    @Test
-    fun onDiscoveryServerChanged_validHost_isValid() = runTest(scheduler) {
-        val viewModel = SettingsViewModel(FakeSettingsRepository())
-
-        viewModel.onDiscoveryServerChanged("valid-host")
-        advanceUntilIdle()
-
-        assertNull(viewModel.uiState.value.validationError)
-    }
-
-    @Test
-    fun onDiscoveryServerChanged_unbracketedIpv6_setsValidationError() = runTest(scheduler) {
-        val viewModel = SettingsViewModel(FakeSettingsRepository())
-
-        viewModel.onDiscoveryServerChanged("::1")
-        advanceUntilIdle()
-
-        assertTrue(viewModel.uiState.value.validationError != null)
-    }
-
-    @Test
-    fun onDiscoveryServerChanged_portOutOfRange_setsValidationError() = runTest(scheduler) {
-        val viewModel = SettingsViewModel(FakeSettingsRepository())
-
-        viewModel.onDiscoveryServerChanged("host:99999")
-        advanceUntilIdle()
-
-        assertTrue(viewModel.uiState.value.validationError != null)
-    }
-
-    @Test
-    fun onDiscoveryServerChanged_bracketedIpv6WithPort_isValid() = runTest(scheduler) {
-        val viewModel = SettingsViewModel(FakeSettingsRepository())
-
-        viewModel.onDiscoveryServerChanged("[::1]:5960")
-        advanceUntilIdle()
-
-        assertNull(viewModel.uiState.value.validationError)
-    }
-
-    @Test
-    fun onSaveSettings_validState_callsRepositorySave() = runTest(scheduler) {
+    fun onSaveSettings_persistsDeveloperMode_withoutChangingDiscoveryInput() = runTest(scheduler) {
         val repository = FakeSettingsRepository(
             NdiSettingsSnapshot(
-                discoveryServerInput = null,
+                discoveryServerInput = "legacy-host:5960",
                 developerModeEnabled = false,
                 themeMode = com.ndi.core.model.NdiThemeMode.DARK,
                 accentColorId = "accent_red",
@@ -104,29 +52,27 @@ class SettingsViewModelTest {
         )
         val viewModel = SettingsViewModel(repository)
 
-        viewModel.onDiscoveryServerChanged("ndi-server.local")
         viewModel.onDeveloperModeToggled(true)
         viewModel.onSaveSettings()
         advanceUntilIdle()
 
         assertEquals(1, repository.savedSnapshots.size)
-        assertEquals("ndi-server.local", repository.savedSnapshots.first().discoveryServerInput)
+        assertEquals("legacy-host:5960", repository.savedSnapshots.first().discoveryServerInput)
         assertTrue(repository.savedSnapshots.first().developerModeEnabled)
         assertEquals(com.ndi.core.model.NdiThemeMode.DARK, repository.savedSnapshots.first().themeMode)
         assertEquals("accent_red", repository.savedSnapshots.first().accentColorId)
     }
 
     @Test
-    fun onSaveSettings_invalidState_doesNotSaveAndKeepsValidationError() = runTest(scheduler) {
+    fun onSaveSettings_withoutInputValidation_alwaysSaves() = runTest(scheduler) {
         val repository = FakeSettingsRepository()
         val viewModel = SettingsViewModel(repository)
 
-        viewModel.onDiscoveryServerChanged("host:99999")
+        viewModel.onDeveloperModeToggled(false)
         viewModel.onSaveSettings()
         advanceUntilIdle()
 
-        assertTrue(viewModel.uiState.value.validationError != null)
-        assertTrue(repository.savedSnapshots.isEmpty())
+        assertEquals(1, repository.savedSnapshots.size)
     }
 
     @Test

@@ -1,0 +1,162 @@
+package com.ndi.feature.ndibrowser.data.repository
+
+import com.ndi.core.database.DiscoveryServerDao
+import com.ndi.core.database.DiscoveryServerEntity
+import com.ndi.core.model.DEFAULT_DISCOVERY_SERVER_PORT
+import com.ndi.core.model.DiscoverySelectionOutcome
+import com.ndi.core.model.DiscoverySelectionResult
+import com.ndi.core.model.DiscoveryServerEntry
+import com.ndi.feature.ndibrowser.domain.repository.DiscoveryServerRepository
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
+import java.util.UUID
+
+class DiscoveryServerRepositoryImpl(
+    private val discoveryServerDao: DiscoveryServerDao,
+) : DiscoveryServerRepository {
+
+    override fun observeServers(): Flow<List<DiscoveryServerEntry>> =
+        discoveryServerDao.observeAll().map { entities ->
+            entities.map { it.toEntry() }
+        }
+
+    override suspend fun addServer(hostOrIp: String, portInput: String): DiscoveryServerEntry {
+        val normalized = hostOrIp.trim()
+        validateHost(normalized)
+        val port = resolvePort(portInput)
+        validatePort(port)
+
+        val duplicateCount = discoveryServerDao.countDuplicates(normalized, port, excludeId = "")
+        if (duplicateCount > 0) {
+            throw IllegalArgumentException("A server with host '$normalized' and port $port already exists.")
+        }
+
+        val nextIndex = (discoveryServerDao.getMaxOrderIndex() ?: -1) + 1
+        val now = System.currentTimeMillis()
+        val entity = DiscoveryServerEntity(
+            id = UUID.randomUUID().toString(),
+            hostOrIp = normalized,
+            port = port,
+            enabled = true,
+            orderIndex = nextIndex,
+            createdAtEpochMillis = now,
+            updatedAtEpochMillis = now,
+        )
+        discoveryServerDao.insert(entity)
+        return entity.toEntry()
+    }
+
+    override suspend fun updateServer(
+        id: String,
+        hostOrIp: String,
+        portInput: String,
+    ): DiscoveryServerEntry {
+        val existing = discoveryServerDao.getById(id)
+            ?: throw NoSuchElementException("No discovery server with id '$id'.")
+
+        val normalized = hostOrIp.trim()
+        validateHost(normalized)
+        val port = resolvePort(portInput)
+        validatePort(port)
+
+        // Check for duplicates excluding this entry itself
+        val duplicateCount = discoveryServerDao.countDuplicates(normalized, port, excludeId = id)
+        if (duplicateCount > 0) {
+            throw IllegalArgumentException("A server with host '$normalized' and port $port already exists.")
+        }
+
+        val updated = existing.copy(
+            hostOrIp = normalized,
+            port = port,
+            updatedAtEpochMillis = System.currentTimeMillis(),
+        )
+        discoveryServerDao.update(updated)
+        return updated.toEntry()
+    }
+
+    override suspend fun removeServer(id: String) {
+        discoveryServerDao.deleteById(id)
+    }
+
+    override suspend fun setServerEnabled(id: String, enabled: Boolean): DiscoveryServerEntry {
+        val existing = discoveryServerDao.getById(id)
+            ?: throw NoSuchElementException("No discovery server with id '$id'.")
+        val updated = existing.copy(
+            enabled = enabled,
+            updatedAtEpochMillis = System.currentTimeMillis(),
+        )
+        discoveryServerDao.update(updated)
+        return updated.toEntry()
+    }
+
+    override suspend fun reorderServers(idsInOrder: List<String>): List<DiscoveryServerEntry> {
+        val all = discoveryServerDao.getAll().associateBy { it.id }
+        val now = System.currentTimeMillis()
+        idsInOrder.forEachIndexed { index, id ->
+            val entity = all[id] ?: return@forEachIndexed
+            if (entity.orderIndex != index) {
+                discoveryServerDao.update(entity.copy(orderIndex = index, updatedAtEpochMillis = now))
+            }
+        }
+        return discoveryServerDao.getAll().map { it.toEntry() }
+    }
+
+    override suspend fun resolveActiveDiscoveryTarget(): DiscoverySelectionResult {
+        val allEntries = discoveryServerDao.getAll().map { it.toEntry() }
+        val enabled = allEntries.filter { it.enabled }.sortedBy { it.orderIndex }
+
+        if (enabled.isEmpty()) {
+            return DiscoverySelectionResult(
+                attemptedEntryIds = emptyList(),
+                selectedEntryId = null,
+                result = DiscoverySelectionOutcome.NO_ENABLED_SERVERS,
+                errorMessage = "No discovery servers are enabled. Enable at least one server in Settings.",
+            )
+        }
+
+        // In production this would do actual reachability checks;
+        // this baseline always selects the first enabled entry.
+        val first = enabled.first()
+        return DiscoverySelectionResult(
+            attemptedEntryIds = listOf(first.id),
+            selectedEntryId = first.id,
+            result = DiscoverySelectionOutcome.SUCCESS,
+            errorMessage = null,
+        )
+    }
+
+    // ---- Validation helpers ----
+
+    private fun validateHost(host: String) {
+        if (host.isBlank()) {
+            throw IllegalArgumentException("Hostname or IP address is required.")
+        }
+        if (host.length > 253) {
+            throw IllegalArgumentException("Hostname is too long (max 253 characters).")
+        }
+    }
+
+    private fun resolvePort(portInput: String): Int {
+        if (portInput.isBlank()) return DEFAULT_DISCOVERY_SERVER_PORT
+        return portInput.trim().toIntOrNull()
+            ?: throw IllegalArgumentException("Port must be a valid number.")
+    }
+
+    private fun validatePort(port: Int) {
+        if (port !in 1..65535) {
+            throw IllegalArgumentException("Port must be between 1 and 65535.")
+        }
+    }
+}
+
+// ---- Mapping extension ----
+
+private fun DiscoveryServerEntity.toEntry() = DiscoveryServerEntry(
+    id = id,
+    hostOrIp = hostOrIp,
+    port = port,
+    enabled = enabled,
+    orderIndex = orderIndex,
+    createdAtEpochMillis = createdAtEpochMillis,
+    updatedAtEpochMillis = updatedAtEpochMillis,
+)

@@ -2,8 +2,8 @@ package com.ndi.feature.ndibrowser.data.repository
 
 import com.ndi.core.model.NdiDiscoveryApplyResult
 import com.ndi.core.model.NdiDiscoveryEndpoint
+import com.ndi.feature.ndibrowser.domain.repository.DiscoveryServerRepository
 import com.ndi.feature.ndibrowser.domain.repository.NdiDiscoveryConfigRepository
-import com.ndi.feature.ndibrowser.domain.repository.NdiSettingsRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -14,7 +14,7 @@ import kotlinx.coroutines.launch
 import java.util.UUID
 
 class NdiDiscoveryConfigRepositoryImpl(
-    private val settingsRepository: NdiSettingsRepository,
+    private val discoveryServerRepository: DiscoveryServerRepository,
 ) : NdiDiscoveryConfigRepository {
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
@@ -22,8 +22,21 @@ class NdiDiscoveryConfigRepositoryImpl(
 
     init {
         scope.launch {
-            settingsRepository.observeSettings().collect { snapshot ->
-                _currentEndpoint.value = NdiDiscoveryEndpoint.parse(snapshot.discoveryServerInput)
+            discoveryServerRepository.observeServers().collect { servers ->
+                val endpoint = servers
+                    .asSequence()
+                    .filter { it.enabled }
+                    .sortedBy { it.orderIndex }
+                    .firstOrNull()
+                    ?.let {
+                        NdiDiscoveryEndpoint(
+                            host = it.hostOrIp,
+                            port = it.port,
+                            resolvedPort = it.port,
+                            usesDefaultPort = false,
+                        )
+                    }
+                _currentEndpoint.value = endpoint
             }
         }
     }
@@ -33,25 +46,14 @@ class NdiDiscoveryConfigRepositoryImpl(
     override suspend fun getCurrentEndpoint(): NdiDiscoveryEndpoint? = _currentEndpoint.value
 
     override suspend fun applyDiscoveryEndpoint(endpoint: NdiDiscoveryEndpoint?): NdiDiscoveryApplyResult {
-        val currentSettings = settingsRepository.getSettings()
-        settingsRepository.saveSettings(
-            currentSettings.copy(
-                discoveryServerInput = endpoint?.let(::toRawInput),
-                updatedAtEpochMillis = System.currentTimeMillis(),
-            ),
-        )
-        _currentEndpoint.value = endpoint
+        // Discovery endpoint can only be changed via Discovery Servers submenu mutations.
+        // Ignore direct apply requests to keep discovery source-of-truth in repository entries.
         return NdiDiscoveryApplyResult(
             applyId = UUID.randomUUID().toString(),
-            endpoint = endpoint,
+            endpoint = _currentEndpoint.value,
             interruptedActiveStream = false,
             fallbackTriggered = false,
             appliedAtEpochMillis = System.currentTimeMillis(),
         )
-    }
-
-    private fun toRawInput(endpoint: NdiDiscoveryEndpoint): String {
-        val host = if (endpoint.host.contains(':')) "[${endpoint.host}]" else endpoint.host
-        return endpoint.port?.let { "$host:$it" } ?: host
     }
 }

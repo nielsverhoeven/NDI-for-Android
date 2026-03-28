@@ -3,7 +3,6 @@ package com.ndi.feature.ndibrowser.settings
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import com.ndi.core.model.NdiDiscoveryEndpoint
 import com.ndi.core.model.NdiSettingsSnapshot
 import com.ndi.feature.ndibrowser.domain.repository.NdiSettingsRepository
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -30,18 +29,9 @@ class SettingsViewModel(
             // Load initial settings once, but don't overwrite local state changes like validation errors
             val initialSettings = settingsRepository.getSettings()
             _uiState.value = _uiState.value.copy(
-                discoveryServerInput = initialSettings.discoveryServerInput.orEmpty(),
                 developerModeEnabled = initialSettings.developerModeEnabled,
             )
         }
-    }
-
-    fun onDiscoveryServerChanged(input: String) {
-        val validationError = validateDiscoveryInput(input)
-        _uiState.value = _uiState.value.copy(
-            discoveryServerInput = input,
-            validationError = validationError,
-        )
     }
 
     fun onDeveloperModeToggled(enabled: Boolean) {
@@ -51,26 +41,17 @@ class SettingsViewModel(
 
     fun onSaveSettings() {
         val state = _uiState.value
-        val validationError = validateDiscoveryInput(state.discoveryServerInput)
-        if (validationError != null) {
-            _uiState.value = _uiState.value.copy(validationError = validationError)
-            return
-        }
 
         viewModelScope.launch {
             val currentSettings = settingsRepository.getSettings()
             settingsRepository.saveSettings(
                 NdiSettingsSnapshot(
-                    discoveryServerInput = state.discoveryServerInput.takeIf { it.isNotBlank() },
+                    // Discovery endpoint is now controlled exclusively by Discovery Servers submenu.
+                    discoveryServerInput = currentSettings.discoveryServerInput,
                     developerModeEnabled = state.developerModeEnabled,
                     themeMode = currentSettings.themeMode,
                     accentColorId = currentSettings.accentColorId,
                     updatedAtEpochMillis = System.currentTimeMillis(),
-                ),
-            )
-            SettingsDependencies.telemetryEmitter.emit(
-                SettingsTelemetry.discoveryServerSaved(
-                    hasEndpoint = state.discoveryServerInput.isNotBlank(),
                 ),
             )
         }
@@ -84,11 +65,6 @@ class SettingsViewModel(
 
     fun onCloseSettingsSettled() {
         closeSettingsInFlight = false
-    }
-
-    private fun validateDiscoveryInput(input: String): String? {
-        if (input.isBlank()) return null
-        return if (NdiDiscoveryEndpoint.parse(input) == null) "Invalid format" else null
     }
 
     class Factory(

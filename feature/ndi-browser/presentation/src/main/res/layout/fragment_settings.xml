@@ -43,30 +43,6 @@
             android:paddingEnd="16dp"
             android:paddingBottom="16dp">
 
-            <com.google.android.material.textfield.TextInputLayout
-                android:id="@+id/discoveryServerInput"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:hint="@string/settings_discovery_server_hint">
-
-                <com.google.android.material.textfield.TextInputEditText
-                    android:id="@+id/discoveryServerEditText"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:inputType="text"
-                    android:maxLines="1"
-                    android:singleLine="true" />
-
-            </com.google.android.material.textfield.TextInputLayout>
-
-            <TextView
-                android:id="@+id/validationMessage"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="4dp"
-                android:textAppearance="@style/TextAppearance.Material3.BodySmall"
-                android:visibility="gone" />
-
             <com.google.android.material.materialswitch.MaterialSwitch
                 android:id="@+id/developerModeSwitch"
                 android:layout_width="match_parent"
@@ -88,6 +64,14 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="12dp"
                 android:text="@string/settings_open_theme_editor" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/openDiscoveryServersButton"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:text="@string/discovery_servers_open_button" />
 
             <TextView
                 android:id="@+id/fallbackWarningMessage"
