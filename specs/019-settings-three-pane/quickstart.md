@@ -100,3 +100,15 @@ For blocked gates, record:
 - failing command
 - environment blocker classification
 - exact unblock/retry command
+
+## 10. Command-to-Evidence Trace
+
+| Task | Command | Evidence File |
+|---|---|---|
+| T001 | `./scripts/verify-android-prereqs.ps1` | `test-results/019-settings-three-pane-preflight.md` |
+| T002 | `./scripts/verify-e2e-dual-emulator-prereqs.ps1 -AllowMissingNdiSdk` | `test-results/019-settings-three-pane-preflight.md` |
+| T003 | `./gradlew.bat :app:assembleDebug` | `test-results/019-settings-three-pane-preflight.md` |
+| T019/T031/T042 | `npm --prefix testing/e2e run test:pr:primary` | `test-results/019-settings-three-pane-validation.md` |
+| T052 | `npm --prefix testing/e2e run test -- tests/settings-three-column-layout.spec.ts` | `test-results/019-settings-three-pane-validation.md` |
+| T051 | `./gradlew.bat :feature:ndi-browser:presentation:testDebugUnitTest :feature:ndi-browser:data:testDebugUnitTest :app:testDebugUnitTest` | `test-results/019-settings-three-pane-validation.md` |
+| T053 | `./gradlew.bat :app:verifyReleaseHardening :app:assembleRelease` | `test-results/019-settings-three-pane-validation.md` |

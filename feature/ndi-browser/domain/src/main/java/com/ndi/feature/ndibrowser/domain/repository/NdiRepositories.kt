@@ -14,6 +14,9 @@ import com.ndi.core.model.OutputHealthSnapshot
 import com.ndi.core.model.OutputSession
 import com.ndi.core.model.ViewerVideoFrame
 import com.ndi.core.model.ViewerSession
+import com.ndi.core.model.SettingsDetailState
+import com.ndi.core.model.SettingsLayoutContext
+import com.ndi.core.model.SettingsLayoutMode
 import com.ndi.core.model.navigation.HomeDashboardSnapshot
 import com.ndi.core.model.navigation.NavigationTransitionRecord
 import com.ndi.core.model.navigation.NavigationTrigger
@@ -169,6 +172,17 @@ interface NdiDiscoveryConfigRepository {
 interface DeveloperDiagnosticsRepository {
     fun observeOverlayState(): Flow<NdiDeveloperOverlayState>
     fun observeRecentLogs(): Flow<List<NdiRedactedLogEntry>>
+}
+
+interface SettingsLayoutModeResolver {
+    fun resolve(widthDp: Int, isLandscape: Boolean): SettingsLayoutMode
+}
+
+interface SettingsWorkspaceStateRepository {
+    suspend fun saveLastSelectedCategoryId(categoryId: String)
+    suspend fun getLastSelectedCategoryId(): String?
+    fun buildDetailState(categoryId: String?): SettingsDetailState
+    fun buildLayoutContext(widthDp: Int, isLandscape: Boolean): SettingsLayoutContext
 }
 
 // ---- Spec 018: Discovery Server Management ----

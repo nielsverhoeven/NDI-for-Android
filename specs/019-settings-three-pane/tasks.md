@@ -11,10 +11,10 @@
 
 **Purpose**: Verify runtime and tool prerequisites before implementation and visual validation.
 
-- [ ] T001 Run prerequisite gate and capture output in test-results/019-settings-three-pane-preflight.md using scripts/verify-android-prereqs.ps1
-- [ ] T002 Run dual-emulator preflight and capture output in test-results/019-settings-three-pane-preflight.md using scripts/verify-e2e-dual-emulator-prereqs.ps1 -AllowMissingNdiSdk
-- [ ] T003 Verify debug build artifact creation and append output in test-results/019-settings-three-pane-preflight.md using ./gradlew.bat :app:assembleDebug
-- [ ] T004 Record any environment blocker and explicit unblock command in test-results/019-settings-three-pane-preflight.md
+- [X] T001 Run prerequisite gate and capture output in test-results/019-settings-three-pane-preflight.md using scripts/verify-android-prereqs.ps1
+- [X] T002 Run dual-emulator preflight and capture output in test-results/019-settings-three-pane-preflight.md using scripts/verify-e2e-dual-emulator-prereqs.ps1 -AllowMissingNdiSdk
+- [X] T003 Verify debug build artifact creation and append output in test-results/019-settings-three-pane-preflight.md using ./gradlew.bat :app:assembleDebug
+- [X] T004 Record any environment blocker and explicit unblock command in test-results/019-settings-three-pane-preflight.md
 
 **Checkpoint**: Preflight is PASS or explicitly BLOCKED-ENV with reproducible unblocking steps.
 
@@ -24,10 +24,10 @@
 
 **Purpose**: Prepare feature-specific validation scaffolding and traceability artifacts.
 
-- [ ] T005 Create feature validation report stub in test-results/019-settings-three-pane-validation.md
-- [ ] T006 Create feature Playwright test shell in testing/e2e/tests/settings-three-column-layout.spec.ts
-- [ ] T007 [P] Create feature Playwright helper scaffold in testing/e2e/tests/support/settings-three-column-helpers.ts
-- [ ] T008 [P] Add command or evidence trace table to specs/019-settings-three-pane/quickstart.md
+- [X] T005 Create feature validation report stub in test-results/019-settings-three-pane-validation.md
+- [X] T006 Create feature Playwright test shell in testing/e2e/tests/settings-three-column-layout.spec.ts
+- [X] T007 [P] Create feature Playwright helper scaffold in testing/e2e/tests/support/settings-three-column-helpers.ts
+- [X] T008 [P] Add command or evidence trace table to specs/019-settings-three-pane/quickstart.md
 
 ---
 
@@ -37,12 +37,12 @@
 
 **CRITICAL**: No user story implementation starts until this phase is complete.
 
-- [ ] T009 Extend settings layout state contract and interfaces in feature/ndi-browser/domain/src/main/java/com/ndi/feature/ndibrowser/domain/repository/NdiRepositories.kt
-- [ ] T010 [P] Add three-pane layout state models in core/model/src/main/java/com/ndi/core/model/NdiSettingsModels.kt
-- [ ] T011 [P] Add dependency provider wiring for three-pane settings components in app/src/main/java/com/ndi/app/di/AppGraph.kt and feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/SettingsDependencies.kt
-- [ ] T012 [P] Add or update wide-layout detection utility surface in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/SettingsLayoutResolver.kt
-- [ ] T013 Add settings navigation wiring for persistent main-navigation interactions in app/src/main/java/com/ndi/app/navigation/NdiNavigation.kt and app/src/main/res/navigation/main_nav_graph.xml
-- [ ] T014 Create baseline settings instrumentation harness for wide and compact mode assertions in feature/ndi-browser/presentation/src/androidTest/java/com/ndi/feature/ndibrowser/settings/SettingsLayoutModeTest.kt
+- [X] T009 Extend settings layout state contract and interfaces in feature/ndi-browser/domain/src/main/java/com/ndi/feature/ndibrowser/domain/repository/NdiRepositories.kt
+- [X] T010 [P] Add three-pane layout state models in core/model/src/main/java/com/ndi/core/model/NdiSettingsModels.kt
+- [X] T011 [P] Add dependency provider wiring for three-pane settings components in app/src/main/java/com/ndi/app/di/AppGraph.kt and feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/SettingsDependencies.kt
+- [X] T012 [P] Add or update wide-layout detection utility surface in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/SettingsLayoutResolver.kt
+- [X] T013 Add settings navigation wiring for persistent main-navigation interactions in app/src/main/java/com/ndi/app/navigation/NdiNavigation.kt and app/src/main/res/navigation/main_nav_graph.xml
+- [X] T014 Create baseline settings instrumentation harness for wide and compact mode assertions in feature/ndi-browser/presentation/src/androidTest/java/com/ndi/feature/ndibrowser/settings/SettingsLayoutModeTest.kt
 
 **Checkpoint**: Foundation complete and user stories may begin.
 
@@ -56,22 +56,22 @@
 
 ### Tests for User Story 1 (REQUIRED)
 
-- [ ] T015 [P] [US1] Add failing ViewModel tests for three-column mode state emission in feature/ndi-browser/presentation/src/test/java/com/ndi/feature/ndibrowser/settings/SettingsViewModelThreeColumnTest.kt
-- [ ] T016 [P] [US1] Add failing ViewModel tests for category selection updating details only in feature/ndi-browser/presentation/src/test/java/com/ndi/feature/ndibrowser/settings/SettingsCategorySelectionTest.kt
-- [ ] T017 [P] [US1] Add failing instrumentation test for three-column rendering in feature/ndi-browser/presentation/src/androidTest/java/com/ndi/feature/ndibrowser/settings/SettingsThreePaneUiTest.kt
-- [ ] T018 [P] [US1] Add failing Playwright e2e for wide-layout three-column rendering and category switching in testing/e2e/tests/settings-three-column-layout.spec.ts
-- [ ] T019 [US1] Run existing Playwright regression suite and append output in test-results/019-settings-three-pane-validation.md using npm --prefix testing/e2e run test:pr:primary
-- [ ] T020 [US1] If blocked, capture blocker classification and unblock command in test-results/019-settings-three-pane-validation.md
+- [X] T015 [P] [US1] Add failing ViewModel tests for three-column mode state emission in feature/ndi-browser/presentation/src/test/java/com/ndi/feature/ndibrowser/settings/SettingsViewModelThreeColumnTest.kt
+- [X] T016 [P] [US1] Add failing ViewModel tests for category selection updating details only in feature/ndi-browser/presentation/src/test/java/com/ndi/feature/ndibrowser/settings/SettingsCategorySelectionTest.kt
+- [X] T017 [P] [US1] Add failing instrumentation test for three-column rendering in feature/ndi-browser/presentation/src/androidTest/java/com/ndi/feature/ndibrowser/settings/SettingsThreePaneUiTest.kt
+- [X] T018 [P] [US1] Add failing Playwright e2e for wide-layout three-column rendering and category switching in testing/e2e/tests/settings-three-column-layout.spec.ts
+- [X] T019 [US1] Run existing Playwright regression suite and append output in test-results/019-settings-three-pane-validation.md using npm --prefix testing/e2e run test:pr:primary
+- [X] T020 [US1] If blocked, capture blocker classification and unblock command in test-results/019-settings-three-pane-validation.md
 
 ### Implementation for User Story 1
 
-- [ ] T021 [P] [US1] Add three-pane settings strings and empty-state messages in feature/ndi-browser/presentation/src/main/res/values/strings.xml
-- [ ] T022 [P] [US1] Create three-column settings layout resources in feature/ndi-browser/presentation/src/main/res/layout/fragment_settings_three_pane.xml and feature/ndi-browser/presentation/src/main/res/layout/item_settings_category.xml
-- [ ] T023 [US1] Bind and render three-pane UI state from ViewModel in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/SettingsFragment.kt
-- [ ] T024 [US1] Implement three-pane layout decision logic and selected-category state in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/SettingsViewModel.kt
-- [ ] T060 [US1] Render column-1 main navigation entries (Home, Stream, View, Settings) with selected-state projection in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/SettingsFragment.kt and feature/ndi-browser/presentation/src/main/res/layout/view_settings_main_navigation_panel.xml
-- [ ] T025 [US1] Implement in-place detail-panel update path and selected-category highlight state in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/SettingsCategoryAdapter.kt
-- [ ] T026 [US1] Render explicit empty-state message when selected category has no adjustable options in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/SettingsDetailRenderer.kt
+- [X] T021 [P] [US1] Add three-pane settings strings and empty-state messages in feature/ndi-browser/presentation/src/main/res/values/strings.xml
+- [X] T022 [P] [US1] Create three-column settings layout resources in feature/ndi-browser/presentation/src/main/res/layout/fragment_settings_three_pane.xml and feature/ndi-browser/presentation/src/main/res/layout/item_settings_category.xml
+- [X] T023 [US1] Bind and render three-pane UI state from ViewModel in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/SettingsFragment.kt
+- [X] T024 [US1] Implement three-pane layout decision logic and selected-category state in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/SettingsViewModel.kt
+- [X] T060 [US1] Render column-1 main navigation entries (Home, Stream, View, Settings) with selected-state projection in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/SettingsFragment.kt and feature/ndi-browser/presentation/src/main/res/layout/view_settings_main_navigation_panel.xml
+- [X] T025 [US1] Implement in-place detail-panel update path and selected-category highlight state in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/SettingsCategoryAdapter.kt
+- [X] T026 [US1] Render explicit empty-state message when selected category has no adjustable options in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/SettingsDetailRenderer.kt
 
 **Checkpoint**: User Story 1 is independently functional and demo-ready.
 
@@ -85,20 +85,20 @@
 
 ### Tests for User Story 2 (REQUIRED)
 
-- [ ] T027 [P] [US2] Add failing ViewModel tests for main-navigation action dispatch and active-state sync in feature/ndi-browser/presentation/src/test/java/com/ndi/feature/ndibrowser/settings/SettingsMainNavigationStateTest.kt
-- [ ] T028 [P] [US2] Add failing navigation integration test for column-1 destination routing in app/src/androidTest/java/com/ndi/app/navigation/SettingsMainNavigationRoutingTest.kt
-- [ ] T029 [P] [US2] Add failing instrumentation test for return-to-settings three-pane restoration in feature/ndi-browser/presentation/src/androidTest/java/com/ndi/feature/ndibrowser/settings/SettingsReturnFlowTest.kt
-- [ ] T030 [P] [US2] Add failing Playwright e2e for column-1 navigation routing and settings return behavior in testing/e2e/tests/settings-three-column-layout.spec.ts
-- [ ] T031 [US2] Run existing Playwright regression suite and append output in test-results/019-settings-three-pane-validation.md using npm --prefix testing/e2e run test:pr:primary
-- [ ] T032 [US2] If blocked, capture blocker classification and unblock command in test-results/019-settings-three-pane-validation.md
+- [X] T027 [P] [US2] Add failing ViewModel tests for main-navigation action dispatch and active-state sync in feature/ndi-browser/presentation/src/test/java/com/ndi/feature/ndibrowser/settings/SettingsMainNavigationStateTest.kt
+- [X] T028 [P] [US2] Add failing navigation integration test for column-1 destination routing in app/src/androidTest/java/com/ndi/app/navigation/SettingsMainNavigationRoutingTest.kt
+- [X] T029 [P] [US2] Add failing instrumentation test for return-to-settings three-pane restoration in feature/ndi-browser/presentation/src/androidTest/java/com/ndi/feature/ndibrowser/settings/SettingsReturnFlowTest.kt
+- [X] T030 [P] [US2] Add failing Playwright e2e for column-1 navigation routing and settings return behavior in testing/e2e/tests/settings-three-column-layout.spec.ts
+- [X] T031 [US2] Run existing Playwright regression suite and append output in test-results/019-settings-three-pane-validation.md using npm --prefix testing/e2e run test:pr:primary
+- [X] T032 [US2] If blocked, capture blocker classification and unblock command in test-results/019-settings-three-pane-validation.md
 
 ### Implementation for User Story 2
 
-- [ ] T033 [P] [US2] Extend main-navigation panel UI resources for routed destination affordances in feature/ndi-browser/presentation/src/main/res/layout/view_settings_main_navigation_panel.xml
-- [ ] T034 [US2] Implement main-navigation click intent dispatch only in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/SettingsFragment.kt
-- [ ] T035 [US2] Implement ViewModel-driven main-navigation routing actions and return-to-settings restoration in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/SettingsViewModel.kt
-- [ ] T036 [US2] Wire navigation helper methods for three-pane main-navigation actions in app/src/main/java/com/ndi/app/navigation/NdiNavigation.kt
-- [ ] T037 [US2] Verify navigation graph compatibility for settings re-entry in app/src/main/res/navigation/main_nav_graph.xml
+- [X] T033 [P] [US2] Extend main-navigation panel UI resources for routed destination affordances in feature/ndi-browser/presentation/src/main/res/layout/view_settings_main_navigation_panel.xml
+- [X] T034 [US2] Implement main-navigation click intent dispatch only in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/SettingsFragment.kt
+- [X] T035 [US2] Implement ViewModel-driven main-navigation routing actions and return-to-settings restoration in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/SettingsViewModel.kt
+- [X] T036 [US2] Wire navigation helper methods for three-pane main-navigation actions in app/src/main/java/com/ndi/app/navigation/NdiNavigation.kt
+- [X] T037 [US2] Verify navigation graph compatibility for settings re-entry in app/src/main/res/navigation/main_nav_graph.xml
 
 **Checkpoint**: User Story 2 is independently functional and testable.
 
@@ -112,20 +112,20 @@
 
 ### Tests for User Story 3 (REQUIRED)
 
-- [ ] T038 [P] [US3] Add failing ViewModel tests for compact fallback mode transitions and category restoration in feature/ndi-browser/presentation/src/test/java/com/ndi/feature/ndibrowser/settings/SettingsLayoutTransitionTest.kt
-- [ ] T039 [P] [US3] Add failing ViewModel tests for empty-category handling during transitions in feature/ndi-browser/presentation/src/test/java/com/ndi/feature/ndibrowser/settings/SettingsDetailStateFallbackTest.kt
-- [ ] T040 [P] [US3] Add failing instrumentation test for rotate wide to compact to wide continuity in feature/ndi-browser/presentation/src/androidTest/java/com/ndi/feature/ndibrowser/settings/SettingsRotationContinuityTest.kt
-- [ ] T041 [P] [US3] Add failing Playwright e2e for compact fallback and context preservation in testing/e2e/tests/settings-three-column-layout.spec.ts
-- [ ] T042 [US3] Run existing Playwright regression suite and append output in test-results/019-settings-three-pane-validation.md using npm --prefix testing/e2e run test:pr:primary
-- [ ] T043 [US3] If blocked, capture blocker classification and unblock command in test-results/019-settings-three-pane-validation.md
+- [X] T038 [P] [US3] Add failing ViewModel tests for compact fallback mode transitions and category restoration in feature/ndi-browser/presentation/src/test/java/com/ndi/feature/ndibrowser/settings/SettingsLayoutTransitionTest.kt
+- [X] T039 [P] [US3] Add failing ViewModel tests for empty-category handling during transitions in feature/ndi-browser/presentation/src/test/java/com/ndi/feature/ndibrowser/settings/SettingsDetailStateFallbackTest.kt
+- [X] T040 [P] [US3] Add failing instrumentation test for rotate wide to compact to wide continuity in feature/ndi-browser/presentation/src/androidTest/java/com/ndi/feature/ndibrowser/settings/SettingsRotationContinuityTest.kt
+- [X] T041 [P] [US3] Add failing Playwright e2e for compact fallback and context preservation in testing/e2e/tests/settings-three-column-layout.spec.ts
+- [X] T042 [US3] Run existing Playwright regression suite and append output in test-results/019-settings-three-pane-validation.md using npm --prefix testing/e2e run test:pr:primary
+- [X] T043 [US3] If blocked, capture blocker classification and unblock command in test-results/019-settings-three-pane-validation.md
 
 ### Implementation for User Story 3
 
-- [ ] T044 [P] [US3] Implement layout transition resolver for wide and compact mode switching in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/SettingsLayoutResolver.kt
-- [ ] T045 [US3] Implement selected-category context persistence across mode transitions in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/SettingsViewModel.kt
-- [ ] T046 [US3] Implement compact fallback rendering path and restoration hooks in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/SettingsFragment.kt
-- [ ] T047 [US3] Add accessibility-focused behavior for larger text scale and long category labels in feature/ndi-browser/presentation/src/main/res/layout/fragment_settings_three_pane.xml and feature/ndi-browser/presentation/src/main/res/layout/item_settings_category.xml
-- [ ] T048 [US3] Ensure compact and wide detail renderers share consistent empty-state semantics in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/SettingsDetailRenderer.kt
+- [X] T044 [P] [US3] Implement layout transition resolver for wide and compact mode switching in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/SettingsLayoutResolver.kt
+- [X] T045 [US3] Implement selected-category context persistence across mode transitions in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/SettingsViewModel.kt
+- [X] T046 [US3] Implement compact fallback rendering path and restoration hooks in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/SettingsFragment.kt
+- [X] T047 [US3] Add accessibility-focused behavior for larger text scale and long category labels in feature/ndi-browser/presentation/src/main/res/layout/fragment_settings_three_pane.xml and feature/ndi-browser/presentation/src/main/res/layout/item_settings_category.xml
+- [X] T048 [US3] Ensure compact and wide detail renderers share consistent empty-state semantics in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/SettingsDetailRenderer.kt
 
 **Checkpoint**: User Story 3 is independently functional and testable.
 
@@ -135,16 +135,16 @@
 
 **Purpose**: Final validation, documentation, and release hardening across all stories.
 
-- [ ] T049 [P] Update feature behavior documentation in docs/ndi-feature.md and docs/006-settings-menu-release-notes.md
-- [ ] T050 [P] Add final validation narrative and gate outcomes in test-results/019-settings-three-pane-validation.md
-- [ ] T051 Run touched module unit test suites and append output in test-results/019-settings-three-pane-validation.md using ./gradlew.bat :feature:ndi-browser:presentation:testDebugUnitTest :feature:ndi-browser:data:testDebugUnitTest :app:testDebugUnitTest
-- [ ] T052 Run feature Playwright coverage and capture artifacts in test-results/019-settings-three-pane-validation.md using npm --prefix testing/e2e run test -- tests/settings-three-column-layout.spec.ts
-- [ ] T053 Run release hardening gate and append output in test-results/019-settings-three-pane-validation.md using ./gradlew.bat :app:verifyReleaseHardening :app:assembleRelease
-- [ ] T054 Record Material 3 compliance verification outcomes in test-results/019-settings-three-pane-validation.md
-- [ ] T055 If final gates are blocked, classify blocker vs code failure and record explicit unblock commands in test-results/019-settings-three-pane-validation.md
-- [ ] T056 [P] Capture baseline usability metric for SC-001 and baseline feedback metric for SC-004 in test-results/019-settings-three-pane-validation.md before implementation comparison runs
+- [X] T049 [P] Update feature behavior documentation in docs/ndi-feature.md and docs/006-settings-menu-release-notes.md
+- [X] T050 [P] Add final validation narrative and gate outcomes in test-results/019-settings-three-pane-validation.md
+- [X] T051 Run touched module unit test suites and append output in test-results/019-settings-three-pane-validation.md using ./gradlew.bat :feature:ndi-browser:presentation:testDebugUnitTest :feature:ndi-browser:data:testDebugUnitTest :app:testDebugUnitTest
+- [X] T052 Run feature Playwright coverage and capture artifacts in test-results/019-settings-three-pane-validation.md using npm --prefix testing/e2e run test -- tests/settings-three-column-layout.spec.ts
+- [X] T053 Run release hardening gate and append output in test-results/019-settings-three-pane-validation.md using ./gradlew.bat :app:verifyReleaseHardening :app:assembleRelease
+- [X] T054 Record Material 3 compliance verification outcomes in test-results/019-settings-three-pane-validation.md
+- [X] T055 If final gates are blocked, classify blocker vs code failure and record explicit unblock commands in test-results/019-settings-three-pane-validation.md
+- [X] T056 [P] Capture baseline usability metric for SC-001 and baseline feedback metric for SC-004 in test-results/019-settings-three-pane-validation.md before implementation comparison runs
 - [ ] T057 Execute usability validation run for SC-001 and append measured completion-rate and timing evidence in test-results/019-settings-three-pane-validation.md
-- [ ] T058 Define and document post-release feedback collection query and one-cycle comparison method for SC-004 in docs/006-settings-menu-release-notes.md and test-results/019-settings-three-pane-validation.md
+- [X] T058 Define and document post-release feedback collection query and one-cycle comparison method for SC-004 in docs/006-settings-menu-release-notes.md and test-results/019-settings-three-pane-validation.md
 - [ ] T059 Perform post-release SC-004 comparison checkpoint and append delta against baseline in test-results/019-settings-three-pane-validation.md
 
 ---

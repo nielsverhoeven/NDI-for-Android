@@ -56,3 +56,45 @@ Current implementation note:
 - Unit tests: green for settings models/viewmodels and redaction/state mapper.
 - Compile and release hardening gates: configured and passing in recorded test results.
 - E2E: harness and scripts are available through `testing/e2e/README.md`.
+
+## Spec 019 Addendum: Three-Pane Settings Workspace
+
+New behavior:
+
+- Adds wide-layout three-pane settings workspace (navigation, categories, details).
+- Maintains compact fallback for unsupported layouts.
+- Preserves selected category context across layout transitions.
+
+Validation status:
+
+- Android unit tests: PASS
+- Release hardening (`:app:verifyReleaseHardening :app:assembleRelease`): PASS
+- Playwright regression and feature spec suite: BLOCKED-ENV in current run due emulator UI hierarchy dump instability.
+
+## SC-004 Feedback Query and One-Cycle Comparison Method
+
+Baseline query (pre-release cycle):
+
+```text
+source = support_feedback
+AND app = "NDI-for-Android"
+AND release_cycle = "pre-019"
+AND tags CONTAINS ANY ("settings", "navigation", "large-screen", "tablet")
+AND sentiment = "negative"
+```
+
+Post-release query (first cycle after release):
+
+```text
+source = support_feedback
+AND app = "NDI-for-Android"
+AND release_cycle = "post-019"
+AND tags CONTAINS ANY ("settings", "navigation", "large-screen", "tablet")
+AND sentiment = "negative"
+```
+
+Comparison method:
+
+1. Count matching records for pre-019 and post-019 cycles.
+2. Compute relative delta: `(post - pre) / pre * 100`.
+3. SC-004 passes when delta is `<= -30%`.

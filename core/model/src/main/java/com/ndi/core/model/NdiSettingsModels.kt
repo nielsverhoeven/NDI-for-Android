@@ -10,6 +10,52 @@ data class NdiSettingsSnapshot(
 
 enum class NdiThemeMode { LIGHT, DARK, SYSTEM }
 
+enum class SettingsLayoutMode {
+    WIDE,
+    COMPACT,
+}
+
+enum class SettingsCategorySelectionSource {
+    DEFAULT,
+    USER_TAP,
+    RESTORED,
+}
+
+data class SettingsLayoutContext(
+    val mode: SettingsLayoutMode,
+    val meetsWideLayoutCriteria: Boolean,
+    val widthDp: Int,
+    val isLandscape: Boolean,
+    val lastTransitionEpochMillis: Long,
+)
+
+data class SettingsCategory(
+    val id: String,
+    val title: String,
+    val subtitle: String? = null,
+    val isSelected: Boolean,
+    val hasAdjustableOptions: Boolean,
+)
+
+data class SettingsCategoryState(
+    val categories: List<SettingsCategory>,
+    val selectedCategoryId: String?,
+    val selectionSource: SettingsCategorySelectionSource,
+)
+
+data class SettingsDetailGroup(
+    val id: String,
+    val title: String,
+    val controls: List<String>,
+)
+
+data class SettingsDetailState(
+    val selectedCategoryId: String?,
+    val groups: List<SettingsDetailGroup>,
+    val emptyStateMessage: String?,
+    val isEditable: Boolean,
+)
+
 // ---- Spec 018: Discovery server collection model types ----
 
 /**
