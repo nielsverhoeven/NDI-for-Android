@@ -10,6 +10,7 @@ import com.ndi.feature.ndibrowser.domain.repository.PlaybackOptimizationState as
 import com.ndi.feature.ndibrowser.domain.repository.QualityProfile
 import com.ndi.feature.ndibrowser.domain.repository.QualityProfileRepository
 import com.ndi.feature.ndibrowser.domain.repository.UserSelectionRepository
+import com.ndi.feature.ndibrowser.domain.repository.ViewerContinuityRepository
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -36,6 +37,8 @@ data class ViewerUiState(
     val recoveryElapsedSeconds: Int = 0,
     val manualReconnectVisible: Boolean = false,
     val overlayDisplayState: com.ndi.feature.ndibrowser.settings.OverlayDisplayState? = null,
+    val restoredPreviewPath: String? = null,
+    val isUnavailableRestore: Boolean = false,
 )
 
 sealed class PlaybackOptimizationState {
@@ -63,6 +66,7 @@ class ViewerViewModel(
     private val userSelectionRepository: UserSelectionRepository,
     private val telemetryEmitter: ViewerTelemetryEmitter = ViewerDependencies.telemetryEmitter,
     private val qualityProfileRepository: QualityProfileRepository? = ViewerDependencies.qualityProfileRepositoryOrNull(),
+    private val viewerContinuityRepository: ViewerContinuityRepository? = ViewerDependencies.viewerContinuityRepositoryOrNull(),
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ViewerUiState())
@@ -103,7 +107,13 @@ class ViewerViewModel(
     }
 
     fun onViewerOpened(sourceId: String) {
-        if (sourceId.isBlank() || connectInFlight) return
+        if (connectInFlight) return
+
+        if (sourceId.isBlank()) {
+            restoreUnavailableLastViewedContext()
+            return
+        }
+
         lockedQualitySourceId = null
         connectInFlight = true
         viewModelScope.launch {
@@ -117,7 +127,13 @@ class ViewerViewModel(
                     ?.let(QualityProfile::fromId)
                     ?: QualityProfile.default()
                 viewerRepository.applyQualityProfile(sourceId, profile)
-                _uiState.update { it.copy(activeQualityProfileId = profile.profileId) }
+                _uiState.update {
+                    it.copy(
+                        activeQualityProfileId = profile.profileId,
+                        restoredPreviewPath = null,
+                        isUnavailableRestore = false,
+                    )
+                }
                 telemetryEmitter.emit(ViewerTelemetry.playbackStarted(sourceId))
                 telemetryEmitter.emit(ViewerRecoveryTelemetry.profileSelected(sourceId, profile.profileId))
                 onStart()
@@ -378,6 +394,8 @@ class ViewerViewModel(
                     interruptionMessage = null,
                     recoveryElapsedSeconds = 0,
                     manualReconnectVisible = false,
+                    isUnavailableRestore = false,
+                    restoredPreviewPath = null,
                 )
             }
         }
@@ -391,11 +409,43 @@ class ViewerViewModel(
         }
     }
 
+    private fun restoreUnavailableLastViewedContext() {
+        viewModelScope.launch {
+            val continuity = viewerContinuityRepository?.getLastViewedContext() ?: return@launch
+            if (continuity.sourceId.isBlank()) return@launch
+
+            userSelectionRepository.saveLastSelectedSource(continuity.sourceId)
+            _uiState.update {
+                it.copy(
+                    sourceId = continuity.sourceId,
+                    playbackState = PlaybackState.IDLE,
+                    restoredPreviewPath = continuity.lastFrameImagePath,
+                    isUnavailableRestore = true,
+                    interruptionMessage = "Last viewed source unavailable. Playback was not auto-started.",
+                    recoveryActionsVisible = true,
+                )
+            }
+            telemetryEmitter.emit(
+                ViewerTelemetry.restoreContextApplied(
+                    sourceId = continuity.sourceId,
+                    hasSavedPreview = !continuity.lastFrameImagePath.isNullOrBlank(),
+                ),
+            )
+            telemetryEmitter.emit(
+                ViewerTelemetry.restoreUnavailableNoAutoplay(
+                    sourceId = continuity.sourceId,
+                    hasSavedPreview = !continuity.lastFrameImagePath.isNullOrBlank(),
+                ),
+            )
+        }
+    }
+
     class Factory(
         private val viewerRepository: NdiViewerRepository,
         private val userSelectionRepository: UserSelectionRepository,
         private val telemetryEmitter: ViewerTelemetryEmitter = ViewerDependencies.telemetryEmitter,
         private val qualityProfileRepository: QualityProfileRepository? = ViewerDependencies.qualityProfileRepositoryOrNull(),
+        private val viewerContinuityRepository: ViewerContinuityRepository? = ViewerDependencies.viewerContinuityRepositoryOrNull(),
     ) : ViewModelProvider.Factory {
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
             require(modelClass.isAssignableFrom(ViewerViewModel::class.java))
@@ -404,6 +454,7 @@ class ViewerViewModel(
                 userSelectionRepository = userSelectionRepository,
                 telemetryEmitter = telemetryEmitter,
                 qualityProfileRepository = qualityProfileRepository,
+                viewerContinuityRepository = viewerContinuityRepository,
             ) as T
         }
     }

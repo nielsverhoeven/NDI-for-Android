@@ -37,6 +37,26 @@
             android:textAppearance="@style/TextAppearance.Material3.LabelMedium"
             android:visibility="gone" />
 
+        <!-- T035: Previously Connected badge -->
+        <TextView
+            android:id="@+id/previouslyConnectedBadge"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="@string/ndi_source_previously_connected"
+            android:textAppearance="@style/TextAppearance.Material3.LabelSmall"
+            android:visibility="gone" />
+
+        <!-- T035: Unavailable badge -->
+        <TextView
+            android:id="@+id/unavailableBadge"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="@string/ndi_source_unavailable"
+            android:textAppearance="@style/TextAppearance.Material3.LabelSmall"
+            android:visibility="gone" />
+
         <com.google.android.material.button.MaterialButton
             android:id="@+id/viewStreamButton"
             style="@style/Widget.Material3.Button.TonalButton"

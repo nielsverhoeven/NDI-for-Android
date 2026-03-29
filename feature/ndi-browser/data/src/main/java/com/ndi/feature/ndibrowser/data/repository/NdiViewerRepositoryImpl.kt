@@ -6,10 +6,12 @@ import com.ndi.core.model.PlaybackState
 import com.ndi.core.model.ViewerVideoFrame
 import com.ndi.core.model.ViewerSession
 import com.ndi.feature.ndibrowser.data.ViewerReconnectCoordinator
+import com.ndi.feature.ndibrowser.domain.repository.LastViewedContext
 import com.ndi.feature.ndibrowser.domain.repository.NdiViewerRepository
 import com.ndi.feature.ndibrowser.domain.repository.PlaybackOptimizationState
 import com.ndi.feature.ndibrowser.domain.repository.QualityProfileApplyResult
 import com.ndi.feature.ndibrowser.domain.repository.QualityProfile
+import com.ndi.feature.ndibrowser.domain.repository.ViewerContinuityRepository
 import com.ndi.sdkbridge.NdiViewerBridge
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -29,6 +31,7 @@ class NdiViewerRepositoryImpl(
     private val bridge: NdiViewerBridge,
     private val viewerSessionDao: ViewerSessionDao,
     private val reconnectCoordinator: ViewerReconnectCoordinator = ViewerReconnectCoordinator(),
+    private val viewerContinuityRepository: ViewerContinuityRepository? = null,
 ) : NdiViewerRepository {
 
     private val operationMutex = Mutex()
@@ -63,10 +66,11 @@ class NdiViewerRepositoryImpl(
             viewerSessionState.value = connectingSession
 
             runCatching {
-                withContext(Dispatchers.IO) {
+                val firstFrame = withContext(Dispatchers.IO) {
                     bridge.startReceiver(sourceId)
                     waitForFirstFrame(sourceId)
                 }
+                persistViewerContinuity(sourceId = sourceId, firstFrame = firstFrame)
                 val playingSession = connectingSession.copy(playbackState = PlaybackState.PLAYING)
                 viewerSessionState.value = playingSession
                 withContext(Dispatchers.IO) {
@@ -334,18 +338,40 @@ class NdiViewerRepositoryImpl(
         }
     }
 
-    private suspend fun waitForFirstFrame(sourceId: String, timeoutMillis: Long = 5_000L) {
+    private suspend fun waitForFirstFrame(sourceId: String, timeoutMillis: Long = 5_000L): ViewerVideoFrame? {
         if (sourceId.startsWith("relay-screen:")) {
-            return
+            return null
         }
         val deadline = System.currentTimeMillis() + timeoutMillis
         while (System.currentTimeMillis() < deadline) {
             val frame = bridge.getLatestReceiverFrame()
             if (frame != null && frame.width > 0 && frame.height > 0 && frame.argbPixels.isNotEmpty()) {
-                return
+                return frame
             }
             delay(100)
         }
         throw IllegalStateException("No video frames received from selected NDI source")
+    }
+
+    private suspend fun persistViewerContinuity(sourceId: String, firstFrame: ViewerVideoFrame?) {
+        val continuityRepository = viewerContinuityRepository ?: return
+        if (sourceId.isBlank()) return
+
+        val capturedAt = System.currentTimeMillis()
+        if (firstFrame != null) {
+            continuityRepository.markSuccessfulFrame(sourceId, capturedAt)
+        }
+        val previewPath = if (firstFrame != null) {
+            continuityRepository.captureAndSavePreviewFrame(sourceId, firstFrame, capturedAt)
+        } else {
+            continuityRepository.getLastViewedContext()?.lastFrameImagePath
+        }
+        continuityRepository.saveLastViewedContext(
+            LastViewedContext(
+                sourceId = sourceId,
+                lastFrameImagePath = previewPath,
+                lastFrameCapturedAtEpochMillis = capturedAt,
+            ),
+        )
     }
 }

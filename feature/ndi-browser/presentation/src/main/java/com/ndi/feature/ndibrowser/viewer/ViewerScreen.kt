@@ -121,12 +121,19 @@ class ViewerFragment : Fragment() {
                 stateFlow.collect { state ->
                     val fragmentBinding = binding ?: return@collect
                     fragmentBinding.viewerTitle.text = getString(R.string.ndi_viewer_title, state.sourceId)
-                    fragmentBinding.viewerState.text = getString(
-                        R.string.ndi_viewer_quality_state,
-                        state.playbackState.name,
-                        state.activeQualityProfileId,
-                        state.droppedFramePercent,
-                    )
+                    fragmentBinding.viewerState.text = if (state.isUnavailableRestore) {
+                        getString(
+                            R.string.ndi_viewer_restore_unavailable_state,
+                            state.sourceId,
+                        )
+                    } else {
+                        getString(
+                            R.string.ndi_viewer_quality_state,
+                            state.playbackState.name,
+                            state.activeQualityProfileId,
+                            state.droppedFramePercent,
+                        )
+                    }
                     activeQualityProfileId = state.activeQualityProfileId
                     latestStreamWidth = state.streamWidth
                     latestStreamHeight = state.streamHeight
@@ -165,7 +172,12 @@ class ViewerFragment : Fragment() {
                         recentLogsView = fragmentBinding.developerOverlay.overlayRecentLogs,
                         overlayDisplayState = state.overlayDisplayState,
                     )
-                    renderRelayPreview(state.sourceId, state.playbackState)
+                    renderRelayPreview(
+                        sourceId = state.sourceId,
+                        playbackState = state.playbackState,
+                        restoredPreviewPath = state.restoredPreviewPath,
+                        isUnavailableRestore = state.isUnavailableRestore,
+                    )
                     renderDisconnectionDialog(state)
                 }
             }
@@ -315,8 +327,24 @@ class ViewerFragment : Fragment() {
             ?.isEnabled = state.manualReconnectVisible
     }
 
-    private fun renderRelayPreview(sourceId: String, playbackState: PlaybackState) {
+    private fun renderRelayPreview(
+        sourceId: String,
+        playbackState: PlaybackState,
+        restoredPreviewPath: String?,
+        isUnavailableRestore: Boolean,
+    ) {
         val fragmentBinding = binding ?: return
+        if (isUnavailableRestore) {
+            relayPreviewJob?.cancel()
+            relayPreviewJob = null
+            relayPreviewSourceId = null
+            val restoreBitmap = restoredPreviewPath
+                ?.takeIf { path -> java.io.File(path).exists() }
+                ?.let(BitmapFactory::decodeFile)
+            fragmentBinding.viewerPreviewImage.setImageBitmap(restoreBitmap)
+            return
+        }
+
         val canRenderPreview = playbackState == PlaybackState.PLAYING
         if (!canRenderPreview) {
             relayPreviewJob?.cancel()

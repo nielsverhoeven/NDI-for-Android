@@ -51,6 +51,16 @@ class SourceViewHolder(
             source.endpointAddress ?: source.sourceId
         }
         binding.highlightBadge.isVisible = isHighlighted
+        
+        // T035: Render Previously Connected badge
+        binding.previouslyConnectedBadge.isVisible = source.previouslyConnected
+        
+        // T035: Render Unavailable badge
+        binding.unavailableBadge.isVisible = !source.isAvailable
+        
+        // T037: Update button enabled state based on availability
+        binding.viewStreamButton.isEnabled = source.isAvailable
+        
         binding.root.setOnClickListener(null)
         binding.root.isClickable = false
         binding.root.isFocusable = false

@@ -65,3 +65,27 @@ Before merge, ensure release build hardening remains intact:
 ```powershell
 ./gradlew.bat :app:verifyReleaseHardening
 ```
+
+## 7. Current Validation Outcome (2026-03-29)
+
+Status summary:
+
+- Preflight: PASS
+- Unit tests: PASS
+- Release hardening: PASS
+- Playwright e2e: DEFERRED (suite scheduled for rebuild)
+
+Executed commands:
+
+```powershell
+scripts/verify-android-prereqs.ps1
+./gradlew.bat --version
+./gradlew.bat :feature:ndi-browser:data:testDebugUnitTest :feature:ndi-browser:presentation:testDebugUnitTest
+./gradlew.bat :app:verifyReleaseHardening
+```
+
+Deferred command (run after e2e rebuild):
+
+```powershell
+Push-Location testing/e2e; npx playwright test tests/021-source-list-availability-status.spec.ts; Pop-Location
+```

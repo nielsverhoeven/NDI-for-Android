@@ -37,6 +37,25 @@ data class ViewerSessionEntity(
     val endedAtEpochMillis: Long?,
 )
 
+@Entity(tableName = "last_viewed_context")
+data class LastViewedContextEntity(
+    @PrimaryKey
+    val contextId: String = "last_viewed_context",
+    val sourceId: String,
+    val lastFrameImagePath: String?,
+    val lastFrameCapturedAtEpochMillis: Long?,
+    val restoredAtEpochMillis: Long?,
+)
+
+@Entity(tableName = "connection_history_state")
+data class ConnectionHistoryStateEntity(
+    @PrimaryKey
+    val sourceId: String,
+    val previouslyConnected: Boolean = true,
+    val firstSuccessfulFrameAtEpochMillis: Long,
+    val lastSuccessfulFrameAtEpochMillis: Long,
+)
+
 @Entity(tableName = "output_configuration")
 data class OutputConfigurationEntity(
     @PrimaryKey
@@ -81,6 +100,36 @@ interface ViewerSessionDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(session: ViewerSessionEntity)
+}
+
+@Dao
+interface LastViewedContextDao {
+    @Query("SELECT * FROM last_viewed_context WHERE contextId = :contextId LIMIT 1")
+    suspend fun get(contextId: String = "last_viewed_context"): LastViewedContextEntity?
+
+    @Query("SELECT * FROM last_viewed_context WHERE contextId = :contextId LIMIT 1")
+    fun observe(contextId: String = "last_viewed_context"): Flow<LastViewedContextEntity?>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entity: LastViewedContextEntity)
+
+    @Query("DELETE FROM last_viewed_context WHERE contextId = :contextId")
+    suspend fun clear(contextId: String = "last_viewed_context")
+}
+
+@Dao
+interface ConnectionHistoryStateDao {
+    @Query("SELECT * FROM connection_history_state ORDER BY lastSuccessfulFrameAtEpochMillis DESC")
+    fun observeAll(): Flow<List<ConnectionHistoryStateEntity>>
+
+    @Query("SELECT * FROM connection_history_state WHERE sourceId = :sourceId LIMIT 1")
+    suspend fun getBySourceId(sourceId: String): ConnectionHistoryStateEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entity: ConnectionHistoryStateEntity)
+
+    @Query("DELETE FROM connection_history_state")
+    suspend fun clearAll()
 }
 
 @Dao
@@ -171,12 +220,14 @@ interface DiscoveryServerDao {
     entities = [
         UserSelectionEntity::class,
         ViewerSessionEntity::class,
+        LastViewedContextEntity::class,
+        ConnectionHistoryStateEntity::class,
         OutputConfigurationEntity::class,
         OutputSessionEntity::class,
         SettingsPreferenceEntity::class,
         DiscoveryServerEntity::class,
     ],
-    version = 6,
+    version = 7,
     exportSchema = false,
 )
 abstract class NdiDatabase : RoomDatabase() {
@@ -184,6 +235,10 @@ abstract class NdiDatabase : RoomDatabase() {
     abstract fun userSelectionDao(): UserSelectionDao
 
     abstract fun viewerSessionDao(): ViewerSessionDao
+
+    abstract fun lastViewedContextDao(): LastViewedContextDao
+
+    abstract fun connectionHistoryStateDao(): ConnectionHistoryStateDao
 
     abstract fun outputConfigurationDao(): OutputConfigurationDao
 
@@ -317,6 +372,35 @@ abstract class NdiDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS last_viewed_context (
+                        contextId TEXT NOT NULL,
+                        sourceId TEXT NOT NULL,
+                        lastFrameImagePath TEXT,
+                        lastFrameCapturedAtEpochMillis INTEGER,
+                        restoredAtEpochMillis INTEGER,
+                        PRIMARY KEY(contextId)
+                    )
+                    """.trimIndent(),
+                )
+
+                database.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS connection_history_state (
+                        sourceId TEXT NOT NULL,
+                        previouslyConnected INTEGER NOT NULL DEFAULT 1,
+                        firstSuccessfulFrameAtEpochMillis INTEGER NOT NULL,
+                        lastSuccessfulFrameAtEpochMillis INTEGER NOT NULL,
+                        PRIMARY KEY(sourceId)
+                    )
+                    """.trimIndent(),
+                )
+            }
+        }
+
         @Volatile
         private var instance: NdiDatabase? = null
 
@@ -327,7 +411,7 @@ abstract class NdiDatabase : RoomDatabase() {
                     NdiDatabase::class.java,
                     "ndi_database",
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
                     .build()
                     .also { instance = it }
             }

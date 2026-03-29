@@ -8,6 +8,7 @@ import com.ndi.core.model.DiscoveryStatus
 import com.ndi.core.model.DiscoveryTrigger
 import com.ndi.core.model.NdiSource
 import com.ndi.feature.ndibrowser.domain.repository.NdiDiscoveryRepository
+import com.ndi.feature.ndibrowser.domain.repository.SourceAvailabilityStatus
 import com.ndi.feature.ndibrowser.domain.repository.UserSelectionRepository
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -15,6 +16,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -52,9 +54,34 @@ class SourceListViewModel(
     val settingsToggleEvents: SharedFlow<Unit> = _settingsToggleEvents.asSharedFlow()
     private var settingsToggleInFlight: Boolean = false
 
+    // Track availability and connection history for UI enrichment
+    private val availabilityHistory = MutableStateFlow<Map<String, SourceAvailabilityStatus>>(emptyMap())
+    private val previouslyConnectedIds = MutableStateFlow<Set<String>>(emptySet())
+    private var allPreviouslySources = mutableMapOf<String, NdiSource>()  // Preserve unavailable sources
+
     init {
         viewModelScope.launch {
             discoveryRepository.observeDiscoveryState().collect(::onDiscoverySnapshot)
+        }
+        viewModelScope.launch {
+            discoveryRepository.observeAvailabilityHistory().collect { history ->
+                availabilityHistory.value = history
+                // Update UI state with enriched availability
+                val enrichedSources = enrichSourcesWithAvailability()
+                _uiState.update { current ->
+                    current.copy(sources = enrichedSources)
+                }
+            }
+        }
+        viewModelScope.launch {
+            SourceListDependencies.viewerContinuityRepositoryOrNull()?.observePreviouslyConnectedSourceIds()?.collect { ids ->
+                previouslyConnectedIds.value = ids
+                // Update UI state with enriched connection history
+                val enrichedSources = enrichSourcesWithAvailability()
+                _uiState.update { current ->
+                    current.copy(sources = enrichedSources)
+                }
+            }
         }
     }
 
@@ -77,6 +104,14 @@ class SourceListViewModel(
     }
 
     fun onSourceSelected(sourceId: String) {
+        // T036: Prevent navigation from unavailable rows
+        val selectedSource = _uiState.value.sources.find { it.sourceId == sourceId }
+        if (selectedSource != null && !selectedSource.isAvailable) {
+            // Source is unavailable; emit blocked selection telemetry but do not navigate
+            telemetryEmitter.emit(SourceListTelemetry.sourceSelectionBlocked(sourceId, "unavailable"))
+            return
+        }
+
         viewModelScope.launch {
             preselectionController.rememberSelection(sourceId)
             _uiState.update { current -> current.copy(highlightedSourceId = sourceId) }
@@ -128,12 +163,23 @@ class SourceListViewModel(
                 DiscoveryStatus.EMPTY,
                 -> {
                     val filteredSources = filterViewableSources(snapshot.sources)
+                    // Store newly seen sources for future reference
+                    filteredSources.forEach { source ->
+                        allPreviouslySources[source.sourceId] = source
+                    }
+                    // Combine newly seen sources with all previously seen sources to preserve unavailable ones
+                    val allSourceIds = (filteredSources.map { it.sourceId } + allPreviouslySources.keys).toSet()
+                    val combinedSources = allSourceIds.mapNotNull { sourceId ->
+                        filteredSources.find { it.sourceId == sourceId }
+                            ?: allPreviouslySources[sourceId]
+                    }
+
                     val highlightedSourceId = it.highlightedSourceId?.takeIf { selected ->
-                        filteredSources.any { source -> source.sourceId == selected }
+                        combinedSources.any { source -> source.sourceId == selected }
                     }
                     it.copy(
                         discoveryStatus = snapshot.status,
-                        sources = filteredSources,
+                        sources = enrichSourcesWithAvailability(combinedSources),
                         highlightedSourceId = highlightedSourceId,
                         errorMessage = snapshot.errorMessage,
                         refreshErrorMessage = null,
@@ -153,6 +199,22 @@ class SourceListViewModel(
             }
         }
         telemetryEmitter.emit(SourceListTelemetry.fromSnapshot(snapshot))
+    }
+
+    private fun enrichSourcesWithAvailability(sources: List<NdiSource>? = null): List<NdiSource> {
+        val sourcesToEnrich = sources ?: _uiState.value.sources
+        val availability = availabilityHistory.value
+        val previouslyConnected = previouslyConnectedIds.value
+
+        return sourcesToEnrich.map { source ->
+            val isAvailable = availability[source.sourceId]?.isAvailable ?: true
+            val wasPreviouslyConnected = source.sourceId in previouslyConnected
+
+            source.copy(
+                isAvailable = isAvailable,
+                previouslyConnected = wasPreviouslyConnected,
+            )
+        }
     }
 
     private fun filterViewableSources(sources: List<NdiSource>): List<NdiSource> {

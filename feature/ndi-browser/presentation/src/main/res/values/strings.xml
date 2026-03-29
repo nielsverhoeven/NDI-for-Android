@@ -5,6 +5,8 @@
     <string name="ndi_discovery_empty">No NDI sources are currently reachable.</string>
     <string name="ndi_discovery_error">Discovery failed. Try again.</string>
     <string name="ndi_source_highlighted">Previously selected</string>
+    <string name="ndi_source_previously_connected">Previously Connected</string>
+    <string name="ndi_source_unavailable">Unavailable</string>
     <string name="ndi_source_start_output">Start Output</string>
     <string name="ndi_source_view_stream">View Stream</string>
     <string name="ndi_source_view_stream_content_description">View stream action</string>
@@ -15,6 +17,7 @@
     <string name="ndi_viewer_title">Viewing %1$s</string>
     <string name="ndi_viewer_tablet_mode">Tablet layout active</string>
     <string name="ndi_viewer_quality_state">%1$s | Profile: %2$s | Drop: %3$d%%</string>
+    <string name="ndi_viewer_restore_unavailable_state">Unavailable restore for %1$s | Playback paused</string>
     <string name="ndi_viewer_quality_menu_title">Quality</string>
     <string name="ndi_viewer_quality_smooth">Smooth</string>
     <string name="ndi_viewer_quality_balanced">Balanced</string>
