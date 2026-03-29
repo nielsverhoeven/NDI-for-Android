@@ -10,7 +10,6 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Before
 import org.junit.Test
 
@@ -31,7 +30,7 @@ class SettingsDetailStateFallbackTest {
     }
 
     @Test
-    fun emptyCategory_detailStateRetainsExplicitMessageAcrossTransitions() = runTest(scheduler) {
+    fun aboutCategory_detailStateRetainsGroupAcrossTransitions() = runTest(scheduler) {
         val viewModel = SettingsViewModel(InMemorySettingsRepository())
 
         viewModel.onSettingsCategorySelected(SettingsViewModel.CATEGORY_ABOUT)
@@ -41,7 +40,8 @@ class SettingsDetailStateFallbackTest {
 
         val detail = viewModel.uiState.value.settingsDetailState
         assertEquals(SettingsViewModel.CATEGORY_ABOUT, detail.selectedCategoryId)
-        assertNotNull(detail.emptyStateMessage)
-        assertEquals(0, detail.groups.size)
+        assertEquals(null, detail.emptyStateMessage)
+        assertEquals(1, detail.groups.size)
+        assertEquals("about-details", detail.groups.first().id)
     }
 }

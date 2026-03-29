@@ -7,16 +7,22 @@ import com.ndi.core.model.ViewerVideoFrame
 import com.ndi.core.model.ViewerSession
 import com.ndi.feature.ndibrowser.data.ViewerReconnectCoordinator
 import com.ndi.feature.ndibrowser.domain.repository.NdiViewerRepository
+import com.ndi.feature.ndibrowser.domain.repository.PlaybackOptimizationState
+import com.ndi.feature.ndibrowser.domain.repository.QualityProfileApplyResult
+import com.ndi.feature.ndibrowser.domain.repository.QualityProfile
 import com.ndi.sdkbridge.NdiViewerBridge
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.withContext
+import java.util.ArrayDeque
 import java.util.UUID
 
 class NdiViewerRepositoryImpl(
@@ -26,6 +32,8 @@ class NdiViewerRepositoryImpl(
 ) : NdiViewerRepository {
 
     private val operationMutex = Mutex()
+    private val qualityBySource = mutableMapOf<String, QualityProfile>()
+    private val codecHintBySource = mutableMapOf<String, String>()
 
     private val viewerSessionState = MutableStateFlow(
         ViewerSession(
@@ -113,6 +121,156 @@ class NdiViewerRepositoryImpl(
                 viewerSessionDao.upsert(stoppedSession.toEntity())
             }
         }
+    }
+
+    override suspend fun applyQualityProfile(sourceId: String, profile: QualityProfile) {
+        operationMutex.withLock {
+            qualityBySource[sourceId] = profile
+            codecHintBySource[sourceId] = "adaptive"
+            withContext(Dispatchers.IO) {
+                bridge.applyReceiverQualityProfile(
+                    profileId = profile.profileId,
+                    maxWidth = profile.maxWidth,
+                    maxHeight = profile.maxHeight,
+                    targetFps = profile.targetFps,
+                )
+            }
+        }
+    }
+
+    override suspend fun applyQualityProfile(profile: QualityProfile): QualityProfileApplyResult {
+        val sourceId = viewerSessionState.value.selectedSourceId
+        if (sourceId.isBlank()) {
+            return QualityProfileApplyResult.NOT_SUPPORTED
+        }
+
+        return operationMutex.withLock {
+            qualityBySource[sourceId] = profile
+            codecHintBySource[sourceId] = "adaptive"
+            withContext(Dispatchers.IO) {
+                bridge.applyReceiverQualityProfile(
+                    profileId = profile.profileId,
+                    maxWidth = profile.maxWidth,
+                    maxHeight = profile.maxHeight,
+                    targetFps = profile.targetFps,
+                )
+                val frameRateApplied = bridge.setFrameRatePolicy(profile.targetFps)
+                val resolutionApplied = bridge.setResolutionPolicy(profile.maxWidth, profile.maxHeight)
+                when {
+                    frameRateApplied && resolutionApplied -> QualityProfileApplyResult.APPLIED
+                    frameRateApplied || resolutionApplied -> QualityProfileApplyResult.FALLBACK
+                    else -> QualityProfileApplyResult.NOT_SUPPORTED
+                }
+            }
+        }
+    }
+
+    override fun getOptimizationStats(): Flow<PlaybackOptimizationState> {
+        return flow {
+            val recentFpsSamples = ArrayDeque<Pair<Long, Double>>()
+            var smoothCount = 0
+            while (true) {
+                val now = System.currentTimeMillis()
+                val session = viewerSessionState.value
+                val sourceId = session.selectedSourceId
+                val activeProfile = qualityBySource[sourceId] ?: QualityProfile.default()
+
+                if (sourceId.isBlank() || session.playbackState != PlaybackState.PLAYING) {
+                    recentFpsSamples.clear()
+                    smoothCount = 0
+                    emit(
+                        PlaybackOptimizationState(
+                            sourceId = sourceId,
+                            selectedProfileId = activeProfile.id,
+                            lastFrameTimeEpochMillis = now,
+                        ),
+                    )
+                    delay(500)
+                    continue
+                }
+
+                val currentFps = withContext(Dispatchers.IO) { bridge.getMeasuredReceiverFps() }
+                    .toDouble()
+                    .coerceAtLeast(0.0)
+                recentFpsSamples.addLast(now to currentFps)
+                while (recentFpsSamples.isNotEmpty() && now - recentFpsSamples.first().first > 1_000L) {
+                    recentFpsSamples.removeFirst()
+                }
+
+                val averageFps = if (recentFpsSamples.isEmpty()) {
+                    currentFps
+                } else {
+                    recentFpsSamples.sumOf { it.second } / recentFpsSamples.size.toDouble()
+                }
+
+                val droppedPercent = withContext(Dispatchers.IO) {
+                    bridge.getReceiverDroppedFramePercent()
+                }.coerceIn(0f, 100f)
+                val (actualWidth, actualHeight) = withContext(Dispatchers.IO) { bridge.getActualResolution() }
+                if (droppedPercent < activeProfile.frameDropThresholdPercent) {
+                    smoothCount += 1
+                }
+
+                emit(
+                    PlaybackOptimizationState(
+                        sourceId = sourceId,
+                        droppedFramePercent = droppedPercent.toInt(),
+                        selectedProfileId = activeProfile.id,
+                        currentFrameRate = currentFps,
+                        averageFrameRate = averageFps,
+                        lastFrameTimeEpochMillis = now,
+                        smoothPlaybackCount = smoothCount,
+                        droppedFrameCount = droppedPercent.toInt(),
+                        actualWidth = actualWidth,
+                        actualHeight = actualHeight,
+                        detectedCodecPreference = codecHintBySource[sourceId] ?: "adaptive",
+                        autoDegradeCount = 0,
+                        updatedAtEpochMillis = now,
+                    ),
+                )
+
+                // Keep additional per-sample hints in source maps for telemetry and downstream policy.
+                qualityBySource[sourceId] = activeProfile
+                codecHintBySource[sourceId] = "adaptive-${actualWidth}x${actualHeight}"
+                delay(500)
+            }
+        }
+    }
+
+    override suspend fun getActiveQualityProfile(sourceId: String): QualityProfile {
+        return operationMutex.withLock {
+            qualityBySource[sourceId] ?: QualityProfile.default()
+        }
+    }
+
+    override fun observeDroppedFramePercent(sourceId: String): Flow<Int> {
+        return viewerSessionState.asStateFlow().map {
+            if (it.selectedSourceId == sourceId && it.playbackState == PlaybackState.PLAYING) {
+                bridge.getReceiverDroppedFramePercent().toInt().coerceIn(0, 100)
+            } else {
+                0
+            }
+        }
+    }
+
+    override suspend fun degradeQualityIfNeeded(sourceId: String, droppedFramePercent: Int): QualityProfile {
+        val current = getActiveQualityProfile(sourceId)
+        if (droppedFramePercent < current.frameDropThresholdPercent) {
+            return current
+        }
+        val next = current.nextLowerProfile() ?: current
+        applyQualityProfile(sourceId, next)
+        return next
+    }
+
+    override suspend fun handleStreamDisconnection(sourceId: String, maxRetries: Int): Boolean {
+        val activeProfile = getActiveQualityProfile(sourceId)
+        val session = retryReconnectWithinWindow(sourceId, windowSeconds = 15)
+        val recovered = session.playbackState == PlaybackState.PLAYING
+        if (recovered) {
+            applyQualityProfile(sourceId, activeProfile)
+        }
+        return recovered
     }
 
     private fun ViewerSession.toEntity(): ViewerSessionEntity {

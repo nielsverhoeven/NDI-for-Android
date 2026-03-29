@@ -2,6 +2,7 @@ package com.ndi.feature.ndibrowser.viewer
 
 import com.ndi.core.model.TelemetryEvent
 import com.ndi.feature.ndibrowser.domain.repository.NdiViewerRepository
+import com.ndi.feature.ndibrowser.domain.repository.QualityProfileRepository
 import com.ndi.feature.ndibrowser.domain.repository.UserSelectionRepository
 import com.ndi.feature.ndibrowser.settings.OverlayDisplayState
 import kotlinx.coroutines.flow.Flow
@@ -12,6 +13,7 @@ fun interface ViewerTelemetryEmitter {
 
 object ViewerDependencies {
     var viewerRepositoryProvider: (() -> NdiViewerRepository)? = null
+    var qualityProfileRepositoryProvider: (() -> QualityProfileRepository)? = null
     var userSelectionRepositoryProvider: (() -> UserSelectionRepository)? = null
     var overlayStateProvider: (() -> Flow<OverlayDisplayState?>)? = null
     var telemetryEmitter: ViewerTelemetryEmitter = ViewerTelemetryEmitter {}
@@ -19,6 +21,14 @@ object ViewerDependencies {
     fun requireViewerRepository(): NdiViewerRepository {
         return requireNotNull(viewerRepositoryProvider) { "Viewer repository dependency is not configured." }.invoke()
     }
+
+    fun requireQualityProfileRepository(): QualityProfileRepository {
+        return requireNotNull(qualityProfileRepositoryProvider) {
+            "Viewer quality repository dependency is not configured."
+        }.invoke()
+    }
+
+    fun qualityProfileRepositoryOrNull(): QualityProfileRepository? = qualityProfileRepositoryProvider?.invoke()
 
     fun requireUserSelectionRepository(): UserSelectionRepository {
         return requireNotNull(userSelectionRepositoryProvider) { "Viewer selection repository dependency is not configured." }.invoke()

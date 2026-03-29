@@ -187,8 +187,8 @@ class SettingsViewModel(
             )
             else -> SettingsDetailState(
                 selectedCategoryId = selectedCategoryId,
-                groups = emptyList(),
-                emptyStateMessage = "No direct controls are available in About.",
+                groups = listOf(SettingsDetailGroup("about-details", "About", listOf("app-version"))),
+                emptyStateMessage = null,
                 isEditable = false,
             )
         }

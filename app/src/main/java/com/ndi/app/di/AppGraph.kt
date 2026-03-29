@@ -40,6 +40,8 @@ import com.ndi.feature.ndibrowser.domain.repository.DeveloperDiagnosticsReposito
 import com.ndi.feature.ndibrowser.domain.repository.DiscoveryServerRepository
 import com.ndi.feature.ndibrowser.domain.repository.NdiDiscoveryConfigRepository
 import com.ndi.feature.ndibrowser.domain.repository.NdiSettingsRepository
+import com.ndi.feature.ndibrowser.data.local.SharedPreferencesQualityStore
+import com.ndi.feature.ndibrowser.data.repository.QualityProfileRepositoryImpl
 import com.ndi.feature.ndibrowser.home.HomeDependencies
 import com.ndi.feature.ndibrowser.output.OutputDependencies
 import com.ndi.feature.ndibrowser.settings.DeveloperOverlayStateMapper
@@ -49,6 +51,7 @@ import com.ndi.feature.ndibrowser.settings.SettingsDependencies
 import com.ndi.feature.ndibrowser.settings.SettingsTelemetry
 import com.ndi.feature.ndibrowser.source_list.SourceListDependencies
 import com.ndi.feature.ndibrowser.viewer.ViewerDependencies
+import com.ndi.feature.ndibrowser.domain.repository.QualityProfileRepository
 import com.ndi.sdkbridge.NativeNdiBridge
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -62,6 +65,7 @@ import kotlinx.coroutines.flow.stateIn
 class AppGraph private constructor(context: Context) {
 
     private val appScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+    private val applicationContext = context.applicationContext
 
     init {
         NativeNdiBridge.initialize(context.applicationContext)
@@ -105,6 +109,10 @@ class AppGraph private constructor(context: Context) {
     val viewerRepository: NdiViewerRepository = NdiViewerRepositoryImpl(
         bridge = NativeNdiBridge,
         viewerSessionDao = database.viewerSessionDao(),
+    )
+
+    val qualityProfileRepository: QualityProfileRepository = QualityProfileRepositoryImpl(
+        store = SharedPreferencesQualityStore(applicationContext),
     )
 
     val screenCaptureConsentRepository: ScreenCaptureConsentRepository = ScreenCaptureConsentRepositoryImpl()
@@ -194,6 +202,7 @@ class AppGraph private constructor(context: Context) {
         SourceListDependencies.outputNavigationRequestProvider = NdiNavigation::outputRequest
         SourceListDependencies.overlayStateProvider = { overlayDisplayStateFlow }
         ViewerDependencies.viewerRepositoryProvider = { viewerRepository }
+        ViewerDependencies.qualityProfileRepositoryProvider = { qualityProfileRepository }
         ViewerDependencies.userSelectionRepositoryProvider = { userSelectionRepository }
         ViewerDependencies.overlayStateProvider = { overlayDisplayStateFlow }
         OutputDependencies.outputRepositoryProvider = { outputRepository }

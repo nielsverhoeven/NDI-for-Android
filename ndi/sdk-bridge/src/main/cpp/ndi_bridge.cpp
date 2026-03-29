@@ -2,8 +2,10 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <cstring>
+#include <deque>
 #include <mutex>
 #include <stdexcept>
 #include <string>
@@ -35,6 +37,21 @@ std::vector<jint> g_latest_argb_frame;
 int g_latest_frame_width = 0;
 int g_latest_frame_height = 0;
 
+struct ReceiverQualityPolicy {
+    int bandwidth_tier = 0;
+    int target_fps = 30;
+    int target_width = 0;
+    int target_height = 0;
+    std::string codec_pref = "adaptive";
+};
+
+ReceiverQualityPolicy g_quality_policy;
+uint64_t g_prev_total_video = 0;
+uint64_t g_prev_dropped_video = 0;
+float g_drop_percent_window = 0.0f;
+float g_measured_receiver_fps = 0.0f;
+std::deque<std::chrono::steady_clock::time_point> g_video_frame_times;
+
 #ifdef NDI_SDK_AVAILABLE
 NDIlib_recv_instance_t g_recv_instance = nullptr;
 NDIlib_send_instance_t g_send_instance = nullptr;
@@ -44,6 +61,11 @@ void clear_latest_frame_locked() {
     g_latest_argb_frame.clear();
     g_latest_frame_width = 0;
     g_latest_frame_height = 0;
+    g_drop_percent_window = 0.0f;
+    g_measured_receiver_fps = 0.0f;
+    g_prev_total_video = 0;
+    g_prev_dropped_video = 0;
+    g_video_frame_times.clear();
 }
 
 void clear_latest_frame() {
@@ -275,6 +297,7 @@ void start_receiver_native(const std::string& source_id) {
             );
 
             if (frame_type == NDIlib_frame_type_video && video_frame.p_data != nullptr && video_frame.xres > 0 && video_frame.yres > 0) {
+                const auto now = std::chrono::steady_clock::now();
                 const int width = video_frame.xres;
                 const int height = video_frame.yres;
                 const int stride = video_frame.line_stride_in_bytes > 0 ? video_frame.line_stride_in_bytes : width * 4;
@@ -314,6 +337,28 @@ void start_receiver_native(const std::string& source_id) {
                     g_latest_frame_width = width;
                     g_latest_frame_height = height;
                     g_latest_argb_frame.swap(argb_pixels);
+
+                    g_video_frame_times.push_back(now);
+                    const auto one_second_ago = now - std::chrono::seconds(1);
+                    while (!g_video_frame_times.empty() && g_video_frame_times.front() < one_second_ago) {
+                        g_video_frame_times.pop_front();
+                    }
+                    g_measured_receiver_fps = static_cast<float>(g_video_frame_times.size());
+                }
+
+                NDIlib_recv_performance_t total_performance;
+                std::memset(&total_performance, 0, sizeof(total_performance));
+                NDIlib_recv_performance_t dropped_performance;
+                std::memset(&dropped_performance, 0, sizeof(dropped_performance));
+                NDIlib_recv_get_performance(g_recv_instance, &total_performance, &dropped_performance);
+                {
+                    std::lock_guard<std::mutex> lock(g_state_mutex);
+                    g_prev_total_video = total_performance.video_frames;
+                    g_prev_dropped_video = dropped_performance.video_frames;
+                    g_drop_percent_window = total_performance.video_frames == 0
+                        ? 0.0f
+                        : (static_cast<float>(dropped_performance.video_frames) * 100.0f /
+                            static_cast<float>(total_performance.video_frames));
                 }
 
                 NDIlib_recv_free_video_v2(g_recv_instance, &video_frame);
@@ -571,6 +616,105 @@ Java_com_ndi_sdkbridge_NativeNdiBridge_nativeStopLocalScreenShareSender(
 #ifdef NDI_SDK_AVAILABLE
     std::lock_guard<std::mutex> lock(g_state_mutex);
     stop_sender_native_locked();
+#endif
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_ndi_sdkbridge_NativeNdiBridge_nativeApplyReceiverQualityProfile(
+    JNIEnv* env,
+    jobject /* this */,
+    jstring /* profile_id */,
+    jint max_width,
+    jint max_height,
+    jint target_fps
+) {
+#ifdef NDI_SDK_AVAILABLE
+    (void)env;
+    std::lock_guard<std::mutex> lock(g_state_mutex);
+    g_quality_policy.bandwidth_tier = static_cast<int>(NDIlib_recv_bandwidth_highest);
+    g_quality_policy.target_width = std::max(0, static_cast<int>(max_width));
+    g_quality_policy.target_height = std::max(0, static_cast<int>(max_height));
+    g_quality_policy.target_fps = std::max(1, static_cast<int>(target_fps));
+    g_quality_policy.codec_pref = "adaptive";
+#else
+    throw_java_runtime_exception(env, "NDI SDK is not linked in this build");
+#endif
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_ndi_sdkbridge_NativeNdiBridge_nativeSetFrameRatePolicy(
+    JNIEnv* /* env */,
+    jobject /* this */,
+    jint fps
+) {
+#ifdef NDI_SDK_AVAILABLE
+    std::lock_guard<std::mutex> lock(g_state_mutex);
+    g_quality_policy.target_fps = std::max(1, static_cast<int>(fps));
+    return JNI_TRUE;
+#else
+    (void)fps;
+    return JNI_FALSE;
+#endif
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_ndi_sdkbridge_NativeNdiBridge_nativeSetResolutionPolicy(
+    JNIEnv* /* env */,
+    jobject /* this */,
+    jint width,
+    jint height
+) {
+#ifdef NDI_SDK_AVAILABLE
+    std::lock_guard<std::mutex> lock(g_state_mutex);
+    g_quality_policy.target_width = std::max(0, static_cast<int>(width));
+    g_quality_policy.target_height = std::max(0, static_cast<int>(height));
+    return JNI_TRUE;
+#else
+    (void)width;
+    (void)height;
+    return JNI_FALSE;
+#endif
+}
+
+extern "C" JNIEXPORT jfloat JNICALL
+Java_com_ndi_sdkbridge_NativeNdiBridge_nativeGetReceiverDroppedFramePercent(
+    JNIEnv* /* env */,
+    jobject /* this */
+) {
+#ifdef NDI_SDK_AVAILABLE
+    std::lock_guard<std::mutex> lock(g_state_mutex);
+    return g_drop_percent_window;
+#else
+    return 0.0f;
+#endif
+}
+
+extern "C" JNIEXPORT jintArray JNICALL
+Java_com_ndi_sdkbridge_NativeNdiBridge_nativeGetActualResolution(
+    JNIEnv* env,
+    jobject /* this */
+) {
+    jint values[2] = {0, 0};
+    {
+        std::lock_guard<std::mutex> lock(g_state_mutex);
+        values[0] = g_latest_frame_width;
+        values[1] = g_latest_frame_height;
+    }
+    jintArray result = env->NewIntArray(2);
+    env->SetIntArrayRegion(result, 0, 2, values);
+    return result;
+}
+
+extern "C" JNIEXPORT jfloat JNICALL
+Java_com_ndi_sdkbridge_NativeNdiBridge_nativeGetMeasuredReceiverFps(
+    JNIEnv* /* env */,
+    jobject /* this */
+) {
+#ifdef NDI_SDK_AVAILABLE
+    std::lock_guard<std::mutex> lock(g_state_mutex);
+    return g_measured_receiver_fps;
+#else
+    return 0.0f;
 #endif
 }
 

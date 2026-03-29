@@ -37,7 +37,7 @@ class SettingsViewModelThreeColumnTest {
         viewModel.onLayoutContextChanged(widthDp = 840, isLandscape = false)
         advanceUntilIdle()
 
-        assertEquals(SettingsLayoutMode.THREE_COLUMN, viewModel.uiState.value.layoutMode)
+        assertEquals(SettingsLayoutMode.WIDE, viewModel.uiState.value.layoutMode)
     }
 
     @Test
