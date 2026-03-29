@@ -1,10 +1,18 @@
 package com.ndi.feature.ndibrowser.viewer
 
 import android.graphics.BitmapFactory
+import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.view.LayoutInflater
+import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.widget.ArrayAdapter
+import android.widget.LinearLayout
+import android.widget.ListView
+import android.widget.TextView
+import android.widget.PopupWindow
 import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
@@ -35,7 +43,12 @@ class ViewerFragment : Fragment() {
     private var relayPreviewJob: Job? = null
     private var relayPreviewSourceId: String? = null
     private var disconnectDialog: androidx.appcompat.app.AlertDialog? = null
+    private var qualityPopupWindow: PopupWindow? = null
     private var streamAspectRatio: Float = 16f / 9f
+    private var activeQualityProfileId: String = "smooth"
+    private var latestStreamWidth: Int = 0
+    private var latestStreamHeight: Int = 0
+    private var latestScaledDimensions: ScaledDimensions? = null
 
     private val viewModel: ViewerViewModel by viewModels {
         ViewerViewModel.Factory(
@@ -58,14 +71,8 @@ class ViewerFragment : Fragment() {
             viewModel.onBackToListPressed()
             runCatching { findNavController().popBackStack() }
         }
-        fragmentBinding.viewerTopAppBar.inflateMenu(R.menu.viewer_menu)
-        fragmentBinding.viewerTopAppBar.setOnMenuItemClickListener { item ->
-            if (item.itemId == R.id.viewer_menu_quality_presets) {
-                showQualityPresetMenu(fragmentBinding.viewerTopAppBar)
-                true
-            } else {
-                false
-            }
+        fragmentBinding.qualityButton.setOnClickListener {
+            showQualityPresetPopup(fragmentBinding.qualityButton)
         }
         return fragmentBinding.root
     }
@@ -91,13 +98,11 @@ class ViewerFragment : Fragment() {
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 scalingViewModel.scaledDimensions.collect { scaled ->
-                    val image = binding?.viewerPreviewImage ?: return@collect
+                    val image = binding?.viewerPreviewImage
+                        ?: return@collect
                     if (scaled == null) return@collect
-                    val params = (image.layoutParams as FrameLayout.LayoutParams)
-                    params.width = scaled.width
-                    params.height = scaled.height
-                    params.gravity = android.view.Gravity.CENTER
-                    image.layoutParams = params
+                    latestScaledDimensions = scaled
+                    applyPreviewLayout(image)
                 }
             }
         }
@@ -122,10 +127,37 @@ class ViewerFragment : Fragment() {
                         state.activeQualityProfileId,
                         state.droppedFramePercent,
                     )
+                    activeQualityProfileId = state.activeQualityProfileId
+                    latestStreamWidth = state.streamWidth
+                    latestStreamHeight = state.streamHeight
+                    binding?.viewerPreviewImage?.let { image ->
+                        applyPreviewLayout(image)
+                    }
+                    fragmentBinding.qualityButton.text = getString(
+                        R.string.ndi_viewer_quality_button_selected,
+                        profileDisplayName(state.activeQualityProfileId),
+                    )
                     fragmentBinding.tabletBadge.isVisible = state.layoutMode == ViewerLayoutMode.TABLET
                     fragmentBinding.recoveryMessage.text = state.interruptionMessage
                     fragmentBinding.recoveryMessage.isVisible = state.interruptionMessage != null
                     fragmentBinding.retryButton.isVisible = state.recoveryActionsVisible
+
+                    if (state.streamWidth > 0 && state.streamHeight > 0) {
+                        streamAspectRatio = state.streamWidth.toFloat() / state.streamHeight.toFloat()
+                        val container = fragmentBinding.viewerSurfacePlaceholder
+                        if (container.width > 0 && container.height > 0) {
+                            scalingViewModel.updatePlayerBounds(
+                                width = container.width,
+                                height = container.height,
+                                streamAspectRatio = streamAspectRatio,
+                                orientation = if (resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE) {
+                                    Orientation.LANDSCAPE
+                                } else {
+                                    Orientation.PORTRAIT
+                                },
+                            )
+                        }
+                    }
                     DeveloperOverlayRenderer.render(
                         container = fragmentBinding.developerOverlay.developerOverlayContainer,
                         streamStatusView = fragmentBinding.developerOverlay.overlayStreamStatus,
@@ -140,19 +172,103 @@ class ViewerFragment : Fragment() {
         }
     }
 
-    private fun showQualityPresetMenu(anchor: View) {
-        val popup = androidx.appcompat.widget.PopupMenu(requireContext(), anchor)
+    private fun showQualityPresetPopup(anchor: View) {
+        if (!isAdded) return
+        qualityPopupWindow?.dismiss()
+
+        val context = requireContext()
         val items = QualitySettingsMenuComposable.buildItems(requireContext())
-        items.forEachIndexed { index, item ->
-            popup.menu.add(0, index, index, "${item.title} - ${item.hint}")
+
+        val labels = items.map { item ->
+            val selected = item.profile.profileId == viewModel.uiState.value.activeQualityProfileId
+            val prefix = if (selected) "\u2713 " else ""
+            "$prefix${item.title} - ${item.hint}"
         }
-        popup.setOnMenuItemClickListener { menuItem ->
-            val index = menuItem.itemId
-            val selected = items.getOrNull(index) ?: return@setOnMenuItemClickListener false
-            viewModel.onQualityProfileSelected(selected.profile.profileId)
-            true
+
+        val listView = ListView(context).apply {
+            adapter = object : ArrayAdapter<String>(context, android.R.layout.simple_list_item_1, labels) {
+                override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
+                    val view = super.getView(position, convertView, parent)
+                    (view as? TextView)?.setTextColor(Color.WHITE)
+                    return view
+                }
+            }
+            setBackgroundColor(Color.TRANSPARENT)
+            dividerHeight = 0
+            setOnItemClickListener { _, _, index, _ ->
+                val selected = items.getOrNull(index) ?: return@setOnItemClickListener
+                viewModel.onQualityProfileSelected(selected.profile.profileId)
+                qualityPopupWindow?.dismiss()
+            }
         }
-        popup.show()
+
+        val titleView = TextView(context).apply {
+            text = getString(R.string.ndi_viewer_quality_sheet_title)
+            setTextColor(Color.WHITE)
+            setPadding(dpToPx(8), dpToPx(6), dpToPx(8), dpToPx(4))
+            setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_TitleMedium)
+        }
+
+        val popupWidth = maxOf(dpToPx(140), (resources.displayMetrics.widthPixels * 0.34f).toInt())
+        listView.layoutParams = LinearLayout.LayoutParams(
+            popupWidth - dpToPx(16),
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+        )
+
+        val content = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            val bg = GradientDrawable().apply {
+                setColor(Color.parseColor("#CC1E1E1E")) // ~80% opacity
+                cornerRadius = dpToPx(12).toFloat()
+            }
+            background = bg
+            elevation = dpToPx(8).toFloat()
+            setPadding(dpToPx(8), dpToPx(8), dpToPx(8), dpToPx(8))
+            addView(titleView)
+            addView(listView)
+        }
+
+        content.measure(
+            View.MeasureSpec.makeMeasureSpec(popupWidth, View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(resources.displayMetrics.heightPixels, View.MeasureSpec.AT_MOST),
+        )
+
+        val popupHeight = content.measuredHeight
+        val yOffset = -(popupHeight + anchor.height + dpToPx(4))
+
+        qualityPopupWindow = PopupWindow(
+            content,
+            popupWidth,
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            true,
+        ).apply {
+            isOutsideTouchable = true
+            elevation = dpToPx(8).toFloat()
+            setOnDismissListener { qualityPopupWindow = null }
+            showAsDropDown(anchor, 0, yOffset, Gravity.END)
+        }
+    }
+
+    private fun profileDisplayName(profileId: String): String {
+        val items = QualitySettingsMenuComposable.buildItems(requireContext())
+        return items.firstOrNull { it.profile.profileId == profileId }?.title
+            ?: getString(R.string.ndi_viewer_quality_smooth)
+    }
+
+    private fun applyPreviewLayout(image: android.widget.ImageView) {
+        val scaled = latestScaledDimensions ?: return
+        val params = (image.layoutParams as FrameLayout.LayoutParams)
+
+        val streamW = latestStreamWidth
+        val streamH = latestStreamHeight
+        params.width = if (streamW > 0) minOf(scaled.width, streamW) else scaled.width
+        params.height = if (streamH > 0) minOf(scaled.height, streamH) else scaled.height
+        params.gravity = android.view.Gravity.CENTER
+        image.layoutParams = params
+    }
+
+    private fun dpToPx(dp: Int): Int {
+        return (dp * resources.displayMetrics.density).toInt()
     }
 
     private fun renderDisconnectionDialog(state: ViewerUiState) {
@@ -258,6 +374,7 @@ class ViewerFragment : Fragment() {
                 }
 
                 if (bitmap != null) {
+                    val displayBitmap = applyProfileRenderPolicy(bitmap, activeQualityProfileId)
                     streamAspectRatio = bitmap.width.toFloat() / bitmap.height.toFloat()
                     val container = binding?.viewerSurfacePlaceholder
                     if (container != null && container.width > 0 && container.height > 0) {
@@ -272,17 +389,51 @@ class ViewerFragment : Fragment() {
                             },
                         )
                     }
-                    binding?.viewerPreviewImage?.setImageBitmap(bitmap)
+                    binding?.viewerPreviewImage?.setImageBitmap(displayBitmap)
                 } else {
                     // Clear stale frame immediately when publisher has stopped or no relay frame is available.
                     binding?.viewerPreviewImage?.setImageDrawable(null)
                 }
-                delay(750)
+                delay(framePollDelayMillis(activeQualityProfileId))
             }
         }
     }
 
+    private fun framePollDelayMillis(profileId: String): Long {
+        return when (profileId) {
+            "high_quality" -> 34L
+            "balanced" -> 42L
+            else -> 25L
+        }
+    }
+
+    private fun applyProfileRenderPolicy(
+        bitmap: android.graphics.Bitmap,
+        profileId: String,
+    ): android.graphics.Bitmap {
+        val target = when (profileId) {
+            "smooth" -> 640 to 360
+            "balanced" -> 1280 to 720
+            else -> null
+        } ?: return bitmap
+
+        val maxWidth = target.first
+        val maxHeight = target.second
+        if (bitmap.width <= maxWidth && bitmap.height <= maxHeight) {
+            return bitmap
+        }
+
+        val widthScale = maxWidth.toFloat() / bitmap.width.toFloat()
+        val heightScale = maxHeight.toFloat() / bitmap.height.toFloat()
+        val scale = minOf(widthScale, heightScale)
+        val scaledWidth = (bitmap.width * scale).toInt().coerceAtLeast(1)
+        val scaledHeight = (bitmap.height * scale).toInt().coerceAtLeast(1)
+        return android.graphics.Bitmap.createScaledBitmap(bitmap, scaledWidth, scaledHeight, true)
+    }
+
     override fun onDestroyView() {
+        qualityPopupWindow?.dismiss()
+        qualityPopupWindow = null
         disconnectDialog?.dismiss()
         disconnectDialog = null
         relayPreviewJob?.cancel()

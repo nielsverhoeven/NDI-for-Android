@@ -45,14 +45,15 @@ class SettingsCategorySelectionTest {
     }
 
     @Test
-    fun onSettingsCategorySelected_aboutCategory_emitsEmptyState() = runTest(scheduler) {
+    fun onSettingsCategorySelected_aboutCategory_emitsAboutDetailGroup() = runTest(scheduler) {
         val viewModel = SettingsViewModel(InMemorySettingsRepository())
 
         viewModel.onSettingsCategorySelected(SettingsViewModel.CATEGORY_ABOUT)
         advanceUntilIdle()
 
         val detail = viewModel.uiState.value.settingsDetailState
-        assertNotEquals(null, detail.emptyStateMessage)
-        assertEquals(true, detail.groups.isEmpty())
+        assertEquals(null, detail.emptyStateMessage)
+        assertEquals(1, detail.groups.size)
+        assertEquals("about-details", detail.groups.first().id)
     }
 }

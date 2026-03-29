@@ -51,6 +51,7 @@ class SettingsViewModelTest {
             ),
         )
         val viewModel = SettingsViewModel(repository)
+        advanceUntilIdle()
 
         viewModel.onDeveloperModeToggled(true)
         viewModel.onSaveSettings()

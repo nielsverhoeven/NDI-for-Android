@@ -139,11 +139,11 @@
 
 **Purpose**: Complete release-readiness, documentation, and full validation.
 
-- [ ] T054 [P] Update feature documentation and developer runbook in `specs/020-optimize-stream-playback/quickstart.md`
-- [ ] T055 Run full feature module unit tests and capture output in `test-results/020-optimize-stream-playback-validation.md`
+- [X] T054 [P] Update feature documentation and developer runbook in `specs/020-optimize-stream-playback/quickstart.md`
+- [X] T055 Run full feature module unit tests and capture output in `test-results/020-optimize-stream-playback-validation.md`
 - [ ] T056 Run full Playwright e2e suite plus Viewer regressions and capture output in `test-results/020-optimize-stream-playback-validation.md`
-- [ ] T057 Run release hardening check (`:app:assembleRelease`, minify/shrink) and capture output in `test-results/020-optimize-stream-playback-validation.md`
-- [ ] T058 Perform telemetry and log review for quality/degradation/reconnect paths in `test-results/020-optimize-stream-playback-validation.md`
+- [X] T057 Run release hardening check (`:app:assembleRelease`, minify/shrink) and capture output in `test-results/020-optimize-stream-playback-validation.md`
+- [X] T058 Perform telemetry and log review for quality/degradation/reconnect paths in `test-results/020-optimize-stream-playback-validation.md`
 
 ---
 

@@ -663,4 +663,55 @@ grep "kotlin" gradle/libs.versions.toml
 
 ---
 
+## Phase 6 Validation Runbook (2026-03-29)
+
+Use these commands and checks for final validation in this repository state.
+
+### Device install gate
+
+```powershell
+adb devices
+./gradlew.bat :app:installDebug --console=plain
+```
+
+Expected install output includes `Installed on 1 device.`
+
+### About section version visibility
+
+1. Open Settings.
+2. Open About.
+3. Confirm `App version` is visible and formatted as `versionName (versionCode)`.
+
+Implementation reference:
+- `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/SettingsDetailRenderer.kt`
+
+### Full feature module unit tests
+
+```powershell
+./gradlew.bat :feature:ndi-browser:data:testDebugUnitTest :feature:ndi-browser:presentation:testDebugUnitTest --console=plain
+```
+
+### Release hardening/build gate
+
+```powershell
+./gradlew.bat --stop
+./gradlew.bat :app:assembleRelease --no-daemon --console=plain
+```
+
+### Telemetry review checkpoints
+
+Verify telemetry emission paths in:
+- `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/viewer/ViewerRecoveryTelemetry.kt`
+- `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/viewer/ViewerViewModel.kt`
+
+Events reviewed:
+- profile selected
+- quality downgraded
+- quality recovered
+- recovery attempted
+- recovery result
+- playback started/stopped
+
+---
+
 **Happy coding! 🚀**

@@ -22,6 +22,9 @@
     <string name="ndi_viewer_quality_hint_smooth">Best for slow networks</string>
     <string name="ndi_viewer_quality_hint_balanced">Adaptive quality</string>
     <string name="ndi_viewer_quality_hint_high_quality">Maximize detail</string>
+    <string name="ndi_viewer_quality_button">Quality</string>
+    <string name="ndi_viewer_quality_button_selected">Quality: %1$s</string>
+    <string name="ndi_viewer_quality_sheet_title">Playback quality</string>
     <string name="ndi_viewer_quality_description_smooth">Smooth quality preset. Best for slow networks.</string>
     <string name="ndi_viewer_quality_description_balanced">Balanced quality preset. Adaptive quality for typical networks.</string>
     <string name="ndi_viewer_quality_description_high_quality">High Quality preset. Maximize detail when bandwidth allows.</string>
@@ -105,6 +108,9 @@
     <string name="settings_detail_discovery_title">Discovery Settings</string>
     <string name="settings_detail_developer_title">Developer Settings</string>
     <string name="settings_detail_about_title">About Settings</string>
+    <string name="settings_about_version_label">App version</string>
+    <string name="settings_about_version_value">%1$s (%2$d)</string>
+    <string name="settings_about_version_unavailable">Version unavailable</string>
     <string name="settings_three_pane_main_nav_title">Navigation</string>
     <string name="settings_three_pane_categories_title">Categories</string>
     <string name="settings_three_pane_details_title">Details</string>

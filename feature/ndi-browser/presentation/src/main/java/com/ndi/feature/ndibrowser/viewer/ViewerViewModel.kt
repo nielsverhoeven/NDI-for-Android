@@ -26,6 +26,8 @@ data class ViewerUiState(
     val playbackState: PlaybackState = PlaybackState.IDLE,
     val activeQualityProfileId: String = QualityProfile.default().profileId,
     val droppedFramePercent: Int = 0,
+    val streamWidth: Int = 0,
+    val streamHeight: Int = 0,
     val layoutMode: ViewerLayoutMode = ViewerLayoutMode.PHONE,
     val interruptionMessage: String? = null,
     val recoveryActionsVisible: Boolean = false,
@@ -75,6 +77,7 @@ class ViewerViewModel(
     private var playbackOptimizationManagerJob: Job? = null
     private var recoveryJob: Job? = null
     private var latestOptimizationSample: OptimizationSample? = null
+    private var lockedQualitySourceId: String? = null
     private var lowFpsSinceEpochMillis: Long? = null
     private var recoveredFpsSinceEpochMillis: Long? = null
 
@@ -90,7 +93,7 @@ class ViewerViewModel(
                         recoveryActionsVisible = recoveryState.recoveryActionsVisible,
                     )
                 }
-                if (session.playbackState == PlaybackState.INTERRUPTED || session.playbackState == PlaybackState.STOPPED) {
+                if (session.playbackState == PlaybackState.INTERRUPTED) {
                     beginRecovery(session.selectedSourceId)
                 } else if (session.playbackState == PlaybackState.PLAYING) {
                     completeRecovery(success = true)
@@ -101,6 +104,7 @@ class ViewerViewModel(
 
     fun onViewerOpened(sourceId: String) {
         if (sourceId.isBlank() || connectInFlight) return
+        lockedQualitySourceId = null
         connectInFlight = true
         viewModelScope.launch {
             runCatching {
@@ -196,6 +200,7 @@ class ViewerViewModel(
         if (sourceId.isBlank()) return
         val profile = QualityProfile.fromId(profileId)
         viewModelScope.launch {
+            lockedQualitySourceId = sourceId
             viewerRepository.applyQualityProfile(sourceId, profile)
             qualityProfileRepository?.setQualityPreference(
                 com.ndi.feature.ndibrowser.domain.repository.QualityPreference(
@@ -215,7 +220,13 @@ class ViewerViewModel(
         optimizationCollectorJob = viewModelScope.launch {
             viewerRepository.getOptimizationStats(sourceId).collect { sample ->
                 latestOptimizationSample = sample
-                _uiState.update { current -> current.copy(droppedFramePercent = sample.droppedFramePercent.coerceIn(0, 100)) }
+                _uiState.update { current ->
+                    current.copy(
+                        droppedFramePercent = sample.droppedFramePercent.coerceIn(0, 100),
+                        streamWidth = sample.actualWidth,
+                        streamHeight = sample.actualHeight,
+                    )
+                }
             }
         }
 
@@ -223,6 +234,15 @@ class ViewerViewModel(
             while (true) {
                 val sample = latestOptimizationSample
                 if (sample != null) {
+                    val isUserLocked = lockedQualitySourceId == sourceId
+                    if (isUserLocked) {
+                        lowFpsSinceEpochMillis = null
+                        recoveredFpsSinceEpochMillis = null
+                        _uiState.update { it.copy(optimizationState = PlaybackOptimizationState.Smooth) }
+                        delay(250)
+                        continue
+                    }
+
                     val now = System.currentTimeMillis()
                     val action = decideAdjustment(sample.averageFrameRate)
                     when (action) {

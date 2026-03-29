@@ -1,5 +1,7 @@
 package com.ndi.feature.ndibrowser.settings
 
+import android.content.pm.PackageManager
+import android.os.Build
 import android.view.View
 import android.widget.LinearLayout
 import android.widget.RadioGroup
@@ -83,9 +85,43 @@ class SettingsDetailRenderer(
                 }
                 detailContent.addView(toggle)
             }
+            SettingsViewModel.CATEGORY_ABOUT -> {
+                val label = TextView(context).apply {
+                    text = context.getString(R.string.settings_about_version_label)
+                    setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_BodyMedium)
+                }
+                val value = TextView(context).apply {
+                    text = resolveAppVersionText()
+                    setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_TitleSmall)
+                }
+                detailContent.addView(label)
+                detailContent.addView(value)
+            }
             else -> {
                 // Empty-state category has no controls.
             }
+        }
+    }
+
+    private fun resolveAppVersionText(): String {
+        val context = detailContent.context
+        return try {
+            val packageInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                context.packageManager.getPackageInfo(
+                    context.packageName,
+                    PackageManager.PackageInfoFlags.of(0),
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                context.packageManager.getPackageInfo(context.packageName, 0)
+            }
+            val versionName = packageInfo.versionName.orEmpty().ifBlank {
+                context.getString(R.string.settings_about_version_unavailable)
+            }
+            val versionCode = packageInfo.longVersionCode
+            context.getString(R.string.settings_about_version_value, versionName, versionCode)
+        } catch (_: Exception) {
+            context.getString(R.string.settings_about_version_unavailable)
         }
     }
 }

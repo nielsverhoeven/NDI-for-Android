@@ -9,7 +9,8 @@
         android:id="@+id/viewerTopAppBar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginBottom="4dp" />
+        android:layout_marginBottom="4dp"
+        android:visibility="gone" />
 
     <include
         android:id="@+id/developerOverlay"
@@ -60,6 +61,16 @@
             android:adjustViewBounds="true"
             android:scaleType="fitCenter" />
     </FrameLayout>
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/qualityButton"
+        style="@style/Widget.Material3.Button.OutlinedButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="end"
+        android:layout_marginTop="10dp"
+        android:text="@string/ndi_viewer_quality_button"
+        android:contentDescription="@string/ndi_viewer_quality_button" />
 
     <com.google.android.material.button.MaterialButton
         android:id="@+id/retryButton"

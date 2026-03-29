@@ -22,10 +22,10 @@ sealed class QualityProfile(
         id = "smooth",
         displayName = "Smooth",
         description = "Best for slow networks",
-        baseWidth = 854,
-        baseHeight = 480,
-        maxFrameRate = 30,
-        frameDropThresholdPercent = 5,
+        baseWidth = 640,
+        baseHeight = 360,
+        maxFrameRate = 15,
+        frameDropThresholdPercent = 1,
         priority = 1,
     )
 

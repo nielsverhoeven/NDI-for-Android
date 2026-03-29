@@ -1,31 +1,39 @@
 # Feature 020 Validation Evidence
 
-Date: 2026-03-28
+Date: 2026-03-29
 Feature: 020-optimize-stream-playback
 
 ## Summary
-This file captures Phase 6 validation outputs for feature 020.
+Phase 6 validation was continued with Kotlin/Gradle gates plus on-device install. Playwright remained deferred by request.
 
-## Unit Test Results
-- Targeted Kotlin unit tests passed for feature 020 viewer quality/recovery/scaling paths.
-- Validated classes: `PlaybackOptimizationPolicyTest`, `NdiViewerRepositoryImplQualityTest`, `ViewerReconnectCoordinatorTest`, `PlayerScalingCalculatorTest`, `PlayerScalingViewModelTest`, `ViewerQualitySettingsViewModelTest`.
+## Device Install Result
+- Command: `./gradlew.bat :app:installDebug --console=plain`
+- Device: `R92Y6085EEJ`
+- Result: PASS (`Installed on 1 device.`)
 
-## Integration Test Results
-- Debug compile and `:app:assembleDebug` both passed after the feature 020 changes.
+## About Section Verification
+- Added About details rendering for app version in `SettingsDetailRenderer`.
+- Version now shown as `versionName (versionCode)` in Settings -> About.
 
-## E2E Test Results
-- Deferred. Playwright validation intentionally skipped for now by request.
+## T055 Full Feature Module Unit Tests
+- Command: `./gradlew.bat :feature:ndi-browser:data:testDebugUnitTest :feature:ndi-browser:presentation:testDebugUnitTest --console=plain`
+- Result: PASS
 
 ## T056 Playwright e2e plus Viewer regressions
-- Deferred. Existing Playwright approach not used in the current validation path.
+- Deferred by request (Playwright path intentionally not used for this pass).
 
 ## T057 Release hardening check
-- Not run in this pass.
+- Command: `./gradlew.bat --stop; ./gradlew.bat :app:assembleRelease --no-daemon --console=plain`
+- Result: PASS
 
 ## T058 Telemetry and log review
-- Manual spot check only. No dedicated telemetry review run completed in this pass.
+- Static emission-path review completed.
+- Reviewed files:
+	- `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/viewer/ViewerRecoveryTelemetry.kt`
+	- `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/viewer/ViewerViewModel.kt`
+- Confirmed event paths for profile selected, quality downgraded/recovered, recovery attempted/result, and playback started/stopped.
 
 ## Current Outcome
-- US1 implementation compiled and validated via targeted Kotlin unit tests plus debug assemble.
-- US2 implementation compiled and validated via targeted Kotlin unit tests plus debug assemble.
-- US3 menu/persistence flow compiled and validated via targeted Kotlin unit tests plus debug assemble.
+- US1/US2/US3 remain compile- and unit-validated.
+- About settings now exposes app version to users.
+- Release build gate passes in current workspace state.
