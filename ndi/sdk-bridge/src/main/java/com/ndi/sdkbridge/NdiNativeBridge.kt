@@ -29,7 +29,13 @@ import org.json.JSONObject
 
 interface NdiDiscoveryBridge {
     suspend fun discoverSources(): List<NdiSource>
-    
+
+    suspend fun isDiscoveryServerReachable(host: String, port: Int?): Boolean = true
+
+    fun setDiscoveryEndpoints(endpoints: List<NdiDiscoveryEndpoint>) {
+        setDiscoveryEndpoint(endpoints.firstOrNull())
+    }
+
     fun setDiscoveryEndpoint(endpoint: NdiDiscoveryEndpoint?)
 }
 
@@ -98,7 +104,10 @@ object NativeNdiBridge : NdiDiscoveryBridge, NdiViewerBridge, NdiOutputBridge {
     private var multicastLock: WifiManager.MulticastLock? = null
     
     @Volatile
-    private var discoveryEndpoint: NdiDiscoveryEndpoint? = null
+    private var discoveryEndpoints: List<NdiDiscoveryEndpoint> = emptyList()
+
+    @Volatile
+    private var appliedDiscoveryExtraIps: String? = null
 
     private val mdnsCacheLock = Any()
 
@@ -123,6 +132,8 @@ object NativeNdiBridge : NdiDiscoveryBridge, NdiViewerBridge, NdiOutputBridge {
 
     fun initialize(context: Context) {
         appContext = context.applicationContext
+        // Set the app data dir in native so NDI SDK can find ~/.ndi/ndi-config.v1.json
+        runCatching { nativeSetAppDataDir(context.applicationContext.dataDir.absolutePath) }
     }
 
     fun registerScreenCapturePermissionResult(resultCode: Int, data: Intent?): String? {
@@ -134,17 +145,36 @@ object NativeNdiBridge : NdiDiscoveryBridge, NdiViewerBridge, NdiOutputBridge {
     }
 
     override fun setDiscoveryEndpoint(endpoint: NdiDiscoveryEndpoint?) {
-        discoveryEndpoint = endpoint
-        val extraIps = endpoint?.host
-            ?.takeIf { it.isNotBlank() }
-            ?.let(::resolveDiscoveryExtraIps)
+        setDiscoveryEndpoints(listOfNotNull(endpoint))
+    }
+
+    override fun setDiscoveryEndpoints(endpoints: List<NdiDiscoveryEndpoint>) {
+        val extraIps = endpoints
+            .asSequence()
+            .filter { it.host.isNotBlank() }
+            .map(::formatDiscoveryEndpoint)
+            .distinct()
+            .joinToString(",")
+            .takeIf { it.isNotBlank() }
+
+        discoveryEndpoints = endpoints
+        if (appliedDiscoveryExtraIps == extraIps) {
+            Log.d("NdiDiscovery", "Endpoints unchanged, skipping native reconfigure: extraIps=$extraIps")
+            return
+        }
+
+        // Write ~/.ndi/ndi-config.v1.json so the NDI SDK (Linux-based) picks up the
+        // discovery server address, which it reads from the config file rather than
+        // the NDI_DISCOVERY_SERVER env var on Android.
+        writeNdiConfigFile(endpoints)
         nativeSetDiscoveryExtraIps(extraIps)
-        Log.d("NdiDiscovery", "Endpoint set: $endpoint, extraIps=$extraIps")
+        appliedDiscoveryExtraIps = extraIps
+        Log.d("NdiDiscovery", "Endpoints set: $endpoints, extraIps=$extraIps")
     }
 
     override suspend fun discoverSources(): List<NdiSource> = withContext(Dispatchers.IO) {
-        val configuredEndpoint = discoveryEndpoint
-        Log.d("NdiDiscovery", "discoverSources() called with endpoint: $configuredEndpoint")
+        val configuredEndpoints = discoveryEndpoints
+        Log.d("NdiDiscovery", "discoverSources() called with endpoints: $configuredEndpoints")
 
         val relaySources = runCatching { discoverRelaySources() }.getOrDefault(emptyList())
 
@@ -180,6 +210,47 @@ object NativeNdiBridge : NdiDiscoveryBridge, NdiViewerBridge, NdiOutputBridge {
                 host
             }
         return resolved.trim('[', ']')
+    }
+
+    private fun formatDiscoveryEndpoint(endpoint: NdiDiscoveryEndpoint): String {
+        val resolvedHost = resolveDiscoveryExtraIps(endpoint.host)
+        val normalizedHost = if (resolvedHost.contains(':')) {
+            "[$resolvedHost]"
+        } else {
+            resolvedHost
+        }
+        return "$normalizedHost:${endpoint.resolvedPort}"
+    }
+
+    /**
+     * Writes the NDI configuration file that the Linux-based NDI SDK uses to locate
+     * the Discovery Server. On Android, the file must be at:
+     *   <app-data-dir>/.ndi/ndi-config.v1.json
+     * and HOME must point to <app-data-dir> so the SDK resolves ~/.ndi/.
+     */
+    private fun writeNdiConfigFile(endpoints: List<NdiDiscoveryEndpoint>) {
+        val context = appContext ?: return
+        val discovery = endpoints
+            .filter { it.host.isNotBlank() }
+            .map { "${it.host}:${it.resolvedPort}" }
+            .joinToString(",")
+
+        val ndiDir = java.io.File(context.dataDir, ".ndi")
+        runCatching {
+            ndiDir.mkdirs()
+            val configFile = java.io.File(ndiDir, "ndi-config.v1.json")
+            if (discovery.isNotBlank()) {
+                // NDI docs use root object `ndi` with nested `networks`.
+                val json = """{"ndi":{"networks":{"ips":"","discovery":"$discovery"}}}"""
+                configFile.writeText(json)
+                Log.d("NdiDiscovery", "NDI config file written: $json -> ${configFile.absolutePath}")
+            } else {
+                configFile.delete()
+                Log.d("NdiDiscovery", "NDI config file removed (no endpoints)")
+            }
+        }.onFailure {
+            Log.w("NdiDiscovery", "Failed to write NDI config file: ${it.message}")
+        }
     }
 
     private fun discoverMdnsSourcesCached(): List<NdiSource> {
@@ -371,7 +442,7 @@ object NativeNdiBridge : NdiDiscoveryBridge, NdiViewerBridge, NdiOutputBridge {
         val targetHost = host.trim()
         if (targetHost.isBlank()) return@withContext false
 
-        val targetPort = port ?: 5960
+        val targetPort = port ?: 5959
         runCatching {
             Socket().use { socket ->
                 socket.connect(InetSocketAddress(targetHost, targetPort), 1500)
@@ -510,6 +581,8 @@ object NativeNdiBridge : NdiDiscoveryBridge, NdiViewerBridge, NdiOutputBridge {
     private external fun nativeDiscoverDisplayNames(): Array<String>
 
     private external fun nativeSetDiscoveryExtraIps(extraIpsCsv: String?)
+
+        private external fun nativeSetAppDataDir(dataDir: String)
 
     private external fun nativeStartReceiver(sourceId: String)
 

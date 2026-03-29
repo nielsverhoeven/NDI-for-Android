@@ -1,6 +1,16 @@
 package com.ndi.feature.ndibrowser.data.repository
 
+import com.ndi.core.database.DiscoveryServerDao
+import com.ndi.core.database.DiscoveryServerEntity
+import com.ndi.core.database.SettingsPreferenceDao
+import com.ndi.core.database.SettingsPreferenceEntity
 import com.ndi.core.model.NdiDiscoveryEndpoint
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -8,6 +18,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class NdiSettingsRepositoryImplTest {
 
     @Test
@@ -127,4 +138,112 @@ class NdiSettingsRepositoryImplTest {
     fun isValidPort_rejectsAboveUpperBound() {
         assertFalse(NdiDiscoveryEndpoint.isValidPort(65536))
     }
+
+    @Test
+    fun init_migratesLegacyDiscoveryInput_once_and_clearsIt() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val settingsDao = FakeSettingsPreferenceDao(
+            SettingsPreferenceEntity(
+                id = 1,
+                discoveryServerInput = "192.168.2.23:5960",
+                developerModeEnabled = false,
+                themeMode = "SYSTEM",
+                accentColorId = "accent_teal",
+                updatedAtEpochMillis = 0L,
+            ),
+        )
+        val discoveryDao = FakeDiscoveryServerDao()
+
+        NdiSettingsRepositoryImpl(
+            settingsDao = settingsDao,
+            discoveryServerDao = discoveryDao,
+            scope = kotlinx.coroutines.CoroutineScope(dispatcher),
+        )
+        advanceUntilIdle()
+
+        assertEquals(1, discoveryDao.getAll().size)
+        assertEquals("192.168.2.23", discoveryDao.getAll().first().hostOrIp)
+        assertNull(settingsDao.get()?.discoveryServerInput)
+    }
+
+    @Test
+    fun init_withExistingDiscoveryServers_clearsLegacyInput_withoutReaddingServer() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val settingsDao = FakeSettingsPreferenceDao(
+            SettingsPreferenceEntity(
+                id = 1,
+                discoveryServerInput = "192.168.2.23:5960",
+                developerModeEnabled = false,
+                themeMode = "SYSTEM",
+                accentColorId = "accent_teal",
+                updatedAtEpochMillis = 0L,
+            ),
+        )
+        val discoveryDao = FakeDiscoveryServerDao(
+            initial = listOf(
+                DiscoveryServerEntity(
+                    id = "existing",
+                    hostOrIp = "10.0.0.5",
+                    port = 5959,
+                    enabled = true,
+                    orderIndex = 0,
+                    createdAtEpochMillis = 1L,
+                    updatedAtEpochMillis = 1L,
+                ),
+            ),
+        )
+
+        NdiSettingsRepositoryImpl(
+            settingsDao = settingsDao,
+            discoveryServerDao = discoveryDao,
+            scope = kotlinx.coroutines.CoroutineScope(dispatcher),
+        )
+        advanceUntilIdle()
+
+        assertEquals(1, discoveryDao.getAll().size)
+        assertEquals("10.0.0.5", discoveryDao.getAll().first().hostOrIp)
+        assertNull(settingsDao.get()?.discoveryServerInput)
+    }
+}
+
+private class FakeSettingsPreferenceDao(
+    initial: SettingsPreferenceEntity? = null,
+) : SettingsPreferenceDao {
+    private var entity: SettingsPreferenceEntity? = initial
+
+    override suspend fun get(): SettingsPreferenceEntity? = entity
+
+    override suspend fun upsert(entity: SettingsPreferenceEntity) {
+        this.entity = entity
+    }
+}
+
+private class FakeDiscoveryServerDao(
+    initial: List<DiscoveryServerEntity> = emptyList(),
+) : DiscoveryServerDao {
+    private val entities = MutableStateFlow(initial)
+
+    override fun observeAll(): Flow<List<DiscoveryServerEntity>> = entities
+
+    override suspend fun getAll(): List<DiscoveryServerEntity> = entities.value
+
+    override suspend fun insert(entity: DiscoveryServerEntity) {
+        entities.value = entities.value + entity
+    }
+
+    override suspend fun update(entity: DiscoveryServerEntity) {
+        entities.value = entities.value.map { existing -> if (existing.id == entity.id) entity else existing }
+    }
+
+    override suspend fun deleteById(id: String) {
+        entities.value = entities.value.filterNot { it.id == id }
+    }
+
+    override suspend fun getById(id: String): DiscoveryServerEntity? = entities.value.firstOrNull { it.id == id }
+
+    override suspend fun countDuplicates(hostOrIp: String, port: Int, excludeId: String): Int {
+        return entities.value.count { it.hostOrIp == hostOrIp && it.port == port && it.id != excludeId }
+    }
+
+    override suspend fun getMaxOrderIndex(): Int? = entities.value.maxOfOrNull { it.orderIndex }
 }

@@ -27,6 +27,7 @@ import com.ndi.core.model.navigation.TopLevelDestinationState
 import com.ndi.core.model.navigation.ViewContinuityState
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.map
 
 interface NdiDiscoveryRepository {
     suspend fun discoverSources(trigger: DiscoveryTrigger): DiscoverySnapshot
@@ -328,8 +329,14 @@ interface NdiSettingsRepository {
 }
 
 interface NdiDiscoveryConfigRepository {
+    fun observeDiscoveryEndpoints(): Flow<List<NdiDiscoveryEndpoint>>
+
     fun observeDiscoveryEndpoint(): Flow<NdiDiscoveryEndpoint?>
+
     suspend fun applyDiscoveryEndpoint(endpoint: NdiDiscoveryEndpoint?): NdiDiscoveryApplyResult
+
+    suspend fun getCurrentEndpoints(): List<NdiDiscoveryEndpoint>
+
     suspend fun getCurrentEndpoint(): NdiDiscoveryEndpoint?
 }
 

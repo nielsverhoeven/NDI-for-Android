@@ -8,9 +8,10 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import java.util.UUID
 
 class NdiDiscoveryConfigRepositoryImpl(
@@ -18,42 +19,57 @@ class NdiDiscoveryConfigRepositoryImpl(
 ) : NdiDiscoveryConfigRepository {
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-    private val _currentEndpoint = MutableStateFlow<NdiDiscoveryEndpoint?>(null)
 
-    init {
-        scope.launch {
-            discoveryServerRepository.observeServers().collect { servers ->
-                val endpoint = servers
-                    .asSequence()
-                    .filter { it.enabled }
-                    .sortedBy { it.orderIndex }
-                    .firstOrNull()
-                    ?.let {
-                        NdiDiscoveryEndpoint(
-                            host = it.hostOrIp,
-                            port = it.port,
-                            resolvedPort = it.port,
-                            usesDefaultPort = false,
-                        )
-                    }
-                _currentEndpoint.value = endpoint
-            }
-        }
+    private val currentEndpoints = discoveryServerRepository.observeServers()
+        .map(::toEnabledEndpoints)
+        .stateIn(
+            scope = scope,
+            started = SharingStarted.Eagerly,
+            initialValue = emptyList(),
+        )
+
+    override fun observeDiscoveryEndpoints(): Flow<List<NdiDiscoveryEndpoint>> = currentEndpoints
+
+    override fun observeDiscoveryEndpoint(): Flow<NdiDiscoveryEndpoint?> = currentEndpoints.map { endpoints ->
+        endpoints.firstOrNull()
     }
 
-    override fun observeDiscoveryEndpoint(): Flow<NdiDiscoveryEndpoint?> = _currentEndpoint.asStateFlow()
+    override suspend fun getCurrentEndpoints(): List<NdiDiscoveryEndpoint> {
+        val cached = currentEndpoints.value
+        if (cached.isNotEmpty()) {
+            return cached
+        }
 
-    override suspend fun getCurrentEndpoint(): NdiDiscoveryEndpoint? = _currentEndpoint.value
+        return toEnabledEndpoints(discoveryServerRepository.observeServers().first())
+    }
+
+    override suspend fun getCurrentEndpoint(): NdiDiscoveryEndpoint? = getCurrentEndpoints().firstOrNull()
 
     override suspend fun applyDiscoveryEndpoint(endpoint: NdiDiscoveryEndpoint?): NdiDiscoveryApplyResult {
         // Discovery endpoint can only be changed via Discovery Servers submenu mutations.
         // Ignore direct apply requests to keep discovery source-of-truth in repository entries.
         return NdiDiscoveryApplyResult(
             applyId = UUID.randomUUID().toString(),
-            endpoint = _currentEndpoint.value,
+            endpoint = currentEndpoints.value.firstOrNull(),
             interruptedActiveStream = false,
             fallbackTriggered = false,
             appliedAtEpochMillis = System.currentTimeMillis(),
         )
+    }
+
+    private fun toEnabledEndpoints(servers: List<com.ndi.core.model.DiscoveryServerEntry>): List<NdiDiscoveryEndpoint> {
+        return servers
+            .asSequence()
+            .filter { it.enabled }
+            .sortedBy { it.orderIndex }
+            .map {
+                NdiDiscoveryEndpoint(
+                    host = it.hostOrIp,
+                    port = it.port,
+                    resolvedPort = it.port,
+                    usesDefaultPort = false,
+                )
+            }
+            .toList()
     }
 }

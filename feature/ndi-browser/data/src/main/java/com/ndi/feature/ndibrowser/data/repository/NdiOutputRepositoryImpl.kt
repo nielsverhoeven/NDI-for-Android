@@ -4,6 +4,8 @@ import com.ndi.core.database.OutputSessionDao
 import com.ndi.core.database.OutputSessionEntity
 import com.ndi.core.model.NdiDiscoveryApplyResult
 import com.ndi.core.model.NdiDiscoveryEndpoint
+import com.ndi.core.model.NdiLogCategory
+import com.ndi.core.model.NdiLogLevel
 import com.ndi.core.model.OutputHealthSnapshot
 import com.ndi.core.model.OutputConsentState
 import com.ndi.core.model.OutputInputKind
@@ -23,6 +25,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -35,11 +38,12 @@ class NdiOutputRepositoryImpl(
     private val mapper: OutputSessionMapper = OutputSessionMapper(),
     private val coordinator: OutputSessionCoordinator = OutputSessionCoordinator(),
     private val recoveryCoordinator: OutputRecoveryCoordinator = OutputRecoveryCoordinator(),
+    private val diagnosticsLogBuffer: DeveloperDiagnosticsLogBuffer? = null,
 ) : NdiOutputRepository {
 
     private companion object {
         const val DISCOVERY_SERVER_UNREACHABLE_MESSAGE =
-            "Configured discovery server is unreachable. Check discovery settings or network connectivity."
+            "Configured discovery servers are unreachable. Check discovery settings or network connectivity."
     }
 
     private val startMutex = Mutex()
@@ -100,13 +104,26 @@ class NdiOutputRepositoryImpl(
                 OutputConsentState.NOT_REQUIRED
             }
 
-            val configuredEndpoint = discoveryConfigRepository.getCurrentEndpoint()
-            if (configuredEndpoint != null) {
+            val configuredEndpoints = discoveryConfigRepository.getCurrentEndpoints()
+            if (configuredEndpoints.isNotEmpty()) {
                 val discoveryReachable = withContext(Dispatchers.IO) {
-                    outputBridge.isDiscoveryServerReachable(
-                        host = configuredEndpoint.host,
-                        port = configuredEndpoint.port,
-                    )
+                    var anyReachable = false
+                    for (endpoint in configuredEndpoints) {
+                        val reachable = outputBridge.isDiscoveryServerReachable(
+                            host = endpoint.host,
+                            port = endpoint.port,
+                        )
+                        diagnosticsLogBuffer?.appendLog(
+                            category = NdiLogCategory.DISCOVERY,
+                            level = if (reachable) NdiLogLevel.INFO else NdiLogLevel.WARN,
+                            message = "output discovery server ${endpoint.host}:${endpoint.resolvedPort} ${if (reachable) "reachable" else "unreachable"}",
+                        )
+                        if (reachable) {
+                            anyReachable = true
+                            break
+                        }
+                    }
+                    anyReachable
                 }
                 if (!discoveryReachable) {
                     val interrupted = current.copy(
@@ -300,12 +317,16 @@ private class NoopScreenCaptureConsentRepository : ScreenCaptureConsentRepositor
 }
 
 private class NoopNdiDiscoveryConfigRepository : NdiDiscoveryConfigRepository {
-    private val endpointState = MutableStateFlow<NdiDiscoveryEndpoint?>(null)
+    private val endpointState = MutableStateFlow<List<NdiDiscoveryEndpoint>>(emptyList())
 
-    override fun observeDiscoveryEndpoint(): Flow<NdiDiscoveryEndpoint?> = endpointState.asStateFlow()
+    override fun observeDiscoveryEndpoints(): Flow<List<NdiDiscoveryEndpoint>> = endpointState.asStateFlow()
+
+    override fun observeDiscoveryEndpoint(): Flow<NdiDiscoveryEndpoint?> = endpointState.asStateFlow().map { endpoints ->
+        endpoints.firstOrNull()
+    }
 
     override suspend fun applyDiscoveryEndpoint(endpoint: NdiDiscoveryEndpoint?): NdiDiscoveryApplyResult {
-        endpointState.value = endpoint
+        endpointState.value = listOfNotNull(endpoint)
         return NdiDiscoveryApplyResult(
             applyId = UUID.randomUUID().toString(),
             endpoint = endpoint,
@@ -315,6 +336,8 @@ private class NoopNdiDiscoveryConfigRepository : NdiDiscoveryConfigRepository {
         )
     }
 
-    override suspend fun getCurrentEndpoint(): NdiDiscoveryEndpoint? = endpointState.value
+    override suspend fun getCurrentEndpoints(): List<NdiDiscoveryEndpoint> = endpointState.value
+
+    override suspend fun getCurrentEndpoint(): NdiDiscoveryEndpoint? = endpointState.value.firstOrNull()
 }
 
