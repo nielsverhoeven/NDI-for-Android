@@ -26,6 +26,7 @@ import com.ndi.core.model.navigation.TopLevelDestination
 import com.ndi.core.model.navigation.TopLevelDestinationState
 import com.ndi.core.model.navigation.ViewContinuityState
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 
 interface NdiDiscoveryRepository {
     suspend fun discoverSources(trigger: DiscoveryTrigger): DiscoverySnapshot
@@ -47,6 +48,96 @@ interface NdiViewerRepository {
     suspend fun retryReconnectWithinWindow(sourceId: String, windowSeconds: Int = 15): ViewerSession
 
     suspend fun stopViewing()
+
+    /**
+     * Applies a quality profile to the active viewer session.
+     *
+     * Implementations may route this to source-specific handling using the currently active source.
+     */
+    suspend fun applyQualityProfile(profile: QualityProfile): QualityProfileApplyResult {
+        return QualityProfileApplyResult.NOT_SUPPORTED
+    }
+
+    suspend fun applyQualityProfile(sourceId: String, profile: QualityProfile) {}
+
+    /**
+     * Returns optimization telemetry as a flow for the currently active stream.
+     */
+    fun getOptimizationStats(): Flow<PlaybackOptimizationState> = emptyFlow()
+
+    /**
+     * Returns optimization telemetry as a flow for a specific source.
+     */
+    fun getOptimizationStats(sourceId: String): Flow<PlaybackOptimizationState> = getOptimizationStats()
+
+    suspend fun getActiveQualityProfile(sourceId: String): QualityProfile {
+        return QualityProfile.default()
+    }
+
+    fun observeDroppedFramePercent(sourceId: String): Flow<Int> = emptyFlow()
+
+    suspend fun degradeQualityIfNeeded(sourceId: String, droppedFramePercent: Int): QualityProfile {
+        return getActiveQualityProfile(sourceId)
+    }
+
+    suspend fun handleStreamDisconnection(sourceId: String, maxRetries: Int = 5): Boolean {
+        retryReconnectWithinWindow(sourceId, windowSeconds = 15)
+        return true
+    }
+}
+
+enum class QualityProfileApplyResult {
+    APPLIED,
+    NOT_SUPPORTED,
+    FALLBACK,
+}
+
+/**
+ * Snapshot of playback optimization state used for monitoring and quality decisions.
+ */
+data class PlaybackOptimizationStats(
+    val sourceId: String,
+    val smoothPlaybackCount: Int = 0,
+    val droppedFrameCount: Int = 0,
+    val lastFrameTimeEpochMillis: Long = 0L,
+    val averageFrameRate: Double = 0.0,
+    val currentFrameRate: Double = 0.0,
+    val droppedFramePercent: Int = 0,
+    val actualWidth: Int = 0,
+    val actualHeight: Int = 0,
+    val detectedCodecPreference: String = "adaptive",
+    val autoDegradeCount: Int = 0,
+    val selectedProfileId: String = QualityProfile.default().id,
+    val updatedAtEpochMillis: Long = System.currentTimeMillis(),
+)
+
+typealias PlaybackOptimizationState = PlaybackOptimizationStats
+
+/**
+ * Disconnection recovery strategy for playback interruption handling.
+ */
+sealed class DisconnectionRecoveryConfig(
+    val maxRetries: Int,
+    val initialBackoffMillis: Long,
+    val maxBackoffMillis: Long,
+) {
+    data object Conservative : DisconnectionRecoveryConfig(
+        maxRetries = 3,
+        initialBackoffMillis = 2_000L,
+        maxBackoffMillis = 8_000L,
+    )
+
+    data object Standard : DisconnectionRecoveryConfig(
+        maxRetries = 5,
+        initialBackoffMillis = 1_000L,
+        maxBackoffMillis = 15_000L,
+    )
+
+    data object Aggressive : DisconnectionRecoveryConfig(
+        maxRetries = 8,
+        initialBackoffMillis = 500L,
+        maxBackoffMillis = 10_000L,
+    )
 }
 
 interface NdiOutputRepository {

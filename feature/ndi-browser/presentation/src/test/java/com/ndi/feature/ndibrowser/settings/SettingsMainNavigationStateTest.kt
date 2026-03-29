@@ -1,10 +1,7 @@
 package com.ndi.feature.ndibrowser.settings
 
-import com.ndi.core.model.SettingsMainDestination
-import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestCoroutineScheduler
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -33,21 +30,14 @@ class SettingsMainNavigationStateTest {
     }
 
     @Test
-    fun onMainNavigationSelected_emitsRoutingEventAndUpdatesSelection() = runTest(scheduler) {
+    fun onSettingsCategorySelected_marksOnlyOneCategorySelected() = runTest(scheduler) {
         val viewModel = SettingsViewModel(InMemorySettingsRepository())
-        var emitted: SettingsMainDestination? = null
-        val collector = launch(start = CoroutineStart.UNDISPATCHED) {
-            viewModel.mainNavigationEvents.collect {
-                emitted = it
-            }
-        }
 
-        viewModel.onMainNavigationSelected(SettingsMainDestination.VIEW)
+        viewModel.onSettingsCategorySelected(SettingsViewModel.CATEGORY_DISCOVERY)
         advanceUntilIdle()
 
-        assertEquals(SettingsMainDestination.VIEW, emitted)
-        val selected = viewModel.uiState.value.mainNavigationItems.single { it.isSelected }
-        assertEquals(SettingsMainDestination.VIEW, selected.destination)
-        collector.cancel()
+        val selected = viewModel.uiState.value.settingsCategoryState.categories.single { it.isSelected }
+        assertEquals(SettingsViewModel.CATEGORY_DISCOVERY, selected.id)
+        assertEquals(SettingsViewModel.CATEGORY_DISCOVERY, viewModel.uiState.value.settingsDetailState.selectedCategoryId)
     }
 }

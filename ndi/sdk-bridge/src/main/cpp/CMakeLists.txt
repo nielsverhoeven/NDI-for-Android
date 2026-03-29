@@ -51,3 +51,9 @@ target_link_libraries(
     ${log-lib}
     ${NDI_LINK_TARGET}
 )
+
+target_compile_definitions(
+    ndi_bridge
+    PRIVATE
+    FEATURE_020_PLAYBACK_QUALITY=1
+)

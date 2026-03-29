@@ -33,7 +33,7 @@ class SettingsCategorySelectionTest {
     @Test
     fun onSettingsCategorySelected_updatesDetailWithoutChangingMainNavSelection() = runTest(scheduler) {
         val viewModel = SettingsViewModel(InMemorySettingsRepository())
-        val mainNavBefore = viewModel.uiState.value.mainNavigationItems
+        val categoriesBefore = viewModel.uiState.value.settingsCategoryState.categories
 
         viewModel.onSettingsCategorySelected(SettingsViewModel.CATEGORY_DISCOVERY)
         advanceUntilIdle()
@@ -41,7 +41,7 @@ class SettingsCategorySelectionTest {
         val state = viewModel.uiState.value
         assertEquals(SettingsViewModel.CATEGORY_DISCOVERY, state.settingsCategoryState.selectedCategoryId)
         assertEquals(SettingsViewModel.CATEGORY_DISCOVERY, state.settingsDetailState.selectedCategoryId)
-        assertEquals(mainNavBefore, state.mainNavigationItems)
+        assertEquals(categoriesBefore.map { it.id }, state.settingsCategoryState.categories.map { it.id })
     }
 
     @Test

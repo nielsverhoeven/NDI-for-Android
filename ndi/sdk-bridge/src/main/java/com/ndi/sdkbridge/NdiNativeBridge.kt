@@ -39,6 +39,18 @@ interface NdiViewerBridge {
     fun stopReceiver()
 
     fun getLatestReceiverFrame(): ViewerVideoFrame?
+
+    fun applyReceiverQualityProfile(profileId: String, maxWidth: Int, maxHeight: Int, targetFps: Int) {}
+
+    fun setFrameRatePolicy(targetFps: Int): Boolean = false
+
+    fun setResolutionPolicy(width: Int, height: Int): Boolean = false
+
+    fun getReceiverDroppedFramePercent(): Float = 0f
+
+    fun getActualResolution(): Pair<Int, Int> = 0 to 0
+
+    fun getMeasuredReceiverFps(): Float = 0f
 }
 
 interface NdiOutputBridge {
@@ -323,6 +335,34 @@ object NativeNdiBridge : NdiDiscoveryBridge, NdiViewerBridge, NdiOutputBridge {
         )
     }
 
+    override fun applyReceiverQualityProfile(profileId: String, maxWidth: Int, maxHeight: Int, targetFps: Int) {
+        runCatching {
+            nativeApplyReceiverQualityProfile(profileId, maxWidth, maxHeight, targetFps)
+        }
+    }
+
+    override fun setFrameRatePolicy(targetFps: Int): Boolean {
+        return runCatching { nativeSetFrameRatePolicy(targetFps) }.getOrDefault(false)
+    }
+
+    override fun setResolutionPolicy(width: Int, height: Int): Boolean {
+        return runCatching { nativeSetResolutionPolicy(width, height) }.getOrDefault(false)
+    }
+
+    override fun getReceiverDroppedFramePercent(): Float {
+        return runCatching { nativeGetReceiverDroppedFramePercent() }.getOrDefault(0f).coerceIn(0f, 100f)
+    }
+
+    override fun getActualResolution(): Pair<Int, Int> {
+        val values = runCatching { nativeGetActualResolution() }.getOrNull() ?: return 0 to 0
+        if (values.size < 2) return 0 to 0
+        return values[0].coerceAtLeast(0) to values[1].coerceAtLeast(0)
+    }
+
+    override fun getMeasuredReceiverFps(): Float {
+        return runCatching { nativeGetMeasuredReceiverFps() }.getOrDefault(0f).coerceAtLeast(0f)
+    }
+
     override suspend fun isSourceReachable(sourceId: String): Boolean = withContext(Dispatchers.IO) {
         discoverSources().any { it.sourceId == sourceId }
     }
@@ -480,6 +520,23 @@ object NativeNdiBridge : NdiDiscoveryBridge, NdiViewerBridge, NdiOutputBridge {
     private external fun nativeGetLatestReceiverFrameWidth(): Int
 
     private external fun nativeGetLatestReceiverFrameHeight(): Int
+
+    private external fun nativeApplyReceiverQualityProfile(
+        profileId: String,
+        maxWidth: Int,
+        maxHeight: Int,
+        targetFps: Int,
+    )
+
+    private external fun nativeGetReceiverDroppedFramePercent(): Float
+
+    private external fun nativeSetFrameRatePolicy(targetFps: Int): Boolean
+
+    private external fun nativeSetResolutionPolicy(width: Int, height: Int): Boolean
+
+    private external fun nativeGetActualResolution(): IntArray?
+
+    private external fun nativeGetMeasuredReceiverFps(): Float
 
     private external fun nativeStartSender(sourceId: String, streamName: String)
 

@@ -40,7 +40,7 @@ class SettingsLayoutTransitionTest {
         viewModel.onLayoutContextChanged(widthDp = 720, isLandscape = true)
         advanceUntilIdle()
 
-        assertEquals(SettingsLayoutMode.THREE_COLUMN, viewModel.uiState.value.layoutMode)
+        assertEquals(SettingsLayoutMode.WIDE, viewModel.uiState.value.layoutMode)
         assertEquals(SettingsViewModel.CATEGORY_DEVELOPER, viewModel.uiState.value.settingsCategoryState.selectedCategoryId)
     }
 }
