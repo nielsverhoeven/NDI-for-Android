@@ -1,5 +1,6 @@
 package com.ndi.feature.ndibrowser.source_list.adapter
 
+import android.graphics.BitmapFactory
 import android.view.LayoutInflater
 import android.view.ViewGroup
 import androidx.core.view.isVisible
@@ -50,6 +51,9 @@ class SourceViewHolder(
         } else {
             source.endpointAddress ?: source.sourceId
         }
+        val previewBitmap = source.lastFramePreviewPath?.let(BitmapFactory::decodeFile)
+        binding.sourcePreviewImage.isVisible = previewBitmap != null
+        binding.sourcePreviewImage.setImageBitmap(previewBitmap)
         binding.highlightBadge.isVisible = isHighlighted
         
         // T035: Render Previously Connected badge

@@ -16,9 +16,9 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.io.File
 
 data class SourceListUiState(
     val discoveryStatus: DiscoveryStatus = DiscoveryStatus.EMPTY,
@@ -57,6 +57,7 @@ class SourceListViewModel(
     // Track availability and connection history for UI enrichment
     private val availabilityHistory = MutableStateFlow<Map<String, SourceAvailabilityStatus>>(emptyMap())
     private val previouslyConnectedIds = MutableStateFlow<Set<String>>(emptySet())
+    private val lastViewedPreviewBySourceId = MutableStateFlow<Map<String, String>>(emptyMap())
     private var allPreviouslySources = mutableMapOf<String, NdiSource>()  // Preserve unavailable sources
 
     init {
@@ -77,6 +78,22 @@ class SourceListViewModel(
             SourceListDependencies.viewerContinuityRepositoryOrNull()?.observePreviouslyConnectedSourceIds()?.collect { ids ->
                 previouslyConnectedIds.value = ids
                 // Update UI state with enriched connection history
+                val enrichedSources = enrichSourcesWithAvailability()
+                _uiState.update { current ->
+                    current.copy(sources = enrichedSources)
+                }
+            }
+        }
+        viewModelScope.launch {
+            SourceListDependencies.viewerContinuityRepositoryOrNull()?.observeLastViewedContext()?.collect { context ->
+                val previewMap = buildMap {
+                    val sourceId = context?.sourceId
+                    val previewPath = context?.lastFrameImagePath
+                    if (!sourceId.isNullOrBlank() && !previewPath.isNullOrBlank() && File(previewPath).exists()) {
+                        put(sourceId, previewPath)
+                    }
+                }
+                lastViewedPreviewBySourceId.value = previewMap
                 val enrichedSources = enrichSourcesWithAvailability()
                 _uiState.update { current ->
                     current.copy(sources = enrichedSources)
@@ -205,14 +222,17 @@ class SourceListViewModel(
         val sourcesToEnrich = sources ?: _uiState.value.sources
         val availability = availabilityHistory.value
         val previouslyConnected = previouslyConnectedIds.value
+        val previewBySourceId = lastViewedPreviewBySourceId.value
 
         return sourcesToEnrich.map { source ->
             val isAvailable = availability[source.sourceId]?.isAvailable ?: true
             val wasPreviouslyConnected = source.sourceId in previouslyConnected
+            val previewPath = previewBySourceId[source.sourceId]
 
             source.copy(
                 isAvailable = isAvailable,
                 previouslyConnected = wasPreviouslyConnected,
+                lastFramePreviewPath = previewPath,
             )
         }
     }

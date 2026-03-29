@@ -110,6 +110,15 @@ class NdiViewerRepositoryImpl(
 
     override suspend fun stopViewing() {
         operationMutex.withLock {
+            val activeSourceId = viewerSessionState.value.selectedSourceId
+            val latestFrameBeforeStop = if (activeSourceId.isNotBlank()) {
+                withContext(Dispatchers.IO) {
+                    bridge.getLatestReceiverFrame()
+                }
+            } else {
+                null
+            }
+
             val stoppedSession = withContext(Dispatchers.IO) {
                 // Native stop can occasionally stall; bound it so UI flows do not ANR.
                 withTimeoutOrNull(1_500L) {
@@ -123,6 +132,10 @@ class NdiViewerRepositoryImpl(
             viewerSessionState.value = stoppedSession
             withContext(Dispatchers.IO) {
                 viewerSessionDao.upsert(stoppedSession.toEntity())
+            }
+
+            if (activeSourceId.isNotBlank()) {
+                persistViewerContinuity(sourceId = activeSourceId, firstFrame = latestFrameBeforeStop)
             }
         }
     }

@@ -68,8 +68,10 @@ class ViewerFragment : Fragment() {
         binding = fragmentBinding
         fragmentBinding.retryButton.setOnClickListener { viewModel.onRetryPressed() }
         fragmentBinding.backToListButton.setOnClickListener {
-            viewModel.onBackToListPressed()
-            runCatching { findNavController().popBackStack() }
+            viewLifecycleOwner.lifecycleScope.launch {
+                viewModel.stopViewingForBackNavigation()
+                runCatching { findNavController().popBackStack() }
+            }
         }
         fragmentBinding.qualityButton.setOnClickListener {
             showQualityPresetPopup(fragmentBinding.qualityButton)
@@ -319,8 +321,10 @@ class ViewerFragment : Fragment() {
                 viewModel.onRetryPressed()
             }
             .setNegativeButton(R.string.ndi_viewer_cancel) { _, _ ->
-                viewModel.onBackToListPressed()
-                runCatching { findNavController().popBackStack() }
+                viewLifecycleOwner.lifecycleScope.launch {
+                    viewModel.stopViewingForBackNavigation()
+                    runCatching { findNavController().popBackStack() }
+                }
             }
             .show()
         disconnectDialog?.getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE)
