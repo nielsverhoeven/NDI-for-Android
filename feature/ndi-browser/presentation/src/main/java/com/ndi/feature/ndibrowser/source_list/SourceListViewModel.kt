@@ -85,18 +85,33 @@ class SourceListViewModel(
             }
         }
         viewModelScope.launch {
-            SourceListDependencies.viewerContinuityRepositoryOrNull()?.observeLastViewedContext()?.collect { context ->
-                val previewMap = buildMap {
-                    val sourceId = context?.sourceId
-                    val previewPath = context?.lastFrameImagePath
-                    if (!sourceId.isNullOrBlank() && !previewPath.isNullOrBlank() && File(previewPath).exists()) {
-                        put(sourceId, previewPath)
+            val frameRepository = SourceListDependencies.perSourceFrameRepositoryOrNull()
+            if (frameRepository != null) {
+                // Per-source frame map: observe all retained thumbnails keyed by sourceId
+                frameRepository.observeFrameMap().collect { frameMap ->
+                    lastViewedPreviewBySourceId.value = frameMap.filterValues { path ->
+                        File(path).exists()
+                    }
+                    val enrichedSources = enrichSourcesWithAvailability()
+                    _uiState.update { current ->
+                        current.copy(sources = enrichedSources)
                     }
                 }
-                lastViewedPreviewBySourceId.value = previewMap
-                val enrichedSources = enrichSourcesWithAvailability()
-                _uiState.update { current ->
-                    current.copy(sources = enrichedSources)
+            } else {
+                // Fallback: single-source continuity (legacy path when repo not wired)
+                SourceListDependencies.viewerContinuityRepositoryOrNull()?.observeLastViewedContext()?.collect { context ->
+                    val previewMap = buildMap {
+                        val sourceId = context?.sourceId
+                        val previewPath = context?.lastFrameImagePath
+                        if (!sourceId.isNullOrBlank() && !previewPath.isNullOrBlank() && File(previewPath).exists()) {
+                            put(sourceId, previewPath)
+                        }
+                    }
+                    lastViewedPreviewBySourceId.value = previewMap
+                    val enrichedSources = enrichSourcesWithAvailability()
+                    _uiState.update { current ->
+                        current.copy(sources = enrichedSources)
+                    }
                 }
             }
         }

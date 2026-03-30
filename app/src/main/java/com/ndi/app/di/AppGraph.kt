@@ -1,6 +1,8 @@
 package com.ndi.app.di
 
 import android.content.Context
+import com.ndi.feature.ndibrowser.data.repository.PerSourceFrameRepositoryImpl
+import com.ndi.feature.ndibrowser.domain.repository.PerSourceFrameRepository
 import com.ndi.core.database.NdiDatabase
 import com.ndi.core.model.NdiOverlayMode
 import com.ndi.feature.ndibrowser.data.OutputRecoveryCoordinator
@@ -120,10 +122,15 @@ class AppGraph private constructor(context: Context) {
         previewDirectory = java.io.File(applicationContext.filesDir, "viewer-previews"),
     )
 
+    val perSourceFrameRepository: PerSourceFrameRepository = PerSourceFrameRepositoryImpl(
+        sessionCacheDir = java.io.File(applicationContext.cacheDir, "ndi-session-previews"),
+    )
+
     val viewerRepository: NdiViewerRepository = NdiViewerRepositoryImpl(
         bridge = NativeNdiBridge,
         viewerSessionDao = database.viewerSessionDao(),
         viewerContinuityRepository = viewerContinuityRepository,
+        perSourceFrameRepository = perSourceFrameRepository,
     )
 
     val qualityProfileRepository: QualityProfileRepository = QualityProfileRepositoryImpl(
@@ -221,6 +228,7 @@ class AppGraph private constructor(context: Context) {
         SourceListDependencies.outputNavigationRequestProvider = NdiNavigation::outputRequest
         SourceListDependencies.overlayStateProvider = { overlayDisplayStateFlow }
         SourceListDependencies.viewerContinuityRepositoryProvider = { viewerContinuityRepository }
+            SourceListDependencies.perSourceFrameRepositoryProvider = { perSourceFrameRepository }
         ViewerDependencies.viewerRepositoryProvider = { viewerRepository }
         ViewerDependencies.qualityProfileRepositoryProvider = { qualityProfileRepository }
         ViewerDependencies.userSelectionRepositoryProvider = { userSelectionRepository }
