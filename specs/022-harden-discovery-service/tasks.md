@@ -21,7 +21,7 @@
 
 - [X] T000 Run `scripts/verify-android-prereqs.ps1` and record PASS or BLOCKED:ENVIRONMENT in test-results/022-preflight-android.md
 - [X] T001 Run `scripts/verify-e2e-dual-emulator-prereqs.ps1` and record PASS or BLOCKED:ENVIRONMENT in test-results/022-preflight-e2e.md
-- [ ] T002 Confirm NDI SDK is installed/discoverable by the build runtime, at least one reachable discovery server endpoint and one unreachable endpoint are available; record environment state in test-results/022-preflight-ndi-endpoints.md
+- [X] T002 Confirm NDI SDK is installed/discoverable by the build runtime, at least one reachable discovery server endpoint and one unreachable endpoint are available; record environment state in test-results/022-preflight-ndi-endpoints.md
 - [X] T002a Resolve APK artifact output path by running `./gradlew.bat :app:assembleDebug --dry-run` and record the confirmed path in test-results/022-preflight-apk-path.md; use this resolved path in Playwright install commands at T024 and T033 (Constitution XII — deterministic artifact paths required before emulator e2e runs)
 
 **Checkpoint**: All preflight checks PASS, or blocked gates are explicitly documented with unblock steps before proceeding.
@@ -79,7 +79,7 @@
 
 ### Implementation for User Story 1
 
-- [ ] T017 [US1] Add `performDiscoveryCheck(hostOrIp: String, port: Int, correlationId: String): DiscoveryServerCheckStatus` Kotlin method and corresponding C++ NDI handshake invocation in `ndi/sdk-bridge/src/main/java/com/ndi/sdkbridge/NdiNativeBridge.kt` and `ndi/sdk-bridge/src/main/cpp/ndi_bridge.cpp`
+- [X] T017 [US1] Add `performDiscoveryCheck(hostOrIp: String, port: Int, correlationId: String): DiscoveryServerCheckStatus` Kotlin method and corresponding C++ NDI handshake invocation in `ndi/sdk-bridge/src/main/java/com/ndi/sdkbridge/NdiNativeBridge.kt` and `ndi/sdk-bridge/src/main/cpp/ndi_bridge.cpp`
 - [X] T018 [US1] Extend `DiscoveryServerRepositoryImpl.addServer` to invoke bridge protocol check, persist `DiscoveryServerCheckStatus` via `DiscoveryServerCheckStatusDao`, and surface failure reason to caller in `feature/ndi-browser/data/src/main/java/com/ndi/feature/ndibrowser/data/repository/DiscoveryServerRepositoryImpl.kt`
 - [X] T019 [US1] Extend `DiscoveryServerSettingsViewModel` to observe and expose `DiscoveryServerCheckStatus` as `checkResult` UI state after each add in `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/DiscoveryServerSettingsViewModel.kt`
 - [X] T020 [US1] Update `DiscoveryServerSettingsFragment` to render check badge (`Connected` / `Check failed`) with timestamp and failure reason per server row in `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/DiscoveryServerSettingsFragment.kt`
@@ -89,7 +89,7 @@
 ### Validation for User Story 1
 
 - [X] T023 [US1] Run `./gradlew.bat :feature:ndi-browser:data:testDebugUnitTest :feature:ndi-browser:presentation:testDebugUnitTest :ndi:sdk-bridge:testDebugUnitTest` and record PASS in `test-results/022-us1-unit-tests.md`
-- [ ] T024 [US1] Run Playwright e2e US1 scenarios (T015, T016) and record PASS or BLOCKED:ENVIRONMENT with reproduction steps in `test-results/022-us1-playwright-evidence.md`
+- [X] T024 [US1] Run Playwright e2e US1 scenarios (T015, T016) and record PASS or BLOCKED:ENVIRONMENT with reproduction steps in `test-results/022-us1-playwright-evidence.md`
 
 **Checkpoint**: US1 is fully functional. Add-time connection check shows pass/fail status per server. Unit tests and e2e scenarios are green (or environment-blocked with evidence).
 
@@ -120,7 +120,7 @@
 ### Validation for User Story 2
 
 - [X] T032 [US2] Run `./gradlew.bat :feature:ndi-browser:data:testDebugUnitTest :feature:ndi-browser:presentation:testDebugUnitTest` and record PASS in `test-results/022-us2-unit-tests.md`
-- [ ] T033 [US2] Run Playwright e2e US2 scenarios (T027) and record PASS or BLOCKED:ENVIRONMENT with reproduction steps in `test-results/022-us2-playwright-evidence.md`
+- [X] T033 [US2] Run Playwright e2e US2 scenarios (T027) and record PASS or BLOCKED:ENVIRONMENT with reproduction steps in `test-results/022-us2-playwright-evidence.md`
 
 **Checkpoint**: US2 is fully functional. Per-server recheck button exists and updates only the targeted server. Unit tests and e2e scenarios are green (or environment-blocked with evidence).
 
@@ -136,7 +136,7 @@
 
 > **NOTE: Write these tests FIRST and confirm they FAIL before any implementation begins.**
 
-- [ ] T034 [P] [US3] Write failing JUnit test: `DiscoveryServerSettingsViewModel` exposes `DeveloperDiscoveryDiagnostics` when developer mode is ON and emits null/hidden state when OFF in `feature/ndi-browser/presentation/src/test/java/com/ndi/feature/ndibrowser/settings/DiscoveryServerSettingsViewModelTest.kt`
+- [X] T034 [P] [US3] Write failing JUnit test: `DiscoveryServerSettingsViewModel` exposes `DeveloperDiscoveryDiagnostics` when developer mode is ON and emits null/hidden state when OFF in `feature/ndi-browser/presentation/src/test/java/com/ndi/feature/ndibrowser/settings/DiscoveryServerSettingsViewModelTest.kt`
 - [X] T035 [P] [US3] Write failing JUnit test: `DeveloperDiagnosticsRepositoryImpl.getDeveloperDiscoveryDiagnostics` aggregates all `DiscoveryServerCheckStatus` records and latest discovery refresh result into `DeveloperDiscoveryDiagnostics` in `feature/ndi-browser/data/src/test/java/com/ndi/feature/ndibrowser/data/DeveloperDiagnosticsRepositoryImplTest.kt`
 - [X] T036 [P] [US3] Write failing Playwright e2e test: toggling developer mode ON renders the discovery diagnostics section; toggling OFF hides it without losing source-list content in `testing/e2e/tests/022-us3-developer-diagnostics.spec.ts`
 - [X] T036a [P] [US3] Write failing JUnit test: `LogRedactor.redact` strips discovery server hostOrIp and port values from a raw log string before it is included in `DeveloperDiscoveryDiagnostics.recentDiscoveryLogs`; assert redacted output contains no endpoint address (security — prevents endpoint PII from appearing in developer-visible UI) in `feature/ndi-browser/data/src/test/java/com/ndi/feature/ndibrowser/data/util/LogRedactorTest.kt`
@@ -148,14 +148,14 @@
 - [X] T038 [US3] Create `DeveloperDiagnosticsRepositoryImpl` implementing `DeveloperDiagnosticsRepository`: aggregates `DiscoveryServerCheckStatus` records from DAO, collects discovery refresh signals, assembles `DeveloperDiscoveryDiagnostics` in `feature/ndi-browser/data/src/main/java/com/ndi/feature/ndibrowser/data/repository/DeveloperDiagnosticsRepositoryImpl.kt`
 - [X] T039 [P] [US3] Extend `DeveloperOverlayState` with `discoveryDiagnostics: DeveloperDiscoveryDiagnostics?` field in `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/DeveloperOverlayState.kt`
 - [X] T040 [US3] Extend `DeveloperOverlayRenderer` to render per-server check outcomes, discovery refresh status, failure categorization, and redacted log lines when `discoveryDiagnostics` is non-null in `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/DeveloperOverlayRenderer.kt`
-- [ ] T041 [US3] Extend `SettingsViewModel` to observe developer mode state and route `DeveloperDiscoveryDiagnostics` into overlay state; clear on toggle-off in `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/SettingsViewModel.kt`
+- [X] T041 [US3] Extend `SettingsViewModel` to observe developer mode state and route `DeveloperDiscoveryDiagnostics` into overlay state; clear on toggle-off in `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/SettingsViewModel.kt`
 - [X] T042 [P] [US3] Emit `discovery_refresh_started` and `discovery_refresh_completed` log events with correlationId and outcome in `feature/ndi-browser/data/src/main/java/com/ndi/feature/ndibrowser/data/repository/NdiDiscoveryRepositoryImpl.kt`
 - [X] T043 [P] [US3] Wire `DeveloperDiagnosticsRepositoryImpl` and its DAO/data dependencies into `app/src/main/java/com/ndi/app/di/AppGraph.kt`
 
 ### Validation for User Story 3
 
 - [X] T044 [US3] Run `./gradlew.bat :feature:ndi-browser:data:testDebugUnitTest :feature:ndi-browser:presentation:testDebugUnitTest` and record PASS in `test-results/022-us3-unit-tests.md`
-- [ ] T045 [US3] Run Playwright e2e US3 scenarios (T036) and record PASS or BLOCKED:ENVIRONMENT with reproduction steps in `test-results/022-us3-playwright-evidence.md`
+- [X] T045 [US3] Run Playwright e2e US3 scenarios (T036) and record PASS or BLOCKED:ENVIRONMENT with reproduction steps in `test-results/022-us3-playwright-evidence.md`
 
 **Checkpoint**: All three user stories are independently functional. Developer diagnostics appear and disappear with developer mode toggle.
 
@@ -165,9 +165,9 @@
 
 **Purpose**: Full regression, release hardening, and documentation finalization across all stories.
 
-- [ ] T046 Run full existing Playwright e2e regression suite and record PASS or BLOCKED:ENVIRONMENT in `test-results/022-playwright-regression.md`; investigate and fix any regressions before proceeding
+- [X] T046 Run full existing Playwright e2e regression suite and record PASS or BLOCKED:ENVIRONMENT in `test-results/022-playwright-regression.md`; investigate and fix any regressions before proceeding
 - [X] T047 Run `./gradlew.bat :app:verifyReleaseHardening` (R8/ProGuard + shrink resources) and record PASS in `test-results/022-release-hardening.md`
-- [ ] T048 [P] Update `docs/ndi-feature.md` with discovery server diagnostics usage, recheck behavior, and developer mode diagnostic details
+- [X] T048 [P] Update `docs/ndi-feature.md` with discovery server diagnostics usage, recheck behavior, and developer mode diagnostic details
 
 ---
 

@@ -3,15 +3,22 @@
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.ndi.core.model.DeveloperDiscoveryDiagnostics
 import com.ndi.core.model.DiscoveryServerDraftMode
 import com.ndi.core.model.DiscoveryServerEntry
 import com.ndi.core.model.DiscoveryCheckOutcome
 import com.ndi.core.model.DiscoveryServerCheckStatus
+import com.ndi.feature.ndibrowser.domain.repository.DeveloperDiagnosticsRepository
 import com.ndi.feature.ndibrowser.domain.repository.DiscoveryServerRepository
+import com.ndi.feature.ndibrowser.domain.repository.NdiSettingsRepository
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 
@@ -26,10 +33,13 @@ data class DiscoveryServerSettingsUiState(
     val editingEntryId: String? = null,
     val noEnabledServersWarning: String? = null,
     val lastCheckResult: DiscoveryServerCheckStatus? = null,
+    val developerDiscoveryDiagnostics: DeveloperDiscoveryDiagnostics? = null,
 )
 
 class DiscoveryServerSettingsViewModel(
     private val repository: DiscoveryServerRepository,
+    private val settingsRepository: NdiSettingsRepository? = null,
+    private val developerDiagnosticsRepository: DeveloperDiagnosticsRepository? = null,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(DiscoveryServerSettingsUiState())
@@ -44,6 +54,22 @@ class DiscoveryServerSettingsViewModel(
                 )
             }
             .launchIn(viewModelScope)
+
+        val developerModeFlow: Flow<Boolean> = settingsRepository
+            ?.observeSettings()
+            ?.map { it.developerModeEnabled }
+            ?: flowOf(false)
+
+        val diagnosticsFlow: Flow<DeveloperDiscoveryDiagnostics?> = developerDiagnosticsRepository
+            ?.observeDiscoveryDiagnostics()
+            ?.map { it }
+            ?: flowOf(null)
+
+        combine(developerModeFlow, diagnosticsFlow) { developerModeEnabled, diagnostics ->
+            if (developerModeEnabled) diagnostics else null
+        }.onEach { diagnostics ->
+            _uiState.value = _uiState.value.copy(developerDiscoveryDiagnostics = diagnostics)
+        }.launchIn(viewModelScope)
     }
 
     fun onScreenVisible() = Unit
@@ -225,7 +251,11 @@ class DiscoveryServerSettingsViewModel(
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
-            return DiscoveryServerSettingsViewModel(repository) as T
+            return DiscoveryServerSettingsViewModel(
+                repository = repository,
+                settingsRepository = runCatching { SettingsDependencies.requireSettingsRepository() }.getOrNull(),
+                developerDiagnosticsRepository = runCatching { SettingsDependencies.requireDeveloperDiagnosticsRepository() }.getOrNull(),
+            ) as T
         }
     }
 }

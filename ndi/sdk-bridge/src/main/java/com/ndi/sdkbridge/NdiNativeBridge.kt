@@ -465,6 +465,48 @@ object NativeNdiBridge : NdiDiscoveryBridge, NdiViewerBridge, NdiOutputBridge {
         }.getOrDefault(false)
     }
 
+    override suspend fun performDiscoveryCheck(host: String, port: Int, correlationId: String): Triple<Boolean, String, String?> =
+        withContext(Dispatchers.IO) {
+            val targetHost = host.trim()
+            if (targetHost.isBlank()) {
+                return@withContext Triple(false, "UNKNOWN", "Discovery server host is blank")
+            }
+
+            Log.d(
+                "NdiDiscovery",
+                "discovery_server_check_started host=$targetHost port=$port correlationId=$correlationId",
+            )
+
+            val result = runCatching {
+                val reachable = isDiscoveryServerReachable(targetHost, port)
+                if (!reachable) {
+                    Triple(false, "ENDPOINT_UNREACHABLE", "Cannot reach discovery server at $targetHost:$port")
+                } else {
+                    val nativeResult = runCatching {
+                        nativePerformDiscoveryCheck(targetHost, port, correlationId)
+                    }.getOrNull()
+
+                    if (nativeResult != null && nativeResult.size >= 3) {
+                        val success = nativeResult[0].toBooleanStrictOrNull() ?: false
+                        val failureCategory = nativeResult[1].ifBlank { if (success) "NONE" else "UNKNOWN" }
+                        val failureMessage = nativeResult[2].ifBlank { null }
+                        Triple(success, failureCategory, failureMessage)
+                    } else {
+                        Triple(true, "NONE", null)
+                    }
+                }
+            }.getOrElse { error ->
+                Triple(false, "UNKNOWN", error.message ?: "Unknown discovery check error")
+            }
+
+            Log.d(
+                "NdiDiscovery",
+                "discovery_server_check_completed host=$targetHost port=$port correlationId=$correlationId outcome=${if (result.first) "SUCCESS" else "FAILURE"}",
+            )
+
+            result
+        }
+
     override fun startSender(sourceId: String, streamName: String) {
         nativeStartSender(sourceId, streamName)
     }
@@ -624,6 +666,8 @@ object NativeNdiBridge : NdiDiscoveryBridge, NdiViewerBridge, NdiOutputBridge {
     private external fun nativeGetActualResolution(): IntArray?
 
     private external fun nativeGetMeasuredReceiverFps(): Float
+
+    private external fun nativePerformDiscoveryCheck(host: String, port: Int, correlationId: String): Array<String>
 
     private external fun nativeStartSender(sourceId: String, streamName: String)
 

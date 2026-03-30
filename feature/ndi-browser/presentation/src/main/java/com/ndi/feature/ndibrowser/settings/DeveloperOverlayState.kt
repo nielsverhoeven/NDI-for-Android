@@ -18,6 +18,7 @@ object DeveloperOverlayStateMapper {
         streamStatus: String?,
         sessionId: String?,
         recentLogs: List<String>,
+        discoveryDiagnostics: DeveloperDiscoveryDiagnostics? = null,
     ): OverlayDisplayState {
         val mode = when {
             !developerModeEnabled -> NdiOverlayMode.DISABLED
@@ -29,6 +30,7 @@ object DeveloperOverlayStateMapper {
             streamStatus = if (mode == NdiOverlayMode.DISABLED) null else streamStatus,
             sessionId = if (mode == NdiOverlayMode.DISABLED) null else sessionId,
             recentLogs = if (mode == NdiOverlayMode.DISABLED) emptyList() else recentLogs,
+            discoveryDiagnostics = if (mode == NdiOverlayMode.DISABLED) null else discoveryDiagnostics,
         )
     }
 }

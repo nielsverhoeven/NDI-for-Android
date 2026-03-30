@@ -838,6 +838,49 @@ Java_com_ndi_sdkbridge_NativeNdiBridge_nativeSetResolutionPolicy(
 #endif
 }
 
+extern "C" JNIEXPORT jobjectArray JNICALL
+Java_com_ndi_sdkbridge_NativeNdiBridge_nativePerformDiscoveryCheck(
+    JNIEnv* env,
+    jobject /* this */,
+    jstring host,
+    jint port,
+    jstring /* correlation_id */
+) {
+    const char* raw_host = host != nullptr ? env->GetStringUTFChars(host, nullptr) : nullptr;
+    const std::string target_host = raw_host != nullptr ? raw_host : "";
+    if (raw_host != nullptr) {
+        env->ReleaseStringUTFChars(host, raw_host);
+    }
+
+    if (target_host.empty() || port <= 0) {
+        return to_java_string_array(env, {"false", "UNKNOWN", "Invalid discovery endpoint"});
+    }
+
+#ifdef NDI_SDK_AVAILABLE
+    if (!ensure_ndi_initialized()) {
+        return to_java_string_array(env, {"false", "HANDSHAKE_FAILED", "NDI SDK initialization failed"});
+    }
+
+    NDIlib_find_create_t create_description;
+    std::memset(&create_description, 0, sizeof(create_description));
+    create_description.show_local_sources = true;
+    create_description.p_groups = nullptr;
+    create_description.p_extra_ips = nullptr;
+
+    NDIlib_find_instance_t probe_finder = NDIlib_find_create_v2(&create_description);
+    if (probe_finder == nullptr) {
+        return to_java_string_array(env, {"false", "HANDSHAKE_FAILED", "Unable to create NDI finder for discovery check"});
+    }
+
+    NDIlib_find_wait_for_sources(probe_finder, 1200);
+    NDIlib_find_destroy(probe_finder);
+    return to_java_string_array(env, {"true", "NONE", ""});
+#else
+    (void)target_host;
+    return to_java_string_array(env, {"false", "UNKNOWN", "NDI SDK is not linked in this build"});
+#endif
+}
+
 extern "C" JNIEXPORT jfloat JNICALL
 Java_com_ndi_sdkbridge_NativeNdiBridge_nativeGetReceiverDroppedFramePercent(
     JNIEnv* /* env */,

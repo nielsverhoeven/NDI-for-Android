@@ -178,7 +178,8 @@ class AppGraph private constructor(context: Context) {
         combine(
             settingsRepository.observeSettings(),
             developerDiagnosticsRepository.observeOverlayState(),
-        ) { settings, overlayState ->
+            developerDiagnosticsRepository.observeDiscoveryDiagnostics(),
+        ) { settings, overlayState, discoveryDiagnostics ->
             val redactedLogs = overlayState.recentLogs.map { log ->
                 OverlayLogRedactor.redact(log.messageRedacted)
             }
@@ -196,6 +197,7 @@ class AppGraph private constructor(context: Context) {
                 streamStatus = overlayState.streamStatusLabel.takeIf { it.isNotBlank() },
                 sessionId = OverlayLogRedactor.redactSessionId(overlayState.sessionId),
                 recentLogs = redactedLogs,
+                discoveryDiagnostics = discoveryDiagnostics.takeIf { settings.developerModeEnabled },
             )
         }.onEach { overlayDisplayState ->
             val currentMode = overlayDisplayState?.mode ?: NdiOverlayMode.DISABLED

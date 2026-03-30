@@ -187,6 +187,9 @@ Operator behavior summary:
 - Users can add, edit, delete, reorder, and toggle individual entries.
 - Runtime target resolution iterates enabled entries in persisted order.
 - If all enabled entries are unreachable, the runtime returns an explicit failure result.
+- After each add, the app performs a discovery check and stores per-server check status (`Connected` or `Check failed`) with timestamp and failure reason.
+- Each discovery server row exposes a recheck action that updates only that row's check status.
+- Developer diagnostics include discovery check rollup and latest discovery refresh status, and are hidden when developer mode is disabled.
 
 
 ## 6. Copy-Paste Integration Patterns
