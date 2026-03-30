@@ -65,6 +65,26 @@
 
 [Add more user stories as needed, each with an assigned priority]
 
+### Visual Change Quality Gate *(mandatory when UI changes are present)*
+
+- If this feature adds or changes visual behavior, the spec MUST define
+  Playwright end-to-end tests that run on emulator(s) and cover each
+  new/updated user-visible flow.
+- If this feature adds or changes visual behavior, the spec MUST include a
+  regression requirement to execute all existing Playwright e2e tests and
+  keep them passing.
+- If no visual behavior changes are included, state "No visual change" with a
+  short justification.
+
+### Test Environment & Preconditions *(mandatory)*
+
+- The spec MUST list required runtime dependencies for validation (for example:
+  emulator serials, physical devices, network fixtures, SDK prerequisites).
+- The spec MUST define at least one preflight command/check that confirms the
+  environment is ready before end-to-end validation begins.
+- If an external dependency can block execution, the spec MUST define how to
+  record a blocked result and the concrete unblocking step.
+
 ### Edge Cases
 
 <!--
@@ -89,29 +109,19 @@
 - **FR-003**: Users MUST be able to [key interaction, e.g., "reset their password"]
 - **FR-004**: System MUST [data requirement, e.g., "persist user preferences"]
 - **FR-005**: System MUST [behavior, e.g., "log all security events"]
+- **FR-006**: For visual additions/changes, system MUST include emulator-run
+  Playwright e2e coverage for new/updated functionality.
+- **FR-007**: For visual additions/changes, system MUST execute and keep
+  passing all existing Playwright e2e tests.
+- **FR-008**: For environment-dependent validations, system MUST run and record
+  preflight checks before executing end-to-end or release gates.
+- **FR-009**: Validation reporting MUST classify each failed/blocked gate as
+  code failure or environment blocker with reproduction details.
 
 *Example of marking unclear requirements:*
 
-- **FR-006**: System MUST authenticate users via [NEEDS CLARIFICATION: auth method not specified - email/password, SSO, OAuth?]
-- **FR-007**: System MUST retain user data for [NEEDS CLARIFICATION: retention period not specified]
-
-### Constitutional Requirements *(mandatory)*
-
-- **CR-001 (Architecture)**: Define how the feature preserves MVVM, single-activity
-  navigation, and repository-mediated data access.
-- **CR-002 (Quality)**: Define the test-first approach and which JUnit/Espresso
-  coverage is required before implementation is complete.
-- **CR-003 (UX and Performance)**: Define Material Design 3 impact, battery impact,
-  and API compatibility constraints for API 24+ with the latest stable compatible
-  compileSdk/targetSdk baseline.
-- **CR-004 (Data and Security)**: Define offline-first/Room behavior and any
-  Android permission implications with explicit justification.
-- **CR-005 (Build and Modularity)**: Define feature module boundaries and release
-  build validation expectations, including R8/ProGuard.
-- **CR-006 (Toolchain Currency)**: Define the expected compileSdk/targetSdk, AGP,
-  Gradle, Kotlin, JDK/JBR, AndroidX/Jetpack, NDK/CMake, and third-party SDK
-  compatibility baseline, plus any documented blocker to adopting the latest
-  stable compatible versions.
+- **FR-010**: System MUST authenticate users via [NEEDS CLARIFICATION: auth method not specified - email/password, SSO, OAuth?]
+- **FR-011**: System MUST retain user data for [NEEDS CLARIFICATION: retention period not specified]
 
 ### Key Entities *(include if feature involves data)*
 

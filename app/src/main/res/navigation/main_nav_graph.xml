@@ -2,25 +2,109 @@
 <navigation xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/main_nav_graph"
-    app:startDestination="@id/sourceListHostFragment">
+    app:startDestination="@id/homeDashboardFragment">
+
+    <!-- ====== Top-level destinations ====== -->
 
     <fragment
-        android:id="@+id/sourceListHostFragment"
+        android:id="@+id/homeDashboardFragment"
+        android:name="com.ndi.feature.ndibrowser.home.HomeDashboardFragment"
+        android:label="@string/nav_home" />
+
+    <fragment
+        android:id="@+id/streamFragment"
         android:name="com.ndi.feature.ndibrowser.source_list.SourceListFragment"
-        android:label="@string/source_list_title">
+        android:label="@string/nav_stream">
         <action
-            android:id="@+id/action_sourceListHostFragment_to_viewerHostFragment"
-            app:destination="@id/viewerHostFragment" />
+            android:id="@+id/action_streamFragment_to_settingsFragment"
+            app:destination="@id/settingsFragment"
+            app:launchSingleTop="true" />
     </fragment>
+
+    <fragment
+        android:id="@+id/viewFragment"
+        android:name="com.ndi.feature.ndibrowser.source_list.SourceListFragment"
+        android:label="@string/nav_view">
+        <action
+            android:id="@+id/action_viewFragment_to_viewerHostFragment"
+            app:destination="@id/viewerHostFragment" />
+        <action
+            android:id="@+id/action_viewFragment_to_settingsFragment"
+            app:destination="@id/settingsFragment"
+            app:launchSingleTop="true" />
+    </fragment>
+
+    <!-- ====== Detail destinations (retain existing deep links) ====== -->
 
     <fragment
         android:id="@+id/viewerHostFragment"
         android:name="com.ndi.feature.ndibrowser.viewer.ViewerFragment"
         android:label="@string/viewer_title">
         <deepLink app:uri="ndi://viewer/{sourceId}" />
+        <action
+            android:id="@+id/action_viewerHostFragment_to_viewFragment"
+            app:destination="@id/viewFragment"
+            app:popUpTo="@id/viewFragment"
+            app:popUpToInclusive="false"
+            app:launchSingleTop="true" />
+        <action
+            android:id="@+id/action_viewerHostFragment_to_settingsFragment"
+            app:destination="@id/settingsFragment"
+            app:launchSingleTop="true" />
         <argument
             android:name="sourceId"
             app:argType="string"
             android:defaultValue="" />
     </fragment>
+
+    <fragment
+        android:id="@+id/outputControlFragment"
+        android:name="com.ndi.feature.ndibrowser.output.OutputControlFragment"
+        android:label="Output">
+        <deepLink app:uri="ndi://output/{sourceId}" />
+        <action
+            android:id="@+id/action_outputControlFragment_to_settingsFragment"
+            app:destination="@id/settingsFragment"
+            app:launchSingleTop="true" />
+        <argument
+            android:name="sourceId"
+            app:argType="string"
+            android:defaultValue="" />
+    </fragment>
+
+    <!-- ====== Settings destination (spec 006) ====== -->
+
+    <fragment
+        android:id="@+id/settingsFragment"
+        android:name="com.ndi.feature.ndibrowser.settings.SettingsFragment"
+        android:label="@string/settings_title">
+        <deepLink app:uri="ndi://settings" />
+        <action
+            android:id="@+id/action_settingsFragment_to_themeEditorFragment"
+            app:destination="@id/themeEditorFragment" />
+        <action
+            android:id="@+id/action_settingsFragment_to_discoveryServerSettingsFragment"
+            app:destination="@id/discoveryServerSettingsFragment" />
+        <action
+            android:id="@+id/action_settingsFragment_to_previous"
+            app:popUpTo="@id/main_nav_graph"
+            app:popUpToInclusive="false" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/themeEditorFragment"
+        android:name="com.ndi.feature.themeeditor.ThemeEditorFragment"
+        android:label="Theme Editor">
+        <deepLink app:uri="ndi://theme-editor" />
+    </fragment>
+
+    <!-- ====== Discovery Servers Settings destination (spec 018) ====== -->
+
+    <fragment
+        android:id="@+id/discoveryServerSettingsFragment"
+        android:name="com.ndi.feature.ndibrowser.settings.DiscoveryServerSettingsFragment"
+        android:label="@string/discovery_servers_title">
+        <deepLink app:uri="ndi://settings/discovery-servers" />
+    </fragment>
+
 </navigation>

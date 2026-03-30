@@ -1,14 +1,14 @@
 [versions]
-agp = "8.5.2"
-kotlin = "1.9.24"
-ksp = "1.9.24-1.0.20"
+agp = "9.0.1"
+kotlin = "2.2.10"
+ksp = "2.3.2"
 androidxCore = "1.13.1"
 appcompat = "1.7.0"
 fragment = "1.8.2"
 activity = "1.9.1"
 lifecycle = "2.8.4"
 navigation = "2.7.7"
-room = "2.6.1"
+room = "2.7.0"
 coroutines = "1.8.1"
 material = "1.12.0"
 constraintlayout = "2.1.4"
@@ -16,6 +16,7 @@ recyclerview = "1.3.2"
 junit4 = "4.13.2"
 androidxJunit = "1.2.1"
 espresso = "3.6.1"
+jmdns = "3.6.0"
 
 [libraries]
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "androidxCore" }
@@ -40,6 +41,7 @@ androidx-espresso-core = { module = "androidx.test.espresso:espresso-core", vers
 kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "coroutines" }
 androidx-fragment-testing = { module = "androidx.fragment:fragment-testing", version.ref = "fragment" }
 androidx-fragment-testing-manifest = { module = "androidx.fragment:fragment-testing-manifest", version.ref = "fragment" }
+jmdns = { module = "org.jmdns:jmdns", version.ref = "jmdns" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

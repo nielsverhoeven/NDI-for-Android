@@ -5,6 +5,17 @@
     android:orientation="vertical"
     android:padding="16dp">
 
+    <com.google.android.material.appbar.MaterialToolbar
+        android:id="@+id/viewerTopAppBar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="4dp"
+        android:visibility="gone" />
+
+    <include
+        android:id="@+id/developerOverlay"
+        layout="@layout/include_developer_overlay" />
+
     <TextView
         android:id="@+id/viewerTitle"
         android:layout_width="wrap_content"
@@ -40,7 +51,26 @@
         android:layout_height="0dp"
         android:layout_marginTop="16dp"
         android:layout_weight="1"
-        android:background="#1C1C1C" />
+        android:background="#1C1C1C">
+
+        <ImageView
+            android:id="@+id/viewerPreviewImage"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:adjustViewBounds="true"
+            android:scaleType="fitCenter" />
+    </FrameLayout>
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/qualityButton"
+        style="@style/Widget.Material3.Button.OutlinedButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="end"
+        android:layout_marginTop="10dp"
+        android:text="@string/ndi_viewer_quality_button"
+        android:contentDescription="@string/ndi_viewer_quality_button" />
 
     <com.google.android.material.button.MaterialButton
         android:id="@+id/retryButton"

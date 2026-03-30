@@ -1,6 +1,7 @@
 package com.ndi.feature.ndibrowser.viewer
 
 import com.ndi.core.model.PlaybackState
+import com.ndi.core.model.ViewerVideoFrame
 import com.ndi.core.model.ViewerSession
 import com.ndi.feature.ndibrowser.testutil.MainDispatcherRule
 import com.ndi.feature.ndibrowser.domain.repository.NdiViewerRepository
@@ -8,6 +9,8 @@ import com.ndi.feature.ndibrowser.domain.repository.UserSelectionRepository
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -45,6 +48,31 @@ class ViewerViewModelTest {
 
         assertEquals(PlaybackState.STOPPED, viewModel.uiState.value.playbackState)
     }
+
+    @Test
+    fun onSettingsTogglePressed_emitsOnceUntilSettled() = runTest(mainDispatcherRule.dispatcher.scheduler) {
+        val repository = FakeViewerRepository()
+        val viewModel = ViewerViewModel(repository, InMemorySelectionRepository(), ViewerTelemetryEmitter {})
+
+        var emissionCount = 0
+        val collector = launch(start = CoroutineStart.UNDISPATCHED) {
+            viewModel.settingsToggleEvents.collect {
+                emissionCount += 1
+            }
+        }
+
+        viewModel.onSettingsTogglePressed()
+        viewModel.onSettingsTogglePressed()
+        advanceUntilIdle()
+        assertEquals(1, emissionCount)
+
+        viewModel.onSettingsToggleSettled()
+        viewModel.onSettingsTogglePressed()
+        advanceUntilIdle()
+        assertEquals(2, emissionCount)
+
+        collector.cancel()
+    }
 }
 
 private class FakeViewerRepository : NdiViewerRepository {
@@ -69,6 +97,8 @@ private class FakeViewerRepository : NdiViewerRepository {
     }
 
     override fun observeViewerSession(): Flow<ViewerSession> = sessions
+
+    override fun getLatestVideoFrame(): ViewerVideoFrame? = null
 
     override suspend fun retryReconnectWithinWindow(sourceId: String, windowSeconds: Int): ViewerSession {
         return connectToSource(sourceId)

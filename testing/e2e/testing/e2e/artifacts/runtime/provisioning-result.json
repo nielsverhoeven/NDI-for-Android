@@ -1,0 +1,33 @@
+﻿{
+    "operation":  "Provision-DualEmulator",
+    "status":  "SUCCESS",
+    "timestamp":  "2026-03-28T20:05:18.5426256Z",
+    "data":  {
+                 "sourceEmulator":  {
+                                        "id":  "emulator-5554",
+                                        "apiLevel":  34,
+                                        "state":  "RUNNING",
+                                        "bootTimeMs":  0,
+                                        "adbPort":  5554,
+                                        "ndiSdkApkInstalled":  false,
+                                        "relayPort":  15004,
+                                        "lastBootTime":  "2026-03-28T20:05:14.2437025Z"
+                                    },
+                 "receiverEmulator":  {
+                                          "id":  "emulator-5556",
+                                          "apiLevel":  34,
+                                          "state":  "RUNNING",
+                                          "bootTimeMs":  0,
+                                          "adbPort":  5556,
+                                          "ndiSdkApkInstalled":  false,
+                                          "relayPort":  15006,
+                                          "lastBootTime":  "2026-03-28T20:05:18.5307172Z"
+                                      }
+             },
+    "errors":  [
+
+               ],
+    "warnings":  [
+
+                 ]
+}

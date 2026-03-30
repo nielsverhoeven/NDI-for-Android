@@ -1,4 +1,4 @@
-package com.ndi.core.database
+﻿package com.ndi.core.database
 
 import android.content.Context
 import androidx.room.Dao
@@ -10,6 +10,10 @@ import androidx.room.PrimaryKey
 import androidx.room.Query
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.Update
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
+import kotlinx.coroutines.flow.Flow
 
 @Entity(tableName = "user_selection_state")
 data class UserSelectionEntity(
@@ -33,6 +37,53 @@ data class ViewerSessionEntity(
     val endedAtEpochMillis: Long?,
 )
 
+@Entity(tableName = "last_viewed_context")
+data class LastViewedContextEntity(
+    @PrimaryKey
+    val contextId: String = "last_viewed_context",
+    val sourceId: String,
+    val lastFrameImagePath: String?,
+    val lastFrameCapturedAtEpochMillis: Long?,
+    val restoredAtEpochMillis: Long?,
+)
+
+@Entity(tableName = "connection_history_state")
+data class ConnectionHistoryStateEntity(
+    @PrimaryKey
+    val sourceId: String,
+    val previouslyConnected: Boolean = true,
+    val firstSuccessfulFrameAtEpochMillis: Long,
+    val lastSuccessfulFrameAtEpochMillis: Long,
+)
+
+@Entity(tableName = "output_configuration")
+data class OutputConfigurationEntity(
+    @PrimaryKey
+    val id: Int = 1,
+    val preferredStreamName: String,
+    val lastSelectedInputSourceId: String?,
+    val lastSelectedInputSourceKind: String?,
+    val autoRetryEnabled: Boolean = true,
+    val retryWindowSeconds: Int = 15,
+    val updatedAtEpochMillis: Long,
+)
+
+@Entity(tableName = "output_session")
+data class OutputSessionEntity(
+    @PrimaryKey
+    val sessionId: String,
+    val inputSourceId: String,
+    val inputSourceKind: String,
+    val outboundStreamName: String,
+    val consentState: String,
+    val state: String,
+    val startedAtEpochMillis: Long,
+    val stoppedAtEpochMillis: Long?,
+    val interruptionReason: String?,
+    val retryAttempts: Int,
+    val hostInstanceId: String,
+)
+
 @Dao
 interface UserSelectionDao {
     @Query("SELECT * FROM user_selection_state WHERE id = 1")
@@ -51,9 +102,162 @@ interface ViewerSessionDao {
     suspend fun upsert(session: ViewerSessionEntity)
 }
 
+@Dao
+interface LastViewedContextDao {
+    @Query("SELECT * FROM last_viewed_context WHERE contextId = :contextId LIMIT 1")
+    suspend fun get(contextId: String = "last_viewed_context"): LastViewedContextEntity?
+
+    @Query("SELECT * FROM last_viewed_context WHERE contextId = :contextId LIMIT 1")
+    fun observe(contextId: String = "last_viewed_context"): Flow<LastViewedContextEntity?>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entity: LastViewedContextEntity)
+
+    @Query("DELETE FROM last_viewed_context WHERE contextId = :contextId")
+    suspend fun clear(contextId: String = "last_viewed_context")
+}
+
+@Dao
+interface ConnectionHistoryStateDao {
+    @Query("SELECT * FROM connection_history_state ORDER BY lastSuccessfulFrameAtEpochMillis DESC")
+    fun observeAll(): Flow<List<ConnectionHistoryStateEntity>>
+
+    @Query("SELECT * FROM connection_history_state WHERE sourceId = :sourceId LIMIT 1")
+    suspend fun getBySourceId(sourceId: String): ConnectionHistoryStateEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entity: ConnectionHistoryStateEntity)
+
+    @Query("DELETE FROM connection_history_state")
+    suspend fun clearAll()
+}
+
+@Dao
+interface OutputConfigurationDao {
+    @Query("SELECT * FROM output_configuration WHERE id = 1")
+    suspend fun get(): OutputConfigurationEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(configuration: OutputConfigurationEntity)
+}
+
+@Dao
+interface OutputSessionDao {
+    @Query("SELECT * FROM output_session ORDER BY startedAtEpochMillis DESC LIMIT 1")
+    suspend fun getLatest(): OutputSessionEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(session: OutputSessionEntity)
+}
+
+@Entity(tableName = "settings_preference")
+data class SettingsPreferenceEntity(
+    @PrimaryKey
+    val id: Int = 1,
+    val discoveryServerInput: String?,
+    val developerModeEnabled: Boolean,
+    val themeMode: String = "SYSTEM",
+    val accentColorId: String = "accent_teal",
+    val updatedAtEpochMillis: Long,
+)
+
+@Dao
+interface SettingsPreferenceDao {
+    @Query("SELECT * FROM settings_preference WHERE id = 1")
+    suspend fun get(): SettingsPreferenceEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entity: SettingsPreferenceEntity)
+}
+
+// ---- Spec 018: Discovery server persistence ----
+
+@Entity(tableName = "discovery_servers")
+data class DiscoveryServerEntity(
+    @PrimaryKey
+    val id: String,
+    val hostOrIp: String,
+    val port: Int,
+    val enabled: Boolean,
+    val orderIndex: Int,
+    val createdAtEpochMillis: Long,
+    val updatedAtEpochMillis: Long,
+)
+
+@Dao
+interface DiscoveryServerDao {
+    /** Observe all servers ordered by orderIndex. Emits on every change. */
+    @Query("SELECT * FROM discovery_servers ORDER BY orderIndex ASC")
+    fun observeAll(): Flow<List<DiscoveryServerEntity>>
+
+    /** Return all servers ordered by orderIndex (suspend, one-shot). */
+    @Query("SELECT * FROM discovery_servers ORDER BY orderIndex ASC")
+    suspend fun getAll(): List<DiscoveryServerEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(entity: DiscoveryServerEntity)
+
+    @Update
+    suspend fun update(entity: DiscoveryServerEntity)
+
+    @Query("DELETE FROM discovery_servers WHERE id = :id")
+    suspend fun deleteById(id: String)
+
+    @Query("SELECT * FROM discovery_servers WHERE id = :id LIMIT 1")
+    suspend fun getById(id: String): DiscoveryServerEntity?
+
+    /** Check for duplicate (hostOrIp + port) excluding a specific id (useful for update). */
+    @Query(
+        "SELECT COUNT(*) FROM discovery_servers WHERE hostOrIp = :hostOrIp AND port = :port AND id != :excludeId"
+    )
+    suspend fun countDuplicates(hostOrIp: String, port: Int, excludeId: String = ""): Int
+
+    @Query("SELECT MAX(orderIndex) FROM discovery_servers")
+    suspend fun getMaxOrderIndex(): Int?
+}
+
+// ---- Spec 022: Discovery server check status persistence ----
+
+@Entity(tableName = "discovery_server_check_status")
+data class DiscoveryServerCheckStatusEntity(
+    @PrimaryKey
+    val serverId: String,
+    val checkType: String,
+    val outcome: String,
+    val checkedAtEpochMillis: Long,
+    val failureCategory: String,
+    val failureMessage: String?,
+    val correlationId: String,
+)
+
+@Dao
+interface DiscoveryServerCheckStatusDao {
+    @Query("SELECT * FROM discovery_server_check_status WHERE serverId = :serverId LIMIT 1")
+    suspend fun getByServerId(serverId: String): DiscoveryServerCheckStatusEntity?
+
+    @Query("SELECT * FROM discovery_server_check_status")
+    fun observeAll(): Flow<List<DiscoveryServerCheckStatusEntity>>
+
+    @Query("SELECT * FROM discovery_server_check_status WHERE serverId = :serverId LIMIT 1")
+    fun observeByServerId(serverId: String): Flow<DiscoveryServerCheckStatusEntity?>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entity: DiscoveryServerCheckStatusEntity)
+}
+
 @Database(
-    entities = [UserSelectionEntity::class, ViewerSessionEntity::class],
-    version = 1,
+    entities = [
+        UserSelectionEntity::class,
+        ViewerSessionEntity::class,
+        LastViewedContextEntity::class,
+        ConnectionHistoryStateEntity::class,
+        OutputConfigurationEntity::class,
+        OutputSessionEntity::class,
+        SettingsPreferenceEntity::class,
+        DiscoveryServerEntity::class,
+        DiscoveryServerCheckStatusEntity::class,
+    ],
+    version = 8,
     exportSchema = false,
 )
 abstract class NdiDatabase : RoomDatabase() {
@@ -62,7 +266,194 @@ abstract class NdiDatabase : RoomDatabase() {
 
     abstract fun viewerSessionDao(): ViewerSessionDao
 
+    abstract fun lastViewedContextDao(): LastViewedContextDao
+
+    abstract fun connectionHistoryStateDao(): ConnectionHistoryStateDao
+
+    abstract fun outputConfigurationDao(): OutputConfigurationDao
+
+    abstract fun outputSessionDao(): OutputSessionDao
+
+    abstract fun settingsPreferenceDao(): SettingsPreferenceDao
+
+    abstract fun discoveryServerDao(): DiscoveryServerDao
+    abstract fun discoveryServerCheckStatusDao(): DiscoveryServerCheckStatusDao
+
+
     companion object {
+        private fun hasColumn(database: SupportSQLiteDatabase, tableName: String, columnName: String): Boolean {
+            database.query("PRAGMA table_info($tableName)").use { cursor ->
+                val nameColumnIndex = cursor.getColumnIndex("name")
+                if (nameColumnIndex == -1) {
+                    return false
+                }
+
+                while (cursor.moveToNext()) {
+                    if (cursor.getString(nameColumnIndex) == columnName) {
+                        return true
+                    }
+                }
+            }
+
+            return false
+        }
+
+        val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS output_configuration (
+                        id INTEGER NOT NULL,
+                        preferredStreamName TEXT NOT NULL,
+                        lastSelectedInputSourceId TEXT,
+                        lastSelectedInputSourceKind TEXT,
+                        autoRetryEnabled INTEGER NOT NULL,
+                        retryWindowSeconds INTEGER NOT NULL,
+                        updatedAtEpochMillis INTEGER NOT NULL,
+                        PRIMARY KEY(id)
+                    )
+                    """.trimIndent(),
+                )
+                database.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS output_session (
+                        sessionId TEXT NOT NULL,
+                        inputSourceId TEXT NOT NULL,
+                        inputSourceKind TEXT NOT NULL,
+                        outboundStreamName TEXT NOT NULL,
+                        consentState TEXT NOT NULL,
+                        state TEXT NOT NULL,
+                        startedAtEpochMillis INTEGER NOT NULL,
+                        stoppedAtEpochMillis INTEGER,
+                        interruptionReason TEXT,
+                        retryAttempts INTEGER NOT NULL,
+                        hostInstanceId TEXT NOT NULL,
+                        PRIMARY KEY(sessionId)
+                    )
+                    """.trimIndent(),
+                )
+            }
+        }
+
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                if (!hasColumn(database, "output_configuration", "lastSelectedInputSourceKind")) {
+                    database.execSQL("ALTER TABLE output_configuration ADD COLUMN lastSelectedInputSourceKind TEXT")
+                }
+
+                if (!hasColumn(database, "output_configuration", "autoRetryEnabled")) {
+                    database.execSQL("ALTER TABLE output_configuration ADD COLUMN autoRetryEnabled INTEGER NOT NULL DEFAULT 1")
+                }
+
+                if (!hasColumn(database, "output_session", "inputSourceKind")) {
+                    database.execSQL("ALTER TABLE output_session ADD COLUMN inputSourceKind TEXT NOT NULL DEFAULT 'DISCOVERED_NDI'")
+                }
+
+                if (!hasColumn(database, "output_session", "consentState")) {
+                    database.execSQL("ALTER TABLE output_session ADD COLUMN consentState TEXT NOT NULL DEFAULT 'NOT_REQUIRED'")
+                }
+            }
+        }
+
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS settings_preference (
+                        id INTEGER NOT NULL,
+                        discoveryServerInput TEXT,
+                        developerModeEnabled INTEGER NOT NULL DEFAULT 0,
+                        themeMode TEXT NOT NULL DEFAULT 'SYSTEM',
+                        accentColorId TEXT NOT NULL DEFAULT 'accent_teal',
+                        updatedAtEpochMillis INTEGER NOT NULL DEFAULT 0,
+                        PRIMARY KEY(id)
+                    )
+                    """.trimIndent(),
+                )
+            }
+        }
+
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                if (!hasColumn(database, "settings_preference", "themeMode")) {
+                    database.execSQL("ALTER TABLE settings_preference ADD COLUMN themeMode TEXT NOT NULL DEFAULT 'SYSTEM'")
+                }
+
+                if (!hasColumn(database, "settings_preference", "accentColorId")) {
+                    database.execSQL("ALTER TABLE settings_preference ADD COLUMN accentColorId TEXT NOT NULL DEFAULT 'accent_teal'")
+                }
+            }
+        }
+
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS discovery_servers (
+                        id TEXT NOT NULL,
+                        hostOrIp TEXT NOT NULL,
+                        port INTEGER NOT NULL,
+                        enabled INTEGER NOT NULL DEFAULT 1,
+                        orderIndex INTEGER NOT NULL DEFAULT 0,
+                        createdAtEpochMillis INTEGER NOT NULL DEFAULT 0,
+                        updatedAtEpochMillis INTEGER NOT NULL DEFAULT 0,
+                        PRIMARY KEY(id)
+                    )
+                    """.trimIndent(),
+                )
+            }
+        }
+
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS last_viewed_context (
+                        contextId TEXT NOT NULL,
+                        sourceId TEXT NOT NULL,
+                        lastFrameImagePath TEXT,
+                        lastFrameCapturedAtEpochMillis INTEGER,
+                        restoredAtEpochMillis INTEGER,
+                        PRIMARY KEY(contextId)
+                    )
+                    """.trimIndent(),
+                )
+
+                database.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS connection_history_state (
+                        sourceId TEXT NOT NULL,
+                        previouslyConnected INTEGER NOT NULL DEFAULT 1,
+                        firstSuccessfulFrameAtEpochMillis INTEGER NOT NULL,
+                        lastSuccessfulFrameAtEpochMillis INTEGER NOT NULL,
+                        PRIMARY KEY(sourceId)
+                    )
+                    """.trimIndent(),
+                )
+            }
+        }
+
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    
+"""
+                    CREATE TABLE IF NOT EXISTS discovery_server_check_status (
+                        serverId TEXT NOT NULL,
+                        checkType TEXT NOT NULL,
+                        outcome TEXT NOT NULL,
+                        checkedAtEpochMillis INTEGER NOT NULL,
+                        failureCategory TEXT NOT NULL,
+                        failureMessage TEXT,
+                        correlationId TEXT NOT NULL,
+                        PRIMARY KEY(serverId)
+                    )
+                    
+""".trimIndent(),
+                )
+            }
+        }
+
         @Volatile
         private var instance: NdiDatabase? = null
 
@@ -72,7 +463,10 @@ abstract class NdiDatabase : RoomDatabase() {
                     context.applicationContext,
                     NdiDatabase::class.java,
                     "ndi_database",
-                ).build().also { instance = it }
+                )
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
+                    .build()
+                    .also { instance = it }
             }
         }
     }

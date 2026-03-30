@@ -1,0 +1,148 @@
+﻿package com.ndi.feature.ndibrowser.settings
+
+import com.ndi.core.model.DEFAULT_DISCOVERY_SERVER_PORT
+import com.ndi.core.model.DiscoveryCheckOutcome
+import com.ndi.core.model.DiscoveryCheckType
+import com.ndi.core.model.DiscoveryFailureCategory
+import com.ndi.core.model.DiscoverySelectionOutcome
+import com.ndi.core.model.DiscoverySelectionResult
+import com.ndi.core.model.DiscoveryServerCheckStatus
+import com.ndi.core.model.DiscoveryServerEntry
+import com.ndi.feature.ndibrowser.domain.repository.DiscoveryServerRepository
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import java.util.UUID
+
+/**
+ * In-memory fake DiscoveryServerRepository for unit tests in the presentation module.
+ */
+class FakeDiscoveryServerRepository : DiscoveryServerRepository {
+
+    private val _entries = MutableStateFlow<List<DiscoveryServerEntry>>(emptyList())
+    private val checkStatusMap = mutableMapOf<String, DiscoveryServerCheckStatus>()
+
+    fun seedServer(hostOrIp: String, port: Int, enabled: Boolean = true): DiscoveryServerEntry {
+        val entry = DiscoveryServerEntry(
+            id = UUID.randomUUID().toString(),
+            hostOrIp = hostOrIp,
+            port = port,
+            enabled = enabled,
+            orderIndex = _entries.value.size,
+            createdAtEpochMillis = 1000L,
+            updatedAtEpochMillis = 1000L,
+        )
+        _entries.value = _entries.value + entry
+        return entry
+    }
+
+    override fun observeServers(): Flow<List<DiscoveryServerEntry>> = _entries
+
+    override suspend fun addServer(hostOrIp: String, portInput: String): DiscoveryServerEntry {
+        val normalized = hostOrIp.trim()
+        if (normalized.isBlank()) throw IllegalArgumentException("Hostname or IP address is required.")
+        val port = if (portInput.isBlank()) DEFAULT_DISCOVERY_SERVER_PORT else {
+            val parsed = portInput.trim().toIntOrNull()
+                ?: throw IllegalArgumentException("Port must be a valid number.")
+            if (parsed !in 1..65535) throw IllegalArgumentException("Port out of range.")
+            parsed
+        }
+        val duplicate = _entries.value.any { it.hostOrIp == normalized && it.port == port }
+        if (duplicate) throw IllegalArgumentException("A server with host '$normalized' and port $port already exists.")
+
+        val entry = DiscoveryServerEntry(
+            id = UUID.randomUUID().toString(),
+            hostOrIp = normalized,
+            port = port,
+            enabled = true,
+            orderIndex = _entries.value.size,
+            createdAtEpochMillis = System.currentTimeMillis(),
+            updatedAtEpochMillis = System.currentTimeMillis(),
+        )
+        _entries.value = _entries.value + entry
+        // Auto-set a SUCCESS check status so tests can observe it
+        val correlationId = UUID.randomUUID().toString()
+        checkStatusMap[entry.id] = DiscoveryServerCheckStatus(
+            serverId = entry.id,
+            checkType = DiscoveryCheckType.ADD_VALIDATION,
+            outcome = DiscoveryCheckOutcome.SUCCESS,
+            checkedAtEpochMillis = System.currentTimeMillis(),
+            failureCategory = DiscoveryFailureCategory.NONE,
+            failureMessage = null,
+            correlationId = correlationId,
+        )
+        return entry
+    }
+
+    override suspend fun updateServer(id: String, hostOrIp: String, portInput: String): DiscoveryServerEntry {
+        val existing = _entries.value.firstOrNull { it.id == id }
+            ?: throw NoSuchElementException("No server with id '$id'.")
+        val normalized = hostOrIp.trim()
+        if (normalized.isBlank()) throw IllegalArgumentException("Hostname or IP address is required.")
+        val port = if (portInput.isBlank()) DEFAULT_DISCOVERY_SERVER_PORT else {
+            portInput.trim().toIntOrNull() ?: throw IllegalArgumentException("Port must be a valid number.")
+        }
+        val duplicate = _entries.value.any { it.hostOrIp == normalized && it.port == port && it.id != id }
+        if (duplicate) throw IllegalArgumentException("Duplicate server.")
+
+        val updated = existing.copy(hostOrIp = normalized, port = port)
+        _entries.value = _entries.value.map { if (it.id == id) updated else it }
+        return updated
+    }
+
+    override suspend fun removeServer(id: String) {
+        _entries.value = _entries.value.filter { it.id != id }
+    }
+
+    override suspend fun setServerEnabled(id: String, enabled: Boolean): DiscoveryServerEntry {
+        val existing = _entries.value.firstOrNull { it.id == id }
+            ?: throw NoSuchElementException("No server with id '$id'.")
+        val updated = existing.copy(enabled = enabled)
+        _entries.value = _entries.value.map { if (it.id == id) updated else it }
+        return updated
+    }
+
+    override suspend fun reorderServers(idsInOrder: List<String>): List<DiscoveryServerEntry> {
+        val map = _entries.value.associateBy { it.id }
+        val reordered = idsInOrder.mapIndexed { index, id -> map[id]?.copy(orderIndex = index) }.filterNotNull()
+        _entries.value = reordered
+        return reordered
+    }
+
+    override suspend fun resolveActiveDiscoveryTarget(): DiscoverySelectionResult {
+        val enabled = _entries.value.filter { it.enabled }.sortedBy { it.orderIndex }
+        return if (enabled.isEmpty()) {
+            DiscoverySelectionResult(emptyList(), null, DiscoverySelectionOutcome.NO_ENABLED_SERVERS, "No enabled servers.")
+        } else {
+            DiscoverySelectionResult(listOf(enabled.first().id), enabled.first().id, DiscoverySelectionOutcome.SUCCESS, null)
+        }
+    }
+
+    override suspend fun performDiscoveryServerCheck(
+        serverId: String,
+        correlationId: String,
+    ): DiscoveryServerCheckStatus {
+        checkNotNull(_entries.value.firstOrNull { it.id == serverId }) { "No server with id '$serverId'" }
+        val status = DiscoveryServerCheckStatus(
+            serverId = serverId,
+            checkType = DiscoveryCheckType.ADD_VALIDATION,
+            outcome = DiscoveryCheckOutcome.SUCCESS,
+            checkedAtEpochMillis = System.currentTimeMillis(),
+            failureCategory = DiscoveryFailureCategory.NONE,
+            failureMessage = null,
+            correlationId = correlationId,
+        )
+        checkStatusMap[serverId] = status
+        return status
+    }
+
+    override suspend fun recheckServer(
+        serverId: String,
+        correlationId: String,
+    ): DiscoveryServerCheckStatus = performDiscoveryServerCheck(serverId, correlationId)
+
+    override suspend fun getServerCheckStatus(serverId: String): DiscoveryServerCheckStatus? =
+        checkStatusMap[serverId]
+
+    override fun observeServerCheckStatus(serverId: String): Flow<DiscoveryServerCheckStatus?> =
+        MutableStateFlow(checkStatusMap[serverId])
+}

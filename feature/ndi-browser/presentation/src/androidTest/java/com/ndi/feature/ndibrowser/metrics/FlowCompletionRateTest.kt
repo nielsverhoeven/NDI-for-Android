@@ -16,6 +16,7 @@ import com.ndi.core.model.DiscoveryStatus
 import com.ndi.core.model.DiscoveryTrigger
 import com.ndi.core.model.NdiSource
 import com.ndi.core.model.PlaybackState
+import com.ndi.core.model.ViewerVideoFrame
 import com.ndi.core.model.ViewerSession
 import com.ndi.feature.ndibrowser.domain.repository.NdiDiscoveryRepository
 import com.ndi.feature.ndibrowser.domain.repository.NdiViewerRepository
@@ -120,6 +121,8 @@ private class FlowViewerRepository : NdiViewerRepository {
     }
 
     override fun observeViewerSession(): Flow<ViewerSession> = sessions
+
+    override fun getLatestVideoFrame(): ViewerVideoFrame? = null
 
     override suspend fun retryReconnectWithinWindow(sourceId: String, windowSeconds: Int): ViewerSession = sessions.value
 

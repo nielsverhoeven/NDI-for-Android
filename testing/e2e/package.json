@@ -1,0 +1,27 @@
+{
+  "name": "ndi-android-e2e",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Playwright end-to-end tests for NDI-for-Android dual-emulator workflows",
+  "scripts": {
+    "test": "playwright test",
+    "test:dual-emulator": "playwright test tests/interop-dual-emulator.spec.ts --project=android-primary",
+    "test:dual-emulator:all": "playwright test --project=android-primary",
+    "test:latency": "playwright test tests/interop-dual-emulator.spec.ts --project=android-primary",
+    "test:latency:dual-emulator": "powershell -ExecutionPolicy Bypass -File ./scripts/run-dual-emulator-e2e.ps1 -EmulatorASerial emulator-5554 -EmulatorBSerial emulator-5556",
+    "test:latency:preflight": "powershell -ExecutionPolicy Bypass -File ./scripts/run-dual-emulator-e2e.ps1 -EmulatorASerial emulator-5554 -EmulatorBSerial emulator-5556 -PreflightOnly",
+    "test:pr:primary": "powershell -ExecutionPolicy Bypass -File ./scripts/run-primary-pr-e2e.ps1",
+    "test:matrix": "powershell -ExecutionPolicy Bypass -File ./scripts/run-matrix-e2e.ps1",
+    "test:summary": "powershell -ExecutionPolicy Bypass -File ./scripts/summarize-e2e-results.ps1",
+    "test:us1": "playwright test tests/us1-*.spec.ts",
+    "test:us2": "playwright test tests/us2-*.spec.ts",
+    "test:us3": "playwright test tests/us3-*.spec.ts",
+    "preflight:dual-emulator": "powershell -ExecutionPolicy Bypass -File ./scripts/run-dual-emulator-e2e.ps1 -EmulatorASerial emulator-5554 -EmulatorBSerial emulator-5556 -PreflightOnly"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.53.0",
+    "pngjs": "^7.0.0",
+    "playwright": "^1.53.0",
+    "typescript": "^5.8.0"
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "suite": "existing-regression",
+  "description": "Pre-existing Playwright scenarios that must remain green in every validation cycle.",
+  "specs": [
+    "tests/interop-dual-emulator.spec.ts",
+    "tests/three-screen-navigation.spec.ts",
+    "tests/us1-output-navigation.spec.ts",
+    "tests/us1-start-output.spec.ts",
+    "tests/us2-output-status.spec.ts",
+    "tests/us2-stop-output.spec.ts",
+    "tests/us3-recovery-actions.spec.ts",
+    "tests/us3-source-loss.spec.ts",
+    "tests/settings-developer-overlay.spec.ts",
+    "tests/us1-view-source-filtering.spec.ts",
+    "tests/us2-us3-view-interactions.spec.ts",
+    "tests/settings-theme-mode.spec.ts",
+    "tests/settings-theme-accent-persistence.spec.ts"
+  ]
+}

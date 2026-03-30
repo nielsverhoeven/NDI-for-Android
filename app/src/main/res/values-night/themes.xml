@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!-- =========================================================
+         Accent theme overlays – dark mode (applied before setContentView)
+         Tonal-palette mapping: primary=T80, onPrimary=T20,
+         container=T30, onContainer=T90 for each accent hue.
+         ========================================================= -->
+
+    <style name="ThemeOverlay.NdiApp.AccentTeal" parent="">
+        <item name="colorPrimary">#51D8C9</item>
+        <item name="colorOnPrimary">#003731</item>
+        <item name="colorPrimaryContainer">#004F48</item>
+        <item name="colorOnPrimaryContainer">#9EF2E4</item>
+        <item name="colorSecondary">#B0CCCB</item>
+        <item name="colorOnSecondary">#1A3433</item>
+        <item name="colorSecondaryContainer">#314C4A</item>
+        <item name="colorOnSecondaryContainer">#CCE8E4</item>
+    </style>
+
+    <style name="ThemeOverlay.NdiApp.AccentBlue" parent="">
+        <item name="colorPrimary">#A6C8FF</item>
+        <item name="colorOnPrimary">#002E66</item>
+        <item name="colorPrimaryContainer">#004490</item>
+        <item name="colorOnPrimaryContainer">#D4E3FF</item>
+        <item name="colorSecondary">#BCC5DE</item>
+        <item name="colorOnSecondary">#253042</item>
+        <item name="colorSecondaryContainer">#3C4759</item>
+        <item name="colorOnSecondaryContainer">#DAE2F7</item>
+    </style>
+
+    <style name="ThemeOverlay.NdiApp.AccentGreen" parent="">
+        <item name="colorPrimary">#9AD4A0</item>
+        <item name="colorOnPrimary">#00391B</item>
+        <item name="colorPrimaryContainer">#1E502A</item>
+        <item name="colorOnPrimaryContainer">#B5F0B9</item>
+        <item name="colorSecondary">#B8CAB6</item>
+        <item name="colorOnSecondary">#233424</item>
+        <item name="colorSecondaryContainer">#394B39</item>
+        <item name="colorOnSecondaryContainer">#D3E8CF</item>
+    </style>
+
+    <style name="ThemeOverlay.NdiApp.AccentOrange" parent="">
+        <item name="colorPrimary">#FFB870</item>
+        <item name="colorOnPrimary">#4A2800</item>
+        <item name="colorPrimaryContainer">#693B00</item>
+        <item name="colorOnPrimaryContainer">#FFDCBA</item>
+        <item name="colorSecondary">#E5BEAD</item>
+        <item name="colorOnSecondary">#422B1B</item>
+        <item name="colorSecondaryContainer">#5B4130</item>
+        <item name="colorOnSecondaryContainer">#FFDCCA</item>
+    </style>
+
+    <style name="ThemeOverlay.NdiApp.AccentRed" parent="">
+        <item name="colorPrimary">#FFB4AB</item>
+        <item name="colorOnPrimary">#690100</item>
+        <item name="colorPrimaryContainer">#930009</item>
+        <item name="colorOnPrimaryContainer">#FFDAD6</item>
+        <item name="colorSecondary">#E7BAB5</item>
+        <item name="colorOnSecondary">#44292A</item>
+        <item name="colorSecondaryContainer">#5C3F41</item>
+        <item name="colorOnSecondaryContainer">#FFDAD7</item>
+    </style>
+
+    <style name="ThemeOverlay.NdiApp.AccentPink" parent="">
+        <item name="colorPrimary">#FFB0CF</item>
+        <item name="colorOnPrimary">#610036</item>
+        <item name="colorPrimaryContainer">#880050</item>
+        <item name="colorOnPrimaryContainer">#FFD9E5</item>
+        <item name="colorSecondary">#E2BACA</item>
+        <item name="colorOnSecondary">#432539</item>
+        <item name="colorSecondaryContainer">#5B3C4E</item>
+        <item name="colorOnSecondaryContainer">#FFD9E6</item>
+    </style>
+
+</resources>

@@ -6,4 +6,77 @@
     </style>
 
     <style name="Theme.NDIforAndroid" parent="android:Theme.Material.Light.NoActionBar" />
+
+    <!-- =========================================================
+         Accent theme overlays – light mode (applied before setContentView)
+         Primary roles  : buttons, FABs, sliders, checkboxes, switches
+         Secondary roles: navigation bar/rail selected indicator & icon
+         ========================================================= -->
+
+    <style name="ThemeOverlay.NdiApp.AccentTeal" parent="">
+        <item name="colorPrimary">#006A60</item>
+        <item name="colorOnPrimary">#FFFFFF</item>
+        <item name="colorPrimaryContainer">#9EF2E4</item>
+        <item name="colorOnPrimaryContainer">#00201C</item>
+        <item name="colorSecondary">#4A6360</item>
+        <item name="colorOnSecondary">#FFFFFF</item>
+        <item name="colorSecondaryContainer">#CCE8E4</item>
+        <item name="colorOnSecondaryContainer">#061F1D</item>
+    </style>
+
+    <style name="ThemeOverlay.NdiApp.AccentBlue" parent="">
+        <item name="colorPrimary">#0056A4</item>
+        <item name="colorOnPrimary">#FFFFFF</item>
+        <item name="colorPrimaryContainer">#D4E3FF</item>
+        <item name="colorOnPrimaryContainer">#001B3E</item>
+        <item name="colorSecondary">#555E71</item>
+        <item name="colorOnSecondary">#FFFFFF</item>
+        <item name="colorSecondaryContainer">#DAE2F7</item>
+        <item name="colorOnSecondaryContainer">#12172C</item>
+    </style>
+
+    <style name="ThemeOverlay.NdiApp.AccentGreen" parent="">
+        <item name="colorPrimary">#356A45</item>
+        <item name="colorOnPrimary">#FFFFFF</item>
+        <item name="colorPrimaryContainer">#B5F0B9</item>
+        <item name="colorOnPrimaryContainer">#002111</item>
+        <item name="colorSecondary">#516350</item>
+        <item name="colorOnSecondary">#FFFFFF</item>
+        <item name="colorSecondaryContainer">#D3E8CF</item>
+        <item name="colorOnSecondaryContainer">#0E1F10</item>
+    </style>
+
+    <style name="ThemeOverlay.NdiApp.AccentOrange" parent="">
+        <item name="colorPrimary">#8B5000</item>
+        <item name="colorOnPrimary">#FFFFFF</item>
+        <item name="colorPrimaryContainer">#FFDCBA</item>
+        <item name="colorOnPrimaryContainer">#2C1600</item>
+        <item name="colorSecondary">#735845</item>
+        <item name="colorOnSecondary">#FFFFFF</item>
+        <item name="colorSecondaryContainer">#FFDCCA</item>
+        <item name="colorOnSecondaryContainer">#291408</item>
+    </style>
+
+    <style name="ThemeOverlay.NdiApp.AccentRed" parent="">
+        <item name="colorPrimary">#B22B24</item>
+        <item name="colorOnPrimary">#FFFFFF</item>
+        <item name="colorPrimaryContainer">#FFDAD6</item>
+        <item name="colorOnPrimaryContainer">#410002</item>
+        <item name="colorSecondary">#775651</item>
+        <item name="colorOnSecondary">#FFFFFF</item>
+        <item name="colorSecondaryContainer">#FFDAD7</item>
+        <item name="colorOnSecondaryContainer">#2C1513</item>
+    </style>
+
+    <style name="ThemeOverlay.NdiApp.AccentPink" parent="">
+        <item name="colorPrimary">#9D005E</item>
+        <item name="colorOnPrimary">#FFFFFF</item>
+        <item name="colorPrimaryContainer">#FFD9E5</item>
+        <item name="colorOnPrimaryContainer">#3C0022</item>
+        <item name="colorSecondary">#74535F</item>
+        <item name="colorOnSecondary">#FFFFFF</item>
+        <item name="colorSecondaryContainer">#FFD9E6</item>
+        <item name="colorOnSecondaryContainer">#2C1520</item>
+    </style>
+
 </resources>

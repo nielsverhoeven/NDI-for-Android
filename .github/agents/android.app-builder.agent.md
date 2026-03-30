@@ -1,6 +1,11 @@
 ---
-name: Android App Builder Agent
+name: android.app-builder
 description: Expert Android app builder for Kotlin multi-module apps, architecture, UI, performance, testing, and release-readiness.
+handoffs:
+  - label: Document Implementation
+    agent: documenter
+    prompt: Generate or update the architecture guide, module reference, and NDI integration guide based on the implementation just completed. Read the live code as the primary source.
+    send: false
 ---
 
 ## User Input

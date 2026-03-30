@@ -6,6 +6,8 @@ import com.ndi.core.model.DiscoveryStatus
 import com.ndi.core.model.TelemetryEvent
 import com.ndi.feature.ndibrowser.domain.repository.NdiDiscoveryRepository
 import com.ndi.feature.ndibrowser.domain.repository.UserSelectionRepository
+import com.ndi.feature.ndibrowser.domain.repository.ViewerContinuityRepository
+import kotlinx.coroutines.flow.Flow
 
 fun interface SourceListTelemetryEmitter {
     fun emit(event: TelemetryEvent)
@@ -15,6 +17,10 @@ object SourceListDependencies {
     var discoveryRepositoryProvider: (() -> NdiDiscoveryRepository)? = null
     var userSelectionRepositoryProvider: (() -> UserSelectionRepository)? = null
     var viewerNavigationRequestProvider: ((String) -> NavDeepLinkRequest)? = null
+    var outputNavigationRequestProvider: ((String) -> NavDeepLinkRequest)? = null
+    var fallbackWarningProvider: (() -> Flow<String?>)? = null
+    var overlayStateProvider: (() -> Flow<com.ndi.feature.ndibrowser.settings.OverlayDisplayState?>)? = null
+    var viewerContinuityRepositoryProvider: (() -> ViewerContinuityRepository)? = null
     var telemetryEmitter: SourceListTelemetryEmitter = SourceListTelemetryEmitter {}
 
     fun requireDiscoveryRepository(): NdiDiscoveryRepository {
@@ -28,6 +34,16 @@ object SourceListDependencies {
     fun viewerNavigationRequest(sourceId: String): NavDeepLinkRequest {
         return requireNotNull(viewerNavigationRequestProvider) { "Source list viewer navigation is not configured." }.invoke(sourceId)
     }
+
+    fun outputNavigationRequest(sourceId: String): NavDeepLinkRequest {
+        return requireNotNull(outputNavigationRequestProvider) { "Source list output navigation is not configured." }.invoke(sourceId)
+    }
+
+    fun fallbackWarningFlowOrNull(): Flow<String?>? = fallbackWarningProvider?.invoke()
+
+    fun overlayStateFlowOrNull(): Flow<com.ndi.feature.ndibrowser.settings.OverlayDisplayState?>? = overlayStateProvider?.invoke()
+
+    fun viewerContinuityRepositoryOrNull(): ViewerContinuityRepository? = viewerContinuityRepositoryProvider?.invoke()
 }
 
 object SourceListTelemetry {
@@ -53,6 +69,44 @@ object SourceListTelemetry {
             name = "source_selected",
             timestampEpochMillis = System.currentTimeMillis(),
             attributes = mapOf("sourceId" to sourceId),
+        )
+    }
+
+    fun viewSelectionOpenedViewer(sourceId: String): TelemetryEvent {
+        return TelemetryEvent(
+            name = TelemetryEvent.VIEW_SELECTION_OPENED_VIEWER,
+            timestampEpochMillis = System.currentTimeMillis(),
+            attributes = mapOf("sourceId" to sourceId),
+        )
+    }
+
+    /**
+     * T038: Telemetry event for blocked source selection.
+     * Emitted when user attempts to select an unavailable source.
+     */
+    fun sourceSelectionBlocked(sourceId: String, reason: String): TelemetryEvent {
+        return TelemetryEvent(
+            name = "source_selection_blocked",
+            timestampEpochMillis = System.currentTimeMillis(),
+            attributes = mapOf(
+                "sourceId" to sourceId,
+                "reason" to reason,
+            ),
+        )
+    }
+
+    /**
+     * T038: Telemetry event for availability state changes.
+     * Emitted when a source transitions from available to unavailable or vice versa.
+     */
+    fun availabilityStateChanged(sourceId: String, isAvailable: Boolean): TelemetryEvent {
+        return TelemetryEvent(
+            name = "source_availability_changed",
+            timestampEpochMillis = System.currentTimeMillis(),
+            attributes = mapOf(
+                "sourceId" to sourceId,
+                "isAvailable" to isAvailable.toString(),
+            ),
         )
     }
 }

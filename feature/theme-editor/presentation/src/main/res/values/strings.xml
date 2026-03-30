@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="theme_editor_title">Theme Editor</string>
+    <string name="theme_mode_light">Light</string>
+    <string name="theme_mode_dark">Dark</string>
+    <string name="theme_mode_system">System</string>
+    <string name="theme_editor_open">Open Theme Editor</string>
+    <string name="theme_accent_palette_title">Accent Color</string>
+    <string name="theme_accent_blue">Blue</string>
+    <string name="theme_accent_teal">Teal</string>
+    <string name="theme_accent_green">Green</string>
+    <string name="theme_accent_orange">Orange</string>
+    <string name="theme_accent_red">Red</string>
+    <string name="theme_accent_pink">Pink</string>
+    <string name="theme_editor_apply">Apply</string>
+</resources>

@@ -1,0 +1,27 @@
+﻿{
+    "operation":  "Reset-EmulatorState",
+    "status":  "SUCCESS",
+    "timestamp":  "2026-03-28T20:05:43.6750063Z",
+    "data":  [
+                 {
+                     "emulatorId":  "emulator-5554",
+                     "packagesCleared":  [
+                                             "com.ndi.app.debug"
+                                         ],
+                     "resetAt":  "2026-03-28T20:05:39.4636888Z"
+                 },
+                 {
+                     "emulatorId":  "emulator-5556",
+                     "packagesCleared":  [
+                                             "com.ndi.app.debug"
+                                         ],
+                     "resetAt":  "2026-03-28T20:05:43.6622119Z"
+                 }
+             ],
+    "errors":  [
+
+               ],
+    "warnings":  [
+
+                 ]
+}

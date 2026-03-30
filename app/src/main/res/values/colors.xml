@@ -7,4 +7,10 @@
     <color name="teal_700">#FF018786</color>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+    <color name="theme_accent_blue">#1565C0</color>
+    <color name="theme_accent_teal">#00897B</color>
+    <color name="theme_accent_green">#2E7D32</color>
+    <color name="theme_accent_orange">#EF6C00</color>
+    <color name="theme_accent_red">#C62828</color>
+    <color name="theme_accent_pink">#AD1457</color>
 </resources>

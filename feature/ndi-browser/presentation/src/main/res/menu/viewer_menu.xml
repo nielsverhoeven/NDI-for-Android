@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:id="@+id/viewer_menu_quality_presets"
+        android:title="@string/ndi_viewer_quality_menu_title"
+        android:showAsAction="ifRoom" />
+</menu>

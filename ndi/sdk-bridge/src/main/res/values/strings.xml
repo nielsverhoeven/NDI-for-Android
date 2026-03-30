@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="screen_share_notification_channel_name">Screen sharing</string>
+    <string name="screen_share_notification_channel_description">Foreground notification for NDI screen share output</string>
+    <string name="screen_share_notification_title">NDI screen share active</string>
+    <string name="screen_share_notification_text">Streaming %1$s from this device</string>
+</resources>

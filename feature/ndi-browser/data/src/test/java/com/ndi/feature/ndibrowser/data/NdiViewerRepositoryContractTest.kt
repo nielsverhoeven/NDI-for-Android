@@ -33,6 +33,8 @@ private object AlwaysFailingViewerBridge : NdiViewerBridge {
     }
 
     override fun stopReceiver() = Unit
+
+    override fun getLatestReceiverFrame() = null
 }
 
 private class InMemoryViewerSessionDao : ViewerSessionDao {

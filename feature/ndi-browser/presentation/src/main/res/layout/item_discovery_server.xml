@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:paddingStart="16dp"
+    android:paddingTop="12dp"
+    android:paddingEnd="8dp"
+    android:paddingBottom="12dp">
+
+    <!-- Drag handle (spec 018 US4: reorder) -->
+    <ImageView
+        android:id="@+id/dragHandle"
+        android:layout_width="24dp"
+        android:layout_height="24dp"
+        android:layout_marginEnd="12dp"
+        android:src="@drawable/ic_drag_handle"
+        android:contentDescription="@string/discovery_drag_handle_description"
+        android:tint="?attr/colorOnSurfaceVariant" />
+
+    <!-- Server display label (e.g. "ndi-server.local:5959") -->
+    <TextView
+        android:id="@+id/serverDisplayLabel"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:textAppearance="@style/TextAppearance.Material3.BodyLarge" />
+
+    <!-- Enabled toggle -->
+    <com.google.android.material.materialswitch.MaterialSwitch
+        android:id="@+id/serverEnabledSwitch"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="8dp"
+        android:checked="true"
+        android:showText="false" />
+
+    <!-- Edit button -->
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/editServerButton"
+        style="@style/Widget.Material3.Button.IconButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        app:icon="@drawable/ic_edit"
+        android:contentDescription="@string/discovery_edit_server_button_description" />
+
+    <!-- Delete button -->
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/deleteServerButton"
+        style="@style/Widget.Material3.Button.IconButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        app:icon="@drawable/ic_delete"
+        android:contentDescription="@string/discovery_delete_server_button_description" />
+
+</LinearLayout>

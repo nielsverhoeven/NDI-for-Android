@@ -1,0 +1,31 @@
+﻿{
+    "sessionId":  "playwright-1774728002017",
+    "generatedAt":  "2026-03-28T20:00:13.5686234Z",
+    "artifacts":  [
+                      {
+                          "path":  "testing\\e2e\\artifacts\\playwright-1774728002017\\logcat-emulator-5554.log",
+                          "sizeBytes":  81961,
+                          "checksumSha256":  "404224fcc5ecc1d260582c03faecd955876d220af43bcc1d717cb01d9cdd423e"
+                      },
+                      {
+                          "path":  "testing\\e2e\\artifacts\\playwright-1774728002017\\screenrecord-emulator-5554.mp4",
+                          "sizeBytes":  49,
+                          "checksumSha256":  "a70f65e8e8e72d50fd4f5443d987c4bcbf97c5f454e988fd877b60964500335c"
+                      },
+                      {
+                          "path":  "testing\\e2e\\artifacts\\playwright-1774728002017\\logcat-emulator-5556.log",
+                          "sizeBytes":  117906,
+                          "checksumSha256":  "b1319101a8b4962e6f2d27a64c499ad9ad58b15aac592381b3fb847bc2007c10"
+                      },
+                      {
+                          "path":  "testing\\e2e\\artifacts\\playwright-1774728002017\\screenrecord-emulator-5556.mp4",
+                          "sizeBytes":  49,
+                          "checksumSha256":  "a70f65e8e8e72d50fd4f5443d987c4bcbf97c5f454e988fd877b60964500335c"
+                      },
+                      {
+                          "path":  "testing\\e2e\\artifacts\\playwright-1774728002017\\diagnostics.json",
+                          "sizeBytes":  828,
+                          "checksumSha256":  "7a6619954eb5a513619d555ff2bfccaf5b3cca7fb997c5f37d9bd542d768db39"
+                      }
+                  ]
+}
