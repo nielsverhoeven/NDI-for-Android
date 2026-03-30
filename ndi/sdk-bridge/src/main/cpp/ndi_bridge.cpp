@@ -140,6 +140,18 @@ void apply_ndi_discovery_env() {
 static std::mutex g_finder_mutex;
 static std::mutex g_discovery_call_mutex;
 static NDIlib_find_instance_t g_finder = nullptr;
+static std::mutex g_send_listener_mutex;
+static NDIlib_send_listener_instance_t g_send_listener = nullptr;
+static std::string g_send_listener_server_url;
+
+void destroy_send_listener_locked() {
+    if (g_send_listener != nullptr) {
+        NDIlib_send_listener_destroy(g_send_listener);
+        g_send_listener = nullptr;
+        g_send_listener_server_url.clear();
+        log_native_info("send_listener destroyed");
+    }
+}
 
 bool ensure_ndi_initialized() {
     if (g_ndi_initialized.load(std::memory_order_acquire)) {
@@ -211,22 +223,31 @@ std::string first_discovery_server_url_snapshot() {
 }
 
 void append_send_listener_sources(std::vector<DiscoveredSource>& discovered) {
-    NDIlib_send_listener_create_t listener_create;
-    std::memset(&listener_create, 0, sizeof(listener_create));
-
     const std::string server_url = first_discovery_server_url_snapshot();
-    listener_create.p_url_address = server_url.empty() ? nullptr : server_url.c_str();
+    std::lock_guard<std::mutex> lock(g_send_listener_mutex);
 
-    NDIlib_send_listener_instance_t listener = NDIlib_send_listener_create(&listener_create);
-    if (listener == nullptr) {
-        log_native_info("send_listener create failed");
-        return;
+    if (g_send_listener != nullptr && g_send_listener_server_url != server_url) {
+        destroy_send_listener_locked();
     }
 
-    NDIlib_send_listener_wait_for_senders(listener, 1200);
+    if (g_send_listener == nullptr) {
+        NDIlib_send_listener_create_t listener_create;
+        std::memset(&listener_create, 0, sizeof(listener_create));
+        listener_create.p_url_address = server_url.empty() ? nullptr : server_url.c_str();
+
+        g_send_listener = NDIlib_send_listener_create(&listener_create);
+        if (g_send_listener == nullptr) {
+            log_native_info("send_listener create failed");
+            return;
+        }
+        g_send_listener_server_url = server_url;
+        log_native_info("send_listener created for " + server_url);
+    }
+
+    NDIlib_send_listener_wait_for_senders(g_send_listener, 1200);
 
     uint32_t sender_count = 0;
-    const NDIlib_sender_t* senders = NDIlib_send_listener_get_senders(listener, &sender_count);
+    const NDIlib_sender_t* senders = NDIlib_send_listener_get_senders(g_send_listener, &sender_count);
     if (senders != nullptr && sender_count > 0) {
         discovered.reserve(discovered.size() + sender_count);
         for (uint32_t index = 0; index < sender_count; ++index) {
@@ -256,8 +277,6 @@ void append_send_listener_sources(std::vector<DiscoveredSource>& discovered) {
             }
         }
     }
-
-    NDIlib_send_listener_destroy(listener);
 }
 
 // Canonical NDI source discovery using a persistent finder.
@@ -678,6 +697,9 @@ Java_com_ndi_sdkbridge_NativeNdiBridge_nativeSetDiscoveryExtraIps(
         log_native_info("NDI discovery endpoints unchanged; skipping reinit");
         return;
     }
+    // Block active discovery loop while reconfiguring NDI/finder/listener state.
+    std::lock_guard<std::mutex> discovery_lock(g_discovery_call_mutex);
+
     // Destroy the persistent finder first so it isn't used against a
     // stale NDI init state. Lock order: g_finder_mutex before g_ndi_init_mutex.
     {
@@ -687,6 +709,10 @@ Java_com_ndi_sdkbridge_NativeNdiBridge_nativeSetDiscoveryExtraIps(
             g_finder = nullptr;
             log_native_info("NDI finder destroyed (endpoint changed)");
         }
+    }
+    {
+        std::lock_guard<std::mutex> listener_lock(g_send_listener_mutex);
+        destroy_send_listener_locked();
     }
     // Reinitialize NDI with the updated NDI_DISCOVERY_SERVER env var so the
     // SDK picks up the new endpoint. Safe only when no active streams exist.
