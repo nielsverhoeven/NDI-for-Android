@@ -45,6 +45,7 @@ data class SettingsUiState(
         emptyStateMessage = null,
         isEditable = false,
     ),
+    val overlayDisplayState: OverlayDisplayState? = null,
 )
 
 class SettingsFragment : Fragment() {

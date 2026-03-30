@@ -1,4 +1,4 @@
-package com.ndi.core.database
+﻿package com.ndi.core.database
 
 import android.content.Context
 import androidx.room.Dao
@@ -216,6 +216,35 @@ interface DiscoveryServerDao {
     suspend fun getMaxOrderIndex(): Int?
 }
 
+// ---- Spec 022: Discovery server check status persistence ----
+
+@Entity(tableName = "discovery_server_check_status")
+data class DiscoveryServerCheckStatusEntity(
+    @PrimaryKey
+    val serverId: String,
+    val checkType: String,
+    val outcome: String,
+    val checkedAtEpochMillis: Long,
+    val failureCategory: String,
+    val failureMessage: String?,
+    val correlationId: String,
+)
+
+@Dao
+interface DiscoveryServerCheckStatusDao {
+    @Query("SELECT * FROM discovery_server_check_status WHERE serverId = :serverId LIMIT 1")
+    suspend fun getByServerId(serverId: String): DiscoveryServerCheckStatusEntity?
+
+    @Query("SELECT * FROM discovery_server_check_status")
+    fun observeAll(): Flow<List<DiscoveryServerCheckStatusEntity>>
+
+    @Query("SELECT * FROM discovery_server_check_status WHERE serverId = :serverId LIMIT 1")
+    fun observeByServerId(serverId: String): Flow<DiscoveryServerCheckStatusEntity?>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entity: DiscoveryServerCheckStatusEntity)
+}
+
 @Database(
     entities = [
         UserSelectionEntity::class,
@@ -226,8 +255,9 @@ interface DiscoveryServerDao {
         OutputSessionEntity::class,
         SettingsPreferenceEntity::class,
         DiscoveryServerEntity::class,
+        DiscoveryServerCheckStatusEntity::class,
     ],
-    version = 7,
+    version = 8,
     exportSchema = false,
 )
 abstract class NdiDatabase : RoomDatabase() {
@@ -247,6 +277,8 @@ abstract class NdiDatabase : RoomDatabase() {
     abstract fun settingsPreferenceDao(): SettingsPreferenceDao
 
     abstract fun discoveryServerDao(): DiscoveryServerDao
+    abstract fun discoveryServerCheckStatusDao(): DiscoveryServerCheckStatusDao
+
 
     companion object {
         private fun hasColumn(database: SupportSQLiteDatabase, tableName: String, columnName: String): Boolean {
@@ -401,6 +433,27 @@ abstract class NdiDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    
+"""
+                    CREATE TABLE IF NOT EXISTS discovery_server_check_status (
+                        serverId TEXT NOT NULL,
+                        checkType TEXT NOT NULL,
+                        outcome TEXT NOT NULL,
+                        checkedAtEpochMillis INTEGER NOT NULL,
+                        failureCategory TEXT NOT NULL,
+                        failureMessage TEXT,
+                        correlationId TEXT NOT NULL,
+                        PRIMARY KEY(serverId)
+                    )
+                    
+""".trimIndent(),
+                )
+            }
+        }
+
         @Volatile
         private var instance: NdiDatabase? = null
 
@@ -411,7 +464,7 @@ abstract class NdiDatabase : RoomDatabase() {
                     NdiDatabase::class.java,
                     "ndi_database",
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
                     .build()
                     .also { instance = it }
             }

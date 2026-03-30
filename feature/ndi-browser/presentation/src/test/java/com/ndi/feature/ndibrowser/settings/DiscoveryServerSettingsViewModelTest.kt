@@ -1,9 +1,17 @@
 package com.ndi.feature.ndibrowser.settings
 
 import com.ndi.core.model.DEFAULT_DISCOVERY_SERVER_PORT
+import com.ndi.core.model.DeveloperDiscoveryDiagnostics
+import com.ndi.core.model.DiscoveryCheckOutcome
+import com.ndi.core.model.DiscoveryStatus
+import com.ndi.core.model.NdiSettingsSnapshot
+import com.ndi.feature.ndibrowser.domain.repository.DeveloperDiagnosticsRepository
+import com.ndi.feature.ndibrowser.domain.repository.NdiSettingsRepository
 import com.ndi.core.model.DiscoveryServerEntry
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.resetMain
@@ -159,5 +167,118 @@ class DiscoveryServerSettingsViewModelTest {
         testDispatcher.scheduler.advanceUntilIdle()
 
         assertEquals(0, viewModel.uiState.value.servers.size)
+    }
+
+    // ---- Spec 022 T014: lastCheckResult ----
+
+    @Test
+    fun `addServer success emits checkResult with SUCCESS outcome in uiState`() = runTest {
+        viewModel.onHostInputChanged("server.local")
+        viewModel.onAddServerClicked()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertNotNull("uiState must have a lastCheckResult after adding a server", state.lastCheckResult)
+        assertEquals(DiscoveryCheckOutcome.SUCCESS, state.lastCheckResult?.outcome)
+    }
+
+    @Test
+    fun `uiState does not expose lastCheckResult before first add`() = runTest {
+        val state = viewModel.uiState.value
+        assertNull(state.lastCheckResult)
+    }
+
+    @Test
+    fun `developer mode ON exposes developer discovery diagnostics in ui state`() = runTest {
+        val settingsRepository = FakeSettingsRepository(
+            initial = NdiSettingsSnapshot(
+                discoveryServerInput = null,
+                developerModeEnabled = true,
+                updatedAtEpochMillis = 0L,
+            ),
+        )
+        val diagnosticsRepository = FakeDeveloperDiagnosticsRepository(
+            diagnostics = DeveloperDiscoveryDiagnostics(
+                developerModeEnabled = true,
+                latestDiscoveryRefreshStatus = DiscoveryStatus.SUCCESS,
+                latestDiscoveryRefreshAtEpochMillis = 1234L,
+                serverStatusRollup = emptyList(),
+                recentDiscoveryLogs = listOf("log"),
+            ),
+        )
+        val diagnosticsViewModel = DiscoveryServerSettingsViewModel(
+            repository = fakeRepository,
+            settingsRepository = settingsRepository,
+            developerDiagnosticsRepository = diagnosticsRepository,
+        )
+
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertNotNull(diagnosticsViewModel.uiState.value.developerDiscoveryDiagnostics)
+    }
+
+    @Test
+    fun `developer mode OFF clears developer discovery diagnostics from ui state`() = runTest {
+        val settingsRepository = FakeSettingsRepository(
+            initial = NdiSettingsSnapshot(
+                discoveryServerInput = null,
+                developerModeEnabled = false,
+                updatedAtEpochMillis = 0L,
+            ),
+        )
+        val diagnosticsRepository = FakeDeveloperDiagnosticsRepository(
+            diagnostics = DeveloperDiscoveryDiagnostics(
+                developerModeEnabled = true,
+                latestDiscoveryRefreshStatus = DiscoveryStatus.SUCCESS,
+                latestDiscoveryRefreshAtEpochMillis = 1234L,
+                serverStatusRollup = emptyList(),
+                recentDiscoveryLogs = listOf("log"),
+            ),
+        )
+        val diagnosticsViewModel = DiscoveryServerSettingsViewModel(
+            repository = fakeRepository,
+            settingsRepository = settingsRepository,
+            developerDiagnosticsRepository = diagnosticsRepository,
+        )
+
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertNull(diagnosticsViewModel.uiState.value.developerDiscoveryDiagnostics)
+    }
+
+    private class FakeSettingsRepository(initial: NdiSettingsSnapshot) : NdiSettingsRepository {
+        private val state = MutableStateFlow(initial)
+
+        override suspend fun getSettings(): NdiSettingsSnapshot = state.value
+
+        override suspend fun saveSettings(snapshot: NdiSettingsSnapshot) {
+            state.value = snapshot
+        }
+
+        override fun observeSettings(): Flow<NdiSettingsSnapshot> = state
+    }
+
+    private class FakeDeveloperDiagnosticsRepository(
+        diagnostics: DeveloperDiscoveryDiagnostics,
+    ) : DeveloperDiagnosticsRepository {
+        private val diagnosticsState = MutableStateFlow(diagnostics)
+
+        override fun observeOverlayState() = MutableStateFlow(
+            com.ndi.core.model.NdiDeveloperOverlayState(
+                visible = false,
+                mode = com.ndi.core.model.NdiOverlayMode.DISABLED,
+                streamDirectionLabel = "",
+                streamStatusLabel = "",
+                sessionId = null,
+                streamSourceLabel = null,
+                warningMessage = null,
+                recentLogs = emptyList(),
+                updatedAtEpochMillis = 0L,
+            ),
+        )
+
+        override fun observeRecentLogs() = MutableStateFlow(emptyList<com.ndi.core.model.NdiRedactedLogEntry>())
+
+        override fun observeDiscoveryDiagnostics(): Flow<DeveloperDiscoveryDiagnostics> = diagnosticsState
     }
 }

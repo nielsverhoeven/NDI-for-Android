@@ -1,8 +1,12 @@
-package com.ndi.feature.ndibrowser.data.repository
+﻿package com.ndi.feature.ndibrowser.data.repository
 
 import com.ndi.core.model.DEFAULT_DISCOVERY_SERVER_PORT
+import com.ndi.core.model.DiscoveryCheckOutcome
+import com.ndi.core.model.DiscoveryCheckType
+import com.ndi.core.model.DiscoveryFailureCategory
 import com.ndi.core.model.DiscoverySelectionOutcome
 import com.ndi.core.model.DiscoverySelectionResult
+import com.ndi.core.model.DiscoveryServerCheckStatus
 import com.ndi.core.model.DiscoveryServerEntry
 import com.ndi.feature.ndibrowser.domain.repository.DiscoveryServerRepository
 import kotlinx.coroutines.flow.Flow
@@ -16,6 +20,7 @@ import java.util.UUID
 class FakeDiscoveryServerRepository : DiscoveryServerRepository {
 
     private val _entries = MutableStateFlow<List<DiscoveryServerEntry>>(emptyList())
+    private val checkStatusMap = mutableMapOf<String, DiscoveryServerCheckStatus>()
 
     fun seedServer(hostOrIp: String, port: Int, enabled: Boolean = true): DiscoveryServerEntry {
         val entry = DiscoveryServerEntry(
@@ -55,6 +60,17 @@ class FakeDiscoveryServerRepository : DiscoveryServerRepository {
             updatedAtEpochMillis = System.currentTimeMillis(),
         )
         _entries.value = _entries.value + entry
+        // Stub: auto-set SUCCESS check status after add
+        val correlationId = UUID.randomUUID().toString()
+        checkStatusMap[entry.id] = DiscoveryServerCheckStatus(
+            serverId = entry.id,
+            checkType = DiscoveryCheckType.ADD_VALIDATION,
+            outcome = DiscoveryCheckOutcome.SUCCESS,
+            checkedAtEpochMillis = System.currentTimeMillis(),
+            failureCategory = DiscoveryFailureCategory.NONE,
+            failureMessage = null,
+            correlationId = correlationId,
+        )
         return entry
     }
 
@@ -122,4 +138,35 @@ class FakeDiscoveryServerRepository : DiscoveryServerRepository {
             )
         }
     }
+
+    override suspend fun performDiscoveryServerCheck(
+        serverId: String,
+        correlationId: String,
+    ): DiscoveryServerCheckStatus {
+        checkNotNull(_entries.value.firstOrNull { it.id == serverId }) {
+            "No server with id '$serverId'"
+        }
+        val status = DiscoveryServerCheckStatus(
+            serverId = serverId,
+            checkType = DiscoveryCheckType.ADD_VALIDATION,
+            outcome = DiscoveryCheckOutcome.SUCCESS,
+            checkedAtEpochMillis = System.currentTimeMillis(),
+            failureCategory = DiscoveryFailureCategory.NONE,
+            failureMessage = null,
+            correlationId = correlationId,
+        )
+        checkStatusMap[serverId] = status
+        return status
+    }
+
+    override suspend fun recheckServer(
+        serverId: String,
+        correlationId: String,
+    ): DiscoveryServerCheckStatus = performDiscoveryServerCheck(serverId, correlationId)
+
+    override suspend fun getServerCheckStatus(serverId: String): DiscoveryServerCheckStatus? =
+        checkStatusMap[serverId]
+
+    override fun observeServerCheckStatus(serverId: String): Flow<DiscoveryServerCheckStatus?> =
+        MutableStateFlow(checkStatusMap[serverId])
 }

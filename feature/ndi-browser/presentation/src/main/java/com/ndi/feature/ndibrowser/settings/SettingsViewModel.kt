@@ -18,6 +18,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 
 class SettingsViewModel(
@@ -53,6 +55,15 @@ class SettingsViewModel(
                 settingsDetailState = buildDetailState(lastSelectedCategoryId),
             )
         }
+
+        SettingsDependencies.overlayStateFlowOrNull()
+            ?.onEach { overlay ->
+                val enabled = _uiState.value.developerModeEnabled
+                _uiState.value = _uiState.value.copy(
+                    overlayDisplayState = if (enabled) overlay else null,
+                )
+            }
+            ?.launchIn(viewModelScope)
     }
 
     fun onLayoutContextChanged(widthDp: Int, isLandscape: Boolean) {
@@ -92,6 +103,7 @@ class SettingsViewModel(
             developerModeEnabled = enabled,
             isDirty = computeIsDirty(themeMode = _uiState.value.themeMode, developerModeEnabled = enabled),
             savedConfirmationVisible = false,
+            overlayDisplayState = if (enabled) _uiState.value.overlayDisplayState else null,
         )
         SettingsDependencies.telemetryEmitter.emit(SettingsTelemetry.developerModeToggled(enabled))
     }

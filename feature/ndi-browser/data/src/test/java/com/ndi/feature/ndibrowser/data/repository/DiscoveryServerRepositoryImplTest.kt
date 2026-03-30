@@ -1,11 +1,14 @@
 package com.ndi.feature.ndibrowser.data.repository
 
 import com.ndi.core.model.DEFAULT_DISCOVERY_SERVER_PORT
+import com.ndi.core.model.DiscoveryCheckOutcome
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Test
 
@@ -166,5 +169,71 @@ class DiscoveryServerRepositoryImplTest {
         val result = fakeRepo.resolveActiveDiscoveryTarget()
         assertEquals(com.ndi.core.model.DiscoverySelectionOutcome.SUCCESS, result.result)
         assertNotNull(result.selectedEntryId)
+    }
+}
+// ---- Spec 022 US1: Add-time check and server survival ----
+
+@OptIn(ExperimentalCoroutinesApi::class)
+class DiscoveryServerRepositoryImpl022Us1Test {
+
+    private lateinit var fakeRepo: FakeDiscoveryServerRepository
+
+    @Before
+    fun setUp() {
+        fakeRepo = FakeDiscoveryServerRepository()
+    }
+
+    @Test
+    fun `addServer with unreachable endpoint still saves the server entry (FR-010)`() = runTest {
+        fakeRepo.addServer("unreachable.local", "5959")
+        val servers = fakeRepo.observeServers().first()
+        assertEquals(1, servers.size)
+        assertEquals("unreachable.local", servers[0].hostOrIp)
+    }
+
+    @Test
+    fun `addServer invokes performDiscoveryServerCheck and returns check status`() = runTest {
+        fakeRepo.addServer("server.local", "")
+        val servers = fakeRepo.observeServers().first()
+        assertEquals(1, servers.size)
+        val checkStatus = fakeRepo.getServerCheckStatus(servers[0].id)
+        assertNotNull("addServer must persist a check status after adding a server", checkStatus)
+    }
+}
+
+// ---- Spec 022 US2: Recheck scope isolation ----
+
+@OptIn(ExperimentalCoroutinesApi::class)
+class DiscoveryServerRepositoryImpl022Us2Test {
+
+    private lateinit var fakeRepo: FakeDiscoveryServerRepository
+
+    @Before
+    fun setUp() {
+        fakeRepo = FakeDiscoveryServerRepository()
+    }
+
+    @Test
+    fun `recheckServer updates only the targeted server status`() = runTest {
+        val serverAId = fakeRepo.addServer("server-a.local", "5959").id
+        val serverBId = fakeRepo.addServer("server-b.local", "5959").id
+        fakeRepo.recheckServer(serverAId, "corr-a")
+        val statusA = fakeRepo.getServerCheckStatus(serverAId)
+        val statusB = fakeRepo.getServerCheckStatus(serverBId)
+        assertNotNull(statusA)
+        if (statusB != null) {
+            assertNotEquals("Server B correlationId must not match A recheck", "corr-a", statusB.correlationId)
+        }
+    }
+
+    @Test
+    fun `recheckServer for server A does not remove server B from observeServers`() = runTest {
+        fakeRepo.addServer("server-a.local", "")
+        fakeRepo.addServer("server-b.local", "")
+        val before = fakeRepo.observeServers().first()
+        assertEquals(2, before.size)
+        fakeRepo.recheckServer(before[0].id, "corr-recheck")
+        val after = fakeRepo.observeServers().first()
+        assertEquals(2, after.size)
     }
 }

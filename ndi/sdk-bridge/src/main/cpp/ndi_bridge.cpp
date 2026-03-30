@@ -19,6 +19,7 @@
 
 #ifdef NDI_SDK_AVAILABLE
 #include "Processing.NDI.Lib.h"
+#include "Processing.NDI.SendListener.h"
 #endif
 
 namespace {
@@ -126,21 +127,31 @@ std::string discovery_endpoints_csv_snapshot() {
 // The NDI SDK (v5+) natively supports multiple discovery servers when
 // given a comma-delimited value — all are contacted simultaneously.
 void apply_ndi_discovery_env() {
-    const std::string csv = discovery_endpoints_csv_snapshot();
-    if (csv.empty()) {
-        unsetenv("NDI_DISCOVERY_SERVER");
-        log_native_info("NDI_DISCOVERY_SERVER cleared");
-    } else {
-        setenv("NDI_DISCOVERY_SERVER", csv.c_str(), 1);
-        log_native_info("NDI_DISCOVERY_SERVER=" + csv);
-    }
+    // On Android we configure discovery via HOME/.ndi/ndi-config.v1.json from Kotlin.
+    // Do not force NDI_DISCOVERY_SERVER here: SDK env parsing differences can override
+    // a valid config file and lead to empty source lists.
+    unsetenv("NDI_DISCOVERY_SERVER");
+    log_native_info("NDI_DISCOVERY_SERVER cleared (using ndi-config.v1.json)");
 }
 
 // Persistent finder — kept alive between discovery ticks so the SDK can
 // accumulate its source list without a cold-start wait on every poll.
 // Destroyed when the discovery endpoint list changes (before NDI reinit).
 static std::mutex g_finder_mutex;
+static std::mutex g_discovery_call_mutex;
 static NDIlib_find_instance_t g_finder = nullptr;
+static std::mutex g_send_listener_mutex;
+static NDIlib_send_listener_instance_t g_send_listener = nullptr;
+static std::string g_send_listener_server_url;
+
+void destroy_send_listener_locked() {
+    if (g_send_listener != nullptr) {
+        NDIlib_send_listener_destroy(g_send_listener);
+        g_send_listener = nullptr;
+        g_send_listener_server_url.clear();
+        log_native_info("send_listener destroyed");
+    }
+}
 
 bool ensure_ndi_initialized() {
     if (g_ndi_initialized.load(std::memory_order_acquire)) {
@@ -174,9 +185,16 @@ void append_find_sources(NDIlib_find_instance_t find_instance, std::vector<Disco
     for (uint32_t index = 0; index < source_count; ++index) {
         const char* ndi_name = sources[index].p_ndi_name;
         const char* url_address = sources[index].p_url_address;
-        const std::string source_id = ndi_name != nullptr ? ndi_name : (url_address != nullptr ? url_address : "");
-        const std::string display_name = ndi_name != nullptr ? ndi_name : source_id;
         const std::string url = url_address != nullptr ? url_address : "";
+        const std::string display_name = ndi_name != nullptr
+            ? ndi_name
+            : (!url.empty() ? url : "");
+
+        // Use URL address as the canonical identity when available because it is
+        // unique per announced source. Some discovery-server topologies can return
+        // duplicate/overlapping NDI names, which collapses distinct sources when
+        // deduplicating by source id on the Kotlin side.
+        const std::string source_id = !url.empty() ? url : display_name;
 
         if (!source_id.empty()) {
             discovered.push_back(DiscoveredSource {
@@ -184,6 +202,79 @@ void append_find_sources(NDIlib_find_instance_t find_instance, std::vector<Disco
                 .display_name = display_name,
                 .url_address = url,
             });
+            log_native_info(
+                "discover source[" + std::to_string(index) + "] id=" + source_id +
+                " name=" + display_name + " url=" + url
+            );
+        }
+    }
+}
+
+std::string first_discovery_server_url_snapshot() {
+    const std::string csv = discovery_endpoints_csv_snapshot();
+    if (csv.empty()) {
+        return "";
+    }
+    const size_t comma = csv.find(',');
+    if (comma == std::string::npos) {
+        return trim_copy(csv);
+    }
+    return trim_copy(csv.substr(0, comma));
+}
+
+void append_send_listener_sources(std::vector<DiscoveredSource>& discovered) {
+    const std::string server_url = first_discovery_server_url_snapshot();
+    std::lock_guard<std::mutex> lock(g_send_listener_mutex);
+
+    if (g_send_listener != nullptr && g_send_listener_server_url != server_url) {
+        destroy_send_listener_locked();
+    }
+
+    if (g_send_listener == nullptr) {
+        NDIlib_send_listener_create_t listener_create;
+        std::memset(&listener_create, 0, sizeof(listener_create));
+        listener_create.p_url_address = server_url.empty() ? nullptr : server_url.c_str();
+
+        g_send_listener = NDIlib_send_listener_create(&listener_create);
+        if (g_send_listener == nullptr) {
+            log_native_info("send_listener create failed");
+            return;
+        }
+        g_send_listener_server_url = server_url;
+        log_native_info("send_listener created for " + server_url);
+    }
+
+    NDIlib_send_listener_wait_for_senders(g_send_listener, 1200);
+
+    uint32_t sender_count = 0;
+    const NDIlib_sender_t* senders = NDIlib_send_listener_get_senders(g_send_listener, &sender_count);
+    if (senders != nullptr && sender_count > 0) {
+        discovered.reserve(discovered.size() + sender_count);
+        for (uint32_t index = 0; index < sender_count; ++index) {
+            const std::string uuid = senders[index].p_uuid != nullptr ? senders[index].p_uuid : "";
+            const std::string name = senders[index].p_name != nullptr ? senders[index].p_name : "";
+            const std::string address = senders[index].p_address != nullptr ? senders[index].p_address : "";
+            const int port = senders[index].port;
+
+            std::string url = address;
+            if (!url.empty() && port > 0) {
+                url += ":" + std::to_string(port);
+            }
+
+            const std::string source_id = !uuid.empty() ? uuid : (!url.empty() ? url : name);
+            const std::string display_name = !name.empty() ? name : source_id;
+
+            if (!source_id.empty()) {
+                discovered.push_back(DiscoveredSource {
+                    .source_id = source_id,
+                    .display_name = display_name,
+                    .url_address = url,
+                });
+                log_native_info(
+                    "send_listener source[" + std::to_string(index) + "] id=" + source_id +
+                    " name=" + display_name + " url=" + url
+                );
+            }
         }
     }
 }
@@ -211,6 +302,11 @@ void append_find_sources(NDIlib_find_instance_t find_instance, std::vector<Disco
 //   reacquired after the wait to read sources. If the finder was destroyed while
 //   we waited (endpoint change), we return empty and let the next tick retry.
 std::vector<DiscoveredSource> discover_sources_native() {
+    // NDI finder calls are not guaranteed to be thread-safe when issued in
+    // parallel against the same finder instance. Source list refresh can be
+    // triggered by multiple app collectors, so serialize discovery calls.
+    std::lock_guard<std::mutex> discovery_call_lock(g_discovery_call_mutex);
+
     // ensure_ndi_initialized acquires and releases g_ndi_init_mutex internally.
     if (!ensure_ndi_initialized()) {
         return {};
@@ -251,6 +347,12 @@ std::vector<DiscoveredSource> discover_sources_native() {
 
     std::vector<DiscoveredSource> discovered;
     append_find_sources(g_finder, discovered);
+
+    // If legacy finder yields nothing, query the NDI 6 sender-listener plane.
+    if (discovered.empty()) {
+        append_send_listener_sources(discovered);
+    }
+
     log_native_info("discover total=" + std::to_string(discovered.size()));
     return discovered;
 }
@@ -595,6 +697,9 @@ Java_com_ndi_sdkbridge_NativeNdiBridge_nativeSetDiscoveryExtraIps(
         log_native_info("NDI discovery endpoints unchanged; skipping reinit");
         return;
     }
+    // Block active discovery loop while reconfiguring NDI/finder/listener state.
+    std::lock_guard<std::mutex> discovery_lock(g_discovery_call_mutex);
+
     // Destroy the persistent finder first so it isn't used against a
     // stale NDI init state. Lock order: g_finder_mutex before g_ndi_init_mutex.
     {
@@ -604,6 +709,10 @@ Java_com_ndi_sdkbridge_NativeNdiBridge_nativeSetDiscoveryExtraIps(
             g_finder = nullptr;
             log_native_info("NDI finder destroyed (endpoint changed)");
         }
+    }
+    {
+        std::lock_guard<std::mutex> listener_lock(g_send_listener_mutex);
+        destroy_send_listener_locked();
     }
     // Reinitialize NDI with the updated NDI_DISCOVERY_SERVER env var so the
     // SDK picks up the new endpoint. Safe only when no active streams exist.
@@ -835,6 +944,49 @@ Java_com_ndi_sdkbridge_NativeNdiBridge_nativeSetResolutionPolicy(
     (void)width;
     (void)height;
     return JNI_FALSE;
+#endif
+}
+
+extern "C" JNIEXPORT jobjectArray JNICALL
+Java_com_ndi_sdkbridge_NativeNdiBridge_nativePerformDiscoveryCheck(
+    JNIEnv* env,
+    jobject /* this */,
+    jstring host,
+    jint port,
+    jstring /* correlation_id */
+) {
+    const char* raw_host = host != nullptr ? env->GetStringUTFChars(host, nullptr) : nullptr;
+    const std::string target_host = raw_host != nullptr ? raw_host : "";
+    if (raw_host != nullptr) {
+        env->ReleaseStringUTFChars(host, raw_host);
+    }
+
+    if (target_host.empty() || port <= 0) {
+        return to_java_string_array(env, {"false", "UNKNOWN", "Invalid discovery endpoint"});
+    }
+
+#ifdef NDI_SDK_AVAILABLE
+    if (!ensure_ndi_initialized()) {
+        return to_java_string_array(env, {"false", "HANDSHAKE_FAILED", "NDI SDK initialization failed"});
+    }
+
+    NDIlib_find_create_t create_description;
+    std::memset(&create_description, 0, sizeof(create_description));
+    create_description.show_local_sources = true;
+    create_description.p_groups = nullptr;
+    create_description.p_extra_ips = nullptr;
+
+    NDIlib_find_instance_t probe_finder = NDIlib_find_create_v2(&create_description);
+    if (probe_finder == nullptr) {
+        return to_java_string_array(env, {"false", "HANDSHAKE_FAILED", "Unable to create NDI finder for discovery check"});
+    }
+
+    NDIlib_find_wait_for_sources(probe_finder, 1200);
+    NDIlib_find_destroy(probe_finder);
+    return to_java_string_array(env, {"true", "NONE", ""});
+#else
+    (void)target_host;
+    return to_java_string_array(env, {"false", "UNKNOWN", "NDI SDK is not linked in this build"});
 #endif
 }
 

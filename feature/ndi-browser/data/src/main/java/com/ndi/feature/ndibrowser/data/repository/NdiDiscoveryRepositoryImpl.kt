@@ -54,6 +54,11 @@ class NdiDiscoveryRepositoryImpl(
         return runCatching {
             val endpoints = discoveryConfigRepository.getCurrentEndpoints()
             runCatching { Log.d(TAG, "Discovery trigger=$trigger, endpoints=$endpoints") }
+            diagnosticsLogBuffer?.appendLog(
+                category = NdiLogCategory.DISCOVERY,
+                level = NdiLogLevel.INFO,
+                message = "discovery_refresh_started trigger=${trigger.name}",
+            )
 
             // Set ALL configured endpoints at once. The NDI SDK (v5+) supports a
             // comma-separated list in NDI_DISCOVERY_SERVER and contacts all servers
@@ -108,7 +113,13 @@ class NdiDiscoveryRepositoryImpl(
                 status = status,
                 sourceCount = sources.size,
                 sources = sources,
-            )
+            ).also {
+                diagnosticsLogBuffer?.appendLog(
+                    category = NdiLogCategory.DISCOVERY,
+                    level = NdiLogLevel.INFO,
+                    message = "discovery_refresh_completed status=${status.name} sourceCount=${sources.size}",
+                )
+            }
         }.onFailure { e ->
             // Restore cooperative cancellation — runCatching catches CancellationException,
             // which would prevent the coroutine from honouring its cancellation signal.

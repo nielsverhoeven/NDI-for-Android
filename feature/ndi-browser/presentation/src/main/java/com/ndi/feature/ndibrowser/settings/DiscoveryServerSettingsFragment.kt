@@ -1,4 +1,4 @@
-package com.ndi.feature.ndibrowser.settings
+﻿package com.ndi.feature.ndibrowser.settings
 
 import android.os.Bundle
 import android.view.LayoutInflater
@@ -19,6 +19,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.ndi.core.model.DiscoveryServerDraftMode
 import com.ndi.core.model.DiscoveryServerEntry
+import com.ndi.core.model.DiscoveryCheckOutcome
 import com.ndi.feature.ndibrowser.presentation.R
 import com.ndi.feature.ndibrowser.presentation.databinding.FragmentDiscoveryServerSettingsBinding
 import com.ndi.feature.ndibrowser.presentation.databinding.ItemDiscoveryServerBinding
@@ -63,6 +64,7 @@ class DiscoveryServerSettingsFragment : Fragment() {
             onEdit = { id -> viewModel.onEditServerClicked(id) },
             onDelete = { id -> showDeleteConfirmationDialog(id) },
             onReorder = { idsInOrder -> viewModel.onServersReordered(idsInOrder) },
+                    onRecheck = { id -> viewModel.recheckServer(id) },
         )
         b.discoveryServerList.layoutManager = LinearLayoutManager(requireContext())
         b.discoveryServerList.adapter = serverAdapter
@@ -145,6 +147,20 @@ class DiscoveryServerSettingsFragment : Fragment() {
         // No-enabled-servers warning
         b.noEnabledServersWarning.isVisible = state.noEnabledServersWarning != null
 
+        // Last check result badge: show connectivity check outcome below the server list
+        val checkResult = state.lastCheckResult
+        if (checkResult != null && state.validationError == null) {
+            val badgeText = when (checkResult.outcome) {
+                DiscoveryCheckOutcome.SUCCESS -> "Connected: ${checkResult.serverId.take(8)}"
+                DiscoveryCheckOutcome.FAILURE -> "Check failed: ${checkResult.failureMessage ?: "unreachable"}"
+            }
+            b.discoveryValidationError.isVisible = checkResult.outcome == DiscoveryCheckOutcome.FAILURE
+            if (checkResult.outcome == DiscoveryCheckOutcome.FAILURE) {
+                b.discoveryValidationError.text = badgeText
+            }
+        }
+
+
         // Form mode: ADD vs EDIT
         val isEditMode = state.formMode == DiscoveryServerDraftMode.EDIT
         b.addDiscoveryServerButton.isVisible = !isEditMode
@@ -191,6 +207,7 @@ class DiscoveryServerAdapter(
     private val onEdit: (id: String) -> Unit,
     private val onDelete: (id: String) -> Unit,
     private val onReorder: (idsInOrder: List<String>) -> Unit,
+    private val onRecheck: (id: String) -> Unit = {},
 ) : RecyclerView.Adapter<DiscoveryServerAdapter.ViewHolder>() {
 
     private val items = mutableListOf<DiscoveryServerEntry>()
@@ -234,6 +251,11 @@ class DiscoveryServerAdapter(
             }
             binding.editServerButton.setOnClickListener { onEdit(entry.id) }
             binding.deleteServerButton.setOnClickListener { onDelete(entry.id) }
+                    // Long-press on the row triggers a connectivity recheck
+                    binding.root.setOnLongClickListener {
+                        onRecheck(entry.id)
+                        true
+                    }
         }
     }
 }
