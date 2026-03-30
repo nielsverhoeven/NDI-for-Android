@@ -25,12 +25,12 @@ import java.util.UUID
 class DeveloperDiagnosticsRepositoryImpl(
     private val viewerRepository: NdiViewerRepository? = null,
     private val outputRepository: NdiOutputRepository? = null,
+    private val logBuffer: DeveloperDiagnosticsLogBuffer = DeveloperDiagnosticsLogBuffer(),
 ) : DeveloperDiagnosticsRepository {
 
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
     private val _overlayState = MutableStateFlow(defaultOverlayState())
-    private val _recentLogs = MutableStateFlow<List<NdiRedactedLogEntry>>(emptyList())
 
     init {
         bindDiagnosticsStreams()
@@ -38,15 +38,16 @@ class DeveloperDiagnosticsRepositoryImpl(
 
     override fun observeOverlayState(): Flow<NdiDeveloperOverlayState> = _overlayState.asStateFlow()
 
-    override fun observeRecentLogs(): Flow<List<NdiRedactedLogEntry>> = _recentLogs.asStateFlow()
+    override fun observeRecentLogs(): Flow<List<NdiRedactedLogEntry>> = logBuffer.observeRecentLogs()
 
     private fun bindDiagnosticsStreams() {
         val viewerFlow = viewerRepository?.observeViewerSession() ?: MutableStateFlow(idleViewerSession())
         val outputFlow = outputRepository?.observeOutputSession() ?: MutableStateFlow(idleOutputSession())
+        val logFlow = logBuffer.observeRecentLogs()
 
         scope.launch {
-            combine(viewerFlow, outputFlow) { viewerSession, outputSession ->
-                buildOverlayState(viewerSession, outputSession)
+            combine(viewerFlow, outputFlow, logFlow) { viewerSession, outputSession, recentLogs ->
+                buildOverlayState(viewerSession, outputSession, recentLogs)
             }.collect { state ->
                 _overlayState.value = state
             }
@@ -80,9 +81,9 @@ class DeveloperDiagnosticsRepositoryImpl(
     private fun buildOverlayState(
         viewerSession: ViewerSession,
         outputSession: OutputSession,
+        recentLogs: List<NdiRedactedLogEntry>,
     ): NdiDeveloperOverlayState {
         val now = System.currentTimeMillis()
-        val recentLogs = _recentLogs.value
         val outputActive = outputSession.inputSourceId.isNotBlank() && outputSession.state !in setOf(OutputState.READY, OutputState.STOPPED)
         if (outputActive) {
             return NdiDeveloperOverlayState(
@@ -149,19 +150,7 @@ class DeveloperDiagnosticsRepositoryImpl(
         level: NdiLogLevel,
         message: String,
     ) {
-        val logEntry = NdiRedactedLogEntry(
-            timestampEpochMillis = System.currentTimeMillis(),
-            level = level,
-            category = category,
-            messageRedacted = message,
-            redactionApplied = false,
-        )
-        val updatedLogs = (_recentLogs.value + logEntry).takeLast(5)
-        _recentLogs.value = updatedLogs
-        _overlayState.value = _overlayState.value.copy(
-            recentLogs = updatedLogs,
-            updatedAtEpochMillis = System.currentTimeMillis(),
-        )
+        logBuffer.appendLog(category, level, message)
     }
 
     private fun idleViewerSession(): ViewerSession = ViewerSession(

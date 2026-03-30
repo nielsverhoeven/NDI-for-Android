@@ -1,4 +1,5 @@
 #include <jni.h>
+#include <android/log.h>
 
 #include <algorithm>
 #include <atomic>
@@ -13,11 +14,20 @@
 #include <unordered_map>
 #include <vector>
 
+// POSIX for setenv/unsetenv
+#include <stdlib.h>
+
 #ifdef NDI_SDK_AVAILABLE
 #include "Processing.NDI.Lib.h"
 #endif
 
 namespace {
+
+constexpr const char* kNativeLogTag = "NdiNative";
+
+void log_native_info(const std::string& message) {
+    __android_log_print(ANDROID_LOG_INFO, kNativeLogTag, "%s", message.c_str());
+}
 
 std::mutex g_state_mutex;
 std::atomic<bool> g_receiver_running{false};
@@ -92,56 +102,156 @@ jobjectArray to_java_string_array(JNIEnv* env, const std::vector<std::string>& v
 }
 
 #ifdef NDI_SDK_AVAILABLE
-bool ensure_ndi_initialized() {
-    static std::once_flag initialization_flag;
-    static bool initialized = false;
-    std::call_once(initialization_flag, []() {
-        initialized = NDIlib_initialize();
-    });
-    return initialized;
+
+std::string trim_copy(const std::string& input) {
+    const size_t start = input.find_first_not_of(" \t\r\n");
+    if (start == std::string::npos) {
+        return "";
+    }
+    const size_t end = input.find_last_not_of(" \t\r\n");
+    return input.substr(start, end - start + 1);
 }
 
+// Use a plain mutex+atomic so we can reinitialize NDI when the discovery
+// server endpoint changes (NDIlib reads NDI_DISCOVERY_SERVER only at init time).
+static std::mutex g_ndi_init_mutex;
+static std::atomic<bool> g_ndi_initialized{false};
+
+std::string discovery_endpoints_csv_snapshot() {
+    std::lock_guard<std::mutex> lock(g_state_mutex);
+    return g_discovery_extra_ips;
+}
+
+// Set NDI_DISCOVERY_SERVER to the full comma-separated endpoint list.
+// The NDI SDK (v5+) natively supports multiple discovery servers when
+// given a comma-delimited value — all are contacted simultaneously.
+void apply_ndi_discovery_env() {
+    const std::string csv = discovery_endpoints_csv_snapshot();
+    if (csv.empty()) {
+        unsetenv("NDI_DISCOVERY_SERVER");
+        log_native_info("NDI_DISCOVERY_SERVER cleared");
+    } else {
+        setenv("NDI_DISCOVERY_SERVER", csv.c_str(), 1);
+        log_native_info("NDI_DISCOVERY_SERVER=" + csv);
+    }
+}
+
+// Persistent finder — kept alive between discovery ticks so the SDK can
+// accumulate its source list without a cold-start wait on every poll.
+// Destroyed when the discovery endpoint list changes (before NDI reinit).
+static std::mutex g_finder_mutex;
+static NDIlib_find_instance_t g_finder = nullptr;
+
+bool ensure_ndi_initialized() {
+    if (g_ndi_initialized.load(std::memory_order_acquire)) {
+        return true;
+    }
+    std::lock_guard<std::mutex> lock(g_ndi_init_mutex);
+    if (g_ndi_initialized.load(std::memory_order_relaxed)) {
+        return true;
+    }
+    // Must set NDI_DISCOVERY_SERVER BEFORE NDIlib_initialize; the SDK reads the
+    // variable once during library initialization and caches the result.
+    apply_ndi_discovery_env();
+    const bool result = NDIlib_initialize();
+    g_ndi_initialized.store(result, std::memory_order_release);
+    if (result) {
+        log_native_info(std::string("NDI init ok, SDK=") + NDIlib_version());
+    } else {
+        log_native_info("NDI init FAILED");
+    }
+    return result;
+}
+
+void append_find_sources(NDIlib_find_instance_t find_instance, std::vector<DiscoveredSource>& discovered) {
+    uint32_t source_count = 0;
+    const NDIlib_source_t* sources = NDIlib_find_get_current_sources(find_instance, &source_count);
+    if (sources == nullptr) {
+        return;
+    }
+
+    discovered.reserve(discovered.size() + source_count);
+    for (uint32_t index = 0; index < source_count; ++index) {
+        const char* ndi_name = sources[index].p_ndi_name;
+        const char* url_address = sources[index].p_url_address;
+        const std::string source_id = ndi_name != nullptr ? ndi_name : (url_address != nullptr ? url_address : "");
+        const std::string display_name = ndi_name != nullptr ? ndi_name : source_id;
+        const std::string url = url_address != nullptr ? url_address : "";
+
+        if (!source_id.empty()) {
+            discovered.push_back(DiscoveredSource {
+                .source_id = source_id,
+                .display_name = display_name,
+                .url_address = url,
+            });
+        }
+    }
+}
+
+// Canonical NDI source discovery using a persistent finder.
+//
+// Architecture (validated against official NDI SDK docs):
+//   - NDI_DISCOVERY_SERVER is set to the full comma-separated list of
+//     host:port endpoints BEFORE NDIlib_initialize(). The SDK v5+ contacts
+//     all listed servers simultaneously via a single finder instance.
+//   - g_finder is kept alive between discovery ticks. Re-creating the finder
+//     on every poll resets the SDK's accumulated source list and restarts the
+//     warm-up wait from zero; a persistent finder avoids this.
+//   - NDIlib_send_listener_* (the prior fallback) is the sender-monitoring API
+//     for the new advertiser protocol (NDI 6.3+). It cannot see legacy NDI
+//     sources that registered via NDIlib_send_create, and must NOT be used
+//     as a discovery path.
+//   - p_extra_ips in NDIlib_find_create_t probes specific host machines for
+//     sources running ON them (unicast reach). Passing a Discovery Server IP
+//     there does not query its registry; that path is also removed.
+//
+// Lock discipline:
+//   g_finder_mutex — protects g_finder pointer.
+//   Held briefly to read/create the pointer, released before the blocking wait,
+//   reacquired after the wait to read sources. If the finder was destroyed while
+//   we waited (endpoint change), we return empty and let the next tick retry.
 std::vector<DiscoveredSource> discover_sources_native() {
+    // ensure_ndi_initialized acquires and releases g_ndi_init_mutex internally.
     if (!ensure_ndi_initialized()) {
         return {};
     }
 
-    NDIlib_find_create_t create_description;
-    std::memset(&create_description, 0, sizeof(create_description));
-    create_description.show_local_sources = true;
-    create_description.p_groups = nullptr;
-    create_description.p_extra_ips = g_discovery_extra_ips.empty() ? nullptr : g_discovery_extra_ips.c_str();
+    log_native_info("discover: NDI_DISCOVERY_SERVER=" + discovery_endpoints_csv_snapshot());
 
-    NDIlib_find_instance_t find_instance = NDIlib_find_create_v2(&create_description);
-    if (find_instance == nullptr) {
+    NDIlib_find_instance_t local_finder;
+    {
+        std::lock_guard<std::mutex> lock(g_finder_mutex);
+        if (g_finder == nullptr) {
+            NDIlib_find_create_t create_description;
+            std::memset(&create_description, 0, sizeof(create_description));
+            create_description.show_local_sources = true;
+            create_description.p_groups = nullptr;
+            create_description.p_extra_ips = nullptr;
+
+            g_finder = NDIlib_find_create_v2(&create_description);
+            if (g_finder == nullptr) {
+                log_native_info("finder create failed");
+                return {};
+            }
+            log_native_info("NDI finder created (persistent)");
+        }
+        local_finder = g_finder;
+    }
+
+    // Wait outside the lock — blocks up to 5 s on first call, returns early
+    // once sources are known to the finder (subsequent ticks are typically fast).
+    NDIlib_find_wait_for_sources(local_finder, 5000);
+
+    // Reacquire to safely read results; verify the finder hasn't been replaced.
+    std::lock_guard<std::mutex> lock(g_finder_mutex);
+    if (g_finder == nullptr || g_finder != local_finder) {
+        log_native_info("discover: finder replaced during wait, skipping stale result");
         return {};
     }
 
     std::vector<DiscoveredSource> discovered;
-    NDIlib_find_wait_for_sources(find_instance, 3000);
-
-    uint32_t source_count = 0;
-    const NDIlib_source_t* sources = NDIlib_find_get_current_sources(find_instance, &source_count);
-    if (sources != nullptr) {
-        discovered.reserve(source_count);
-        for (uint32_t index = 0; index < source_count; ++index) {
-            const char* ndi_name = sources[index].p_ndi_name;
-            const char* url_address = sources[index].p_url_address;
-            const std::string source_id = ndi_name != nullptr ? ndi_name : (url_address != nullptr ? url_address : "");
-            const std::string display_name = ndi_name != nullptr ? ndi_name : source_id;
-            const std::string url = url_address != nullptr ? url_address : "";
-
-            if (!source_id.empty()) {
-                discovered.push_back(DiscoveredSource {
-                    .source_id = source_id,
-                    .display_name = display_name,
-                    .url_address = url,
-                });
-            }
-        }
-    }
-
-    NDIlib_find_destroy(find_instance);
+    append_find_sources(g_finder, discovered);
+    log_native_info("discover total=" + std::to_string(discovered.size()));
     return discovered;
 }
 
@@ -263,6 +373,9 @@ void start_receiver_native(const std::string& source_id) {
     if (looks_like_ndi_name) {
         source_to_connect.p_ndi_name = source_id.c_str();
         source_to_connect.p_url_address = discovered_url.empty() ? nullptr : discovered_url.c_str();
+    } else if (!discovered_url.empty()) {
+        source_to_connect.p_ndi_name = nullptr;
+        source_to_connect.p_url_address = discovered_url.c_str();
     } else {
         source_to_connect.p_ndi_name = nullptr;
         source_to_connect.p_url_address = source_id.c_str();
@@ -438,6 +551,25 @@ Java_com_ndi_sdkbridge_NativeNdiBridge_nativeDiscoverDisplayNames(
 }
 
 extern "C" JNIEXPORT void JNICALL
+Java_com_ndi_sdkbridge_NativeNdiBridge_nativeSetAppDataDir(
+    JNIEnv* env,
+    jobject /* this */,
+    jstring data_dir
+) {
+    if (data_dir == nullptr) {
+        return;
+    }
+    const char* raw = env->GetStringUTFChars(data_dir, nullptr);
+    if (raw) {
+        // Set HOME so that the NDI SDK (Linux-based) resolves ~/.ndi/ndi-config.v1.json
+        // to <app-data-dir>/.ndi/ndi-config.v1.json.
+        setenv("HOME", raw, 1);
+        log_native_info(std::string("HOME set to: ") + raw);
+        env->ReleaseStringUTFChars(data_dir, raw);
+    }
+}
+
+extern "C" JNIEXPORT void JNICALL
 Java_com_ndi_sdkbridge_NativeNdiBridge_nativeSetDiscoveryExtraIps(
     JNIEnv* env,
     jobject /* this */,
@@ -445,14 +577,44 @@ Java_com_ndi_sdkbridge_NativeNdiBridge_nativeSetDiscoveryExtraIps(
 ) {
 #ifdef NDI_SDK_AVAILABLE
     const char* raw_value = extra_ips_csv != nullptr ? env->GetStringUTFChars(extra_ips_csv, nullptr) : nullptr;
+    const std::string incoming = raw_value != nullptr ? raw_value : "";
+    bool changed = false;
     {
         std::lock_guard<std::mutex> lock(g_state_mutex);
-        g_discovery_extra_ips = raw_value != nullptr ? raw_value : "";
-        g_last_discovered_sources.clear();
-        g_discovered_url_by_source_id.clear();
+        if (g_discovery_extra_ips != incoming) {
+            g_discovery_extra_ips = incoming;
+            g_last_discovered_sources.clear();
+            g_discovered_url_by_source_id.clear();
+            changed = true;
+        }
     }
     if (raw_value != nullptr) {
         env->ReleaseStringUTFChars(extra_ips_csv, raw_value);
+    }
+    if (!changed) {
+        log_native_info("NDI discovery endpoints unchanged; skipping reinit");
+        return;
+    }
+    // Destroy the persistent finder first so it isn't used against a
+    // stale NDI init state. Lock order: g_finder_mutex before g_ndi_init_mutex.
+    {
+        std::lock_guard<std::mutex> finder_lock(g_finder_mutex);
+        if (g_finder != nullptr) {
+            NDIlib_find_destroy(g_finder);
+            g_finder = nullptr;
+            log_native_info("NDI finder destroyed (endpoint changed)");
+        }
+    }
+    // Reinitialize NDI with the updated NDI_DISCOVERY_SERVER env var so the
+    // SDK picks up the new endpoint. Safe only when no active streams exist.
+    {
+        std::lock_guard<std::mutex> init_lock(g_ndi_init_mutex);
+        const bool active = (g_recv_instance != nullptr || g_send_instance != nullptr);
+        if (!active && g_ndi_initialized.load(std::memory_order_relaxed)) {
+            NDIlib_destroy();
+            g_ndi_initialized.store(false, std::memory_order_release);
+            log_native_info("NDI reinit scheduled: discovery endpoint changed");
+        }
     }
 #else
     (void)env;

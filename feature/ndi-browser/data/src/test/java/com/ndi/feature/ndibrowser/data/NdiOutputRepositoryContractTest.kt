@@ -114,11 +114,13 @@ class NdiOutputRepositoryContractTest {
             outputSessionDao = InMemoryOutputSessionDao(),
             outputBridge = bridge,
             discoveryConfigRepository = FakeOutputDiscoveryConfigRepository(
-                NdiDiscoveryEndpoint(
-                    host = "example.invalid",
-                    port = 5960,
-                    resolvedPort = 5960,
-                    usesDefaultPort = false,
+                listOf(
+                    NdiDiscoveryEndpoint(
+                        host = "example.invalid",
+                        port = 5960,
+                        resolvedPort = 5960,
+                        usesDefaultPort = false,
+                    ),
                 ),
             ),
             mapper = OutputSessionMapper(),
@@ -139,11 +141,13 @@ class NdiOutputRepositoryContractTest {
             outputSessionDao = InMemoryOutputSessionDao(),
             outputBridge = bridge,
             discoveryConfigRepository = FakeOutputDiscoveryConfigRepository(
-                NdiDiscoveryEndpoint(
-                    host = "127.0.0.1",
-                    port = 5960,
-                    resolvedPort = 5960,
-                    usesDefaultPort = false,
+                listOf(
+                    NdiDiscoveryEndpoint(
+                        host = "127.0.0.1",
+                        port = 5960,
+                        resolvedPort = 5960,
+                        usesDefaultPort = false,
+                    ),
                 ),
             ),
             mapper = OutputSessionMapper(),
@@ -156,12 +160,43 @@ class NdiOutputRepositoryContractTest {
     }
 
     @Test
+    fun startOutput_triesLaterConfiguredDiscoveryServersWhenEarlierOnesFail() = runTest {
+        val bridge = FakeOutputBridge(discoveryReachableHosts = setOf("second.local"))
+        val repository = NdiOutputRepositoryImpl(
+            outputSessionDao = InMemoryOutputSessionDao(),
+            outputBridge = bridge,
+            discoveryConfigRepository = FakeOutputDiscoveryConfigRepository(
+                listOf(
+                    NdiDiscoveryEndpoint(
+                        host = "first.local",
+                        port = 5959,
+                        resolvedPort = 5959,
+                        usesDefaultPort = false,
+                    ),
+                    NdiDiscoveryEndpoint(
+                        host = "second.local",
+                        port = 5960,
+                        resolvedPort = 5960,
+                        usesDefaultPort = false,
+                    ),
+                ),
+            ),
+            mapper = OutputSessionMapper(),
+        )
+
+        val session = repository.startOutput("camera-1", "Live")
+
+        assertEquals(OutputState.ACTIVE, session.state)
+        assertEquals(2, bridge.discoveryReachabilityChecks)
+    }
+
+    @Test
     fun startOutput_skipsDiscoveryReachabilityWhenNoEndpointConfigured() = runTest {
         val bridge = FakeOutputBridge(discoveryReachable = true)
         val repository = NdiOutputRepositoryImpl(
             outputSessionDao = InMemoryOutputSessionDao(),
             outputBridge = bridge,
-            discoveryConfigRepository = FakeOutputDiscoveryConfigRepository(null),
+            discoveryConfigRepository = FakeOutputDiscoveryConfigRepository(emptyList()),
             mapper = OutputSessionMapper(),
         )
 
@@ -175,6 +210,7 @@ class NdiOutputRepositoryContractTest {
 private class FakeOutputBridge(
     private val reachable: Boolean = true,
     private val discoveryReachable: Boolean = true,
+    private val discoveryReachableHosts: Set<String>? = null,
     private val startDelayMs: Long = 0L,
 ) : NdiOutputBridge {
     var startCount: Int = 0
@@ -185,7 +221,7 @@ private class FakeOutputBridge(
 
     override suspend fun isDiscoveryServerReachable(host: String, port: Int?): Boolean {
         discoveryReachabilityChecks += 1
-        return discoveryReachable
+        return discoveryReachableHosts?.contains(host) ?: discoveryReachable
     }
 
     override fun startSender(sourceId: String, streamName: String) {
@@ -235,9 +271,11 @@ private class InMemoryOutputSessionDao : OutputSessionDao {
 }
 
 private class FakeOutputDiscoveryConfigRepository(
-    private val endpoint: NdiDiscoveryEndpoint?,
+    private val endpoints: List<NdiDiscoveryEndpoint>,
 ) : NdiDiscoveryConfigRepository {
-    override fun observeDiscoveryEndpoint(): Flow<NdiDiscoveryEndpoint?> = flowOf(endpoint)
+    override fun observeDiscoveryEndpoints(): Flow<List<NdiDiscoveryEndpoint>> = flowOf(endpoints)
+
+    override fun observeDiscoveryEndpoint(): Flow<NdiDiscoveryEndpoint?> = flowOf(endpoints.firstOrNull())
 
     override suspend fun applyDiscoveryEndpoint(endpoint: NdiDiscoveryEndpoint?): NdiDiscoveryApplyResult {
         return NdiDiscoveryApplyResult(
@@ -249,5 +287,7 @@ private class FakeOutputDiscoveryConfigRepository(
         )
     }
 
-    override suspend fun getCurrentEndpoint(): NdiDiscoveryEndpoint? = endpoint
+    override suspend fun getCurrentEndpoints(): List<NdiDiscoveryEndpoint> = endpoints
+
+    override suspend fun getCurrentEndpoint(): NdiDiscoveryEndpoint? = endpoints.firstOrNull()
 }

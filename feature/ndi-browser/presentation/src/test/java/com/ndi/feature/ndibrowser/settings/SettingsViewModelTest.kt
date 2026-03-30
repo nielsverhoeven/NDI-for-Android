@@ -40,7 +40,7 @@ class SettingsViewModelTest {
     }
 
     @Test
-    fun onSaveSettings_persistsDeveloperMode_withoutChangingDiscoveryInput() = runTest(scheduler) {
+    fun onSaveSettings_persistsDeveloperMode_and_clearsLegacyDiscoveryInput() = runTest(scheduler) {
         val repository = FakeSettingsRepository(
             NdiSettingsSnapshot(
                 discoveryServerInput = "legacy-host:5960",
@@ -58,7 +58,7 @@ class SettingsViewModelTest {
         advanceUntilIdle()
 
         assertEquals(1, repository.savedSnapshots.size)
-        assertEquals("legacy-host:5960", repository.savedSnapshots.first().discoveryServerInput)
+        assertEquals(null, repository.savedSnapshots.first().discoveryServerInput)
         assertTrue(repository.savedSnapshots.first().developerModeEnabled)
         assertEquals(com.ndi.core.model.NdiThemeMode.DARK, repository.savedSnapshots.first().themeMode)
         assertEquals("accent_red", repository.savedSnapshots.first().accentColorId)

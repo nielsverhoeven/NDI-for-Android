@@ -12,10 +12,12 @@ import org.junit.Test
 class NdiDiscoveryConfigRepositoryImplTest {
 
     private lateinit var fakeDiscoveryRepo: FakeDiscoveryServerRepository
+    private lateinit var repository: NdiDiscoveryConfigRepositoryImpl
 
     @Before
     fun setUp() {
         fakeDiscoveryRepo = FakeDiscoveryServerRepository()
+        repository = NdiDiscoveryConfigRepositoryImpl(fakeDiscoveryRepo)
     }
 
     @Test
@@ -74,5 +76,29 @@ class NdiDiscoveryConfigRepositoryImplTest {
         fakeDiscoveryRepo.reorderServers(reversed)
         val after = fakeDiscoveryRepo.observeServers().first()
         assertEquals(reversed[0], after[0].id)
+    }
+
+    @Test
+    fun getCurrentEndpoints_returnsAllEnabledServersInPersistedOrder() = runTest {
+        val first = fakeDiscoveryRepo.addServer("first.local", "5959")
+        fakeDiscoveryRepo.addServer("second.local", "5960")
+        fakeDiscoveryRepo.addServer("third.local", "5961")
+        fakeDiscoveryRepo.setServerEnabled(first.id, false)
+
+        val endpoints = repository.getCurrentEndpoints()
+
+        assertEquals(listOf("second.local", "third.local"), endpoints.map { it.host })
+        assertEquals(listOf(5960, 5961), endpoints.map { it.resolvedPort })
+    }
+
+    @Test
+    fun observeDiscoveryEndpoint_returnsFirstEnabledServer() = runTest {
+        fakeDiscoveryRepo.addServer("first.local", "5959")
+        fakeDiscoveryRepo.addServer("second.local", "5960")
+
+        val endpoint = repository.observeDiscoveryEndpoint().first()
+
+        assertEquals("first.local", endpoint?.host)
+        assertEquals(5959, endpoint?.resolvedPort)
     }
 }

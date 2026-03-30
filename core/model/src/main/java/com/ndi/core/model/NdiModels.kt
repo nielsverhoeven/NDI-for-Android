@@ -26,6 +26,9 @@ data class NdiSource(
     val endpointAddress: String? = null,
     val isReachable: Boolean = true,
     val lastSeenAtEpochMillis: Long,
+    val isAvailable: Boolean = true,
+    val previouslyConnected: Boolean = false,
+    val lastFramePreviewPath: String? = null,
 )
 
 data class DiscoverySnapshot(

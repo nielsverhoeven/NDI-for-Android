@@ -15,6 +15,7 @@ import com.ndi.feature.ndibrowser.data.repository.ScreenCaptureConsentRepository
 import com.ndi.feature.ndibrowser.data.repository.StreamContinuityRepositoryImpl
 import com.ndi.feature.ndibrowser.data.repository.TopLevelNavigationRepositoryImpl
 import com.ndi.feature.ndibrowser.data.repository.UserSelectionRepositoryImpl
+import com.ndi.feature.ndibrowser.data.repository.ViewerContinuityRepositoryImpl
 import com.ndi.feature.ndibrowser.data.repository.ViewContinuityRepositoryImpl
 import com.ndi.feature.ndibrowser.domain.repository.HomeDashboardRepository
 import com.ndi.feature.ndibrowser.domain.repository.NdiDiscoveryRepository
@@ -25,6 +26,7 @@ import com.ndi.feature.ndibrowser.domain.repository.ScreenCaptureConsentReposito
 import com.ndi.feature.ndibrowser.domain.repository.StreamContinuityRepository
 import com.ndi.feature.ndibrowser.domain.repository.TopLevelNavigationRepository
 import com.ndi.feature.ndibrowser.domain.repository.UserSelectionRepository
+import com.ndi.feature.ndibrowser.domain.repository.ViewerContinuityRepository
 import com.ndi.feature.ndibrowser.domain.repository.ViewContinuityRepository
 import com.ndi.feature.themeeditor.data.repository.ThemeEditorRepositoryImpl
 import com.ndi.feature.themeeditor.domain.repository.ThemeEditorRepository
@@ -33,6 +35,7 @@ import com.ndi.feature.themeeditor.ThemeEditorTelemetryEmitter
 import com.ndi.app.theme.AppThemeCoordinator
 import com.ndi.app.navigation.NdiNavigation
 import com.ndi.feature.ndibrowser.data.repository.DeveloperDiagnosticsRepositoryImpl
+import com.ndi.feature.ndibrowser.data.repository.DeveloperDiagnosticsLogBuffer
 import com.ndi.feature.ndibrowser.data.repository.DiscoveryServerRepositoryImpl
 import com.ndi.feature.ndibrowser.data.repository.NdiDiscoveryConfigRepositoryImpl
 import com.ndi.feature.ndibrowser.data.repository.NdiSettingsRepositoryImpl
@@ -82,6 +85,9 @@ class AppGraph private constructor(context: Context) {
 
     val discoveryServerRepository: DiscoveryServerRepository = DiscoveryServerRepositoryImpl(
         discoveryServerDao = database.discoveryServerDao(),
+        discoveryServerReachabilityChecker = { host, port ->
+            NativeNdiBridge.isDiscoveryServerReachable(host, port)
+        },
     )
 
     val themeEditorRepository: ThemeEditorRepository = ThemeEditorRepositoryImpl(
@@ -96,19 +102,29 @@ class AppGraph private constructor(context: Context) {
         discoveryServerRepository = discoveryServerRepository,
     )
 
+    private val developerDiagnosticsLogBuffer = DeveloperDiagnosticsLogBuffer()
+
     val discoveryRepository: NdiDiscoveryRepository = NdiDiscoveryRepositoryImpl(
         bridge = NativeNdiBridge,
         userSelectionDao = database.userSelectionDao(),
         discoveryConfigRepository = discoveryConfigRepository,
+        diagnosticsLogBuffer = developerDiagnosticsLogBuffer,
     )
 
     val userSelectionRepository: UserSelectionRepository = UserSelectionRepositoryImpl(
         userSelectionDao = database.userSelectionDao(),
     )
 
+    val viewerContinuityRepository: ViewerContinuityRepository = ViewerContinuityRepositoryImpl(
+        lastViewedContextDao = database.lastViewedContextDao(),
+        connectionHistoryStateDao = database.connectionHistoryStateDao(),
+        previewDirectory = java.io.File(applicationContext.filesDir, "viewer-previews"),
+    )
+
     val viewerRepository: NdiViewerRepository = NdiViewerRepositoryImpl(
         bridge = NativeNdiBridge,
         viewerSessionDao = database.viewerSessionDao(),
+        viewerContinuityRepository = viewerContinuityRepository,
     )
 
     val qualityProfileRepository: QualityProfileRepository = QualityProfileRepositoryImpl(
@@ -125,6 +141,7 @@ class AppGraph private constructor(context: Context) {
         mapper = OutputSessionMapper(),
         coordinator = OutputSessionCoordinator(),
         recoveryCoordinator = OutputRecoveryCoordinator(),
+        diagnosticsLogBuffer = developerDiagnosticsLogBuffer,
     )
 
     val outputConfigurationRepository: OutputConfigurationRepository = OutputConfigurationRepositoryImpl(
@@ -153,6 +170,7 @@ class AppGraph private constructor(context: Context) {
     val developerDiagnosticsRepository: DeveloperDiagnosticsRepository = DeveloperDiagnosticsRepositoryImpl(
         viewerRepository = viewerRepository,
         outputRepository = outputRepository,
+        logBuffer = developerDiagnosticsLogBuffer,
     )
 
     private var previousOverlayMode: NdiOverlayMode? = null
@@ -201,10 +219,12 @@ class AppGraph private constructor(context: Context) {
         SourceListDependencies.viewerNavigationRequestProvider = NdiNavigation::viewerRequest
         SourceListDependencies.outputNavigationRequestProvider = NdiNavigation::outputRequest
         SourceListDependencies.overlayStateProvider = { overlayDisplayStateFlow }
+        SourceListDependencies.viewerContinuityRepositoryProvider = { viewerContinuityRepository }
         ViewerDependencies.viewerRepositoryProvider = { viewerRepository }
         ViewerDependencies.qualityProfileRepositoryProvider = { qualityProfileRepository }
         ViewerDependencies.userSelectionRepositoryProvider = { userSelectionRepository }
         ViewerDependencies.overlayStateProvider = { overlayDisplayStateFlow }
+        ViewerDependencies.viewerContinuityRepositoryProvider = { viewerContinuityRepository }
         OutputDependencies.outputRepositoryProvider = { outputRepository }
         OutputDependencies.outputConfigurationRepositoryProvider = { outputConfigurationRepository }
         OutputDependencies.screenCaptureConsentRepositoryProvider = { screenCaptureConsentRepository }

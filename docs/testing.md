@@ -152,3 +152,19 @@ When tests fail, map them to feature contracts:
 - Spec 006 contracts: `specs/006-settings-menu/contracts/ndi-settings-feature-contract.md`
 
 Use this mapping to determine whether failures are implementation bugs, test regressions, or contract drift.
+
+## 8. Feature 021 Validation Snapshot (Viewer Persistence + Source Availability)
+
+Validation date: 2026-03-29
+
+Completed gates:
+
+- Environment preflight pass (`scripts/verify-android-prereqs.ps1`, `./gradlew.bat --version`)
+- Source-list focused unit tests pass (`:feature:ndi-browser:presentation:testDebugUnitTest --tests "com.ndi.feature.ndibrowser.source_list.*"`)
+- Module unit test suites pass (`:feature:ndi-browser:data:testDebugUnitTest :feature:ndi-browser:presentation:testDebugUnitTest`)
+- Release hardening pass (`:app:verifyReleaseHardening`)
+
+Deferred gates:
+
+- Playwright e2e execution for feature 021 is intentionally deferred while e2e scenarios are rebuilt.
+- Deferment evidence and unblock command are tracked in `test-results/021-us2-playwright-regression.md`.

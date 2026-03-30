@@ -13,6 +13,7 @@ import java.util.UUID
 
 class DiscoveryServerRepositoryImpl(
     private val discoveryServerDao: DiscoveryServerDao,
+    private val discoveryServerReachabilityChecker: suspend (host: String, port: Int) -> Boolean = { _, _ -> true },
 ) : DiscoveryServerRepository {
 
     override fun observeServers(): Flow<List<DiscoveryServerEntry>> =
@@ -25,6 +26,7 @@ class DiscoveryServerRepositoryImpl(
         validateHost(normalized)
         val port = resolvePort(portInput)
         validatePort(port)
+        validateReachability(normalized, port)
 
         val duplicateCount = discoveryServerDao.countDuplicates(normalized, port, excludeId = "")
         if (duplicateCount > 0) {
@@ -58,6 +60,7 @@ class DiscoveryServerRepositoryImpl(
         validateHost(normalized)
         val port = resolvePort(portInput)
         validatePort(port)
+        validateReachability(normalized, port)
 
         // Check for duplicates excluding this entry itself
         val duplicateCount = discoveryServerDao.countDuplicates(normalized, port, excludeId = id)
@@ -114,14 +117,28 @@ class DiscoveryServerRepositoryImpl(
             )
         }
 
-        // In production this would do actual reachability checks;
-        // this baseline always selects the first enabled entry.
-        val first = enabled.first()
+        val attempted = mutableListOf<String>()
+        for (entry in enabled) {
+            attempted += entry.id
+            val isReachable = runCatching {
+                discoveryServerReachabilityChecker(entry.hostOrIp, entry.port)
+            }.getOrDefault(false)
+
+            if (isReachable) {
+                return DiscoverySelectionResult(
+                    attemptedEntryIds = attempted,
+                    selectedEntryId = entry.id,
+                    result = DiscoverySelectionOutcome.SUCCESS,
+                    errorMessage = null,
+                )
+            }
+        }
+
         return DiscoverySelectionResult(
-            attemptedEntryIds = listOf(first.id),
-            selectedEntryId = first.id,
-            result = DiscoverySelectionOutcome.SUCCESS,
-            errorMessage = null,
+            attemptedEntryIds = attempted,
+            selectedEntryId = null,
+            result = DiscoverySelectionOutcome.ALL_ENABLED_UNREACHABLE,
+            errorMessage = "All enabled discovery servers are unreachable. Verify host, port, and network access.",
         )
     }
 
@@ -145,6 +162,18 @@ class DiscoveryServerRepositoryImpl(
     private fun validatePort(port: Int) {
         if (port !in 1..65535) {
             throw IllegalArgumentException("Port must be between 1 and 65535.")
+        }
+    }
+
+    private suspend fun validateReachability(host: String, port: Int) {
+        val reachable = runCatching {
+            discoveryServerReachabilityChecker(host, port)
+        }.getOrDefault(false)
+
+        if (!reachable) {
+            throw IllegalArgumentException(
+                "Cannot reach discovery server '$host:$port'. Verify the endpoint and network connectivity from this device.",
+            )
         }
     }
 }

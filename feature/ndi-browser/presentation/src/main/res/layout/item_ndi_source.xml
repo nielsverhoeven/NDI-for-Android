@@ -10,8 +10,14 @@
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="vertical"
+        android:orientation="horizontal"
         android:padding="16dp">
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
 
         <TextView
             android:id="@+id/sourceName"
@@ -37,14 +43,46 @@
             android:textAppearance="@style/TextAppearance.Material3.LabelMedium"
             android:visibility="gone" />
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/viewStreamButton"
-            style="@style/Widget.Material3.Button.TonalButton"
+        <!-- T035: Previously Connected badge -->
+        <TextView
+            android:id="@+id/previouslyConnectedBadge"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:contentDescription="@string/ndi_source_view_stream_content_description"
-            android:text="@string/ndi_source_view_stream" />
+            android:layout_marginTop="4dp"
+            android:text="@string/ndi_source_previously_connected"
+            android:textAppearance="@style/TextAppearance.Material3.LabelSmall"
+            android:visibility="gone" />
+
+        <!-- T035: Unavailable badge -->
+        <TextView
+            android:id="@+id/unavailableBadge"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="@string/ndi_source_unavailable"
+            android:textAppearance="@style/TextAppearance.Material3.LabelSmall"
+            android:visibility="gone" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/viewStreamButton"
+                style="@style/Widget.Material3.Button.TonalButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:contentDescription="@string/ndi_source_view_stream_content_description"
+                android:text="@string/ndi_source_view_stream" />
+        </LinearLayout>
+
+        <ImageView
+            android:id="@+id/sourcePreviewImage"
+            android:layout_width="88dp"
+            android:layout_height="56dp"
+            android:layout_gravity="top"
+            android:layout_marginStart="12dp"
+            android:adjustViewBounds="true"
+            android:contentDescription="@null"
+            android:scaleType="centerCrop"
+            android:visibility="gone" />
     </LinearLayout>
 
 </com.google.android.material.card.MaterialCardView>

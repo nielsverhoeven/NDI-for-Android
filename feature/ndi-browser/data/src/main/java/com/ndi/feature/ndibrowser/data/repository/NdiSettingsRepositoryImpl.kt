@@ -22,9 +22,8 @@ class NdiSettingsRepositoryImpl(
     private val settingsDao: SettingsPreferenceDao,
     /** Optional: provide to enable one-time legacy single-endpoint → discovery-server migration on init. */
     private val discoveryServerDao: DiscoveryServerDao? = null,
+    private val scope: CoroutineScope = CoroutineScope(Dispatchers.IO + SupervisorJob()),
 ) : NdiSettingsRepository {
-
-    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val _settings = MutableStateFlow<NdiSettingsSnapshot?>(null)
 
     init {
@@ -58,22 +57,38 @@ class NdiSettingsRepositoryImpl(
         val dao = discoveryServerDao ?: return
         val legacyInput = snapshot.discoveryServerInput?.trim()?.takeIf { it.isNotBlank() } ?: return
 
-        // Only migrate if the collection is empty (first-run after upgrade)
-        if (dao.getAll().isNotEmpty()) return
+        if (dao.getAll().isNotEmpty()) {
+            clearLegacyDiscoveryInput(snapshot)
+            return
+        }
 
-        val parsed = NdiDiscoveryEndpoint.parse(legacyInput) ?: return
-        val now = System.currentTimeMillis()
-        dao.insert(
-            DiscoveryServerEntity(
-                id = UUID.randomUUID().toString(),
-                hostOrIp = parsed.host,
-                port = parsed.resolvedPort.takeIf { it > 0 } ?: DEFAULT_DISCOVERY_SERVER_PORT,
-                enabled = true,
-                orderIndex = 0,
-                createdAtEpochMillis = now,
-                updatedAtEpochMillis = now,
-            ),
+        val parsed = NdiDiscoveryEndpoint.parse(legacyInput)
+        if (parsed != null) {
+            val now = System.currentTimeMillis()
+            dao.insert(
+                DiscoveryServerEntity(
+                    id = UUID.randomUUID().toString(),
+                    hostOrIp = parsed.host,
+                    port = parsed.resolvedPort.takeIf { it > 0 } ?: DEFAULT_DISCOVERY_SERVER_PORT,
+                    enabled = true,
+                    orderIndex = 0,
+                    createdAtEpochMillis = now,
+                    updatedAtEpochMillis = now,
+                ),
+            )
+        }
+        clearLegacyDiscoveryInput(snapshot)
+    }
+
+    private suspend fun clearLegacyDiscoveryInput(snapshot: NdiSettingsSnapshot) {
+        if (snapshot.discoveryServerInput.isNullOrBlank()) return
+
+        val cleared = snapshot.copy(
+            discoveryServerInput = null,
+            updatedAtEpochMillis = System.currentTimeMillis(),
         )
+        settingsDao.upsert(cleared.toEntity())
+        _settings.value = cleared
     }
 
     private fun defaultSnapshot() = NdiSettingsSnapshot(

@@ -104,7 +104,7 @@ class SettingsViewModel(
             settingsRepository.saveSettings(
                 NdiSettingsSnapshot(
                     // Discovery endpoint is now controlled exclusively by Discovery Servers submenu.
-                    discoveryServerInput = currentSettings.discoveryServerInput,
+                    discoveryServerInput = null,
                     developerModeEnabled = state.developerModeEnabled,
                     themeMode = state.themeMode,
                     accentColorId = currentSettings.accentColorId,

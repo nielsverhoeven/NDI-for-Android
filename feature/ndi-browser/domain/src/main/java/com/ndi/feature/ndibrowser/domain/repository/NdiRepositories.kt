@@ -27,6 +27,7 @@ import com.ndi.core.model.navigation.TopLevelDestinationState
 import com.ndi.core.model.navigation.ViewContinuityState
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.map
 
 interface NdiDiscoveryRepository {
     suspend fun discoverSources(trigger: DiscoveryTrigger): DiscoverySnapshot
@@ -36,6 +37,17 @@ interface NdiDiscoveryRepository {
     fun startForegroundAutoRefresh(intervalSeconds: Int = 5)
 
     fun stopForegroundAutoRefresh()
+
+    /**
+     * Observes the availability debounce history for all discovered sources.
+     * Maps sourceId to SourceAvailabilityStatus with two-miss debounce logic applied.
+     */
+    fun observeAvailabilityHistory(): Flow<Map<String, SourceAvailabilityStatus>> = emptyFlow()
+
+    /**
+     * Gets the current availability status for a specific source.
+     */
+    suspend fun getSourceAvailabilityStatus(sourceId: String): SourceAvailabilityStatus? = null
 }
 
 interface NdiViewerRepository {
@@ -190,6 +202,68 @@ interface UserSelectionRepository {
     suspend fun getLastSelectedSource(): String?
 }
 
+data class LastViewedContext(
+    val contextId: String = LAST_VIEWED_CONTEXT_ID,
+    val sourceId: String,
+    val lastFrameImagePath: String? = null,
+    val lastFrameCapturedAtEpochMillis: Long? = null,
+    val restoredAtEpochMillis: Long? = null,
+) {
+    companion object {
+        const val LAST_VIEWED_CONTEXT_ID = "last_viewed_context"
+    }
+}
+
+data class ConnectionHistoryState(
+    val sourceId: String,
+    val previouslyConnected: Boolean = true,
+    val firstSuccessfulFrameAtEpochMillis: Long,
+    val lastSuccessfulFrameAtEpochMillis: Long,
+)
+
+data class SourceAvailabilityStatus(
+    val sourceId: String,
+    val isAvailable: Boolean,
+    val consecutiveMissedPolls: Int = 0,
+    val lastSeenAtEpochMillis: Long? = null,
+    val lastStatusChangedAtEpochMillis: Long = System.currentTimeMillis(),
+)
+
+interface ViewerContinuityRepository {
+    fun observeLastViewedContext(): Flow<LastViewedContext?>
+
+    suspend fun getLastViewedContext(): LastViewedContext?
+
+    suspend fun saveLastViewedContext(context: LastViewedContext)
+
+    suspend fun clearLastViewedContext()
+
+    fun observeConnectionHistory(): Flow<List<ConnectionHistoryState>>
+
+    fun observePreviouslyConnectedSourceIds(): Flow<Set<String>>
+
+    suspend fun markSuccessfulFrame(sourceId: String, frameCapturedAtEpochMillis: Long = System.currentTimeMillis())
+
+    suspend fun captureAndSavePreviewFrame(
+        sourceId: String,
+        frame: ViewerVideoFrame,
+        frameCapturedAtEpochMillis: Long = System.currentTimeMillis(),
+    ): String? {
+        return null
+    }
+
+    suspend fun resetPersistedStateOnAppDataClear() {
+        clearLastViewedContext()
+        clearConnectionHistory()
+    }
+
+    suspend fun getConnectionHistory(sourceId: String): ConnectionHistoryState?
+
+    suspend fun hasPreviouslyConnected(sourceId: String): Boolean
+
+    suspend fun clearConnectionHistory()
+}
+
 // ---- Spec 003: Three-Screen Navigation repositories ----
 
 /**
@@ -255,8 +329,14 @@ interface NdiSettingsRepository {
 }
 
 interface NdiDiscoveryConfigRepository {
+    fun observeDiscoveryEndpoints(): Flow<List<NdiDiscoveryEndpoint>>
+
     fun observeDiscoveryEndpoint(): Flow<NdiDiscoveryEndpoint?>
+
     suspend fun applyDiscoveryEndpoint(endpoint: NdiDiscoveryEndpoint?): NdiDiscoveryApplyResult
+
+    suspend fun getCurrentEndpoints(): List<NdiDiscoveryEndpoint>
+
     suspend fun getCurrentEndpoint(): NdiDiscoveryEndpoint?
 }
 
