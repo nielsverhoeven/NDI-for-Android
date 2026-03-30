@@ -1,25 +1,32 @@
 package com.ndi.feature.ndibrowser.data.repository
 
 import com.ndi.core.database.DiscoveryServerDao
+import com.ndi.core.database.DiscoveryServerCheckStatusDao
+import com.ndi.core.database.DiscoveryServerCheckStatusEntity
 import com.ndi.core.database.DiscoveryServerEntity
 import com.ndi.core.model.DiscoverySelectionOutcome
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Test
 
 class DiscoveryServerRepositoryReachabilityValidationTest {
 
-    @Test(expected = IllegalArgumentException::class)
-    fun addServer_rejectsUnreachableEndpoint() = runTest {
+    @Test
+    fun addServer_savesServerEvenWhenEndpointUnreachable() = runTest {
         val dao = InMemoryDiscoveryServerDao()
+        val checkDao = InMemoryDiscoveryServerCheckStatusDao()
         val repository = DiscoveryServerRepositoryImpl(
             discoveryServerDao = dao,
+            discoveryServerCheckStatusDao = checkDao,
             discoveryServerReachabilityChecker = { _, _ -> false },
         )
 
-        repository.addServer("10.10.0.53", "5959")
+        val result = repository.addServer("10.10.0.53", "5959")
+        assertNotNull(result)  // server is saved regardless of reachability
     }
 
     @Test
@@ -50,6 +57,7 @@ class DiscoveryServerRepositoryReachabilityValidationTest {
 
         val repository = DiscoveryServerRepositoryImpl(
             discoveryServerDao = dao,
+            discoveryServerCheckStatusDao = InMemoryDiscoveryServerCheckStatusDao(),
             discoveryServerReachabilityChecker = { host, _ -> host == "10.10.0.53" },
         )
 
@@ -77,6 +85,7 @@ class DiscoveryServerRepositoryReachabilityValidationTest {
 
         val repository = DiscoveryServerRepositoryImpl(
             discoveryServerDao = dao,
+            discoveryServerCheckStatusDao = InMemoryDiscoveryServerCheckStatusDao(),
             discoveryServerReachabilityChecker = { _, _ -> false },
         )
 
@@ -116,4 +125,20 @@ private class InMemoryDiscoveryServerDao : DiscoveryServerDao {
     }
 
     override suspend fun getMaxOrderIndex(): Int? = entities.value.maxOfOrNull { it.orderIndex }
+}
+
+private class InMemoryDiscoveryServerCheckStatusDao : DiscoveryServerCheckStatusDao {
+    private val statuses = MutableStateFlow<List<DiscoveryServerCheckStatusEntity>>(emptyList())
+
+    override suspend fun getByServerId(serverId: String): DiscoveryServerCheckStatusEntity? =
+        statuses.value.firstOrNull { it.serverId == serverId }
+
+    override fun observeAll(): Flow<List<DiscoveryServerCheckStatusEntity>> = statuses
+
+    override fun observeByServerId(serverId: String): Flow<DiscoveryServerCheckStatusEntity?> =
+        statuses.map { list -> list.firstOrNull { it.serverId == serverId } }
+
+    override suspend fun upsert(entity: DiscoveryServerCheckStatusEntity) {
+        statuses.value = statuses.value.filterNot { it.serverId == entity.serverId } + entity
+    }
 }

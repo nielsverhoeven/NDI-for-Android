@@ -1,10 +1,12 @@
-package com.ndi.feature.ndibrowser.settings
+﻿package com.ndi.feature.ndibrowser.settings
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.ndi.core.model.DiscoveryServerDraftMode
 import com.ndi.core.model.DiscoveryServerEntry
+import com.ndi.core.model.DiscoveryCheckOutcome
+import com.ndi.core.model.DiscoveryServerCheckStatus
 import com.ndi.feature.ndibrowser.domain.repository.DiscoveryServerRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -23,6 +25,7 @@ data class DiscoveryServerSettingsUiState(
     val formMode: DiscoveryServerDraftMode = DiscoveryServerDraftMode.ADD,
     val editingEntryId: String? = null,
     val noEnabledServersWarning: String? = null,
+    val lastCheckResult: DiscoveryServerCheckStatus? = null,
 )
 
 class DiscoveryServerSettingsViewModel(
@@ -81,13 +84,17 @@ class DiscoveryServerSettingsViewModel(
         viewModelScope.launch {
             runCatching {
                 repository.addServer(state.hostInput, state.portInput)
-            }.onSuccess {
+            }.onSuccess { entry ->
+                val checkStatus = runCatching { repository.getServerCheckStatus(entry.id) }.getOrNull()
                 _uiState.value = _uiState.value.copy(
                     hostInput = "",
                     portInput = "",
                     isBusy = false,
                     isSaveEnabled = false,
-                    validationError = null,
+                    validationError = if (checkStatus?.outcome == DiscoveryCheckOutcome.FAILURE) {
+                        checkStatus.failureMessage ?: "Server registered but connectivity check failed."
+                    } else null,
+                    lastCheckResult = checkStatus,
                 )
             }.onFailure { e ->
                 _uiState.value = _uiState.value.copy(
@@ -177,6 +184,20 @@ class DiscoveryServerSettingsViewModel(
 
     fun onDismissValidationError() {
         _uiState.value = _uiState.value.copy(validationError = null)
+    }
+
+
+    fun recheckServer(serverId: String) {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isBusy = true)
+            runCatching {
+                repository.recheckServer(serverId, java.util.UUID.randomUUID().toString())
+            }.onSuccess { checkStatus ->
+                _uiState.value = _uiState.value.copy(isBusy = false, lastCheckResult = checkStatus)
+            }.onFailure {
+                _uiState.value = _uiState.value.copy(isBusy = false)
+            }
+        }
     }
 
     private fun validateHost(input: String): String? {

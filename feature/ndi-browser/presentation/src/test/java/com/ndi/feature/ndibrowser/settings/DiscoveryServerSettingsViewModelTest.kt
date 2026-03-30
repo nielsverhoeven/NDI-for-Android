@@ -1,6 +1,7 @@
 package com.ndi.feature.ndibrowser.settings
 
 import com.ndi.core.model.DEFAULT_DISCOVERY_SERVER_PORT
+import com.ndi.core.model.DiscoveryCheckOutcome
 import com.ndi.core.model.DiscoveryServerEntry
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -159,5 +160,24 @@ class DiscoveryServerSettingsViewModelTest {
         testDispatcher.scheduler.advanceUntilIdle()
 
         assertEquals(0, viewModel.uiState.value.servers.size)
+    }
+
+    // ---- Spec 022 T014: lastCheckResult ----
+
+    @Test
+    fun `addServer success emits checkResult with SUCCESS outcome in uiState`() = runTest {
+        viewModel.onHostInputChanged("server.local")
+        viewModel.onAddServerClicked()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertNotNull("uiState must have a lastCheckResult after adding a server", state.lastCheckResult)
+        assertEquals(DiscoveryCheckOutcome.SUCCESS, state.lastCheckResult?.outcome)
+    }
+
+    @Test
+    fun `uiState does not expose lastCheckResult before first add`() = runTest {
+        val state = viewModel.uiState.value
+        assertNull(state.lastCheckResult)
     }
 }

@@ -1,12 +1,14 @@
-package com.ndi.feature.ndibrowser.settings
+﻿package com.ndi.feature.ndibrowser.settings
 
 import com.ndi.core.model.NdiOverlayMode
+import com.ndi.core.model.DeveloperDiscoveryDiagnostics
 
 data class OverlayDisplayState(
     val mode: NdiOverlayMode,
     val streamStatus: String?,
     val sessionId: String?,
     val recentLogs: List<String>,
+    val discoveryDiagnostics: DeveloperDiscoveryDiagnostics? = null,
 )
 
 object DeveloperOverlayStateMapper {

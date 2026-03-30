@@ -1,18 +1,29 @@
 package com.ndi.feature.ndibrowser.data.repository
 
+import android.util.Log
+import com.ndi.core.database.DiscoveryServerCheckStatusDao
+import com.ndi.core.database.DiscoveryServerCheckStatusEntity
 import com.ndi.core.database.DiscoveryServerDao
 import com.ndi.core.database.DiscoveryServerEntity
 import com.ndi.core.model.DEFAULT_DISCOVERY_SERVER_PORT
+import com.ndi.core.model.DiscoveryCheckOutcome
+import com.ndi.core.model.DiscoveryCheckType
+import com.ndi.core.model.DiscoveryFailureCategory
 import com.ndi.core.model.DiscoverySelectionOutcome
 import com.ndi.core.model.DiscoverySelectionResult
+import com.ndi.core.model.DiscoveryServerCheckStatus
 import com.ndi.core.model.DiscoveryServerEntry
+import com.ndi.feature.ndibrowser.data.util.CorrelationId
 import com.ndi.feature.ndibrowser.domain.repository.DiscoveryServerRepository
+import com.ndi.sdkbridge.NdiDiscoveryBridge
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import java.util.UUID
 
 class DiscoveryServerRepositoryImpl(
     private val discoveryServerDao: DiscoveryServerDao,
+    private val discoveryServerCheckStatusDao: DiscoveryServerCheckStatusDao,
+    private val discoveryBridge: NdiDiscoveryBridge? = null,
     private val discoveryServerReachabilityChecker: suspend (host: String, port: Int) -> Boolean = { _, _ -> true },
 ) : DiscoveryServerRepository {
 
@@ -26,7 +37,8 @@ class DiscoveryServerRepositoryImpl(
         validateHost(normalized)
         val port = resolvePort(portInput)
         validatePort(port)
-        validateReachability(normalized, port)
+        val correlationId = CorrelationId.generate()
+        Log.d("NdiDiscovery", "discovery_server_add_started host=$normalized port=$port correlationId=$correlationId")
 
         val duplicateCount = discoveryServerDao.countDuplicates(normalized, port, excludeId = "")
         if (duplicateCount > 0) {
@@ -45,6 +57,11 @@ class DiscoveryServerRepositoryImpl(
             updatedAtEpochMillis = now,
         )
         discoveryServerDao.insert(entity)
+        Log.d("NdiDiscovery", "discovery_server_add_completed serverId=${entity.id} correlationId=$correlationId")
+
+        // Perform check after registration (FR-010: server stays even if check fails)
+        runCatching { performDiscoveryServerCheck(entity.id, correlationId) }
+
         return entity.toEntry()
     }
 
@@ -60,8 +77,6 @@ class DiscoveryServerRepositoryImpl(
         validateHost(normalized)
         val port = resolvePort(portInput)
         validatePort(port)
-        validateReachability(normalized, port)
-
         // Check for duplicates excluding this entry itself
         val duplicateCount = discoveryServerDao.countDuplicates(normalized, port, excludeId = id)
         if (duplicateCount > 0) {
@@ -121,7 +136,8 @@ class DiscoveryServerRepositoryImpl(
         for (entry in enabled) {
             attempted += entry.id
             val isReachable = runCatching {
-                discoveryServerReachabilityChecker(entry.hostOrIp, entry.port)
+                discoveryBridge?.isDiscoveryServerReachable(entry.hostOrIp, entry.port)
+                    ?: discoveryServerReachabilityChecker(entry.hostOrIp, entry.port)
             }.getOrDefault(false)
 
             if (isReachable) {
@@ -165,17 +181,70 @@ class DiscoveryServerRepositoryImpl(
         }
     }
 
-    private suspend fun validateReachability(host: String, port: Int) {
-        val reachable = runCatching {
-            discoveryServerReachabilityChecker(host, port)
-        }.getOrDefault(false)
-
-        if (!reachable) {
-            throw IllegalArgumentException(
-                "Cannot reach discovery server '$host:$port'. Verify the endpoint and network connectivity from this device.",
-            )
+    override suspend fun performDiscoveryServerCheck(
+        serverId: String,
+        correlationId: String,
+    ): DiscoveryServerCheckStatus {
+        val entry = discoveryServerDao.getById(serverId)
+            ?: throw NoSuchElementException("No discovery server with id '$serverId'.")
+        Log.d("NdiDiscovery", "discovery_server_check_started serverId=$serverId correlationId=$correlationId")
+        val now = System.currentTimeMillis()
+        val (success, failureCategoryStr, failureMessage) = runCatching {
+            discoveryBridge?.performDiscoveryCheck(entry.hostOrIp, entry.port, correlationId)
+                ?: if (discoveryServerReachabilityChecker(entry.hostOrIp, entry.port)) {
+                    Triple(true, "NONE", null)
+                } else {
+                    Triple(false, "ENDPOINT_UNREACHABLE", "Cannot reach ${entry.hostOrIp}:${entry.port}")
+                }
+        }.getOrElse { e ->
+            val category = when {
+                e is java.net.SocketTimeoutException -> "TIMEOUT"
+                else -> "UNKNOWN"
+            }
+            Triple(false, category, e.message ?: "Unknown error during discovery check")
         }
+        val statusEntity = DiscoveryServerCheckStatusEntity(
+            serverId = serverId,
+            checkType = DiscoveryCheckType.ADD_VALIDATION.name,
+            outcome = if (success) DiscoveryCheckOutcome.SUCCESS.name else DiscoveryCheckOutcome.FAILURE.name,
+            checkedAtEpochMillis = now,
+            failureCategory = failureCategoryStr,
+            failureMessage = failureMessage,
+            correlationId = correlationId,
+        )
+        discoveryServerCheckStatusDao.upsert(statusEntity)
+        Log.d("NdiDiscovery", "discovery_server_check_completed serverId=$serverId correlationId=$correlationId outcome=${statusEntity.outcome}")
+        return statusEntity.toCheckStatus()
     }
+
+    override suspend fun recheckServer(
+        serverId: String,
+        correlationId: String,
+    ): DiscoveryServerCheckStatus {
+        discoveryServerDao.getById(serverId)
+            ?: throw NoSuchElementException("No discovery server with id '$serverId'.")
+        Log.d("NdiDiscovery", "discovery_server_recheck_started serverId=$serverId correlationId=$correlationId")
+        val checkResult = performDiscoveryServerCheck(serverId, correlationId)
+        // Overwrite checkType to MANUAL_RECHECK
+        val recheckEntity = DiscoveryServerCheckStatusEntity(
+            serverId = serverId,
+            checkType = DiscoveryCheckType.MANUAL_RECHECK.name,
+            outcome = checkResult.outcome.name,
+            checkedAtEpochMillis = checkResult.checkedAtEpochMillis,
+            failureCategory = checkResult.failureCategory.name,
+            failureMessage = checkResult.failureMessage,
+            correlationId = correlationId,
+        )
+        discoveryServerCheckStatusDao.upsert(recheckEntity)
+        Log.d("NdiDiscovery", "discovery_server_recheck_completed serverId=$serverId correlationId=$correlationId outcome=${checkResult.outcome}")
+        return recheckEntity.toCheckStatus()
+    }
+
+    override suspend fun getServerCheckStatus(serverId: String): DiscoveryServerCheckStatus? =
+        discoveryServerCheckStatusDao.getByServerId(serverId)?.toCheckStatus()
+
+    override fun observeServerCheckStatus(serverId: String): Flow<DiscoveryServerCheckStatus?> =
+        discoveryServerCheckStatusDao.observeByServerId(serverId).map { it?.toCheckStatus() }
 }
 
 // ---- Mapping extension ----
@@ -188,4 +257,14 @@ private fun DiscoveryServerEntity.toEntry() = DiscoveryServerEntry(
     orderIndex = orderIndex,
     createdAtEpochMillis = createdAtEpochMillis,
     updatedAtEpochMillis = updatedAtEpochMillis,
+)
+
+private fun DiscoveryServerCheckStatusEntity.toCheckStatus() = DiscoveryServerCheckStatus(
+    serverId = serverId,
+    checkType = DiscoveryCheckType.valueOf(checkType),
+    outcome = DiscoveryCheckOutcome.valueOf(outcome),
+    checkedAtEpochMillis = checkedAtEpochMillis,
+    failureCategory = DiscoveryFailureCategory.valueOf(failureCategory),
+    failureMessage = failureMessage,
+    correlationId = correlationId,
 )

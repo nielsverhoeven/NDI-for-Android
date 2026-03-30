@@ -1,6 +1,9 @@
 package com.ndi.feature.ndibrowser.domain.repository
 
 import com.ndi.core.model.DiscoverySnapshot
+import com.ndi.core.model.DeveloperDiscoveryDiagnostics
+import com.ndi.core.model.DiscoveryCheckType
+import com.ndi.core.model.DiscoveryServerCheckStatus
 import com.ndi.core.model.DiscoveryTrigger
 import com.ndi.core.model.DiscoverySelectionResult
 import com.ndi.core.model.DiscoveryServerEntry
@@ -343,8 +346,12 @@ interface NdiDiscoveryConfigRepository {
 interface DeveloperDiagnosticsRepository {
     fun observeOverlayState(): Flow<NdiDeveloperOverlayState>
     fun observeRecentLogs(): Flow<List<NdiRedactedLogEntry>>
+    /**
+     * Observes aggregated developer diagnostics for discovery operations.
+     * Returns empty/default state when developer mode is OFF.
+     */
+    fun observeDiscoveryDiagnostics(): Flow<DeveloperDiscoveryDiagnostics> = emptyFlow()
 }
-
 interface SettingsLayoutModeResolver {
     fun resolve(widthDp: Int, isLandscape: Boolean): SettingsLayoutMode
 }
@@ -401,5 +408,36 @@ interface DiscoveryServerRepository {
      * Returns the first reachable entry or an appropriate error outcome.
      */
     suspend fun resolveActiveDiscoveryTarget(): DiscoverySelectionResult
+
+    /**
+     * Performs a protocol-level discovery connection check for the given server entry.
+     * Called automatically after addServer and on-demand via recheckServer.
+     * @return DiscoveryServerCheckStatus with check outcome and failure details.
+     */
+    suspend fun performDiscoveryServerCheck(
+        serverId: String,
+        correlationId: String,
+    ): DiscoveryServerCheckStatus
+
+    /**
+     * Rechecks only the targeted server's connectivity.
+     * Does NOT alter orderIndex, enabled state, or other server entries.
+     * @throws NoSuchElementException when serverId does not exist.
+     */
+    suspend fun recheckServer(
+        serverId: String,
+        correlationId: String,
+    ): DiscoveryServerCheckStatus
+
+    /**
+     * Returns the latest check status for a registered server, or null if not yet checked.
+     */
+    suspend fun getServerCheckStatus(serverId: String): DiscoveryServerCheckStatus?
+
+    /**
+     * Observes the check status for a specific server entry.
+     */
+    fun observeServerCheckStatus(serverId: String): Flow<DiscoveryServerCheckStatus?>
 }
+
 

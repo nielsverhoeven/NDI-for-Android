@@ -37,6 +37,20 @@ interface NdiDiscoveryBridge {
     }
 
     fun setDiscoveryEndpoint(endpoint: NdiDiscoveryEndpoint?)
+
+    /**
+     * Performs an NDI discovery protocol check for host:port.
+     * Returns Triple(success, failureCategoryStr, failureMessage) where failureCategoryStr is
+     * one of: "NONE", "ENDPOINT_UNREACHABLE", "HANDSHAKE_FAILED", "TIMEOUT", "UNKNOWN".
+     * Default implementation reuses the existing TCP reachability check.
+     */
+    suspend fun performDiscoveryCheck(host: String, port: Int, correlationId: String): Triple<Boolean, String, String?> {
+        return if (isDiscoveryServerReachable(host, port)) {
+            Triple(true, "NONE", null)
+        } else {
+            Triple(false, "ENDPOINT_UNREACHABLE", "Cannot reach discovery server at $host:$port")
+        }
+    }
 }
 
 interface NdiViewerBridge {

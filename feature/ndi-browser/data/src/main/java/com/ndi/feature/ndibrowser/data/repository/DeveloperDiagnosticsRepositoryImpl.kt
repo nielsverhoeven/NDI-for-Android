@@ -1,6 +1,7 @@
 package com.ndi.feature.ndibrowser.data.repository
 
 import com.ndi.core.model.NdiDeveloperOverlayState
+import com.ndi.core.model.DeveloperDiscoveryDiagnostics
 import com.ndi.core.model.NdiLogCategory
 import com.ndi.core.model.NdiLogLevel
 import com.ndi.core.model.NdiOverlayMode
@@ -39,6 +40,17 @@ class DeveloperDiagnosticsRepositoryImpl(
     override fun observeOverlayState(): Flow<NdiDeveloperOverlayState> = _overlayState.asStateFlow()
 
     override fun observeRecentLogs(): Flow<List<NdiRedactedLogEntry>> = logBuffer.observeRecentLogs()
+    override fun observeDiscoveryDiagnostics(): Flow<DeveloperDiscoveryDiagnostics> =
+        MutableStateFlow(
+            DeveloperDiscoveryDiagnostics(
+                developerModeEnabled = false,
+                latestDiscoveryRefreshStatus = null,
+                latestDiscoveryRefreshAtEpochMillis = null,
+                serverStatusRollup = emptyList(),
+                recentDiscoveryLogs = emptyList(),
+            ),
+        ).asStateFlow()
+
 
     private fun bindDiagnosticsStreams() {
         val viewerFlow = viewerRepository?.observeViewerSession() ?: MutableStateFlow(idleViewerSession())

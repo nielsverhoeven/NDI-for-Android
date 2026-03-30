@@ -85,9 +85,8 @@ class AppGraph private constructor(context: Context) {
 
     val discoveryServerRepository: DiscoveryServerRepository = DiscoveryServerRepositoryImpl(
         discoveryServerDao = database.discoveryServerDao(),
-        discoveryServerReachabilityChecker = { host, port ->
-            NativeNdiBridge.isDiscoveryServerReachable(host, port)
-        },
+        discoveryServerCheckStatusDao = database.discoveryServerCheckStatusDao(),
+        discoveryBridge = NativeNdiBridge,
     )
 
     val themeEditorRepository: ThemeEditorRepository = ThemeEditorRepositoryImpl(

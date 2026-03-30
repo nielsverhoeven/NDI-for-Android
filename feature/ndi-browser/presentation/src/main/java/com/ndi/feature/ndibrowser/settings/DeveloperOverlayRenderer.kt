@@ -1,4 +1,4 @@
-package com.ndi.feature.ndibrowser.settings
+﻿package com.ndi.feature.ndibrowser.settings
 
 import android.view.View
 import android.widget.TextView
@@ -38,5 +38,29 @@ object DeveloperOverlayRenderer {
 
         recentLogsView.text = state.recentLogs.joinToString(separator = "\n")
         recentLogsView.isVisible = state.recentLogs.isNotEmpty()
+    }
+
+    fun renderDiscoveryDiagnostics(
+        discoveryDiagnosticsView: TextView,
+        overlayDisplayState: OverlayDisplayState?,
+    ) {
+        val diagnostics = overlayDisplayState?.discoveryDiagnostics
+        if (diagnostics == null || overlayDisplayState.mode == NdiOverlayMode.DISABLED) {
+            discoveryDiagnosticsView.isVisible = false
+            discoveryDiagnosticsView.text = ""
+            return
+        }
+        val summary = buildString {
+            append("Discovery: ")
+            if (diagnostics.serverStatusRollup.isEmpty()) {
+                append("no servers checked")
+            } else {
+                diagnostics.serverStatusRollup.forEach { status ->
+                    append("[${status.serverId.take(8)} ${status.outcome.name}] ")
+                }
+            }
+        }
+        discoveryDiagnosticsView.text = summary
+        discoveryDiagnosticsView.isVisible = true
     }
 }
