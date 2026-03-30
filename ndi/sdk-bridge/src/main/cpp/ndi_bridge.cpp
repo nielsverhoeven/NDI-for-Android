@@ -19,6 +19,7 @@
 
 #ifdef NDI_SDK_AVAILABLE
 #include "Processing.NDI.Lib.h"
+#include "Processing.NDI.SendListener.h"
 #endif
 
 namespace {
@@ -126,20 +127,18 @@ std::string discovery_endpoints_csv_snapshot() {
 // The NDI SDK (v5+) natively supports multiple discovery servers when
 // given a comma-delimited value — all are contacted simultaneously.
 void apply_ndi_discovery_env() {
-    const std::string csv = discovery_endpoints_csv_snapshot();
-    if (csv.empty()) {
-        unsetenv("NDI_DISCOVERY_SERVER");
-        log_native_info("NDI_DISCOVERY_SERVER cleared");
-    } else {
-        setenv("NDI_DISCOVERY_SERVER", csv.c_str(), 1);
-        log_native_info("NDI_DISCOVERY_SERVER=" + csv);
-    }
+    // On Android we configure discovery via HOME/.ndi/ndi-config.v1.json from Kotlin.
+    // Do not force NDI_DISCOVERY_SERVER here: SDK env parsing differences can override
+    // a valid config file and lead to empty source lists.
+    unsetenv("NDI_DISCOVERY_SERVER");
+    log_native_info("NDI_DISCOVERY_SERVER cleared (using ndi-config.v1.json)");
 }
 
 // Persistent finder — kept alive between discovery ticks so the SDK can
 // accumulate its source list without a cold-start wait on every poll.
 // Destroyed when the discovery endpoint list changes (before NDI reinit).
 static std::mutex g_finder_mutex;
+static std::mutex g_discovery_call_mutex;
 static NDIlib_find_instance_t g_finder = nullptr;
 
 bool ensure_ndi_initialized() {
@@ -174,9 +173,16 @@ void append_find_sources(NDIlib_find_instance_t find_instance, std::vector<Disco
     for (uint32_t index = 0; index < source_count; ++index) {
         const char* ndi_name = sources[index].p_ndi_name;
         const char* url_address = sources[index].p_url_address;
-        const std::string source_id = ndi_name != nullptr ? ndi_name : (url_address != nullptr ? url_address : "");
-        const std::string display_name = ndi_name != nullptr ? ndi_name : source_id;
         const std::string url = url_address != nullptr ? url_address : "";
+        const std::string display_name = ndi_name != nullptr
+            ? ndi_name
+            : (!url.empty() ? url : "");
+
+        // Use URL address as the canonical identity when available because it is
+        // unique per announced source. Some discovery-server topologies can return
+        // duplicate/overlapping NDI names, which collapses distinct sources when
+        // deduplicating by source id on the Kotlin side.
+        const std::string source_id = !url.empty() ? url : display_name;
 
         if (!source_id.empty()) {
             discovered.push_back(DiscoveredSource {
@@ -184,8 +190,74 @@ void append_find_sources(NDIlib_find_instance_t find_instance, std::vector<Disco
                 .display_name = display_name,
                 .url_address = url,
             });
+            log_native_info(
+                "discover source[" + std::to_string(index) + "] id=" + source_id +
+                " name=" + display_name + " url=" + url
+            );
         }
     }
+}
+
+std::string first_discovery_server_url_snapshot() {
+    const std::string csv = discovery_endpoints_csv_snapshot();
+    if (csv.empty()) {
+        return "";
+    }
+    const size_t comma = csv.find(',');
+    if (comma == std::string::npos) {
+        return trim_copy(csv);
+    }
+    return trim_copy(csv.substr(0, comma));
+}
+
+void append_send_listener_sources(std::vector<DiscoveredSource>& discovered) {
+    NDIlib_send_listener_create_t listener_create;
+    std::memset(&listener_create, 0, sizeof(listener_create));
+
+    const std::string server_url = first_discovery_server_url_snapshot();
+    listener_create.p_url_address = server_url.empty() ? nullptr : server_url.c_str();
+
+    NDIlib_send_listener_instance_t listener = NDIlib_send_listener_create(&listener_create);
+    if (listener == nullptr) {
+        log_native_info("send_listener create failed");
+        return;
+    }
+
+    NDIlib_send_listener_wait_for_senders(listener, 1200);
+
+    uint32_t sender_count = 0;
+    const NDIlib_sender_t* senders = NDIlib_send_listener_get_senders(listener, &sender_count);
+    if (senders != nullptr && sender_count > 0) {
+        discovered.reserve(discovered.size() + sender_count);
+        for (uint32_t index = 0; index < sender_count; ++index) {
+            const std::string uuid = senders[index].p_uuid != nullptr ? senders[index].p_uuid : "";
+            const std::string name = senders[index].p_name != nullptr ? senders[index].p_name : "";
+            const std::string address = senders[index].p_address != nullptr ? senders[index].p_address : "";
+            const int port = senders[index].port;
+
+            std::string url = address;
+            if (!url.empty() && port > 0) {
+                url += ":" + std::to_string(port);
+            }
+
+            const std::string source_id = !uuid.empty() ? uuid : (!url.empty() ? url : name);
+            const std::string display_name = !name.empty() ? name : source_id;
+
+            if (!source_id.empty()) {
+                discovered.push_back(DiscoveredSource {
+                    .source_id = source_id,
+                    .display_name = display_name,
+                    .url_address = url,
+                });
+                log_native_info(
+                    "send_listener source[" + std::to_string(index) + "] id=" + source_id +
+                    " name=" + display_name + " url=" + url
+                );
+            }
+        }
+    }
+
+    NDIlib_send_listener_destroy(listener);
 }
 
 // Canonical NDI source discovery using a persistent finder.
@@ -211,6 +283,11 @@ void append_find_sources(NDIlib_find_instance_t find_instance, std::vector<Disco
 //   reacquired after the wait to read sources. If the finder was destroyed while
 //   we waited (endpoint change), we return empty and let the next tick retry.
 std::vector<DiscoveredSource> discover_sources_native() {
+    // NDI finder calls are not guaranteed to be thread-safe when issued in
+    // parallel against the same finder instance. Source list refresh can be
+    // triggered by multiple app collectors, so serialize discovery calls.
+    std::lock_guard<std::mutex> discovery_call_lock(g_discovery_call_mutex);
+
     // ensure_ndi_initialized acquires and releases g_ndi_init_mutex internally.
     if (!ensure_ndi_initialized()) {
         return {};
@@ -251,6 +328,12 @@ std::vector<DiscoveredSource> discover_sources_native() {
 
     std::vector<DiscoveredSource> discovered;
     append_find_sources(g_finder, discovered);
+
+    // If legacy finder yields nothing, query the NDI 6 sender-listener plane.
+    if (discovered.empty()) {
+        append_send_listener_sources(discovered);
+    }
+
     log_native_info("discover total=" + std::to_string(discovered.size()));
     return discovered;
 }

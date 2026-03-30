@@ -10,9 +10,9 @@ import com.ndi.core.model.ViewerVideoFrame
 import java.net.HttpURLConnection
 import java.net.InetAddress
 import java.net.Inet4Address
-import java.net.InetSocketAddress
+import java.net.DatagramPacket
+import java.net.DatagramSocket
 import java.net.NetworkInterface
-import java.net.Socket
 import java.net.URL
 import java.util.Collections
 import java.util.UUID
@@ -24,6 +24,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -42,7 +44,7 @@ interface NdiDiscoveryBridge {
      * Performs an NDI discovery protocol check for host:port.
      * Returns Triple(success, failureCategoryStr, failureMessage) where failureCategoryStr is
      * one of: "NONE", "ENDPOINT_UNREACHABLE", "HANDSHAKE_FAILED", "TIMEOUT", "UNKNOWN".
-     * Default implementation reuses the existing TCP reachability check.
+     * Default implementation uses UDP reachability semantics suitable for NDI discovery.
      */
     suspend fun performDiscoveryCheck(host: String, port: Int, correlationId: String): Triple<Boolean, String, String?> {
         return if (isDiscoveryServerReachable(host, port)) {
@@ -140,6 +142,8 @@ object NativeNdiBridge : NdiDiscoveryBridge, NdiViewerBridge, NdiOutputBridge {
     @Volatile
     private var activeLocalSenderHeartbeat = null as kotlinx.coroutines.Job?
 
+    private val discoverMutex = Mutex()
+
     init {
         runCatching { System.loadLibrary("ndi_bridge") }
     }
@@ -187,34 +191,113 @@ object NativeNdiBridge : NdiDiscoveryBridge, NdiViewerBridge, NdiOutputBridge {
     }
 
     override suspend fun discoverSources(): List<NdiSource> = withContext(Dispatchers.IO) {
-        val configuredEndpoints = discoveryEndpoints
-        Log.d("NdiDiscovery", "discoverSources() called with endpoints: $configuredEndpoints")
+        discoverMutex.withLock {
+            val configuredEndpoints = discoveryEndpoints
+            Log.d("NdiDiscovery", "discoverSources() called with endpoints: $configuredEndpoints")
 
-        val relaySources = runCatching { discoverRelaySources() }.getOrDefault(emptyList())
+            val relaySources = runCatching { discoverRelaySources() }.getOrDefault(emptyList())
 
+            var nativeSources = discoverNativeSourcesOnce()
+
+            // Fallback path for SDK/server combinations that fail to resolve sources from a
+            // comma-separated multi-server list in one call. Probe each configured endpoint
+            // individually and merge results.
+            if (nativeSources.isEmpty() && configuredEndpoints.size > 1) {
+                Log.w(
+                    "NdiDiscovery",
+                    "Combined discovery returned 0 sources; retrying each endpoint individually",
+                )
+
+                val fallback = linkedMapOf<String, NdiSource>()
+                configuredEndpoints.forEach { endpoint ->
+                    runCatching {
+                        setDiscoveryEndpoints(listOf(endpoint))
+                        discoverNativeSourcesOnce()
+                    }.getOrDefault(emptyList()).forEach { source ->
+                        fallback.putIfAbsent(source.sourceId, source)
+                    }
+                }
+
+                // Restore configured endpoint list after fallback probe sweep.
+                runCatching { setDiscoveryEndpoints(configuredEndpoints) }
+
+                if (fallback.isNotEmpty()) {
+                    Log.i("NdiDiscovery", "Per-endpoint fallback discovered ${fallback.size} native sources")
+                    nativeSources = fallback.values.toList()
+                }
+            }
+
+            // If discovery is still empty, probe alternate discovery ports per host.
+            // Some Discovery Service setups are configured on non-default ports.
+            if (nativeSources.isEmpty() && configuredEndpoints.isNotEmpty()) {
+                val fallbackPorts = listOf(5959, 5960, 5961)
+                val fallback = linkedMapOf<String, NdiSource>()
+
+                configuredEndpoints.forEach { endpoint ->
+                    val candidatePorts = buildList {
+                        add(endpoint.resolvedPort)
+                        fallbackPorts.forEach { candidate ->
+                            if (candidate != endpoint.resolvedPort) add(candidate)
+                        }
+                    }
+
+                    candidatePorts.forEach { port ->
+                        runCatching {
+                            val probeEndpoint = endpoint.copy(
+                                port = port,
+                                resolvedPort = port,
+                                usesDefaultPort = port == 5959,
+                            )
+                            setDiscoveryEndpoints(listOf(probeEndpoint))
+                            discoverNativeSourcesOnce()
+                        }.getOrDefault(emptyList()).forEach { source ->
+                            fallback.putIfAbsent(source.sourceId, source)
+                        }
+
+                        if (fallback.isNotEmpty()) {
+                            Log.i(
+                                "NdiDiscovery",
+                                "Discovery fallback found sources via ${endpoint.host}:$port",
+                            )
+                            return@forEach
+                        }
+                    }
+                }
+
+                runCatching { setDiscoveryEndpoints(configuredEndpoints) }
+                if (fallback.isNotEmpty()) {
+                    nativeSources = fallback.values.toList()
+                }
+            }
+
+            Log.d("NdiDiscovery", "Found ${relaySources.size} relay sources, ${nativeSources.size} native sources")
+
+            // When native SDK discovery is available, prefer its canonical source identities for receiver connect.
+            val mdnsSources = if (nativeSources.isEmpty()) {
+                runCatching { discoverMdnsSourcesCached() }.getOrDefault(emptyList())
+            } else {
+                emptyList()
+            }
+
+            buildList {
+                addAll(relaySources)
+                addAll(nativeSources)
+                addAll(mdnsSources)
+            }.distinctBy { it.sourceId }
+        }
+    }
+
+    private fun discoverNativeSourcesOnce(): List<NdiSource> {
         val sourceIds = runCatching { nativeDiscoverSourceIds() }.getOrDefault(emptyArray())
         val displayNames = runCatching { nativeDiscoverDisplayNames() }.getOrDefault(emptyArray())
-        val nativeSources = sourceIds.mapIndexed { index, sourceId ->
+        val now = System.currentTimeMillis()
+        return sourceIds.mapIndexed { index, sourceId ->
             NdiSource(
                 sourceId = sourceId,
                 displayName = displayNames.getOrNull(index) ?: sourceId,
-                lastSeenAtEpochMillis = System.currentTimeMillis(),
+                lastSeenAtEpochMillis = now,
             )
         }
-        Log.d("NdiDiscovery", "Found ${relaySources.size} relay sources, ${nativeSources.size} native sources")
-
-        // When native SDK discovery is available, prefer its canonical source identities for receiver connect.
-        val mdnsSources = if (nativeSources.isEmpty()) {
-            runCatching { discoverMdnsSourcesCached() }.getOrDefault(emptyList())
-        } else {
-            emptyList()
-        }
-
-        buildList {
-            addAll(relaySources)
-            addAll(nativeSources)
-            addAll(mdnsSources)
-        }.distinctBy { it.sourceId }
     }
 
     private fun resolveDiscoveryExtraIps(host: String): String {
@@ -233,7 +316,12 @@ object NativeNdiBridge : NdiDiscoveryBridge, NdiViewerBridge, NdiOutputBridge {
         } else {
             resolvedHost
         }
-        return "$normalizedHost:${endpoint.resolvedPort}"
+        val ndiDefaultPort = 5959
+        return if (endpoint.resolvedPort == ndiDefaultPort) {
+            normalizedHost
+        } else {
+            "$normalizedHost:${endpoint.resolvedPort}"
+        }
     }
 
     /**
@@ -244,17 +332,21 @@ object NativeNdiBridge : NdiDiscoveryBridge, NdiViewerBridge, NdiOutputBridge {
      */
     private fun writeNdiConfigFile(endpoints: List<NdiDiscoveryEndpoint>) {
         val context = appContext ?: return
+        val ndiDefaultPort = 5959
         val discovery = endpoints
             .filter { it.host.isNotBlank() }
-            .map { "${it.host}:${it.resolvedPort}" }
+            .map { endpoint ->
+                val resolvedHost = resolveDiscoveryExtraIps(endpoint.host)
+                val normalizedHost = if (resolvedHost.contains(':')) "[$resolvedHost]" else resolvedHost
+                if (endpoint.resolvedPort == ndiDefaultPort) normalizedHost
+                else "$normalizedHost:${endpoint.resolvedPort}"
+            }
             .joinToString(",")
-
         val ndiDir = java.io.File(context.dataDir, ".ndi")
         runCatching {
             ndiDir.mkdirs()
             val configFile = java.io.File(ndiDir, "ndi-config.v1.json")
             if (discovery.isNotBlank()) {
-                // NDI docs use root object `ndi` with nested `networks`.
                 val json = """{"ndi":{"networks":{"ips":"","discovery":"$discovery"}}}"""
                 configFile.writeText(json)
                 Log.d("NdiDiscovery", "NDI config file written: $json -> ${configFile.absolutePath}")
@@ -458,8 +550,14 @@ object NativeNdiBridge : NdiDiscoveryBridge, NdiViewerBridge, NdiOutputBridge {
 
         val targetPort = port ?: 5959
         runCatching {
-            Socket().use { socket ->
-                socket.connect(InetSocketAddress(targetHost, targetPort), 1500)
+            val address = InetAddress.getByName(targetHost)
+            DatagramSocket().use { socket ->
+                socket.soTimeout = 1_200
+                socket.connect(address, targetPort)
+                // UDP/RUDP discovery endpoints do not guarantee a TCP handshake.
+                // Send a minimal datagram probe so invalid route/address errors surface.
+                val probe = byteArrayOf(0)
+                socket.send(DatagramPacket(probe, probe.size, address, targetPort))
             }
             true
         }.getOrDefault(false)
@@ -478,21 +576,21 @@ object NativeNdiBridge : NdiDiscoveryBridge, NdiViewerBridge, NdiOutputBridge {
             )
 
             val result = runCatching {
-                val reachable = isDiscoveryServerReachable(targetHost, port)
-                if (!reachable) {
-                    Triple(false, "ENDPOINT_UNREACHABLE", "Cannot reach discovery server at $targetHost:$port")
-                } else {
-                    val nativeResult = runCatching {
-                        nativePerformDiscoveryCheck(targetHost, port, correlationId)
-                    }.getOrNull()
+                val nativeResult = runCatching {
+                    nativePerformDiscoveryCheck(targetHost, port, correlationId)
+                }.getOrNull()
 
-                    if (nativeResult != null && nativeResult.size >= 3) {
-                        val success = nativeResult[0].toBooleanStrictOrNull() ?: false
-                        val failureCategory = nativeResult[1].ifBlank { if (success) "NONE" else "UNKNOWN" }
-                        val failureMessage = nativeResult[2].ifBlank { null }
-                        Triple(success, failureCategory, failureMessage)
-                    } else {
+                if (nativeResult != null && nativeResult.size >= 3) {
+                    val success = nativeResult[0].toBooleanStrictOrNull() ?: false
+                    val failureCategory = nativeResult[1].ifBlank { if (success) "NONE" else "UNKNOWN" }
+                    val failureMessage = nativeResult[2].ifBlank { null }
+                    Triple(success, failureCategory, failureMessage)
+                } else {
+                    val reachable = isDiscoveryServerReachable(targetHost, port)
+                    if (reachable) {
                         Triple(true, "NONE", null)
+                    } else {
+                        Triple(false, "ENDPOINT_UNREACHABLE", "Cannot reach discovery server at $targetHost:$port")
                     }
                 }
             }.getOrElse { error ->

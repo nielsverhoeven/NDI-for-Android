@@ -60,8 +60,8 @@ data class SettingsDetailState(
 
 /**
  * Default NDI discovery port for the new multi-server feature.
- * NOTE: The legacy single-endpoint constant DEFAULT_NDI_DISCOVERY_PORT (5960) is preserved
- * for backward compatibility in NdiDiscoveryEndpoint.
+ * NOTE: DEFAULT_NDI_DISCOVERY_PORT in NdiDiscoveryEndpoint matches this value (5959) —
+ * the official NDI Discovery Server default port per NDI docs.
  */
 const val DEFAULT_DISCOVERY_SERVER_PORT = 5959
 
@@ -140,7 +140,7 @@ data class NdiDiscoveryEndpoint(
     val usesDefaultPort: Boolean,
 ) {
     companion object {
-        const val DEFAULT_NDI_DISCOVERY_PORT = 5960
+        const val DEFAULT_NDI_DISCOVERY_PORT = 5959
 
         /**
          * Parse formats: hostname, hostname:port, IPv4, IPv4:port, [IPv6], [IPv6]:port.
