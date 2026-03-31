@@ -89,6 +89,9 @@ class SettingsFragment : Fragment() {
             detailEmptyState = fragmentBinding.root.findViewById<TextView>(R.id.settingsDetailEmptyState),
             onDeveloperModeToggled = viewModel::onDeveloperModeToggled,
             onThemeModeChanged = viewModel::onThemeModeChanged,
+            onOpenThemeEditor = {
+                findNavController().navigate(Uri.parse("ndi://theme-editor"))
+            },
         )
         fragmentBinding.root.findViewById<MaterialButton>(R.id.settingsApplyButton)
             .setOnClickListener { viewModel.onSaveSettings() }

@@ -20,6 +20,7 @@ class SettingsDetailRenderer(
     private val detailEmptyState: TextView,
     private val onDeveloperModeToggled: (Boolean) -> Unit,
     private val onThemeModeChanged: (NdiThemeMode) -> Unit,
+    private val onOpenThemeEditor: () -> Unit,
 ) {
 
     fun render(
@@ -71,6 +72,12 @@ class SettingsDetailRenderer(
                     idsToMode[checkedId]?.let { onThemeModeChanged(it) }
                 }
                 detailContent.addView(radioGroup)
+
+                val themeEditorButton = MaterialButton(context).apply {
+                    text = context.getString(R.string.settings_open_theme_editor)
+                    setOnClickListener { onOpenThemeEditor() }
+                }
+                detailContent.addView(themeEditorButton)
             }
             SettingsViewModel.CATEGORY_DISCOVERY -> {
                 // Discovery servers are managed inline via an embedded fragment.
