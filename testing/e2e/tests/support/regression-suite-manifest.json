@@ -1,0 +1,73 @@
+{
+  "version": "024.0",
+  "baseline": {
+    "activeSuiteId": "rebuilt-024-baseline",
+    "preRebuildSnapshotEvidencePath": "test-results/024-transition-baseline-pre-rebuild.md"
+  },
+  "scenarios": [
+    {
+      "id": "us1-core-settings-smoke",
+      "featureArea": "settings",
+      "specPath": "testing/e2e/tests/024-core-settings-smoke.spec.ts",
+      "enabled": true,
+      "legacy": false
+    },
+    {
+      "id": "us1-core-navigation-smoke",
+      "featureArea": "navigation",
+      "specPath": "testing/e2e/tests/024-core-navigation-smoke.spec.ts",
+      "enabled": true,
+      "legacy": false
+    },
+    {
+      "id": "us2-settings-menu",
+      "featureArea": "settings",
+      "specPath": "testing/e2e/tests/024-settings-menu-rebuild.spec.ts",
+      "enabled": true,
+      "legacy": false
+    },
+    {
+      "id": "us2-navigation-menu",
+      "featureArea": "navigation",
+      "specPath": "testing/e2e/tests/024-navigation-menu-rebuild.spec.ts",
+      "enabled": true,
+      "legacy": false
+    },
+    {
+      "id": "us3-developer-mode",
+      "featureArea": "developer-mode",
+      "specPath": "testing/e2e/tests/024-developer-mode-rebuild.spec.ts",
+      "enabled": true,
+      "legacy": false,
+      "requiresDeveloperMode": true
+    }
+  ],
+  "profiles": {
+    "pr-primary": [
+      "us1-core-settings-smoke",
+      "us1-core-navigation-smoke",
+      "us2-settings-menu",
+      "us2-navigation-menu",
+      "us3-developer-mode"
+    ],
+    "us2-only": [
+      "us2-settings-menu",
+      "us2-navigation-menu"
+    ],
+    "us3-only": [
+      "us3-developer-mode"
+    ],
+    "dual-emulator": [
+      "us2-settings-menu",
+      "us2-navigation-menu",
+      "us3-developer-mode"
+    ],
+    "matrix-nightly": [
+      "us1-core-settings-smoke",
+      "us1-core-navigation-smoke",
+      "us2-settings-menu",
+      "us2-navigation-menu",
+      "us3-developer-mode"
+    ]
+  }
+}

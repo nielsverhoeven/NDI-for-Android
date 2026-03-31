@@ -1,0 +1,16 @@
+{
+  "name": "ndi-android-e2e",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "test:pr:primary": "playwright test tests/support/e2e-suite-classification.spec.ts tests/support/regression-suite-integrity.spec.ts tests/support/ci-artifact-contract.spec.ts tests/support/ci-workflow-contract.spec.ts tests/024-core-settings-smoke.spec.ts tests/024-core-navigation-smoke.spec.ts",
+    "test:support": "playwright test tests/support/e2e-suite-classification.spec.ts tests/support/regression-suite-integrity.spec.ts tests/support/ci-artifact-contract.spec.ts tests/support/ci-workflow-contract.spec.ts",
+    "test:matrix": "pwsh ./scripts/run-matrix-e2e.ps1 -Profiles pr-primary,us2-only,us3-only",
+    "test:ci:contracts": "playwright test tests/support/ci-artifact-contract.spec.ts tests/support/ci-workflow-contract.spec.ts"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.53.1",
+    "@types/node": "^22.13.10",
+    "typescript": "^5.8.2"
+  }
+}

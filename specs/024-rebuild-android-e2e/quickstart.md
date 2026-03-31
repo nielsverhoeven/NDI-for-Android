@@ -36,7 +36,14 @@ npm --prefix testing/e2e run test:pr:primary
 Validated command-contract path (preflight + primary gate):
 
 ```powershell
-pwsh ./scripts/verify-android-prereqs.ps1 -CiMode -AllowMissingNdiSdk; npm --prefix testing/e2e run test:pr:primary
+pwsh ./testing/e2e/scripts/validate-command-contract.ps1 -Execute
+pwsh ./testing/e2e/scripts/run-primary-pr-e2e.ps1 -Profile pr-primary
+```
+
+Matrix profile execution:
+
+```powershell
+npm --prefix testing/e2e run test:matrix
 ```
 
 Dual-emulator preflight only:
@@ -66,8 +73,8 @@ Validate workflow wiring by confirming:
 
 ## 7. Playwright Agent Workflow (Required)
 
-- Use Playwright planner agent to produce scenario planning output for each user story.
-- Use Playwright generator agent to create/update `.spec.ts` scenario files from approved plans.
+- Use Playwright planner agent to produce scenario planning output for each scenario-authoring user story (US1, US2, US3). US4 (CI wiring) does not require planner or generator entries.
+- Use Playwright generator agent to create/update `.spec.ts` scenario files from approved plans (US1, US2, US3).
 - Use Playwright healer agent when runs fail to generate remediation actions and updated evidence.
 - Save agent outputs in `test-results/024-*.md` or `testing/e2e/artifacts/` for auditability.
 
