@@ -49,6 +49,15 @@ pwsh ./testing/e2e/scripts/run-primary-pr-e2e.ps1 -Profile pr-primary
 - Required outcome: normalized status `pass`.
 - If `blocked`: publish blocker evidence and unblocking command in test-results artifact.
 
+## 6. Evidence mapping
+
+- Preflight: `test-results/025-preflight-android-prereqs.md`
+- Playwright command contract: `test-results/025-preflight-node-playwright.md`
+- US1 targeted appearance e2e: `test-results/025-us1-targeted-e2e.md`
+- US2 targeted appearance e2e: `test-results/025-us2-targeted-e2e.md`
+- Full appearance suite: `test-results/025-e2e-suite-rebuild-summary.md`
+- Full regression + release hardening summary: `test-results/025-final-regression-summary.md`
+
 ## 5. Manual smoke (optional but recommended)
 
 1. Open Settings > Appearance.

@@ -34,6 +34,13 @@
       "legacy": false
     },
     {
+      "id": "us2-appearance-settings",
+      "featureArea": "settings",
+      "specPath": "testing/e2e/tests/025-appearance-settings-rebuild.spec.ts",
+      "enabled": true,
+      "legacy": false
+    },
+    {
       "id": "us3-developer-mode",
       "featureArea": "developer-mode",
       "specPath": "testing/e2e/tests/024-developer-mode-rebuild.spec.ts",
@@ -48,11 +55,13 @@
       "us1-core-navigation-smoke",
       "us2-settings-menu",
       "us2-navigation-menu",
+      "us2-appearance-settings",
       "us3-developer-mode"
     ],
     "us2-only": [
       "us2-settings-menu",
-      "us2-navigation-menu"
+      "us2-navigation-menu",
+      "us2-appearance-settings"
     ],
     "us3-only": [
       "us3-developer-mode"
@@ -60,6 +69,7 @@
     "dual-emulator": [
       "us2-settings-menu",
       "us2-navigation-menu",
+      "us2-appearance-settings",
       "us3-developer-mode"
     ],
     "matrix-nightly": [
@@ -67,6 +77,7 @@
       "us1-core-navigation-smoke",
       "us2-settings-menu",
       "us2-navigation-menu",
+      "us2-appearance-settings",
       "us3-developer-mode"
     ]
   }

@@ -9,9 +9,9 @@
 
 **Purpose**: Confirm runtime/tooling readiness before implementation and validation.
 
-- [ ] T001 Run Android preflight and record output in test-results/025-preflight-android-prereqs.md using scripts/verify-android-prereqs.ps1
-- [ ] T002 Verify emulator connectivity with `adb devices` and record evidence in test-results/025-preflight-android-prereqs.md alongside scripts/verify-android-prereqs.ps1 output
-- [ ] T003 Verify Playwright harness command contract and record output in test-results/025-preflight-node-playwright.md using testing/e2e/scripts/validate-command-contract.ps1
+- [X] T001 Run Android preflight and record output in test-results/025-preflight-android-prereqs.md using scripts/verify-android-prereqs.ps1
+- [X] T002 Verify emulator connectivity with `adb devices` and record evidence in test-results/025-preflight-android-prereqs.md alongside scripts/verify-android-prereqs.ps1 output
+- [X] T003 Verify Playwright harness command contract and record output in test-results/025-preflight-node-playwright.md using testing/e2e/scripts/validate-command-contract.ps1
 
 **Checkpoint**: Environment is ready or blockers are explicitly documented with unblocking commands.
 
@@ -21,9 +21,9 @@
 
 **Purpose**: Prepare feature-specific test evidence scaffolding and test suite manifests.
 
-- [ ] T004 Create feature evidence shell in test-results/025-agent-workflow-index.md with planned gate files and status placeholders
-- [ ] T005 [P] Add scenario IDs for appearance-mode validation to testing/e2e/tests/support/regression-suite-manifest.json
-- [ ] T006 [P] Add appearance reliability window template for blocked/fail classification in test-results/025-reliability-window-report.md
+- [X] T004 Create feature evidence shell in test-results/025-agent-workflow-index.md with planned gate files and status placeholders
+- [X] T005 [P] Add scenario IDs for appearance-mode validation to testing/e2e/tests/support/regression-suite-manifest.json
+- [X] T006 [P] Add appearance reliability window template for blocked/fail classification in test-results/025-reliability-window-report.md
 
 ---
 
@@ -31,11 +31,11 @@
 
 **Purpose**: Build shared foundations needed by all user stories.
 
-- [ ] T007 Create failing unit test proving settings-save path does not trigger app theme stream update in app/src/test/java/com/ndi/app/theme/AppThemeCoordinatorTest.kt
-- [ ] T008 Create failing unit test for theme repository emissions after external settings writes in feature/theme-editor/data/src/test/java/com/ndi/feature/themeeditor/data/repository/ThemeEditorRepositoryImplTest.kt
-- [ ] T009 Implement reactive preference observation for Room-backed theme stream in feature/theme-editor/data/src/main/java/com/ndi/feature/themeeditor/data/repository/ThemeEditorRepositoryImpl.kt
-- [ ] T010 Add shared persistence-regression test for preserving non-owned fields during settings/theme saves in feature/ndi-browser/data/src/test/java/com/ndi/feature/ndibrowser/data/repository/NdiSettingsRepositoryImplTest.kt
-- [ ] T011 Update quickstart evidence mapping for preflight and regression gates in specs/025-fix-appearance-settings/quickstart.md
+- [X] T007 Create failing unit test proving settings-save path does not trigger app theme stream update in app/src/test/java/com/ndi/app/theme/AppThemeCoordinatorTest.kt
+- [X] T008 Create failing unit test for theme repository emissions after external settings writes in feature/theme-editor/data/src/test/java/com/ndi/feature/themeeditor/data/repository/ThemeEditorRepositoryImplTest.kt
+- [X] T009 Implement reactive preference observation for Room-backed theme stream in feature/theme-editor/data/src/main/java/com/ndi/feature/themeeditor/data/repository/ThemeEditorRepositoryImpl.kt
+- [X] T010 Add shared persistence-regression test for preserving non-owned fields during settings/theme saves in feature/theme-editor/data/src/test/java/com/ndi/feature/themeeditor/data/repository/ThemeEditorRepositoryImplTest.kt
+- [X] T011 Update quickstart evidence mapping for preflight and regression gates in specs/025-fix-appearance-settings/quickstart.md
 
 **Checkpoint**: Theme preference stream reacts to all save paths and persistence invariants are protected by tests.
 
@@ -49,18 +49,18 @@
 
 ### Tests for User Story 1 (REQUIRED)
 
-- [ ] T012 [P] [US1] Add failing ViewModel test for mode dirty/save state transitions in feature/ndi-browser/presentation/src/test/java/com/ndi/feature/ndibrowser/settings/SettingsViewModelTest.kt
-- [ ] T013 [P] [US1] Add failing coordinator integration test for mode apply after settings-driven save in app/src/test/java/com/ndi/app/theme/AppThemeCoordinatorTest.kt
-- [ ] T014 [P] [US1] Add failing Playwright scenario for Light/Dark/System mode save and verification in testing/e2e/tests/025-appearance-settings-rebuild.spec.ts
-- [ ] T015 [US1] Run targeted US1 appearance scenarios and record evidence in test-results/025-us1-targeted-e2e.md via testing/e2e/tests/025-appearance-settings-rebuild.spec.ts
-- [ ] T016 [US1] If targeted e2e/preflight is blocked, capture blocker classification and unblock command in test-results/025-us1-targeted-e2e.md
+- [X] T012 [P] [US1] Add failing ViewModel test for mode dirty/save state transitions in feature/ndi-browser/presentation/src/test/java/com/ndi/feature/ndibrowser/settings/SettingsViewModelTest.kt
+- [X] T013 [P] [US1] Add failing coordinator integration test for mode apply after settings-driven save in app/src/test/java/com/ndi/app/theme/AppThemeCoordinatorTest.kt
+- [X] T014 [P] [US1] Add failing Playwright scenario for Light/Dark/System mode save and verification in testing/e2e/tests/025-appearance-settings-rebuild.spec.ts
+- [X] T015 [US1] Run targeted US1 appearance scenarios and record evidence in test-results/025-us1-targeted-e2e.md via testing/e2e/tests/025-appearance-settings-rebuild.spec.ts
+- [X] T016 [US1] Targeted e2e/preflight blocker classification checked; no blocker encountered.
 
 ### Implementation for User Story 1
 
-- [ ] T017 [US1] Update theme-mode save/apply flow in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/SettingsViewModel.kt
-- [ ] T018 [US1] Ensure app-wide night mode application remains driven by repository stream in app/src/main/java/com/ndi/app/theme/AppThemeCoordinator.kt
-- [ ] T019 [US1] Preserve persisted mode selection state rendering in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/SettingsDetailRenderer.kt
-- [ ] T020 [US1] Add failing unit test for mode-apply latency measurement plumbing in app/src/test/java/com/ndi/app/theme/AppThemeCoordinatorTest.kt
+- [X] T017 [US1] Update theme-mode save/apply flow in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/SettingsViewModel.kt
+- [X] T018 [US1] Ensure app-wide night mode application remains driven by repository stream in app/src/main/java/com/ndi/app/theme/AppThemeCoordinator.kt
+- [X] T019 [US1] Preserve persisted mode selection state rendering in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/SettingsDetailRenderer.kt
+- [X] T020 [US1] Add failing unit test for mode-apply latency measurement plumbing in app/src/test/java/com/ndi/app/theme/AppThemeCoordinatorTest.kt
 
 **Checkpoint**: User Story 1 is independently functional and verified by unit + e2e tests.
 
@@ -74,18 +74,18 @@
 
 ### Tests for User Story 2 (REQUIRED)
 
-- [ ] T021 [P] [US2] Add failing presentation test for color-theme entry visibility in compact layout in feature/ndi-browser/presentation/src/test/java/com/ndi/feature/ndibrowser/settings/SettingsScreenTest.kt
-- [ ] T022 [P] [US2] Add failing presentation test for color-theme entry visibility in wide layout in feature/ndi-browser/presentation/src/test/java/com/ndi/feature/ndibrowser/settings/SettingsFragmentWideLayoutTest.kt
-- [ ] T023 [P] [US2] Add failing Playwright scenario for Theme Editor navigation and accent update in testing/e2e/tests/025-appearance-settings-rebuild.spec.ts
-- [ ] T024 [US2] Run targeted US2 color-theme navigation scenarios and record evidence in test-results/025-us2-targeted-e2e.md via testing/e2e/tests/025-appearance-settings-rebuild.spec.ts
-- [ ] T025 [US2] If targeted e2e/preflight is blocked, capture blocker classification and unblock command in test-results/025-us2-targeted-e2e.md
+- [X] T021 [P] [US2] Add failing presentation test for color-theme entry visibility in compact layout in feature/ndi-browser/presentation/src/test/java/com/ndi/feature/ndibrowser/settings/SettingsScreenTest.kt
+- [X] T022 [P] [US2] Add failing presentation test for color-theme entry visibility in wide layout in feature/ndi-browser/presentation/src/test/java/com/ndi/feature/ndibrowser/settings/SettingsFragmentWideLayoutTest.kt
+- [X] T023 [P] [US2] Add failing Playwright scenario for Theme Editor navigation and accent update in testing/e2e/tests/025-appearance-settings-rebuild.spec.ts
+- [X] T024 [US2] Run targeted US2 color-theme navigation scenarios and record evidence in test-results/025-us2-targeted-e2e.md via testing/e2e/tests/025-appearance-settings-rebuild.spec.ts
+- [X] T025 [US2] Targeted e2e/preflight blocker classification checked; no blocker encountered.
 
 ### Implementation for User Story 2
 
-- [ ] T026 [US2] Restore Appearance panel color-theme entry behavior in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/SettingsDetailRenderer.kt
-- [ ] T027 [US2] Wire compact and wide settings UI to Theme Editor entry point in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/SettingsFragment.kt
-- [ ] T028 [US2] Ensure appearance detail state includes color-theme control contract in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/SettingsViewModel.kt
-- [ ] T029 [US2] Validate deep-link contract stability for Theme Editor in app/src/main/res/navigation/main_nav_graph.xml
+- [X] T026 [US2] Restore Appearance panel color-theme entry behavior in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/SettingsDetailRenderer.kt
+- [X] T027 [US2] Wire compact and wide settings UI to Theme Editor entry point in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/SettingsFragment.kt
+- [X] T028 [US2] Ensure appearance detail state includes color-theme control contract in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/SettingsViewModel.kt
+- [X] T029 [US2] Validate deep-link contract stability for Theme Editor in app/src/main/res/navigation/main_nav_graph.xml
 
 **Checkpoint**: User Story 2 is independently functional and verified by presentation + e2e tests.
 
@@ -99,19 +99,19 @@
 
 ### Tests for User Story 3 (REQUIRED)
 
-- [ ] T030 [P] [US3] Add failing Playwright test for hybrid Light-mode assertion (persisted state + visual token) in testing/e2e/tests/025-appearance-settings-rebuild.spec.ts
-- [ ] T031 [P] [US3] Add failing Playwright test for hybrid Dark-mode assertion (persisted state + visual token) in testing/e2e/tests/025-appearance-settings-rebuild.spec.ts
-- [ ] T032 [P] [US3] Add failing Playwright test for System Default follow-system toggle behavior in testing/e2e/tests/025-appearance-settings-rebuild.spec.ts
-- [ ] T033 [US3] Execute appearance e2e suite and record results in test-results/025-e2e-suite-rebuild-summary.md
-- [ ] T034 [US3] Execute full Playwright regression and record outcome in test-results/025-final-regression-summary.md
-- [ ] T035 [US3] If any gate is blocked, classify and document unblock steps in test-results/025-final-regression-summary.md
+- [X] T030 [P] [US3] Add failing Playwright test for hybrid Light-mode assertion (persisted state + visual token) in testing/e2e/tests/025-appearance-settings-rebuild.spec.ts
+- [X] T031 [P] [US3] Add failing Playwright test for hybrid Dark-mode assertion (persisted state + visual token) in testing/e2e/tests/025-appearance-settings-rebuild.spec.ts
+- [X] T032 [P] [US3] Add failing Playwright test for System Default follow-system toggle behavior in testing/e2e/tests/025-appearance-settings-rebuild.spec.ts
+- [X] T033 [US3] Execute appearance e2e suite and record results in test-results/025-e2e-suite-rebuild-summary.md
+- [X] T034 [US3] Execute full Playwright regression and record outcome in test-results/025-final-regression-summary.md
+- [X] T035 [US3] Full regression blocker classification checked; no blocker encountered.
 
 ### Implementation for User Story 3
 
-- [ ] T036 [US3] Add reusable Android UI driver helpers for hybrid theme assertions in testing/e2e/tests/support/android-ui-driver.ts
-- [ ] T037 [US3] Add deterministic emulator theme-toggle helper for System Default validation in testing/e2e/tests/support/android-theme-driver.ts
-- [ ] T038 [US3] Update Playwright suite classification metadata for new appearance scenarios in testing/e2e/tests/support/e2e-suite-classification.spec.ts
-- [ ] T043 [US3] Add latency assertion helper and measurement capture for <=1s mode-apply validation in testing/e2e/tests/support/android-ui-driver.ts
+- [X] T036 [US3] Add reusable Android UI driver helpers for hybrid theme assertions in testing/e2e/tests/support/android-ui-driver.ts
+- [X] T037 [US3] Add deterministic emulator theme-toggle helper for System Default validation in testing/e2e/tests/support/android-theme-driver.ts
+- [X] T038 [US3] Update Playwright suite classification metadata for new appearance scenarios in testing/e2e/tests/support/e2e-suite-classification.spec.ts
+- [X] T043 [US3] Add latency assertion helper and measurement capture for <=1s mode-apply validation in testing/e2e/tests/support/android-ui-driver.ts
 
 **Checkpoint**: User Story 3 validation is complete with deterministic e2e evidence and regression coverage.
 
@@ -121,10 +121,10 @@
 
 **Purpose**: Final hardening and delivery evidence.
 
-- [ ] T039 [P] Update appearance feature documentation in docs/testing.md
-- [ ] T040 [P] Update feature index and result links in test-results/025-agent-workflow-index.md
-- [ ] T041 Run full quickstart validation sequence and capture pass/fail summary in test-results/025-command-contract-validation.md
-- [ ] T042 Verify release-hardening gate remains intact with appearance changes by running app:verifyReleaseHardening and recording output in test-results/025-final-regression-summary.md
+- [X] T039 [P] Update appearance feature documentation in docs/testing.md
+- [X] T040 [P] Update feature index and result links in test-results/025-agent-workflow-index.md
+- [X] T041 Run full quickstart validation sequence and capture pass/fail summary in test-results/025-command-contract-validation.md
+- [X] T042 Verify release-hardening gate remains intact with appearance changes by running app:verifyReleaseHardening and recording output in test-results/025-final-regression-summary.md
 
 ---
 
