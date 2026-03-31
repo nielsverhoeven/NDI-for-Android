@@ -244,6 +244,17 @@ If you find something unclear:
 **Summary**: Keeps NDI output streaming active when the broadcaster navigates to Home or another app.
 Dual-emulator e2e validates six-step Chrome/nos.nl cross-app propagation with visual similarity proof.
 
+### 023 – Per-Source Frame Retention
+- Spec: `specs/023-per-source-frame-retention/spec.md`
+- Plan: `specs/023-per-source-frame-retention/plan.md`
+- Tasks: `specs/023-per-source-frame-retention/tasks.md`
+- Research: `specs/023-per-source-frame-retention/research.md`
+- Data model: `specs/023-per-source-frame-retention/data-model.md`
+- Quickstart: `specs/023-per-source-frame-retention/quickstart.md`
+- Contract: `specs/023-per-source-frame-retention/contracts/per-source-frame-repository.md`
+
+**Summary**: Replaces the single-slot source-list preview with session-scoped per-source thumbnail retention, backed by a 10-entry LRU cache while preserving the existing relaunch continuity path.
+
 ---
 
 **Version**: 1.1  

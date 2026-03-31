@@ -75,7 +75,7 @@
 ### Implementation for User Story 1
 
 - [X] T017 Verify `SourceAdapter` in `feature/ndi-browser/presentation`/src/main/java/com/ndi/feature/ndibrowser/source_list/adapter/SourceAdapter.kt` already renders `source.lastFramePreviewPath` as thumbnail via `sourcePreviewImage.setImageBitmap(BitmapFactory.decodeFile(previewPath))` — no changes needed if already present, else add the bitmap loading logic
-- [ ] [P] T018 End-to-end verification: Build and deploy debug APK on dual emulator via `./gradlew assembleDebug`
+- [X] [P] T018 End-to-end verification: Build and deploy debug APK on dual emulator via `./gradlew assembleDebug`
 - [ ] [P] T019 Run Playwright e2e test `multi-source frames retained independently in list` on emulator pair; record results in `test-results/023-us1-multi-frame.md`
 - [ ] [P] T020 Run Playwright e2e test `source never viewed shows placeholder` on emulator pair; record results in `test-results/023-us1-placeholder.md`
 - [ ] T021 Run full existing Playwright e2e suite via `testing/e2e/scripts/run-dual-emulator-e2e.ps1` and record all passing/blocking results in `test-results/023-regression.md`
@@ -140,24 +140,24 @@
 - [ ] T037 Run release build with R8/ProGuard + shrink enabled via `./gradlew :app:bundleRelease verifyReleaseHardening` and verify no new classes need keep-rules or excludes
 - [X] [P] T038 Verify no new Android permissions declared in `AndroidManifest.xml` (feature uses only existing app permissions)
 - [X] [P] T039 Confirm all new Kotlin classes compile without lint warnings; run `./gradlew :feature:ndi-browser:data:lintDebug` and `./gradlew :feature:ndi-browser:presentation:lintDebug`
-- [ ] T040 Code review for Material 3 compliance: confirm no new UI components added (only existing `sourcePreviewImage` reused); existing layouts untouched
+- [X] T040 Code review for Material 3 compliance: confirm no new UI components added (only existing `sourcePreviewImage` reused); existing layouts untouched
 
 ### Regression & Preflight Evidence
 
 - [ ] T041 Final full run of existing Playwright e2e suite on dual emulator with both NDI sources available; record comprehensive passing evidence in `test-results/023-final-regression.md`
-- [ ] [P] T042 Preflight validation: run `scripts/verify-android-prereqs.ps1` and `scripts/verify-e2e-dual-emulator-prereqs.ps1` one final time; append summary to `test-results/023-final-preflight.md`
+- [X] [P] T042 Preflight validation: run `scripts/verify-android-prereqs.ps1` and `scripts/verify-e2e-dual-emulator-prereqs.ps1` one final time; append summary to `test-results/023-final-preflight.md`
 - [ ] T043 Performance validation: measure source-list-visible time with no frames retained vs. with all 10-source cap frames retained; confirm startup time increase is ≤2 seconds per SC-005; document results (mean startup time before/after and delta) in `test-results/023-performance-impact.md`. Also confirm no background work added (frame capture only on viewer exit, in-memory only).
 
 ### Documentation
 
-- [ ] T044 Update [docs/ndi-feature.md](docs/ndi-feature.md) to document per-source frame retention behavior, including LRU cap of 10 and session-only lifecycle
-- [ ] [P] T045 Add implementation notes to [DOCUMENTATION-INDEX.md](DOCUMENTATION-INDEX.md) pointing to spec, plan, and contracts
+- [X] T044 Update [docs/ndi-feature.md](docs/ndi-feature.md) to document per-source frame retention behavior, including LRU cap of 10 and session-only lifecycle
+- [X] [P] T045 Add implementation notes to [DOCUMENTATION-INDEX.md](DOCUMENTATION-INDEX.md) pointing to spec, plan, and contracts
 
 ### Final Validation
 
-- [ ] T046 Run all unit tests (domain, data, presentation) via `./gradlew :feature:ndi-browser:test` and confirm 100% pass
-- [ ] T047 Final emulator build and deploy-check: `./gradlew assembleDebug` produces valid APK with no errors
-- [ ] T048 Confirm ViewerContinuityRepository single-source restore path (for relaunch) still works: run regression test `test-results/021-server-correlation-checklist-20260329.md` (or similar existing continuity test) and document no regression in `test-results/023-continuity-regression.md`
+- [X] T046 Run all unit tests (domain, data, presentation) via `./gradlew :feature:ndi-browser:test` and confirm 100% pass
+- [X] T047 Final emulator build and deploy-check: `./gradlew assembleDebug` produces valid APK with no errors
+- [X] T048 Confirm ViewerContinuityRepository single-source restore path (for relaunch) still works: run regression test `test-results/021-server-correlation-checklist-20260329.md` (or similar existing continuity test) and document no regression in `test-results/023-continuity-regression.md`
 
 **Checkpoint**: Feature complete. All 3 user stories tested. Release hardening validated. No regressions in existing flows. Documentation updated.
 
