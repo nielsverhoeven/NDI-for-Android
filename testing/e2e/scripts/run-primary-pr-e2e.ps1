@@ -1,122 +1,108 @@
 param(
-    [string]$PrimaryProject = "android-primary",
-    [string]$OutputRoot
+    [string]$Status = 'auto',
+    [bool]$RequiredProfile = $true,
+    [string]$Profile = 'pr-primary',
+    [bool]$DeveloperModeAvailable = $true,
+    [switch]$ValidateCommandContract,
+    [string]$OutputDir = "$(Join-Path $PSScriptRoot '..\artifacts')"
 )
 
-$ErrorActionPreference = "Stop"
+. "$PSScriptRoot\helpers\result-handler.ps1"
+. "$PSScriptRoot\helpers\triage-summary.ps1"
 
-if (-not $OutputRoot) {
-    $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
-    $OutputRoot = Join-Path $PSScriptRoot "..\artifacts\primary-pr-$timestamp"
-}
+$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
+$e2eRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+$manifestPath = Join-Path $PSScriptRoot '..\tests\support\regression-suite-manifest.json'
+$manifest = Get-Content -Path $manifestPath -Raw | ConvertFrom-Json
+$selectedScenarioIds = $manifest.profiles.$Profile
+$selectedSpecs = @()
+$missingSpecs = @()
+$notApplicableScenarioIds = @()
 
-New-Item -ItemType Directory -Path $OutputRoot -Force | Out-Null
-
-$resultsDir = Join-Path $OutputRoot "results"
-New-Item -ItemType Directory -Path $resultsDir -Force | Out-Null
-
-$newSettingsSpecs = @(
-    "tests/settings-navigation-source-list.spec.ts",
-    "tests/settings-navigation-viewer.spec.ts",
-    "tests/settings-navigation-output.spec.ts",
-    "tests/settings-valid-discovery-persistence.spec.ts",
-    "tests/settings-invalid-discovery-validation.spec.ts",
-    "tests/settings-discovery-fallback.spec.ts",
-    "tests/settings-discovery-config.spec.ts"
-)
-
-$manifestPath = Join-Path $PSScriptRoot "..\tests\support\regression-suite-manifest.json"
-if (-not (Test-Path $manifestPath)) {
-    throw "Missing regression suite manifest: $manifestPath"
-}
-
-$manifest = Get-Content $manifestPath -Raw | ConvertFrom-Json
-$existingRegressionSpecs = @($manifest.specs)
-if ($existingRegressionSpecs.Count -eq 0) {
-    throw "Regression suite manifest did not include any spec entries."
-}
-
-function Invoke-PlaywrightSuite {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$Name,
-        [Parameter(Mandatory = $true)]
-        [string[]]$Specs,
-        [Parameter(Mandatory = $true)]
-        [string]$JsonPath,
-        [string]$Grep
-    )
-
-    Write-Host "Running suite '$Name' on project '$PrimaryProject'"
-    Write-Host "Specs: $($Specs -join ', ')"
-    if ($Grep) {
-        Write-Host "Grep filter: $Grep"
-    }
-    Write-Host "Output directory: $resultsDir/$Name"
-    Write-Host "JSON capture path: $JsonPath"
-
-    $playwrightArgs = @("playwright", "test", "--project=$PrimaryProject", "--workers=1", "--reporter=line,json", "--output", "$resultsDir/$Name")
-    if ($Grep) {
-        $playwrightArgs += @("--grep", $Grep)
-    }
-    $playwrightArgs += $Specs
-
-    Write-Host "Command: npx $($playwrightArgs -join ' ')"
-    Write-Host "--- Playwright Output Start ---"
-
-    # Execute and stream logs while capturing structured JSON to file
-    $playwrightRaw = & npx @playwrightArgs 2>&1 | Tee-Object -FilePath $JsonPath
-    $playwrightExitCode = $LASTEXITCODE
-
-    Write-Host "--- Playwright Output End ---"
-    Write-Host "Exit code: $playwrightExitCode"
-
-    if ($playwrightExitCode -ne 0) {
-        Write-Host "Playwright failed with exit code $playwrightExitCode" -ForegroundColor Red
-        if (Test-Path $JsonPath) {
-            Write-Host "Captured result snippet (first 2000 chars):"
-            Write-Host ($playwrightRaw -join "`n").Substring(0, [Math]::Min(2000, ($playwrightRaw -join "`n").Length))
+foreach ($scenarioId in $selectedScenarioIds) {
+    $scenario = $manifest.scenarios | Where-Object { $_.id -eq $scenarioId } | Select-Object -First 1
+    if ($null -ne $scenario) {
+        if (($scenario.PSObject.Properties.Name -contains 'requiresDeveloperMode') -and $scenario.requiresDeveloperMode -and -not $DeveloperModeAvailable) {
+            $notApplicableScenarioIds += $scenario.id
+            continue
         }
 
-        throw "Playwright suite '$Name' failed with exit code $playwrightExitCode"
-    }
+        $resolvedSpecPath = Join-Path $repoRoot $scenario.specPath
 
-    if (-not (Test-Path $JsonPath)) {
-        throw "Suite '$Name' did not emit JSON report at $JsonPath"
+        if (Test-Path $resolvedSpecPath) {
+            $relativeSpecPath = [System.IO.Path]::GetRelativePath($e2eRoot, $resolvedSpecPath).Replace([System.IO.Path]::DirectorySeparatorChar, '/')
+            $selectedSpecs += $relativeSpecPath
+        }
+        else {
+            $missingSpecs += $scenario.specPath
+        }
     }
-
-    Write-Host "Suite '$Name' finished successfully" -ForegroundColor Green
 }
 
-Push-Location (Join-Path $PSScriptRoot "..")
-try {
-    Write-Host "Ensuring Playwright browsers are installed for e2e execution"
-    npx playwright install --with-deps
-
-    $newSettingsJson = Join-Path $OutputRoot "new-settings.json"
-    $latencyJson = Join-Path $OutputRoot "latency-scenario.json"
-    $existingJson = Join-Path $OutputRoot "existing-regression.json"
-
-    Invoke-PlaywrightSuite -Name "new-settings" -Specs $newSettingsSpecs -JsonPath $newSettingsJson
-    Invoke-PlaywrightSuite -Name "latency-scenario" -Specs @(
-        "tests/support/latency-analysis.spec.ts",
-        "tests/support/scenario-checkpoints.spec.ts"
-    ) -JsonPath $latencyJson -Grep "@latency"
-    Invoke-PlaywrightSuite -Name "existing-regression" -Specs $existingRegressionSpecs -JsonPath $existingJson
-
-    & powershell -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "summarize-e2e-results.ps1") `
-        -Profile "primary" `
-        -NewSettingsJson $newSettingsJson `
-        -LatencyScenarioJson $latencyJson `
-        -ExistingRegressionJson $existingJson `
-        -OutputPath (Join-Path $OutputRoot "summary-primary.md")
-
+if ($ValidateCommandContract) {
+    & pwsh -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'validate-command-contract.ps1')
     if ($LASTEXITCODE -ne 0) {
-        throw "Summary script failed with exit code $LASTEXITCODE"
+        $Status = 'blocked'
     }
+}
 
-    Write-Host "Primary PR gate completed. Evidence: $OutputRoot"
+if (-not (Test-Path $OutputDir)) {
+    New-Item -ItemType Directory -Path $OutputDir -Force | Out-Null
 }
-finally {
-    Pop-Location
+
+$normalized = $Status
+
+if ($normalized -eq 'auto') {
+    if ($missingSpecs.Count -gt 0) {
+        $normalized = 'blocked'
+    }
+    elseif ($selectedSpecs.Count -eq 0 -and $notApplicableScenarioIds.Count -gt 0) {
+        $normalized = 'not-applicable'
+    }
+    else {
+        Push-Location (Join-Path $PSScriptRoot '..')
+        & npx playwright test $selectedSpecs
+        $playwrightExitCode = $LASTEXITCODE
+        Pop-Location
+
+        if ($playwrightExitCode -eq 0) {
+            $normalized = 'pass'
+        }
+        else {
+            $normalized = 'fail'
+        }
+    }
 }
+
+$normalized = Normalize-E2eStatus -Status $normalized
+$gate = Get-GateDecision -Status $normalized -RequiredProfile $RequiredProfile
+
+$result = [ordered]@{
+    status = $normalized
+    requiredProfile = $RequiredProfile
+    profile = $Profile
+    activeSuiteId = $manifest.baseline.activeSuiteId
+    selectedScenarioIds = $selectedScenarioIds
+    notApplicableScenarioIds = $notApplicableScenarioIds
+    missingSpecPaths = $missingSpecs
+    gateDecision = $gate
+    generatedAtUtc = (Get-Date).ToUniversalTime().ToString('o')
+}
+
+$resultPath = Join-Path $OutputDir 'primary-status.json'
+$result | ConvertTo-Json -Depth 5 | Set-Content -Path $resultPath -Encoding UTF8
+
+$triagePath = Join-Path $OutputDir 'triage-summary.json'
+if ($normalized -eq 'fail' -or $normalized -eq 'blocked') {
+    $rootCause = if ($normalized -eq 'blocked') { 'environment-blocker' } else { 'test-defect' }
+    New-TriageSummary -Status $normalized -ScenarioIds $selectedScenarioIds -RootCauseCategory $rootCause -OutputPath $triagePath | Out-Null
+}
+elseif (Test-Path $triagePath) {
+    Remove-Item -Path $triagePath -Force
+}
+
+if ($gate -eq 'fail') {
+    exit 1
+}
+
+exit 0

@@ -1,136 +1,79 @@
 param(
-    [string]$SessionId = (Get-Date -Format "yyyyMMdd-HHmmss"),
-    [string[]]$EmulatorIds = @("emulator-5554", "emulator-5556"),
-    [string]$ArtifactsRoot = "testing/e2e/artifacts",
-    [string]$RelayMetricsPath = "testing/e2e/artifacts/runtime/relay-metrics.json",
-    [string]$PreinstallReportPath = "testing/e2e/artifacts/runtime/preinstall-report.json",
-    [string]$OutputPath
+    [Parameter(Mandatory = $true)]
+    [string]$SessionId
 )
 
-$ErrorActionPreference = "Stop"
+<#
+.SYNOPSIS
+Collect and consolidate test artifacts from a dual-emulator e2e session.
 
-. "$PSScriptRoot/helpers/result-handler.ps1"
-. "$PSScriptRoot/helpers/emulator-adb.ps1"
+.PARAMETER SessionId
+The session ID that identifies the test run.
 
-function Collect-Logcat {
-    param([Parameter(Mandatory = $true)][string]$EmulatorSerial, [Parameter(Mandatory = $true)][string]$Directory)
-    $path = Join-Path $Directory "logcat-$EmulatorSerial.log"
-    Collect-LogcatSnapshot -Serial $EmulatorSerial -OutputPath $path -LineCount 500
-    return $path
+.DESCRIPTION
+Gathers Playwright test reports, logs, and other artifacts from the test execution
+and consolidates them in the test-results directory for analysis and CI artifact upload.
+#>
+
+$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
+$e2eRoot = Join-Path $repoRoot 'testing\e2e'
+$testResultsDir = Join-Path $repoRoot 'test-results'
+$artifactsDir = Join-Path $e2eRoot 'artifacts'
+
+Write-Output "[collect-artifacts] Starting artifact collection for session: $SessionId"
+Write-Output "[collect-artifacts] Repository root: $repoRoot"
+Write-Output "[collect-artifacts] Test results directory: $testResultsDir"
+
+# Ensure test-results directory exists
+if (-not (Test-Path $testResultsDir)) {
+    New-Item -ItemType Directory -Path $testResultsDir -Force | Out-Null
 }
 
-function Collect-ScreenRecording {
-    param([Parameter(Mandatory = $true)][string]$EmulatorSerial, [Parameter(Mandatory = $true)][string]$Directory)
-    $path = Join-Path $Directory "screenrecord-$EmulatorSerial.mp4"
-    # Placeholder artifact for deterministic CI diagnostics when active recordings are unavailable.
-    Set-Content -LiteralPath $path -Value "screenrecord-not-captured-in-post-collection" -Encoding UTF8
-    return $path
-}
-
-function Collect-Diagnostics {
-    param([Parameter(Mandatory = $true)][string[]]$Devices, [Parameter(Mandatory = $true)][string]$Directory)
-
-    $diagPath = Join-Path $Directory "diagnostics.json"
-    $payload = [PSCustomObject]@{
-        capturedAt = (Get-Date).ToUniversalTime().ToString("o")
-        devices = @()
-        relayMetricsPath = $RelayMetricsPath
-        relayMetricsExists = (Test-Path -LiteralPath $RelayMetricsPath)
-    }
-
-    foreach ($d in $Devices) {
-        $payload.devices += Get-EmulatorStateSnapshot -Serial $d
-    }
-
-    $payload | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $diagPath -Encoding UTF8
-    return $diagPath
-}
-
-function Generate-ArtifactManifest {
-    param(
-        [Parameter(Mandatory = $true)][string]$Directory,
-        [Parameter(Mandatory = $true)][string[]]$Paths
-    )
-
-    $manifest = [PSCustomObject]@{
-        sessionId = $SessionId
-        generatedAt = (Get-Date).ToUniversalTime().ToString("o")
-        artifacts = @()
-    }
-
-    function Get-ChecksumSha256 {
-        param([Parameter(Mandatory = $true)][string]$LiteralPath)
-
-        if (Get-Command Get-FileHash -ErrorAction SilentlyContinue) {
-            return (Get-FileHash -LiteralPath $LiteralPath -Algorithm SHA256).Hash
-        }
-
-        $stream = [System.IO.File]::OpenRead($LiteralPath)
-        try {
-            $sha = [System.Security.Cryptography.SHA256]::Create()
-            try {
-                $bytes = $sha.ComputeHash($stream)
-                return ([System.BitConverter]::ToString($bytes) -replace '-', '').ToLowerInvariant()
-            }
-            finally {
-                $sha.Dispose()
-            }
-        }
-        finally {
-            $stream.Dispose()
+# Collect Playwright test results
+$playwrightResults = @()
+if (Test-Path (Join-Path $e2eRoot 'artifacts')) {
+    Get-ChildItem -Path (Join-Path $e2eRoot 'artifacts') -Filter '*.json' -Recurse | ForEach-Object {
+        $playwrightResults += @{
+            File = $_.FullName
+            RelativePath = [System.IO.Path]::GetRelativePath($repoRoot, $_.FullName)
         }
     }
 
-    foreach ($path in $Paths) {
-        $item = Get-Item -LiteralPath $path
-        $hash = Get-ChecksumSha256 -LiteralPath $path
-        $manifest.artifacts += [PSCustomObject]@{
-            path = $path
-            sizeBytes = $item.Length
-            checksumSha256 = $hash
+    if ($playwrightResults.Count -gt 0) {
+        Write-Output "[collect-artifacts] Found $($playwrightResults.Count) Playwright artifact files"
+        $playwrightResults | ForEach-Object {
+            Write-Output "  - $($_.RelativePath)"
         }
     }
-
-    $manifestPath = Join-Path $Directory "manifest.json"
-    $manifest | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $manifestPath -Encoding UTF8
-    return $manifestPath
 }
 
-try {
-    $sessionDir = Join-Path $ArtifactsRoot $SessionId
-    New-Item -ItemType Directory -Path $sessionDir -Force | Out-Null
-
-    $artifactPaths = @()
-    foreach ($device in $EmulatorIds) {
-        $artifactPaths += Collect-Logcat -EmulatorSerial $device -Directory $sessionDir
-        $artifactPaths += Collect-ScreenRecording -EmulatorSerial $device -Directory $sessionDir
-    }
-
-    $artifactPaths += Collect-Diagnostics -Devices $EmulatorIds -Directory $sessionDir
-    if (Test-Path -LiteralPath $PreinstallReportPath) {
-        $reportCopyPath = Join-Path $sessionDir "preinstall-report.json"
-        Copy-Item -LiteralPath $PreinstallReportPath -Destination $reportCopyPath -Force
-        $artifactPaths += $reportCopyPath
-    }
-    $manifestPath = Generate-ArtifactManifest -Directory $sessionDir -Paths $artifactPaths
-    $artifactPaths += $manifestPath
-
-    $result = New-E2eResult -Operation "Collect-TestArtifacts" -Status "SUCCESS" -Data ([PSCustomObject]@{
-            sessionId = $SessionId
-            artifactDirectory = $sessionDir
-            artifacts = $artifactPaths
-            manifestPath = $manifestPath
-        })
-
-    if (-not $OutputPath) {
-        $OutputPath = Join-Path $sessionDir "collection-result.json"
-    }
-
-    Exit-E2eWithResult -Result $result -OutputPath $OutputPath
+# Consolidate primary-status artifact
+$primaryStatusPath = Join-Path $artifactsDir 'primary-status.json'
+if (Test-Path $primaryStatusPath) {
+    $consolidatedStatusPath = Join-Path $testResultsDir "024-dual-emulator-session-$SessionId.json"
+    Copy-Item -Path $primaryStatusPath -Destination $consolidatedStatusPath -Force
+    Write-Output "[collect-artifacts] Consolidated primary-status to $consolidatedStatusPath"
 }
-catch {
-    $result = New-E2eResult -Operation "Collect-TestArtifacts" -Status "FAILURE" -Errors @(
-        New-E2eError -Code "COLLECTION_FAILED" -Message $_.Exception.Message
-    )
-    Exit-E2eWithResult -Result $result -OutputPath $OutputPath
+
+# Consolidate triage summary if present
+$triagePath = Join-Path $artifactsDir 'triage-summary.json'
+if (Test-Path $triagePath) {
+    $consolidatedTriagePath = Join-Path $testResultsDir "024-dual-emulator-triage-$SessionId.json"
+    Copy-Item -Path $triagePath -Destination $consolidatedTriagePath -Force
+    Write-Output "[collect-artifacts] Consolidated triage summary to $consolidatedTriagePath"
 }
+
+# Create collection manifest
+$manifest = [ordered]@{
+    sessionId = $SessionId
+    collectedAt = (Get-Date).ToUniversalTime().ToString('o')
+    artifactFiles = $playwrightResults
+    consolidationDir = [System.IO.Path]::GetRelativePath($repoRoot, $testResultsDir)
+}
+
+$manifestPath = Join-Path $testResultsDir "024-dual-emulator-manifest-$SessionId.json"
+$manifest | ConvertTo-Json -Depth 5 | Set-Content -Path $manifestPath -Encoding UTF8
+Write-Output "[collect-artifacts] Collection manifest written to $manifestPath"
+
+Write-Output "[collect-artifacts] Artifact collection completed successfully"
+exit 0

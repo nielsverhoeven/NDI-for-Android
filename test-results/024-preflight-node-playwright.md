@@ -1,0 +1,5 @@
+
+added 4 packages, and audited 5 packages in 4s
+
+found 0 vulnerabilities
+EXIT_CODE=0

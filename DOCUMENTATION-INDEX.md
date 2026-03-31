@@ -255,10 +255,21 @@ Dual-emulator e2e validates six-step Chrome/nos.nl cross-app propagation with vi
 
 **Summary**: Replaces the single-slot source-list preview with session-scoped per-source thumbnail retention, backed by a 10-entry LRU cache while preserving the existing relaunch continuity path.
 
+### 024 – Rebuild Android E2E Suite
+- Spec: `specs/024-rebuild-android-e2e/spec.md`
+- Plan: `specs/024-rebuild-android-e2e/plan.md`
+- Tasks: `specs/024-rebuild-android-e2e/tasks.md`
+- Research: `specs/024-rebuild-android-e2e/research.md`
+- Data model: `specs/024-rebuild-android-e2e/data-model.md`
+- Quickstart: `specs/024-rebuild-android-e2e/quickstart.md`
+- Contract: `specs/024-rebuild-android-e2e/contracts/e2e-execution-contract.md`
+
+**Summary**: Rebuilds the Android Playwright e2e suite with canonical status taxonomy, preflight-first CI gating, reliability-window reporting, triage-SLA evidence, and planner/generator/healer workflow artifacts.
+
 ---
 
 **Version**: 1.1  
-**Last Updated**: 2026-03-20  
+**Last Updated**: 2026-03-31  
 **Status**: Ready for use ✓
 
 

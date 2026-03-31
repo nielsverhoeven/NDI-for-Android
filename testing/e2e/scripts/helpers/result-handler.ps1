@@ -1,4 +1,38 @@
-Set-StrictMode -Version Latest
+function Normalize-E2eStatus {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Status
+    )
+
+    $normalized = $Status.Trim().ToLowerInvariant()
+    switch ($normalized) {
+        'pass' { return 'pass' }
+        'fail' { return 'fail' }
+        'blocked' { return 'blocked' }
+        'not-applicable' { return 'not-applicable' }
+        default { throw "Unsupported e2e status: $Status" }
+    }
+}
+
+function Get-GateDecision {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Status,
+        [Parameter(Mandatory = $true)]
+        [bool]$RequiredProfile
+    )
+
+    $normalized = Normalize-E2eStatus -Status $Status
+    if (-not $RequiredProfile) {
+        return 'pass'
+    }
+
+    if ($normalized -eq 'fail' -or $normalized -eq 'blocked') {
+        return 'fail'
+    }
+
+    return 'pass'
+}
 
 function New-E2eError {
     param(
@@ -6,7 +40,7 @@ function New-E2eError {
         [string]$Code,
         [Parameter(Mandatory = $true)]
         [string]$Message,
-        [object]$Details = $null
+        [hashtable]$Details
     )
 
     return [PSCustomObject]@{
@@ -20,59 +54,38 @@ function New-E2eResult {
     param(
         [Parameter(Mandatory = $true)]
         [string]$Operation,
-        [ValidateSet("SUCCESS", "PARTIAL_SUCCESS", "FAILURE", "HEALTHY", "DEGRADED", "UNHEALTHY")]
-        [string]$Status = "SUCCESS",
-        [object]$Data = $null,
-        [object[]]$Errors = @(),
-        [object[]]$Warnings = @()
+        [Parameter(Mandatory = $true)]
+        [string]$Status,
+        [Parameter(Mandatory = $true)]
+        [object]$Data,
+        [object[]]$Errors = @()
     )
 
     return [PSCustomObject]@{
         operation = $Operation
-        status = $Status
-        timestamp = (Get-Date).ToUniversalTime().ToString("o")
+        status = Normalize-E2eStatus -Status ($(if ($Status -eq 'SUCCESS') { 'pass' } elseif ($Status -eq 'FAILURE') { 'fail' } else { $Status }))
         data = $Data
-        errors = @($Errors)
-        warnings = @($Warnings)
+        errors = $Errors
+        generatedAtUtc = (Get-Date).ToUniversalTime().ToString('o')
     }
-}
-
-function Write-E2eJsonResult {
-    param(
-        [Parameter(Mandatory = $true)]
-        [object]$Result,
-        [string]$OutputPath
-    )
-
-    $json = $Result | ConvertTo-Json -Depth 10
-    if ([string]::IsNullOrWhiteSpace($OutputPath)) {
-        $json
-        return
-    }
-
-    $directory = Split-Path -Parent $OutputPath
-    if ($directory -and -not (Test-Path -LiteralPath $directory)) {
-        New-Item -ItemType Directory -Path $directory -Force | Out-Null
-    }
-
-    Set-Content -LiteralPath $OutputPath -Value $json -Encoding UTF8
-    $json
 }
 
 function Exit-E2eWithResult {
     param(
         [Parameter(Mandatory = $true)]
         [object]$Result,
-        [string]$OutputPath,
-        [int]$SuccessExitCode = 0,
-        [int]$FailureExitCode = 1
+        [Parameter(Mandatory = $true)]
+        [string]$OutputPath
     )
 
-    Write-E2eJsonResult -Result $Result -OutputPath $OutputPath | Write-Output
-
-    if ($Result.status -eq "FAILURE" -or $Result.status -eq "UNHEALTHY") {
-        exit $FailureExitCode
+    $parent = Split-Path -Parent $OutputPath
+    if ($parent -and -not (Test-Path $parent)) {
+        New-Item -ItemType Directory -Path $parent -Force | Out-Null
     }
 
-    exit $SuccessExitCode
+    $Result | ConvertTo-Json -Depth 8 | Set-Content -Path $OutputPath -Encoding UTF8
+    if ($Result.status -eq 'fail') {
+        exit 1
+    }
+    exit 0
 }

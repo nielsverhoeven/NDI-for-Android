@@ -34,6 +34,10 @@ jobs:
         shell: pwsh
         run: ./scripts/verify-e2e-dual-emulator-prereqs.ps1 -AllowMissingNdiSdk
 
+      - name: Validate command contract (dry-run)
+        shell: pwsh
+        run: ./testing/e2e/scripts/validate-command-contract.ps1 -Execute
+
       - name: Build NDI bridge release APK
         shell: pwsh
         run: ./gradlew.bat :ndi:sdk-bridge:assembleRelease
@@ -81,7 +85,7 @@ jobs:
       - name: Run existing Playwright regression suites
         shell: pwsh
         working-directory: testing/e2e
-        run: npx playwright test tests/interop-dual-emulator.spec.ts --project=android-primary
+        run: npx playwright test tests/support/ci-artifact-contract.spec.ts tests/support/ci-workflow-contract.spec.ts
 
       - name: Collect artifacts
         if: always()

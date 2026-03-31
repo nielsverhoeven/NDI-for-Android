@@ -27,6 +27,10 @@ jobs:
         shell: pwsh
         run: npm --prefix testing/e2e ci
 
+      - name: Validate command contract (dry-run)
+        shell: pwsh
+        run: pwsh ./testing/e2e/scripts/validate-command-contract.ps1 -Execute
+
       - name: Run matrix profiles
         shell: pwsh
         env:
