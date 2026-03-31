@@ -59,16 +59,43 @@ Defines required execution interfaces for local and CI e2e runs after suite rebu
 ### Classification Rules
 
 - `blocked` => environment blocker with explicit failed preflight evidence.
-- `fail` => product/test failure with failing scenario identifiers.
+- `fail` => product/test failure with failing scenario identifiers and root-cause class.
 - `not-applicable` => policy-sanctioned target mismatch (developer mode only).
+
+### Gating Rules
+
+- Required profile gates MUST fail on `fail` or `blocked` outcomes.
+- Required profile gates MUST NOT fail on policy-sanctioned `not-applicable` outcomes.
+- Optional/nightly profiles may report `not-applicable` without merge gating impact.
 
 ### Artifact Requirements
 
 - JSON result payload for automated parsing.
 - Markdown summary for human triage.
 - Logs/screenshots/traces as available from Playwright runner.
+- Failed-run triage summary including: failure timestamp, scenario ID(s), root-cause class (`product-defect`, `environment-blocker`, or `test-defect`), and first maintainer classification timestamp.
 
-## 5) Backward Compatibility Contract
+## 5) Reliability and Operability Contract
+
+### Reliability Window Contract
+
+- Reliability MUST be evaluated over the latest 20 unchanged-code runs for required PR-gate profiles.
+- Compliance requires at least 19/20 runs without nondeterministic failures.
+- Reliability computation artifacts MUST be published in machine-readable form.
+
+### Triage SLA Contract
+
+- For each failed required-profile run, first maintainer classification timestamp MUST be no later than 15 minutes from failure timestamp.
+- If SLA is missed, the run remains valid but must be tagged as operability regression.
+
+## 6) Playwright Agent Workflow Contract
+
+- Scenario planning MUST include Playwright planner agent output evidence.
+- Scenario/spec generation MUST include Playwright generator agent output evidence.
+- Failure remediation MUST include Playwright healer agent output evidence when triaging failed scenarios.
+- Agent evidence MUST be stored with run artifacts under `test-results/` or `testing/e2e/artifacts/`.
+
+## 7) Backward Compatibility Contract
 
 - Legacy e2e specs marked as retired MUST NOT be included in active primary suite selection.
 - The rebuilt suite becomes the authoritative regression baseline for subsequent changes.

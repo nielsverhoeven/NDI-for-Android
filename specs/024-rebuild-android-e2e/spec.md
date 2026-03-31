@@ -10,6 +10,10 @@
 ### Session 2026-03-31
 
 - Q: How should developer mode e2e tests behave across build variants where developer mode may not be available? → A: Run developer mode e2e tests on designated developer-mode-enabled CI targets; on other targets report not-applicable without failing the core suite.
+- Q: Which execution status taxonomy should CI and reports use? → A: Use pass/fail/blocked/not-applicable as the canonical set; required profiles gate on fail and blocked, while not-applicable is informational for intentionally unsupported targets.
+- Q: How should reliability be measured for the 95% stability target? → A: Measure pass-rate across the latest 20 unchanged-code runs of required PR-gate profiles on default-branch CI history; success requires at least 19 of 20 runs without nondeterministic failure.
+- Q: What evidence proves the 15-minute triage objective? → A: Each failed CI run must publish a triage summary artifact with failure timestamp, scenario ID, root-cause category, and first maintainer classification timestamp not exceeding 15 minutes.
+- Q: How should currently open edge-case questions be resolved? → A: Convert each to deterministic behavior rules covering install-fail classification, slow-runner timing controls, feature-flag-hidden menu handling, and missing setup-data blocked outcomes.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -77,12 +81,12 @@ As a repository maintainer, I need the rebuilt e2e suite to run in GitHub Action
 
 **Why this priority**: CI execution is required to make the new suite enforceable and valuable for team workflows.
 
-**Independent Test**: Can be tested independently by running the workflow in GitHub Actions and confirming e2e steps execute and publish pass/fail results.
+**Independent Test**: Can be tested independently by running the workflow in GitHub Actions and confirming e2e steps execute and publish canonical status outcomes and gating signals.
 
 **Acceptance Scenarios**:
 
 1. **Given** a pull request triggers CI, **When** the e2e workflow starts, **Then** required preflight checks run before e2e execution.
-2. **Given** e2e tests run in CI, **When** tests pass or fail, **Then** the workflow reports clear outcomes and includes logs/artifacts needed for triage.
+2. **Given** e2e tests run in CI, **When** tests complete, **Then** the workflow reports canonical outcomes (pass/fail/blocked/not-applicable) with required gating signals and includes logs/artifacts needed for triage.
 
 ### Visual Change Quality Gate *(mandatory when UI changes are present)*
 
@@ -107,10 +111,10 @@ As a repository maintainer, I need the rebuilt e2e suite to run in GitHub Action
 ### Edge Cases
 
 - When developer mode is not accessible in a build variant, developer mode scenarios are reported as not-applicable and do not fail the core suite for that target.
-- How does the suite behave when emulator boot succeeds but app install fails?
-- How are flaky timing-sensitive UI assertions handled when CI runners are slower than local environments?
-- What happens when one required menu item is hidden due to feature flags or first-run state?
-- How are blocked outcomes distinguished from true product regressions when preflight passes but test setup data is unavailable?
+- If emulator boot succeeds but app install fails, the run result MUST be classified as blocked and include install command output plus explicit reinstall/uninstall remediation steps.
+- Timing-sensitive assertions MUST use bounded explicit waits and retry-once assertion wrappers with fixed upper limits so slower CI runners do not introduce nondeterministic outcomes.
+- If a required menu item is intentionally hidden by feature flags or first-run gating, the scenario MUST record not-applicable with the gating condition artifact; if the item is expected but missing, the scenario MUST fail.
+- If preflight passes but scenario setup data is unavailable, the run MUST be classified as blocked with a setup-data-missing reason code and regeneration command.
 
 ## Requirements *(mandatory)*
 
@@ -126,12 +130,25 @@ As a repository maintainer, I need the rebuilt e2e suite to run in GitHub Action
 - **FR-008**: GitHub Actions MUST execute the e2e suite as part of repository automation for pull request or protected-branch validation.
 - **FR-009**: CI e2e execution MUST run preflight checks before test execution and fail fast on unmet prerequisites.
 - **FR-010**: CI runs MUST publish logs and artifacts sufficient to diagnose failed or blocked e2e outcomes.
-- **FR-011**: Validation reports MUST classify outcomes as pass, fail, or blocked and include clear blocker reasons.
+- **FR-011**: Validation reports MUST classify outcomes using pass, fail, blocked, or not-applicable and include clear blocker/gating reasons.
 - **FR-012**: Test definitions MUST be organized so menu coverage and developer mode coverage can be executed independently.
 - **FR-013**: The rebuilt suite MUST avoid dependency on deprecated or removed test cases from the retired suite.
 - **FR-014**: Developer mode e2e scenarios MUST execute on designated developer-mode-enabled CI targets and MUST be reported as not-applicable (not failed) on targets where developer mode is intentionally unavailable.
 - **FR-015**: CI reporting MUST distinguish not-applicable developer mode results from pass/fail outcomes while preserving required pass/fail gating for settings and navigation scenarios.
 - **FR-016**: During legacy-to-rebuilt suite handover, the project MUST record transition evidence that captures a pre-rebuild Playwright baseline run and a rebuilt-suite comparison report proving required gate coverage continuity.
+- **FR-017**: CI reliability measurement MUST be computed on the latest 20 unchanged-code runs of required PR-gate profiles, with a minimum 95% nondeterministic-failure-free pass rate.
+- **FR-018**: For each failed CI run, a triage summary artifact MUST include failure timestamp, scenario ID, root-cause category (product defect, environment blocker, or test defect), and first classification timestamp.
+- **FR-019**: Required profile gating MUST fail on fail or blocked outcomes and MUST NOT fail on not-applicable outcomes from intentionally unsupported targets.
+- **FR-020**: Local and CI execution documentation MUST include at least one validated command contract path that is executable end-to-end without undocumented manual steps.
+- **FR-021**: This feature's e2e rebuild workflow MUST use Playwright planner, generator, and healer agents for scenario planning, scenario authoring, and failure remediation, with produced evidence captured in test results.
+
+### Non-Functional Requirements
+
+- **NFR-001 (Reliability)**: Over a rolling window of 20 unchanged-code required-profile CI runs, at least 19 runs MUST complete without nondeterministic failures.
+- **NFR-002 (Observability)**: Every CI e2e run MUST publish machine-readable status and triage artifacts that include status taxonomy value, scenario identifiers, and blocker or root-cause metadata.
+- **NFR-003 (Operability)**: For failed runs, first maintainer classification time MUST be within 15 minutes from failure timestamp as evidenced in triage artifacts.
+- **NFR-004 (Determinism)**: Test timing controls MUST use bounded waits and deterministic retry policy to limit CI vs local timing drift impact.
+- **NFR-005 (Tooling Consistency)**: Playwright remains the default e2e framework and Playwright agents are required for planning, generation, and healing activities in this feature scope.
 
 ### Key Entities *(include if feature involves data)*
 
@@ -153,6 +170,6 @@ As a repository maintainer, I need the rebuilt e2e suite to run in GitHub Action
 
 - **SC-001**: 100% of legacy e2e tests are retired from active e2e execution within this feature scope.
 - **SC-002**: New automated e2e coverage exists for settings menu, navigation menu, and developer mode, with at least one passing scenario per area.
-- **SC-003**: In CI, at least 95% of repeated e2e runs for unchanged code complete without nondeterministic failures over a rolling 20-run window.
-- **SC-004**: For any failed CI e2e run, maintainers can identify the failing scenario and root-cause category (product defect vs environment blocker) within 15 minutes using published artifacts.
-- **SC-005**: Pull requests that trigger e2e validation receive a clear automated e2e status (pass/fail/blocked) before merge decision.
+- **SC-003**: In CI, at least 95% (minimum 19/20) of unchanged-code runs for required PR-gate profiles complete without nondeterministic failures over a rolling 20-run window.
+- **SC-004**: For any failed CI e2e run, maintainers can identify the failing scenario and root-cause category (product defect, environment blocker, or test defect) within 15 minutes using published triage artifacts.
+- **SC-005**: Pull requests that trigger e2e validation receive a clear automated status using pass/fail/blocked/not-applicable taxonomy before merge decision, with gating determined by required profile rules.

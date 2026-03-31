@@ -1,159 +1,180 @@
 # Tasks: Rebuild Android E2E Suite
 
-**Input**: Design documents from `/specs/024-rebuild-android-e2e/`
-**Prerequisites**: plan.md, spec.md, research.md, data-model.md, contracts/e2e-execution-contract.md, quickstart.md
+**Input**: Design documents from /specs/024-rebuild-android-e2e/
+**Prerequisites**: plan.md (required), spec.md (required), research.md, data-model.md, contracts/e2e-execution-contract.md, quickstart.md
 
-**Tests**: Tests are REQUIRED by constitution. Each user story includes failing-test-first tasks, Playwright emulator e2e coverage tasks, regression execution tasks, and blocked-gate evidence tasks.
+**Tests**: Tests are REQUIRED by constitution. Every user story uses failing-test-first sequencing and includes Playwright emulator coverage, regression evidence, and blocked-gate evidence where applicable.
+
+**Organization**: Tasks are grouped by user story so each story remains independently implementable and testable.
 
 ## Phase 0: Environment Preflight (Blocking)
 
-**Purpose**: Ensure all runtime/tool dependencies are validated before implementation and validation tasks.
+**Purpose**: Validate runtime/tool readiness before implementation and validation.
 
-- [X] T001 Run Android prerequisite preflight in scripts/verify-android-prereqs.ps1 and capture output in test-results/024-preflight-android-prereqs.md
-- [X] T002 Run dual-emulator prerequisite preflight in scripts/verify-e2e-dual-emulator-prereqs.ps1 and capture output in test-results/024-preflight-dual-emulator.md
-- [X] T003 Verify e2e dependency bootstrap commands in testing/e2e/package.json and capture output in test-results/024-preflight-node-playwright.md
+- [ ] T001 Run Android prerequisite preflight via scripts/verify-android-prereqs.ps1 and record output in test-results/024-preflight-android-prereqs.md
+- [ ] T002 Run dual-emulator preflight via scripts/verify-e2e-dual-emulator-prereqs.ps1 and record output in test-results/024-preflight-dual-emulator.md
+- [ ] T003 Validate Playwright bootstrap commands in testing/e2e/package.json and record output in test-results/024-preflight-node-playwright.md
 
-**Checkpoint**: Environment is validated or blockers are explicitly documented with reproduction and unblocking commands.
+**Checkpoint**: Environment readiness is confirmed or blockers are documented with exact unblock commands.
 
 ---
 
 ## Phase 1: Setup (Shared Infrastructure)
 
-**Purpose**: Establish feature branch test scaffolding and reporting skeleton shared by all stories.
+**Purpose**: Establish shared feature scaffolding used by all stories.
 
-- [X] T004 Create feature execution log template in test-results/024-execution-log-template.md
-- [X] T005 [P] Add feature suite index section in testing/e2e/README.md for 024 rebuilt scenarios
-- [X] T006 [P] Create placeholder artifact folder note in testing/e2e/artifacts/.gitkeep
+- [ ] T004 Create feature execution log template in test-results/024-execution-log-template.md
+- [ ] T005 [P] Create suite overview section for feature 024 in testing/e2e/README.md
+- [ ] T006 [P] Ensure artifact placeholder exists in testing/e2e/artifacts/.gitkeep
+- [ ] T007 Create Playwright agent evidence index template in test-results/024-agent-workflow-index.md
 
 ---
 
 ## Phase 2: Foundational (Blocking Prerequisites)
 
-**Purpose**: Build shared selection/reporting foundations required before any story-specific scenario work.
+**Purpose**: Build shared manifest/reporting/gating foundations before any user story implementation.
 
-**CRITICAL**: No user story implementation starts until this phase is complete.
+**CRITICAL**: No user story work starts until this phase completes.
 
-- [ ] T007 Define rebuilt suite scenario IDs and feature-area mapping in testing/e2e/tests/support/regression-suite-manifest.json
-- [ ] T008 Add canonical scenario classification assertions in testing/e2e/tests/support/e2e-suite-classification.spec.ts
-- [ ] T009 Add run-result schema contract test (pass/fail/blocked/not-applicable) in testing/e2e/tests/support/ci-artifact-contract.spec.ts
-- [ ] T010 Implement shared result classification helper updates in testing/e2e/scripts/helpers/result-handler.ps1
-- [ ] T011 Configure primary runner to emit normalized status JSON in testing/e2e/scripts/run-primary-pr-e2e.ps1
+- [ ] T008 Define canonical scenario IDs and feature-area map in testing/e2e/tests/support/regression-suite-manifest.json
+- [ ] T009 Add canonical taxonomy assertions in testing/e2e/tests/support/e2e-suite-classification.spec.ts
+- [ ] T010 Add result-schema contract test for pass/fail/blocked/not-applicable in testing/e2e/tests/support/ci-artifact-contract.spec.ts
+- [ ] T011 Add workflow contract test for required profile gating semantics in testing/e2e/tests/support/ci-workflow-contract.spec.ts
+- [ ] T012 Implement shared result classification helper updates in testing/e2e/scripts/helpers/result-handler.ps1
+- [ ] T013 Implement normalized status JSON emission in testing/e2e/scripts/run-primary-pr-e2e.ps1
+- [ ] T014 Add triage-summary schema helper in testing/e2e/scripts/helpers/triage-summary.ps1
+- [ ] T015 Add reliability-window computation helper (20-run, 19-pass threshold) in testing/e2e/scripts/helpers/reliability-window.ps1
+- [ ] T016 Add validated command-contract script for local+CI-equivalent execution in testing/e2e/scripts/validate-command-contract.ps1
+- [ ] T017 Run foundational support tests and capture baseline evidence in test-results/024-foundational-baseline.md
 
-**Checkpoint**: Suite metadata, status taxonomy, and shared runner output are stable for story execution.
+**Checkpoint**: Shared taxonomy, reporting, command contract, and reliability helpers are ready for story delivery.
 
 ---
 
 ## Phase 3: User Story 1 - Rebuild Core E2E Coverage (Priority: P1) 🎯 MVP
 
-**Goal**: Retire the legacy active suite and establish a deterministic rebuilt core suite baseline.
+**Goal**: Retire legacy active suite content and establish deterministic rebuilt baseline coverage.
 
-**Independent Test**: Run rebuilt baseline support tests and primary profile; confirm only rebuilt scenarios are active and deterministic.
+**Independent Test**: Run rebuilt baseline scenarios only and verify legacy scenarios are excluded while settings/navigation smoke checks pass deterministically.
 
 ### Tests for User Story 1 (REQUIRED) ⚠️
 
-- [ ] T012 [P] [US1] Add failing legacy-retirement guard test in testing/e2e/tests/support/e2e-suite-classification.spec.ts
-- [ ] T013 [P] [US1] Add failing manifest-integrity test for rebuilt baseline in testing/e2e/tests/support/regression-suite-integrity.spec.ts
-- [ ] T014 [US1] Execute failing baseline support tests and capture red-phase evidence in test-results/024-us1-red.md
-- [ ] T053 [US1] Execute pre-rebuild Playwright baseline gate snapshot and record results in test-results/024-transition-baseline-pre-rebuild.md
+- [ ] T018 [US1] Produce Playwright planner scenario plan for baseline rebuild in test-results/024-us1-planner.md
+- [ ] T019 [P] [US1] Add failing legacy-retirement guard test in testing/e2e/tests/support/e2e-suite-classification.spec.ts
+- [ ] T020 [P] [US1] Add failing manifest-integrity test for rebuilt baseline in testing/e2e/tests/support/regression-suite-integrity.spec.ts
+- [ ] T021 [US1] Execute failing US1 support tests and capture red-phase evidence in test-results/024-us1-red.md
+- [ ] T022 [US1] Execute pre-rebuild Playwright baseline snapshot and record evidence in test-results/024-transition-baseline-pre-rebuild.md
 
 ### Implementation for User Story 1
 
-- [ ] T015 [US1] Retire legacy active scenarios and register rebuilt baseline scenarios in testing/e2e/tests/support/regression-suite-manifest.json
-- [ ] T016 [US1] Update classification constants/assertions for rebuilt baseline in testing/e2e/tests/support/e2e-suite-classification.spec.ts
-- [ ] T017 [P] [US1] Implement rebuilt core settings smoke scenario in testing/e2e/tests/024-core-settings-smoke.spec.ts
-- [ ] T018 [P] [US1] Implement rebuilt core navigation smoke scenario in testing/e2e/tests/024-core-navigation-smoke.spec.ts
-- [ ] T019 [US1] Wire rebuilt baseline spec set into primary gate selection in testing/e2e/scripts/run-primary-pr-e2e.ps1
-- [ ] T020 [US1] Run rebuilt primary baseline and record green-phase evidence in test-results/024-us1-core-rebuild.md
-- [ ] T054 [US1] Produce handover comparison report between pre-rebuild and rebuilt suites in test-results/024-transition-handover-comparison.md
+- [ ] T023 [US1] Retire legacy active scenarios and register rebuilt baseline scenarios in testing/e2e/tests/support/regression-suite-manifest.json
+- [ ] T024 [US1] Update baseline classification constants/assertions in testing/e2e/tests/support/e2e-suite-classification.spec.ts
+- [ ] T025 [US1] Produce Playwright generator output for baseline scenarios in test-results/024-us1-generator.md
+- [ ] T026 [P] [US1] Implement rebuilt core settings smoke scenario in testing/e2e/tests/024-core-settings-smoke.spec.ts
+- [ ] T027 [P] [US1] Implement rebuilt core navigation smoke scenario in testing/e2e/tests/024-core-navigation-smoke.spec.ts
+- [ ] T028 [US1] Wire rebuilt baseline scenario selection in testing/e2e/scripts/run-primary-pr-e2e.ps1
+- [ ] T029 [US1] Execute rebuilt baseline run and capture green-phase evidence in test-results/024-us1-core-rebuild.md
+- [ ] T030 [US1] Produce pre-vs-post handover comparison report in test-results/024-transition-handover-comparison.md
 
-**Checkpoint**: Legacy active suite is retired and rebuilt core baseline runs deterministically.
+**Checkpoint**: Legacy suite is retired and rebuilt baseline is deterministic and enforceable.
 
 ---
 
 ## Phase 4: User Story 4 - Run E2E in GitHub Actions (Priority: P1)
 
-**Goal**: Ensure rebuilt suite runs in CI with preflight-first gating and artifact-driven triage.
+**Goal**: Enforce CI execution with preflight-first gates, canonical outcomes, and artifact-driven triage.
 
-**Independent Test**: Execute workflow validation and local CI-equivalent commands; verify required outputs and artifact paths exist.
+**Independent Test**: Run CI-equivalent sequence and verify workflow wiring, gate semantics, artifact outputs, and command-contract validation.
 
 ### Tests for User Story 4 (REQUIRED) ⚠️
 
-- [ ] T021 [P] [US4] Add failing CI artifact contract assertion for primary gate outputs in testing/e2e/tests/support/ci-artifact-contract.spec.ts
-- [ ] T022 [US4] Add failing workflow-schema validation test in testing/e2e/tests/support/ci-workflow-contract.spec.ts
-- [ ] T023 [US4] Execute failing CI contract tests and capture red-phase evidence in test-results/024-us4-red.md
+- [ ] T031 [US4] Add failing CI artifact contract assertions for required output set in testing/e2e/tests/support/ci-artifact-contract.spec.ts
+- [ ] T032 [US4] Add failing workflow contract assertions for fail/blocked/not-applicable gating in testing/e2e/tests/support/ci-workflow-contract.spec.ts
+- [ ] T033 [US4] Add failing triage-SLA contract assertion in testing/e2e/tests/support/ci-artifact-contract.spec.ts
+- [ ] T034 [US4] Execute failing US4 contract tests and capture red-phase evidence in test-results/024-us4-red.md
 
 ### Implementation for User Story 4
 
-- [ ] T024 [US4] Update primary CI e2e gate steps and artifact uploads in .github/workflows/android-ci.yml
-- [ ] T025 [US4] Align dual-emulator workflow preflight and execution wiring in .github/workflows/e2e-dual-emulator.yml
-- [ ] T026 [US4] Align matrix nightly workflow profile execution in .github/workflows/e2e-matrix-nightly.yml
-- [ ] T027 [US4] Implement CI status/report path contract updates in testing/e2e/scripts/run-primary-pr-e2e.ps1
-- [ ] T028 [US4] Document CI run and triage flow for rebuilt suite in testing/e2e/README.md
-- [ ] T029 [US4] Run CI-equivalent command sequence and capture green-phase evidence in test-results/024-us4-ci-validation.md
+- [ ] T035 [US4] Update primary CI e2e gate and artifact uploads in .github/workflows/android-ci.yml
+- [ ] T036 [US4] Align dual-emulator workflow preflight and execution in .github/workflows/e2e-dual-emulator.yml
+- [ ] T037 [US4] Align nightly matrix workflow profiles in .github/workflows/e2e-matrix-nightly.yml
+- [ ] T038 [US4] Implement required profile gate semantics and status reporting in testing/e2e/scripts/run-primary-pr-e2e.ps1
+- [ ] T039 [US4] Implement triage-summary artifact generation in testing/e2e/scripts/run-primary-pr-e2e.ps1
+- [ ] T040 [US4] Implement validated command-contract invocation path in testing/e2e/scripts/run-primary-pr-e2e.ps1
+- [ ] T041 [US4] Document CI execution and triage flow in testing/e2e/README.md
+- [ ] T042 [US4] Validate command-contract path and record evidence in test-results/024-command-contract-validation.md
+- [ ] T043 [US4] Run CI-equivalent sequence and capture green-phase evidence in test-results/024-us4-ci-validation.md
 
-**Checkpoint**: GitHub Actions e2e execution contract is satisfied for rebuilt suite.
+**Checkpoint**: CI execution contract is satisfied with canonical statuses, gate rules, and triage artifacts.
 
 ---
 
 ## Phase 5: User Story 2 - Validate Settings and Navigation Menus (Priority: P2)
 
-**Goal**: Provide robust rebuilt scenarios for settings and top-level navigation coverage.
+**Goal**: Deliver robust rebuilt settings and navigation menu scenarios with deterministic behavior.
 
-**Independent Test**: Run only US2 scenarios and verify destination routing, menu visibility, and persisted settings responses.
+**Independent Test**: Run US2-only scenarios and verify route transitions, menu visibility, and persisted setting outcomes.
 
 ### Tests for User Story 2 (REQUIRED) ⚠️
 
-- [ ] T030 [P] [US2] Add failing settings menu scenario spec in testing/e2e/tests/024-settings-menu-rebuild.spec.ts
-- [ ] T031 [P] [US2] Add failing navigation menu scenario spec in testing/e2e/tests/024-navigation-menu-rebuild.spec.ts
-- [ ] T032 [US2] Add failing US2 suite-membership assertions in testing/e2e/tests/support/e2e-suite-classification.spec.ts
-- [ ] T033 [US2] Execute failing US2 scenarios and capture red-phase evidence in test-results/024-us2-red.md
+- [ ] T044 [US2] Produce Playwright planner scenario plan for menu flows in test-results/024-us2-planner.md
+- [ ] T045 [P] [US2] Add failing settings menu scenario spec in testing/e2e/tests/024-settings-menu-rebuild.spec.ts
+- [ ] T046 [P] [US2] Add failing navigation menu scenario spec in testing/e2e/tests/024-navigation-menu-rebuild.spec.ts
+- [ ] T047 [US2] Add failing US2 suite-membership assertions in testing/e2e/tests/support/e2e-suite-classification.spec.ts
+- [ ] T048 [US2] Execute failing US2 scenarios and capture red-phase evidence in test-results/024-us2-red.md
 
 ### Implementation for User Story 2
 
-- [ ] T034 [US2] Implement deterministic settings menu assertions in testing/e2e/tests/024-settings-menu-rebuild.spec.ts
-- [ ] T035 [US2] Implement deterministic top-level navigation assertions in testing/e2e/tests/024-navigation-menu-rebuild.spec.ts
-- [ ] T036 [P] [US2] Extend reusable menu interaction helpers in testing/e2e/tests/support/android-ui-driver.ts
-- [ ] T037 [US2] Register US2 scenarios in primary gate suite selection in testing/e2e/scripts/run-primary-pr-e2e.ps1
-- [ ] T038 [US2] Update manifest/classification entries for US2 scenarios in testing/e2e/tests/support/regression-suite-manifest.json
-- [ ] T039 [US2] Run US2-only scenario set and record green-phase evidence in test-results/024-us2-settings-navigation.md
+- [ ] T049 [US2] Produce Playwright generator output for menu scenarios in test-results/024-us2-generator.md
+- [ ] T050 [US2] Implement deterministic settings menu assertions in testing/e2e/tests/024-settings-menu-rebuild.spec.ts
+- [ ] T051 [US2] Implement deterministic navigation menu assertions in testing/e2e/tests/024-navigation-menu-rebuild.spec.ts
+- [ ] T052 [P] [US2] Extend menu interaction and bounded wait helpers in testing/e2e/tests/support/android-ui-driver.ts
+- [ ] T053 [US2] Register US2 scenario set in testing/e2e/tests/support/regression-suite-manifest.json
+- [ ] T054 [US2] Wire US2 profile selection in testing/e2e/scripts/run-primary-pr-e2e.ps1
+- [ ] T055 [US2] Run US2-only validation and capture green-phase evidence in test-results/024-us2-settings-navigation.md
 
-**Checkpoint**: Settings and navigation rebuilt scenarios pass independently and are included in primary gate.
+**Checkpoint**: Settings and navigation coverage pass independently and are correctly selectable in suite profiles.
 
 ---
 
 ## Phase 6: User Story 3 - Validate Developer Mode Flows (Priority: P3)
 
-**Goal**: Add reliable developer mode e2e coverage with target-capability-aware not-applicable handling.
+**Goal**: Add reliable developer-mode coverage with capability-aware not-applicable handling.
 
-**Independent Test**: Execute developer mode scenarios on capable and non-capable targets and verify pass/not-applicable classification behavior.
+**Independent Test**: Run developer-mode scenarios on capable and non-capable targets and verify pass/not-applicable behavior with required profile gating preserved.
 
 ### Tests for User Story 3 (REQUIRED) ⚠️
 
-- [ ] T040 [P] [US3] Add failing developer mode scenario spec in testing/e2e/tests/024-developer-mode-rebuild.spec.ts
-- [ ] T041 [US3] Add failing not-applicable policy assertion in testing/e2e/tests/support/ci-artifact-contract.spec.ts
-- [ ] T042 [US3] Execute failing US3 scenarios and capture red-phase evidence in test-results/024-us3-red.md
+- [ ] T056 [US3] Produce Playwright planner scenario plan for developer-mode flows in test-results/024-us3-planner.md
+- [ ] T057 [P] [US3] Add failing developer-mode scenario spec in testing/e2e/tests/024-developer-mode-rebuild.spec.ts
+- [ ] T058 [US3] Add failing not-applicable policy assertion in testing/e2e/tests/support/ci-artifact-contract.spec.ts
+- [ ] T059 [US3] Execute failing US3 scenarios and capture red-phase evidence in test-results/024-us3-red.md
 
 ### Implementation for User Story 3
 
-- [ ] T043 [US3] Implement developer mode enable/disable flow assertions in testing/e2e/tests/024-developer-mode-rebuild.spec.ts
-- [ ] T044 [US3] Implement target-capability gating and not-applicable emission in testing/e2e/scripts/run-primary-pr-e2e.ps1
-- [ ] T045 [P] [US3] Implement matrix profile capability mapping for developer mode runs in testing/e2e/scripts/run-matrix-e2e.ps1
-- [ ] T046 [P] [US3] Register US3 developer mode scenario in testing/e2e/tests/support/regression-suite-manifest.json
-- [ ] T047 [US3] Run capable/non-capable developer mode validations and record green-phase evidence in test-results/024-us3-developer-mode.md
+- [ ] T060 [US3] Produce Playwright generator output for developer-mode scenarios in test-results/024-us3-generator.md
+- [ ] T061 [US3] Implement developer-mode enable/disable assertions in testing/e2e/tests/024-developer-mode-rebuild.spec.ts
+- [ ] T062 [US3] Implement target-capability gating and not-applicable emission in testing/e2e/scripts/run-primary-pr-e2e.ps1
+- [ ] T063 [P] [US3] Implement matrix capability mapping in testing/e2e/scripts/run-matrix-e2e.ps1
+- [ ] T064 [P] [US3] Register developer-mode scenario metadata in testing/e2e/tests/support/regression-suite-manifest.json
+- [ ] T065 [US3] Run capable/non-capable target validation and capture evidence in test-results/024-us3-developer-mode.md
+- [ ] T066 [US3] Produce Playwright healer remediation evidence from a controlled failure-recovery rehearsal in test-results/024-us3-healer.md
 
-**Checkpoint**: Developer mode coverage is enforceable on capable targets and correctly not-applicable elsewhere.
+**Checkpoint**: Developer mode scenarios enforce required behavior on capable targets and report policy-sanctioned not-applicable elsewhere.
 
 ---
 
 ## Phase 7: Polish & Cross-Cutting Concerns
 
-**Purpose**: Final consistency, documentation, and full-regression validation across stories.
+**Purpose**: Validate cross-story quality bars and finalize evidence/reporting.
 
-- [ ] T048 [P] Update quickstart consistency notes for rebuilt suite in specs/024-rebuild-android-e2e/quickstart.md
-- [ ] T049 [P] Update feature documentation index entry in DOCUMENTATION-INDEX.md
-- [ ] T050 Run full rebuilt primary regression and summarize in test-results/024-final-primary-regression.md
-- [ ] T051 Run dual-emulator gate regression and summarize in test-results/024-final-dual-emulator-regression.md
-- [ ] T052 Produce final pass/fail/blocked/not-applicable summary report in test-results/024-e2e-suite-rebuild-summary.md
+- [ ] T067 [P] Update quickstart command-contract and verification notes in specs/024-rebuild-android-e2e/quickstart.md
+- [ ] T068 [P] Update feature documentation index reference in DOCUMENTATION-INDEX.md
+- [ ] T069 Implement reliability-window report generation in testing/e2e/scripts/helpers/reliability-window.ps1
+- [ ] T070 Run 20-run reliability window evaluation and publish report in test-results/024-reliability-window-report.md
+- [ ] T071 Execute failed-run triage drill and publish 15-minute SLA evidence in test-results/024-triage-sla-validation.md
+- [ ] T072 Run full rebuilt primary and dual-emulator regressions and summarize in test-results/024-final-regression-summary.md
+- [ ] T073 Produce final suite summary (pass/fail/blocked/not-applicable, reliability, triage SLA, agent evidence) in test-results/024-e2e-suite-rebuild-summary.md
 
 ---
 
@@ -165,25 +186,24 @@
 - Phase 1 (Setup): Depends on Phase 0.
 - Phase 2 (Foundational): Depends on Phase 1 and blocks all user story work.
 - Phase 3 (US1): Depends on Phase 2.
-- Phase 4 (US4): Depends on Phase 2 and can proceed in parallel with later user stories once shared runner updates are coordinated.
-- Phase 5 (US2): Depends on Phase 2; should merge after US1 baseline files are stable.
-- Phase 6 (US3): Depends on Phase 2 and US4 CI status taxonomy wiring.
-- Phase 7 (Polish): Depends on completion of selected user stories.
+- Phase 4 (US4): Depends on Phase 2 and can proceed in parallel with later stories after shared script conflicts are coordinated.
+- Phase 5 (US2): Depends on Phase 2 and should merge after US1 baseline stabilization.
+- Phase 6 (US3): Depends on Phase 2 and US4 gate/status contracts.
+- Phase 7 (Polish): Depends on completion of selected user stories and CI contract wiring.
 
 ### User Story Dependencies
 
-- **US1 (P1)**: Starts immediately after foundational completion.
-- **US1 (P1)**: Includes transition evidence gate tasks T053 and T054 to preserve continuity proof across suite handover.
-- **US4 (P1)**: Starts after foundational completion; required for CI acceptance.
-- **US2 (P2)**: Depends on US1 rebuilt baseline to avoid legacy suite reintroduction.
-- **US3 (P3)**: Depends on US4 status taxonomy implementation for not-applicable reporting.
+- US1 (P1): Starts immediately after foundational completion.
+- US4 (P1): Starts after foundational completion and is required for CI acceptance.
+- US2 (P2): Depends on baseline selection stability from US1.
+- US3 (P3): Depends on taxonomy/gating contract implementation from US4.
 
 ### Within Each User Story
 
-- Failing tests first (Red).
-- Scenario/script implementation second (Green).
-- Runner/manifest integration next.
-- Independent validation evidence task last.
+- Write failing tests first (red).
+- Implement scenarios/scripts second (green).
+- Integrate manifest/runner contracts next.
+- Capture independent validation evidence last.
 
 ---
 
@@ -192,34 +212,34 @@
 ### US1 Parallel Example
 
 ```bash
-# Parallelize independent core spec creation
-T017 [US1] testing/e2e/tests/024-core-settings-smoke.spec.ts
-T018 [US1] testing/e2e/tests/024-core-navigation-smoke.spec.ts
+# Parallelize independent baseline scenario implementations
+T026 [US1] testing/e2e/tests/024-core-settings-smoke.spec.ts
+T027 [US1] testing/e2e/tests/024-core-navigation-smoke.spec.ts
 ```
 
 ### US4 Parallel Example
 
 ```bash
-# Parallelize workflow updates in distinct files
-T024 [US4] .github/workflows/android-ci.yml
-T025 [US4] .github/workflows/e2e-dual-emulator.yml
-T026 [US4] .github/workflows/e2e-matrix-nightly.yml
+# Parallelize workflow updates in independent files
+T035 [US4] .github/workflows/android-ci.yml
+T036 [US4] .github/workflows/e2e-dual-emulator.yml
+T037 [US4] .github/workflows/e2e-matrix-nightly.yml
 ```
 
 ### US2 Parallel Example
 
 ```bash
-# Parallelize independent menu story test files
-T030 [US2] testing/e2e/tests/024-settings-menu-rebuild.spec.ts
-T031 [US2] testing/e2e/tests/024-navigation-menu-rebuild.spec.ts
+# Parallelize independent menu scenario files
+T045 [US2] testing/e2e/tests/024-settings-menu-rebuild.spec.ts
+T046 [US2] testing/e2e/tests/024-navigation-menu-rebuild.spec.ts
 ```
 
 ### US3 Parallel Example
 
 ```bash
-# Parallelize manifest and matrix policy work
-T045 [US3] testing/e2e/scripts/run-matrix-e2e.ps1
-T046 [US3] testing/e2e/tests/support/regression-suite-manifest.json
+# Parallelize matrix capability mapping and manifest metadata updates
+T063 [US3] testing/e2e/scripts/run-matrix-e2e.ps1
+T064 [US3] testing/e2e/tests/support/regression-suite-manifest.json
 ```
 
 ---
@@ -228,20 +248,20 @@ T046 [US3] testing/e2e/tests/support/regression-suite-manifest.json
 
 ### MVP First (US1 + US4)
 
-1. Complete Phase 0 to Phase 2.
-2. Deliver US1 rebuilt baseline.
-3. Deliver US4 CI execution contract.
-4. Validate rebuilt suite works locally and in CI-equivalent flow.
+1. Complete Phase 0 through Phase 2.
+2. Deliver US1 rebuilt baseline and transition evidence.
+3. Deliver US4 CI gate and artifact contracts.
+4. Validate command-contract, CI-equivalent run, and baseline determinism.
 
 ### Incremental Delivery
 
-1. Add US2 settings/navigation scenarios and validate independently.
-2. Add US3 developer mode with capability-aware policy handling.
-3. Run final cross-story regressions and produce summary report.
+1. Add US2 settings/navigation coverage and validate independently.
+2. Add US3 developer-mode coverage with capability-aware not-applicable behavior.
+3. Complete reliability, triage SLA, and final cross-story regression reporting.
 
 ### Team Parallel Strategy
 
-1. One stream owns runner/workflow contracts (US4).
-2. One stream owns core/menu scenario rebuild (US1+US2).
-3. One stream owns developer mode gating semantics (US3).
-4. Merge after manifest/classification contract checks pass.
+1. Stream A owns manifest/classification and baseline scenarios (US1 + US2).
+2. Stream B owns workflows, gating contracts, and triage/reliability plumbing (US4).
+3. Stream C owns developer-mode capability mapping and policy behavior (US3).
+4. Coordinate merges around shared files: testing/e2e/scripts/run-primary-pr-e2e.ps1 and testing/e2e/tests/support/regression-suite-manifest.json.

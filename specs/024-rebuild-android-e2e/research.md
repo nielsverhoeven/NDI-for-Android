@@ -26,7 +26,7 @@
 
 ## Decision 4: Keep preflight-first gating with explicit blocker taxonomy
 
-- Decision: Run preflight checks before e2e execution using repository scripts and classify outcomes as pass/fail/blocked with reproducible evidence.
+- Decision: Run preflight checks before e2e execution using repository scripts and classify outcomes as pass/fail/blocked/not-applicable with reproducible evidence and explicit gating rules.
 - Rationale: Constitution v2.2.0 requires execution-ready environments and explicit blocked-gate handling.
 - Alternatives considered:
   - Execute tests directly and infer setup failures: rejected because root-cause triage becomes ambiguous.
@@ -46,3 +46,27 @@
 - Rationale: Feature goal is test suite rebuild and reliability, not product behavior changes.
 - Alternatives considered:
   - Add app-side test-only behavior toggles globally: rejected unless a specific scenario cannot be made deterministic otherwise.
+
+## Decision 7: Enforce rolling reliability evaluation on unchanged-code required profiles
+
+- Decision: Compute reliability from the latest 20 unchanged-code CI runs of required PR-gate profiles and require at least 19/20 runs without nondeterministic failures.
+- Rationale: This directly operationalizes SC-003 and prevents anecdotal reliability claims.
+- Alternatives considered:
+  - Use a shorter 5-run window: rejected as too noisy for stability conclusions.
+  - Measure across all profile types including optional/nightly only: rejected because required gate quality is the merge-critical signal.
+
+## Decision 8: Standardize triage evidence and 15-minute classification SLA
+
+- Decision: Require a triage summary artifact for each failed CI run containing failure timestamp, scenario ID, root-cause class (product defect, environment blocker, test defect), and first maintainer classification timestamp.
+- Rationale: This provides measurable evidence for SC-004 and speeds incident response.
+- Alternatives considered:
+  - Rely on ad-hoc issue comments: rejected because timing and structure are not enforceable.
+  - Capture only logs without summary metadata: rejected because root-cause attribution becomes inconsistent.
+
+## Decision 9: Require Playwright planner/generator/healer agents in rebuild workflow
+
+- Decision: Use Playwright planner for scenario planning, Playwright generator for test/spec authoring, and Playwright healer for CI/local failure remediation; archive resulting evidence in test-results artifacts.
+- Rationale: The clarified scope explicitly mandates agent-assisted workflow consistency and traceable outputs.
+- Alternatives considered:
+  - Manual-only authoring/debugging without agents: rejected because it violates FR-021.
+  - Use only one Playwright agent for all phases: rejected because planning, generation, and healing have distinct responsibilities.

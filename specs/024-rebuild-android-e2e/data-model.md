@@ -68,21 +68,59 @@
   - runId (string, required, unique)
   - suiteId (string, required)
   - targetId (string, required)
+  - isRequiredProfile (boolean, required)
   - outcome (enum: pass | fail | blocked | not-applicable, required)
   - failingScenarioIds (string[], optional)
+  - outcomeReasonCode (string, optional)
   - artifactPaths (string[], required)
-  - classification (enum: product-defect | environment-blocker | not-applicable, required)
+  - classification (enum: product-defect | environment-blocker | test-defect | not-applicable, required)
+  - failedAtUtc (datetime, optional)
+  - firstClassifiedAtUtc (datetime, optional)
   - summaryPath (string, required)
 - Validation:
   - blocked outcome requires classification=environment-blocker and unblock guidance.
   - not-applicable outcome requires designated target rule (developer mode unavailability).
   - fail outcome requires at least one failingScenarioId.
+  - required-profile gating fails on fail or blocked and ignores not-applicable when policy-sanctioned.
+  - failed runs require failedAtUtc and firstClassifiedAtUtc values to validate triage SLA.
+
+## Entity: ReliabilityWindow
+
+- Purpose: Tracks rolling unchanged-code reliability for required CI profiles.
+- Fields:
+  - windowId (string, required, unique)
+  - profileId (string, required)
+  - sourceBranch (string, required, default main)
+  - sampleSize (integer, required, fixed 20)
+  - nondeterministicFailureFreeRuns (integer, required, range 0..20)
+  - evaluatedAtUtc (datetime, required)
+  - passThreshold (decimal, required, default 0.95)
+  - passed (boolean, required)
+- Validation:
+  - sampleSize must remain 20 for SC-003 compliance.
+  - passed=true requires nondeterministicFailureFreeRuns >= 19.
+
+## Entity: AgentWorkflowEvidence
+
+- Purpose: Captures required Playwright planner/generator/healer participation per rebuild stream.
+- Fields:
+  - evidenceId (string, required, unique)
+  - runId (string, required)
+  - agentType (enum: planner | generator | healer, required)
+  - taskRef (string, required)
+  - outputArtifactPath (string, required)
+  - recordedAtUtc (datetime, required)
+- Validation:
+  - All three agent types must be present across feature execution evidence.
+  - outputArtifactPath must resolve to a stored artifact in test-results or testing/e2e/artifacts.
 
 ## Relationships
 
 - E2eSuite 1..* -> E2eScenario
 - ExecutionTarget 1..* -> E2eRunResult
 - E2eRunResult 1..* -> PreflightCheckResult
+- E2eRunResult 0..1 -> ReliabilityWindow
+- E2eRunResult 0..* -> AgentWorkflowEvidence
 
 ## State Transitions
 

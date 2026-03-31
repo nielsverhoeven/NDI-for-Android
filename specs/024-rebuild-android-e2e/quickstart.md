@@ -33,6 +33,12 @@ Primary gate profile:
 npm --prefix testing/e2e run test:pr:primary
 ```
 
+Validated command-contract path (preflight + primary gate):
+
+```powershell
+pwsh ./scripts/verify-android-prereqs.ps1 -CiMode -AllowMissingNdiSdk; npm --prefix testing/e2e run test:pr:primary
+```
+
 Dual-emulator preflight only:
 
 ```powershell
@@ -58,7 +64,19 @@ Validate workflow wiring by confirming:
 - On developer-mode-enabled targets: developer mode scenarios must run and gate.
 - On non-capable targets: developer mode scenarios must report not-applicable, without failing settings/navigation core gates.
 
-## 7. Expected Outputs
+## 7. Playwright Agent Workflow (Required)
+
+- Use Playwright planner agent to produce scenario planning output for each user story.
+- Use Playwright generator agent to create/update `.spec.ts` scenario files from approved plans.
+- Use Playwright healer agent when runs fail to generate remediation actions and updated evidence.
+- Save agent outputs in `test-results/024-*.md` or `testing/e2e/artifacts/` for auditability.
+
+## 8. Reliability and Triage Verification
+
+- Confirm reliability artifact reports latest 20 unchanged-code required-profile runs and at least 19 nondeterministic-failure-free outcomes.
+- For failed runs, confirm triage artifact includes failure timestamp and first classification timestamp within 15 minutes.
+
+## 9. Expected Outputs
 
 - JSON result files and markdown summaries under [testing/e2e/artifacts](../../testing/e2e/artifacts).
 - CI artifact uploads containing scenario-level evidence and aggregate summaries.
