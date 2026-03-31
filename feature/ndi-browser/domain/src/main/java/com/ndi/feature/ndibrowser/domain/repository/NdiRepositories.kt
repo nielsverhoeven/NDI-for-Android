@@ -440,4 +440,44 @@ interface DiscoveryServerRepository {
     fun observeServerCheckStatus(serverId: String): Flow<DiscoveryServerCheckStatus?>
 }
 
+// ---- Spec 023: Per-Source Frame Retention ----
+
+/**
+ * Manages session-scoped retention of thumbnail frames (one per NDI source).
+ * Retained frames are in-memory only (no disk persistence); discarded on app exit.
+ * LRU eviction triggers when max concurrent retained sources (10) is exceeded.
+ *
+ * Frame capture happens when user exits viewer for a source (last frame at exit time).
+ * Frames are scaled to thumbnail resolution (~320×height) and stored in session cache directory.
+ */
+interface PerSourceFrameRepository {
+    /**
+     * Captures and stores the last frame for a given source.
+     * If frame is null, no-op (source viewed but no frame available).
+     * If sourceId is blank, no-op.
+     * Overwrites existing frame for the same source; evicts LRU entry if cap exceeded.
+     */
+    suspend fun saveFrameForSource(sourceId: String, frame: ViewerVideoFrame?)
+
+    /**
+     * Returns the absolute file path to the thumbnail PNG for a source, or null if not retained.
+     */
+    suspend fun getFramePathForSource(sourceId: String): String?
+
+    /**
+     * Observes the current per-source frame map as sourceId → thumbnailFilePath.
+     * Emits empty map initially; updates whenever frames are saved or evicted.
+     */
+    fun observeFrameMap(): kotlinx.coroutines.flow.StateFlow<Map<String, String>>
+
+    /**
+     * Clears all retained frames and emits empty map.
+     * Useful for app data clear or session cleanup.
+     */
+    suspend fun clearAll()
+
+    companion object {
+        const val MAX_RETAINED_SOURCES = 10
+    }
+}
 

@@ -12,6 +12,7 @@ import com.ndi.feature.ndibrowser.domain.repository.PlaybackOptimizationState
 import com.ndi.feature.ndibrowser.domain.repository.QualityProfileApplyResult
 import com.ndi.feature.ndibrowser.domain.repository.QualityProfile
 import com.ndi.feature.ndibrowser.domain.repository.ViewerContinuityRepository
+import com.ndi.feature.ndibrowser.domain.repository.PerSourceFrameRepository
 import com.ndi.sdkbridge.NdiViewerBridge
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -32,6 +33,7 @@ class NdiViewerRepositoryImpl(
     private val viewerSessionDao: ViewerSessionDao,
     private val reconnectCoordinator: ViewerReconnectCoordinator = ViewerReconnectCoordinator(),
     private val viewerContinuityRepository: ViewerContinuityRepository? = null,
+    private val perSourceFrameRepository: PerSourceFrameRepository? = null,
 ) : NdiViewerRepository {
 
     private val operationMutex = Mutex()
@@ -136,6 +138,8 @@ class NdiViewerRepositoryImpl(
 
             if (activeSourceId.isNotBlank()) {
                 persistViewerContinuity(sourceId = activeSourceId, firstFrame = latestFrameBeforeStop)
+                // Save frame for per-source retention after continuity is persisted
+                perSourceFrameRepository?.saveFrameForSource(activeSourceId, latestFrameBeforeStop)
             }
         }
     }

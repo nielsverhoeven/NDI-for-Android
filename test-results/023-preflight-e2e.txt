@@ -1,0 +1,31 @@
+{
+  "operation": "verify-e2e-dual-emulator-prereqs",
+  "status": "SUCCESS",
+  "timestamp": "2026-03-30T20:51:09.6549225Z",
+  "data": {
+    "checks": [
+      {
+        "name": "adb",
+        "ok": true
+      },
+      {
+        "name": "emulator",
+        "ok": true
+      },
+      {
+        "name": "sdkmanager",
+        "ok": true
+      },
+      {
+        "name": "ndi-sdk-artifact",
+        "ok": true,
+        "path": "C:\\githubrepos\\NDI-for-Android\\ndi\\sdk-bridge\\build\\outputs\\aar\\sdk-bridge-release.aar",
+        "type": "aar",
+        "warning": "library-artifact-only"
+      }
+    ],
+    "apkPath": "C:\\githubrepos\\NDI-for-Android\\ndi\\sdk-bridge\\build\\outputs\\aar\\sdk-bridge-release.aar"
+  },
+  "errors": [],
+  "warnings": []
+}

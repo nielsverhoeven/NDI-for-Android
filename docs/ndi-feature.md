@@ -273,3 +273,29 @@ Validation snapshot for spec 019:
 - Unit test and release-hardening gates passed.
 - Playwright validation commands executed but classified as `BLOCKED-ENV` due emulator UIAutomator dump instability.
 - See `test-results/019-settings-three-pane-validation.md` for command logs and unblock steps.
+
+## 9. Per-Source Last Frame Retention (Spec 023)
+
+Implemented behavior summary:
+
+- Source-list previews now retain the last captured frame independently per viewed source rather than sharing a single global preview slot.
+- Retention is session-scoped only: thumbnails are written under `cacheDir/ndi-session-previews`, mirrored in-memory, and discarded when the app process ends.
+- The retention store is capped at 10 sources and evicts the least-recently-viewed thumbnail when a new source exceeds that cap.
+- Thumbnail capture happens when the viewer stops for a source, after the existing single-source continuity preview has been persisted.
+- The existing relaunch continuity path remains unchanged and is still owned by `ViewerContinuityRepository`.
+
+Primary implementation files:
+
+- `feature/ndi-browser/domain/src/main/java/com/ndi/feature/ndibrowser/domain/repository/NdiRepositories.kt`
+- `feature/ndi-browser/data/src/main/java/com/ndi/feature/ndibrowser/data/repository/PerSourceFrameRepositoryImpl.kt`
+- `feature/ndi-browser/data/src/main/java/com/ndi/feature/ndibrowser/data/repository/NdiViewerRepositoryImpl.kt`
+- `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/source_list/SourceListViewModel.kt`
+- `app/src/main/java/com/ndi/app/di/AppGraph.kt`
+
+Validation snapshot for spec 023:
+
+- `:app:assembleDebug` passed and exported a debug APK.
+- `:feature:ndi-browser:data:testDebugUnitTest`, `:feature:ndi-browser:presentation:testDebugUnitTest`, and the continuity regression tests passed.
+- `:app:verifyReleaseHardening` passed.
+- Release bundle compilation remains blocked by a pre-existing DataBinding release-resource issue unrelated to spec 023.
+- Playwright coverage for spec 023 was intentionally deferred to the next feature specification cycle.

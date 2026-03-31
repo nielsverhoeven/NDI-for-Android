@@ -1,0 +1,24 @@
+
+> Configure project :app
+WARNING: The option setting 'android.builtInKotlin=false' is deprecated.
+The current default is 'true'.
+It will be removed in version 10.0 of the Android Gradle plugin.
+WARNING: The option setting 'android.newDsl=false' is deprecated.
+The current default is 'true'.
+It will be removed in version 10.0 of the Android Gradle plugin.
+  Γ£ô Version incremented: versionCode 235 ΓåÆ 236, versionName 0.9.12 ΓåÆ 0.10.0 (feature bump: 022 -> 023)
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Problem configuring task :feature:ndi-browser:data:test from command line.
+> Unknown command-line option '--tests'.
+
+* Try:
+> Run gradlew help --task :feature:ndi-browser:data:test to get task usage details.
+> Run with --stacktrace option to get the stack trace.
+> Run with --info or --debug option to get more log output.
+> Run with --scan to generate a Build Scan (powered by Develocity).
+> Get more help at https://help.gradle.org.
+
+BUILD FAILED in 3s

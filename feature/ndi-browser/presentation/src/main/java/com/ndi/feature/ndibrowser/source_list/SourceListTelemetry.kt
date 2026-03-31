@@ -7,6 +7,7 @@ import com.ndi.core.model.TelemetryEvent
 import com.ndi.feature.ndibrowser.domain.repository.NdiDiscoveryRepository
 import com.ndi.feature.ndibrowser.domain.repository.UserSelectionRepository
 import com.ndi.feature.ndibrowser.domain.repository.ViewerContinuityRepository
+import com.ndi.feature.ndibrowser.domain.repository.PerSourceFrameRepository
 import kotlinx.coroutines.flow.Flow
 
 fun interface SourceListTelemetryEmitter {
@@ -21,6 +22,7 @@ object SourceListDependencies {
     var fallbackWarningProvider: (() -> Flow<String?>)? = null
     var overlayStateProvider: (() -> Flow<com.ndi.feature.ndibrowser.settings.OverlayDisplayState?>)? = null
     var viewerContinuityRepositoryProvider: (() -> ViewerContinuityRepository)? = null
+    var perSourceFrameRepositoryProvider: (() -> PerSourceFrameRepository)? = null
     var telemetryEmitter: SourceListTelemetryEmitter = SourceListTelemetryEmitter {}
 
     fun requireDiscoveryRepository(): NdiDiscoveryRepository {
@@ -44,6 +46,7 @@ object SourceListDependencies {
     fun overlayStateFlowOrNull(): Flow<com.ndi.feature.ndibrowser.settings.OverlayDisplayState?>? = overlayStateProvider?.invoke()
 
     fun viewerContinuityRepositoryOrNull(): ViewerContinuityRepository? = viewerContinuityRepositoryProvider?.invoke()
+    fun perSourceFrameRepositoryOrNull(): PerSourceFrameRepository? = perSourceFrameRepositoryProvider?.invoke()
 }
 
 object SourceListTelemetry {
