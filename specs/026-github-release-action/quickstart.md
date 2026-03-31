@@ -71,6 +71,18 @@ After the workflow completes:
 - The `verifyReleaseHardening` gate runs before the build. If it fails, check that `isMinifyEnabled = true` and `isShrinkResources = true` are still set in `app/build.gradle.kts`.
 - ProGuard rule errors appear in the Gradle build log as R8 diagnostics.
 
+### Release failed because signing secrets are missing
+
+- Production mode requires all signing secrets: `RELEASE_KEYSTORE_BASE64`, `RELEASE_KEYSTORE_PASSWORD`, `RELEASE_KEY_ALIAS`, `RELEASE_KEY_PASSWORD`.
+- Check **Settings** → **Secrets and variables** → **Actions** and verify all four are configured.
+- If `RELEASE_KEYSTORE_BASE64` was copied incorrectly, regenerate it and update the secret.
+
+### Release failed: APK is debug-signed
+
+- This means production mode ran without valid release-signing material.
+- Ensure secrets are present and valid, then rerun the workflow.
+- The workflow stores apksigner output in `release-diagnostics/apksigner-output.txt` artifact for confirmation.
+
 ### Branch protection blocks the version commit-back
 
 - The release is still published; only the version commit-back step is affected.
@@ -93,4 +105,24 @@ If this is not configured, the release will still succeed but the version commit
 
 ## Required Repository Permissions
 
-The workflow uses only the built-in `GITHUB_TOKEN`. No additional secrets are required for the initial scope (debug-signed APK). Ensure the token has **read and write** permissions under **Settings** → **Actions** → **General** → **Workflow permissions**.
+Ensure `GITHUB_TOKEN` has **read and write** permissions under **Settings** → **Actions** → **General** → **Workflow permissions**.
+
+## Required Signing Secrets (for production releases)
+
+Production releases now require a release keystore. Configure these repository secrets:
+
+- `RELEASE_KEYSTORE_BASE64`: Base64-encoded `.jks` or `.keystore` file content
+- `RELEASE_KEYSTORE_PASSWORD`: Keystore store password
+- `RELEASE_KEY_ALIAS`: Key alias name
+- `RELEASE_KEY_PASSWORD`: Key password
+
+Behavior:
+
+- If `prerelease` is `false` (or release mode resolves to production), missing secrets fail the workflow before build.
+- If `prerelease` is `true`, missing secrets allow the run but the APK is treated as non-production.
+
+Example (PowerShell) to generate `RELEASE_KEYSTORE_BASE64`:
+
+```powershell
+[Convert]::ToBase64String([IO.File]::ReadAllBytes("C:\path\to\release-keystore.jks"))
+```

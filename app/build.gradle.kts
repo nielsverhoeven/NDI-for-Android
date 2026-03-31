@@ -97,8 +97,36 @@ fun incrementAndWriteVersion(): Pair<Int, String> {
 // Increment version at the START of each build
 val (appVersionCode, appVersionName) = incrementAndWriteVersion()
 
+val releaseKeystoreFile = System.getenv("RELEASE_KEYSTORE_FILE")
+val releaseKeystorePassword = System.getenv("RELEASE_KEYSTORE_PASSWORD")
+val releaseKeyAlias = System.getenv("RELEASE_KEY_ALIAS")
+val releaseKeyPassword = System.getenv("RELEASE_KEY_PASSWORD")
+
+val hasReleaseSigningConfig =
+    !releaseKeystoreFile.isNullOrBlank() &&
+        !releaseKeystorePassword.isNullOrBlank() &&
+        !releaseKeyAlias.isNullOrBlank() &&
+        !releaseKeyPassword.isNullOrBlank() &&
+        File(releaseKeystoreFile).exists()
+
+if (hasReleaseSigningConfig) {
+    println("  ✓ Release signing configuration detected.")
+} else {
+    println("  ! Release signing configuration not detected. Release builds will use fallback signing.")
+}
+
 android {
     namespace = "com.ndi.app"
+    signingConfigs {
+        if (hasReleaseSigningConfig) {
+            create("release") {
+                storeFile = File(releaseKeystoreFile!!)
+                storePassword = releaseKeystorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
+    }
     compileSdk = 34
 
     defaultConfig {
@@ -122,6 +150,9 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
+            if (hasReleaseSigningConfig) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
 

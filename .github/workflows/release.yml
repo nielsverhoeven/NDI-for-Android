@@ -21,6 +21,11 @@ jobs:
     runs-on: windows-latest
     permissions:
       contents: write
+    env:
+      RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+      RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+      RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+      RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
     if: >-
       ${{
         github.event_name == 'workflow_dispatch' ||
@@ -54,6 +59,88 @@ jobs:
         shell: pwsh
         run: |
           Write-Host "::error::Prerequisite verification failed. Run: pwsh ./scripts/verify-android-prereqs.ps1 -CiMode -AllowMissingNdiSdk"
+
+      - name: Determine release mode
+        id: release_mode
+        shell: pwsh
+        run: |
+          $sourceBranch = '${{ github.ref }}'
+          if ('${{ github.event_name }}' -eq 'workflow_run') {
+            $sourceBranch = 'refs/heads/${{ github.event.workflow_run.head_branch }}'
+          }
+
+          $isPre = $false
+          if ($sourceBranch -ne 'refs/heads/main') {
+            $isPre = $true
+          }
+
+          if ('${{ github.event_name }}' -eq 'workflow_dispatch' -and '${{ github.event.inputs.prerelease }}' -eq 'true') {
+            $isPre = $true
+          }
+
+          if ($isPre) {
+            'IS_PRERELEASE=true' | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            'is_prerelease=true' | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          }
+          else {
+            'IS_PRERELEASE=false' | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            'is_prerelease=false' | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          }
+
+          "SOURCE_BRANCH=$sourceBranch" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "source_branch=$sourceBranch" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      - name: Prepare release signing
+        id: prepare_signing
+        shell: pwsh
+        run: |
+          $requiredSecrets = @(
+            'RELEASE_KEYSTORE_BASE64',
+            'RELEASE_KEYSTORE_PASSWORD',
+            'RELEASE_KEY_ALIAS',
+            'RELEASE_KEY_PASSWORD'
+          )
+
+          $missing = @()
+          foreach ($secretName in $requiredSecrets) {
+            if ([string]::IsNullOrWhiteSpace((Get-Item -Path "Env:$secretName" -ErrorAction SilentlyContinue).Value)) {
+              $missing += $secretName
+            }
+          }
+
+          if ($missing.Count -gt 0 -and $env:IS_PRERELEASE -eq 'true') {
+            Write-Host "::warning::Release signing secrets are not fully configured ($($missing -join ', ')). Proceeding with non-production signing for pre-release."
+            'SIGNING_MODE=debug' | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            'signing_mode=debug' | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+            exit 0
+          }
+
+          if ($missing.Count -gt 0) {
+            Write-Error "Missing required release signing secrets for production release: $($missing -join ', ')."
+            exit 1
+          }
+
+          $keystorePath = Join-Path $env:RUNNER_TEMP 'release-keystore.jks'
+          try {
+            [System.IO.File]::WriteAllBytes($keystorePath, [System.Convert]::FromBase64String($env:RELEASE_KEYSTORE_BASE64))
+          }
+          catch {
+            Write-Error 'RELEASE_KEYSTORE_BASE64 is not valid base64 or could not be decoded.'
+            exit 1
+          }
+
+          "RELEASE_KEYSTORE_FILE=$keystorePath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "RELEASE_KEYSTORE_PASSWORD=$env:RELEASE_KEYSTORE_PASSWORD" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "RELEASE_KEY_ALIAS=$env:RELEASE_KEY_ALIAS" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "RELEASE_KEY_PASSWORD=$env:RELEASE_KEY_PASSWORD" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          'SIGNING_MODE=release' | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          'signing_mode=release' | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      - name: Annotate signing preparation failure
+        if: ${{ failure() && steps.prepare_signing.outcome == 'failure' }}
+        shell: pwsh
+        run: |
+          Write-Host "::error::Production release requires signing secrets: RELEASE_KEYSTORE_BASE64, RELEASE_KEYSTORE_PASSWORD, RELEASE_KEY_ALIAS, RELEASE_KEY_PASSWORD"
 
       - name: Verify release hardening
         id: verify_hardening
@@ -101,29 +188,6 @@ jobs:
           "tag_name=$tagName" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
           "apk_path=$apkPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
-      - name: Determine pre-release mode
-        id: prerelease_mode
-        shell: pwsh
-        run: |
-          $isPre = $false
-
-          if ('${{ github.ref }}' -ne 'refs/heads/main') {
-            $isPre = $true
-          }
-
-          if ('${{ github.event_name }}' -eq 'workflow_dispatch' -and '${{ github.event.inputs.prerelease }}' -eq 'true') {
-            $isPre = $true
-          }
-
-          if ($isPre) {
-            'IS_PRERELEASE=true' | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-            'is_prerelease=true' | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-          }
-          else {
-            'IS_PRERELEASE=false' | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-            'is_prerelease=false' | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-          }
-
       - name: Verify release APK artifact
         id: verify_apk
         shell: pwsh
@@ -144,11 +208,47 @@ jobs:
             exit 1
           }
 
+      - name: Verify production signing certificate
+        id: verify_signing
+        if: ${{ steps.release_mode.outputs.is_prerelease != 'true' }}
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path release-diagnostics -Force | Out-Null
+
+          $buildToolsDir = Join-Path $env:ANDROID_SDK_ROOT 'build-tools'
+          if (-not (Test-Path $buildToolsDir)) {
+            Write-Error "Android build-tools directory not found at $buildToolsDir"
+            exit 1
+          }
+
+          $apksigner = Get-ChildItem -Path $buildToolsDir -Recurse -Filter 'apksigner.bat' |
+            Sort-Object FullName -Descending |
+            Select-Object -First 1
+
+          if (-not $apksigner) {
+            Write-Error 'apksigner.bat not found in Android SDK build-tools.'
+            exit 1
+          }
+
+          $apksignerOutput = & $apksigner.FullName verify --print-certs $env:APK_PATH 2>&1 | Out-String
+          $apksignerOutput | Set-Content -Path release-diagnostics/apksigner-output.txt
+
+          if ($apksignerOutput -match 'Android Debug') {
+            Write-Error 'Production release APK is debug-signed. Configure release signing secrets.'
+            exit 1
+          }
+
       - name: Annotate APK verification failure
         if: ${{ failure() && steps.verify_apk.outcome == 'failure' }}
         shell: pwsh
         run: |
           Write-Host "::error::APK verification failed. Expected non-empty file at $env:APK_PATH after ./gradlew.bat assembleRelease"
+
+      - name: Annotate signing verification failure
+        if: ${{ failure() && steps.verify_signing.outcome == 'failure' }}
+        shell: pwsh
+        run: |
+          Write-Host "::error::Production signing verification failed. Ensure the release APK is signed with the production key, not Android Debug key."
 
       - name: Publish GitHub release
         id: publish_release
@@ -159,7 +259,7 @@ jobs:
           files: ${{ steps.extract_version.outputs.apk_path }}
           fail_on_unmatched_files: true
           generate_release_notes: true
-          prerelease: ${{ steps.prerelease_mode.outputs.is_prerelease == 'true' }}
+          prerelease: ${{ steps.release_mode.outputs.is_prerelease == 'true' }}
 
       - name: Annotate publish failure
         if: ${{ failure() && steps.publish_release.outcome == 'failure' }}
@@ -169,7 +269,7 @@ jobs:
 
       - name: Commit version bump back to main
         id: commit_back
-        if: ${{ github.ref == 'refs/heads/main' && steps.publish_release.outcome == 'success' }}
+        if: ${{ steps.release_mode.outputs.source_branch == 'refs/heads/main' && steps.publish_release.outcome == 'success' }}
         continue-on-error: true
         shell: pwsh
         run: |
@@ -186,7 +286,7 @@ jobs:
           git push origin HEAD:main
 
       - name: Warn when commit-back is blocked
-        if: ${{ github.ref == 'refs/heads/main' && steps.commit_back.outcome == 'failure' }}
+        if: ${{ steps.release_mode.outputs.source_branch == 'refs/heads/main' && steps.commit_back.outcome == 'failure' }}
         shell: pwsh
         run: |
           Write-Host "::warning::Version commit-back failed (likely branch protection). Release publication already completed. Manually commit version.properties to main or allow github-actions[bot] bypass."
@@ -200,6 +300,8 @@ jobs:
           @(
             "event_name=${{ github.event_name }}"
             "ref=${{ github.ref }}"
+            "source_branch=${{ steps.release_mode.outputs.source_branch }}"
+            "signing_mode=${{ steps.prepare_signing.outputs.signing_mode }}"
             "workflow_run_conclusion=${{ github.event.workflow_run.conclusion }}"
             "verify_prereqs_outcome=${{ steps.verify_prereqs.outcome }}"
             "verify_hardening_outcome=${{ steps.verify_hardening.outcome }}"
@@ -210,7 +312,7 @@ jobs:
             "version_code=${{ steps.extract_version.outputs.version_code }}"
             "tag_name=${{ steps.extract_version.outputs.tag_name }}"
             "apk_path=${{ steps.extract_version.outputs.apk_path }}"
-            "is_prerelease=${{ steps.prerelease_mode.outputs.is_prerelease }}"
+            "is_prerelease=${{ steps.release_mode.outputs.is_prerelease }}"
           ) | Set-Content -Path release-diagnostics/step-outcomes.txt
 
           if (Test-Path -Path version.properties) {
