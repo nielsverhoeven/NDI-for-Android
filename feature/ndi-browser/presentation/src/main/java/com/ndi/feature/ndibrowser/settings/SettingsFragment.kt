@@ -31,6 +31,7 @@ data class SettingsUiState(
     val developerModeEnabled: Boolean = false,
     val fallbackWarning: String? = null,
     val themeMode: NdiThemeMode = NdiThemeMode.SYSTEM,
+    val accentColorId: String = SettingsViewModel.ACCENT_TEAL,
     val isDirty: Boolean = false,
     val savedConfirmationVisible: Boolean = false,
     val layoutMode: SettingsLayoutMode = SettingsLayoutMode.COMPACT,
@@ -76,9 +77,8 @@ class SettingsFragment : Fragment() {
             binding = fragmentBinding,
             onSave = viewModel::onSaveSettings,
             onDeveloperModeToggled = viewModel::onDeveloperModeToggled,
-            onOpenThemeEditor = {
-                findNavController().navigate(Uri.parse("ndi://theme-editor"))
-            },
+            onThemeModeChanged = viewModel::onThemeModeChanged,
+            onAccentColorChanged = viewModel::onAccentColorChanged,
         )
         val categoriesList = fragmentBinding.root.findViewById<RecyclerView>(R.id.settingsCategoriesList)
         categoriesList.layoutManager = LinearLayoutManager(requireContext())
@@ -89,9 +89,7 @@ class SettingsFragment : Fragment() {
             detailEmptyState = fragmentBinding.root.findViewById<TextView>(R.id.settingsDetailEmptyState),
             onDeveloperModeToggled = viewModel::onDeveloperModeToggled,
             onThemeModeChanged = viewModel::onThemeModeChanged,
-            onOpenThemeEditor = {
-                findNavController().navigate(Uri.parse("ndi://theme-editor"))
-            },
+            onAccentColorChanged = viewModel::onAccentColorChanged,
         )
         fragmentBinding.root.findViewById<MaterialButton>(R.id.settingsApplyButton)
             .setOnClickListener { viewModel.onSaveSettings() }
@@ -183,6 +181,7 @@ class SettingsFragment : Fragment() {
                 state = state.settingsDetailState,
                 developerModeEnabled = state.developerModeEnabled,
                 themeMode = state.themeMode,
+                accentColorId = state.accentColorId,
             )
             fragmentBinding.root.findViewById<MaterialButton>(R.id.settingsApplyButton).isEnabled = state.isDirty
             fragmentBinding.root.findViewById<TextView>(R.id.settingsSavedConfirmation).isVisible = state.savedConfirmationVisible
@@ -200,14 +199,36 @@ class SettingsScreen(
     private val binding: FragmentSettingsBinding,
     onSave: () -> Unit,
     onDeveloperModeToggled: (Boolean) -> Unit,
-    onOpenThemeEditor: () -> Unit,
+    onThemeModeChanged: (NdiThemeMode) -> Unit,
+    onAccentColorChanged: (String) -> Unit,
 ) {
+    private val compactThemeModeIds = mapOf(
+        NdiThemeMode.LIGHT to binding.compactThemeModeLight.id,
+        NdiThemeMode.DARK to binding.compactThemeModeDark.id,
+        NdiThemeMode.SYSTEM to binding.compactThemeModeSystem.id,
+    )
+    private val compactThemeIdsToMode = compactThemeModeIds.entries.associate { it.value to it.key }
+    private val compactAccentIds = mapOf(
+        SettingsViewModel.ACCENT_BLUE to binding.compactAccentBlue.id,
+        SettingsViewModel.ACCENT_TEAL to binding.compactAccentTeal.id,
+        SettingsViewModel.ACCENT_GREEN to binding.compactAccentGreen.id,
+        SettingsViewModel.ACCENT_ORANGE to binding.compactAccentOrange.id,
+        SettingsViewModel.ACCENT_RED to binding.compactAccentRed.id,
+        SettingsViewModel.ACCENT_PINK to binding.compactAccentPink.id,
+    )
+    private val compactIdsToAccent = compactAccentIds.entries.associate { it.value to it.key }
+
     init {
         binding.settingsTopAppBar.inflateMenu(R.menu.settings_menu)
         binding.saveSettingsButton.setOnClickListener { onSave() }
-        binding.openThemeEditorButton.setOnClickListener { onOpenThemeEditor() }
         binding.developerModeSwitch.setOnCheckedChangeListener { _, isChecked ->
             onDeveloperModeToggled(isChecked)
+        }
+        binding.compactThemeModeGroup.setOnCheckedChangeListener { _, checkedId ->
+            compactThemeIdsToMode[checkedId]?.let(onThemeModeChanged)
+        }
+        binding.compactAccentGroup.setOnCheckedChangeListener { _, checkedId ->
+            compactIdsToAccent[checkedId]?.let(onAccentColorChanged)
         }
     }
 
@@ -219,5 +240,15 @@ class SettingsScreen(
         }
         binding.saveSettingsButton.isEnabled = state.isDirty
         binding.settingsCompactSavedConfirmation.isVisible = state.savedConfirmationVisible
+
+        val themeId = compactThemeModeIds[state.themeMode] ?: binding.compactThemeModeSystem.id
+        if (binding.compactThemeModeGroup.checkedRadioButtonId != themeId) {
+            binding.compactThemeModeGroup.check(themeId)
+        }
+
+        val accentId = compactAccentIds[state.accentColorId] ?: binding.compactAccentTeal.id
+        if (binding.compactAccentGroup.checkedRadioButtonId != accentId) {
+            binding.compactAccentGroup.check(accentId)
+        }
     }
 }

@@ -33,14 +33,15 @@ class SettingsFragmentWideLayoutTest {
     }
 
     @Test
-    fun wideLayout_appearanceSelection_keepsThemeEditorControlContract() = runTest {
+    fun wideLayout_appearanceSelection_keepsInlineAppearanceControlContract() = runTest {
         val viewModel = SettingsViewModel(WideTestSettingsRepository())
         viewModel.onLayoutContextChanged(widthDp = 900, isLandscape = true)
         viewModel.onSettingsCategorySelected(SettingsViewModel.CATEGORY_APPEARANCE)
 
         val state = viewModel.uiState.value
         assertEquals(SettingsLayoutMode.WIDE, state.layoutMode)
-        assertTrue(state.settingsDetailState.groups.first().controls.contains("theme-editor"))
+        assertTrue(state.settingsDetailState.groups.first().controls.contains("theme-mode"))
+        assertTrue(state.settingsDetailState.groups.first().controls.contains("accent-palette"))
     }
 }
 

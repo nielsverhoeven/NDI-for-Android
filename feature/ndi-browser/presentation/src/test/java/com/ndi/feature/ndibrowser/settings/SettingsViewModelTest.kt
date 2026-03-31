@@ -126,6 +126,22 @@ class SettingsViewModelTest {
         assertFalse(viewModel.uiState.value.isDirty)
         assertEquals(com.ndi.core.model.NdiThemeMode.DARK, repository.savedSnapshots.last().themeMode)
     }
+
+    @Test
+    fun onAccentColorChanged_marksDirty_and_onSaveSettings_persistsAccent() = runTest(scheduler) {
+        val repository = FakeSettingsRepository()
+        val viewModel = SettingsViewModel(repository)
+        advanceUntilIdle()
+
+        viewModel.onAccentColorChanged(SettingsViewModel.ACCENT_BLUE)
+        assertTrue(viewModel.uiState.value.isDirty)
+
+        viewModel.onSaveSettings()
+        advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.value.isDirty)
+        assertEquals(SettingsViewModel.ACCENT_BLUE, repository.savedSnapshots.last().accentColorId)
+    }
 }
 
 private class FakeSettingsRepository(

@@ -32,13 +32,14 @@ class SettingsScreenTest {
     }
 
     @Test
-    fun appearanceSelection_exposesThemeEditorControlContract() = runTest {
+    fun appearanceSelection_exposesInlineAppearanceControlContract() = runTest {
         val viewModel = SettingsViewModel(CompactTestSettingsRepository())
         viewModel.onSettingsCategorySelected(SettingsViewModel.CATEGORY_APPEARANCE)
 
         val state = viewModel.uiState.value.settingsDetailState
         assertEquals(SettingsViewModel.CATEGORY_APPEARANCE, state.selectedCategoryId)
-        assertTrue(state.groups.first().controls.contains("theme-editor"))
+        assertTrue(state.groups.first().controls.contains("theme-mode"))
+        assertTrue(state.groups.first().controls.contains("accent-palette"))
     }
 }
 

@@ -33,6 +33,13 @@ class SettingsViewModel(
         const val CATEGORY_DISCOVERY = "discovery"
         const val CATEGORY_DEVELOPER = "developer"
         const val CATEGORY_ABOUT = "about"
+
+        const val ACCENT_BLUE = "accent_blue"
+        const val ACCENT_TEAL = "accent_teal"
+        const val ACCENT_GREEN = "accent_green"
+        const val ACCENT_ORANGE = "accent_orange"
+        const val ACCENT_RED = "accent_red"
+        const val ACCENT_PINK = "accent_pink"
     }
 
     private val _uiState = MutableStateFlow(defaultUiState())
@@ -52,6 +59,7 @@ class SettingsViewModel(
             _uiState.value = _uiState.value.copy(
                 developerModeEnabled = initialSettings.developerModeEnabled,
                 themeMode = initialSettings.themeMode,
+                accentColorId = normalizeAccent(initialSettings.accentColorId),
                 settingsDetailState = buildDetailState(lastSelectedCategoryId),
             )
         }
@@ -93,15 +101,37 @@ class SettingsViewModel(
     fun onThemeModeChanged(mode: NdiThemeMode) {
         _uiState.value = _uiState.value.copy(
             themeMode = mode,
-            isDirty = computeIsDirty(themeMode = mode, developerModeEnabled = _uiState.value.developerModeEnabled),
+            isDirty = computeIsDirty(
+                themeMode = mode,
+                accentColorId = _uiState.value.accentColorId,
+                developerModeEnabled = _uiState.value.developerModeEnabled,
+            ),
             savedConfirmationVisible = false,
         )
+    }
+
+    fun onAccentColorChanged(accentColorId: String) {
+        val normalizedAccent = normalizeAccent(accentColorId)
+        _uiState.value = _uiState.value.copy(
+            accentColorId = normalizedAccent,
+            isDirty = computeIsDirty(
+                themeMode = _uiState.value.themeMode,
+                accentColorId = normalizedAccent,
+                developerModeEnabled = _uiState.value.developerModeEnabled,
+            ),
+            savedConfirmationVisible = false,
+        )
+        SettingsDependencies.telemetryEmitter.emit(SettingsTelemetry.themeAccentSelected(normalizedAccent))
     }
 
     fun onDeveloperModeToggled(enabled: Boolean) {
         _uiState.value = _uiState.value.copy(
             developerModeEnabled = enabled,
-            isDirty = computeIsDirty(themeMode = _uiState.value.themeMode, developerModeEnabled = enabled),
+            isDirty = computeIsDirty(
+                themeMode = _uiState.value.themeMode,
+                accentColorId = _uiState.value.accentColorId,
+                developerModeEnabled = enabled,
+            ),
             savedConfirmationVisible = false,
             overlayDisplayState = if (enabled) _uiState.value.overlayDisplayState else null,
         )
@@ -112,20 +142,20 @@ class SettingsViewModel(
         val state = _uiState.value
 
         viewModelScope.launch {
-            val currentSettings = settingsRepository.getSettings()
             settingsRepository.saveSettings(
                 NdiSettingsSnapshot(
                     // Discovery endpoint is now controlled exclusively by Discovery Servers submenu.
                     discoveryServerInput = null,
                     developerModeEnabled = state.developerModeEnabled,
                     themeMode = state.themeMode,
-                    accentColorId = currentSettings.accentColorId,
+                    accentColorId = normalizeAccent(state.accentColorId),
                     updatedAtEpochMillis = System.currentTimeMillis(),
                 ),
             )
             baselineSettings = baselineSettings?.copy(
                 developerModeEnabled = state.developerModeEnabled,
                 themeMode = state.themeMode,
+                accentColorId = normalizeAccent(state.accentColorId),
             )
             _uiState.value = _uiState.value.copy(
                 isDirty = false,
@@ -181,7 +211,7 @@ class SettingsViewModel(
             )
             CATEGORY_APPEARANCE -> SettingsDetailState(
                 selectedCategoryId = selectedCategoryId,
-                groups = listOf(SettingsDetailGroup("appearance-controls", "Appearance Settings", listOf("theme-editor"))),
+                groups = listOf(SettingsDetailGroup("appearance-controls", "Appearance Settings", listOf("theme-mode", "accent-palette"))),
                 emptyStateMessage = null,
                 isEditable = true,
             )
@@ -210,6 +240,7 @@ class SettingsViewModel(
         val selectedCategory = CATEGORY_GENERAL
         return SettingsUiState(
             themeMode = NdiThemeMode.SYSTEM,
+            accentColorId = ACCENT_TEAL,
             isDirty = false,
             savedConfirmationVisible = false,
             layoutMode = SettingsLayoutMode.COMPACT,
@@ -218,8 +249,23 @@ class SettingsViewModel(
         )
     }
 
-    private fun computeIsDirty(themeMode: NdiThemeMode, developerModeEnabled: Boolean): Boolean {
+    private fun computeIsDirty(themeMode: NdiThemeMode, accentColorId: String, developerModeEnabled: Boolean): Boolean {
         val baseline = baselineSettings ?: return false
-        return themeMode != baseline.themeMode || developerModeEnabled != baseline.developerModeEnabled
+        return themeMode != baseline.themeMode ||
+            normalizeAccent(accentColorId) != normalizeAccent(baseline.accentColorId) ||
+            developerModeEnabled != baseline.developerModeEnabled
+    }
+
+    private fun normalizeAccent(accentColorId: String): String {
+        return when (accentColorId) {
+            ACCENT_BLUE,
+            ACCENT_TEAL,
+            ACCENT_GREEN,
+            ACCENT_ORANGE,
+            ACCENT_RED,
+            ACCENT_PINK,
+            -> accentColorId
+            else -> ACCENT_TEAL
+        }
     }
 }
