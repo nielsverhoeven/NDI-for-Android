@@ -153,17 +153,22 @@ You **MUST** consider the user input before proceeding (if not empty).
   | NDI SDK integration contracts, bridge behavior, and protocol correctness | `ndi.expert` (with `android.app-builder`) | Any task that changes NDI behavior, SDK usage, source discovery/streaming semantics, or `ndi/sdk-bridge` contracts |
    | Core Android implementation (models, repositories, ViewModels, DI wiring, architecture) | `android.app-builder` | Any task touching `core/*`, `feature/*/data`, `feature/*/domain`, `ndi/sdk-bridge`, or `app/di` |
    | UI screens, layouts, Compose, navigation, accessibility | `frontend-dev` | Any task touching `feature/*/presentation`, layouts, navigation graphs, or screen-level UX |
-   | Test writing/validation, build verification, instrumentation, e2e | `tester` | After every implementation phase and before marking a phase complete |
+   | Android e2e test planning (Activities, Fragments, user flows, test scenarios) | `playwright-test-planner` | When creating comprehensive Android e2e test plans for new features or user stories |
+   | Android e2e test implementation (instrumentation tests, UI Automator, Espresso) | `playwright-test-generator` | When implementing Android e2e tests from test plans or adding automated UI validation |
+   | Android e2e test debugging (failed tests, logcat analysis, UI test issues) | `playwright-test-healer` | When Android e2e tests fail and need debugging/fixing |
+   | Test writing/validation, build verification, general instrumentation | `tester` | After every implementation phase and before marking a phase complete |
    | Architecture review, quality gates, security/design gaps | `reviewer` | After core implementation phases and before final completion sign-off |
    | Documentation (guides, README, module reference, feature docs) | `documenter` | After all user stories are committed and final gates pass |
 
    **Collaboration Workflow Per Phase**:
 
   1. **Implement** — Delegate NDI SDK integration requirements to `ndi.expert`, then execute code tasks with `android.app-builder` (core/data/domain) and `frontend-dev` (UI/presentation) as appropriate for the tasks in that phase.
-   2. **Review** — After implementation tasks in a phase are done, invoke `reviewer` to assess architecture compliance, module boundary correctness, and quality gaps.
-   3. **Test** — Invoke `tester` to run the applicable test stages (unit, instrumentation, e2e) and validate the phase output. Do not advance to the next phase until the tester signals a pass.
-  4. **Fix loop** — If `reviewer` or `tester` surface issues, route NDI-specific findings through `ndi.expert` and hand implementation fixes back to `android.app-builder` or `frontend-dev`, then re-run review and test.
-   5. **Commit** — Once the phase passes review and test, create a git commit for the completed user story. See **User Story Commit Rules** below.
+   2. **Plan e2e tests** — For phases with Android e2e testing requirements, invoke `playwright-test-planner` to create comprehensive test scenarios covering Activities, Fragments, user flows, and Android-specific interactions.
+   3. **Generate e2e tests** — After test planning, invoke `playwright-test-generator` to implement Android instrumentation tests, UI Automator tests, or Espresso tests based on the test plan.
+   4. **Review** — After implementation tasks in a phase are done, invoke `reviewer` to assess architecture compliance, module boundary correctness, and quality gaps.
+   5. **Test** — Invoke `tester` to run the applicable test stages (unit, instrumentation, e2e) and validate the phase output. For e2e test failures, delegate to `playwright-test-healer` for debugging and fixing before re-running tests.
+  6. **Fix loop** — If `reviewer` or `tester` surface issues, route NDI-specific findings through `ndi.expert` and hand implementation fixes back to `android.app-builder` or `frontend-dev`. For e2e test issues, use `playwright-test-healer` to debug and fix Android test failures, then re-run review and test.
+   7. **Commit** — Once the phase passes review and test, create a git commit for the completed user story. See **User Story Commit Rules** below.
 
    **User Story Commit Rules**:
 
@@ -213,9 +218,12 @@ You **MUST** consider the user input before proceeding (if not empty).
 
    **Final Collaboration Gates (Android project)**:
 
-   **Gate A — Final Test Run (delegate to `tester`)**:
-   - Invoke `tester` to run all applicable stages (unit, instrumentation, e2e dual-emulator, release hardening).
-   - Do not declare completion until `tester` confirms all release gates pass.
+   **Gate A — Final Test Run (delegate to `tester` and Android e2e agents)**:
+   - Invoke `tester` to run all applicable stages (unit, instrumentation, general e2e validation, release hardening).
+   - For comprehensive e2e testing, invoke `playwright-test-planner` to ensure test coverage is complete for all user flows.
+   - Run Android e2e tests via `playwright-test-generator` if new tests are needed or via `tester` for existing tests.
+   - If Android e2e tests fail, delegate to `playwright-test-healer` to debug and fix test failures.
+   - Do not declare completion until `tester` confirms all release gates pass and Android e2e tests are stable.
    - Route any failures back to `android.app-builder` or `frontend-dev` for fixes, then re-run `tester`.
 
    **Gate B — Architecture and Quality Sign-Off (delegate to `reviewer`)**:
@@ -229,6 +237,7 @@ You **MUST** consider the user input before proceeding (if not empty).
 
    **Gate D — Final Summary**:
    - Report completed tasks, agent collaborations performed, test results, reviewer dispositions, and documentation produced.
+   - Include summary of Android e2e test coverage and any remaining test automation gaps.
    - Document any remaining open risks or follow-up recommendations.
 
 Note: This command assumes a complete task breakdown exists in tasks.md. If tasks are incomplete or missing, suggest running `/speckit.tasks` first to regenerate the task list.
