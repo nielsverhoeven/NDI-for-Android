@@ -1,8 +1,8 @@
 param(
     [ValidateSet('provision-dual', 'reset')]
     [string]$Action = 'provision-dual',
-    [bool]$InstallNdiSdk = $true,
-    [bool]$SkipBootIfAlreadyRunning = $false
+    [switch]$InstallNdiSdk,
+    [switch]$SkipBootIfAlreadyRunning
 )
 
 <#
@@ -19,6 +19,9 @@ Whether to install the NDI SDK on the emulators.
 If emulators are already running, skip the boot step.
 #>
 
+$installNdiSdkEnabled = $InstallNdiSdk.IsPresent
+$skipBootIfAlreadyRunningEnabled = $SkipBootIfAlreadyRunning.IsPresent
+
 Write-Output "[dual-emulator] Dual emulator provisioning for action: $Action"
 
 switch ($Action.ToLowerInvariant()) {
@@ -26,8 +29,8 @@ switch ($Action.ToLowerInvariant()) {
         Write-Output "[dual-emulator] Provisioning dual emulators..."
         Write-Output "  - Primary emulator: pixel-5-api-34-primary"
         Write-Output "  - Secondary emulator: pixel-5-api-35-secondary"
-        Write-Output "  - Install NDI SDK: $InstallNdiSdk"
-        Write-Output "  - Skip boot if running: $SkipBootIfAlreadyRunning"
+        Write-Output "  - Install NDI SDK: $installNdiSdkEnabled"
+        Write-Output "  - Skip boot if running: $skipBootIfAlreadyRunningEnabled"
 
         # In CI/GitHub Actions, emulators are managed by Android setup action
         # This script is a placeholder for local dual-emulator provisioning
