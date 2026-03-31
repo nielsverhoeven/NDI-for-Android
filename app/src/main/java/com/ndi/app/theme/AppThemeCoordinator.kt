@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlin.system.measureNanoTime
 
 class AppThemeCoordinator(
     private val themeEditorRepository: ThemeEditorRepository,
@@ -18,6 +19,7 @@ class AppThemeCoordinator(
 ) {
     private var observationJob: Job? = null
     internal var lastAppliedNightMode: Int? = null
+    internal var lastApplyLatencyMillis: Long? = null
 
     private val _activeAccentColorId = MutableStateFlow<String?>(null)
     val activeAccentColorId: StateFlow<String?> = _activeAccentColorId.asStateFlow()
@@ -50,7 +52,10 @@ class AppThemeCoordinator(
             NdiThemeMode.DARK -> AppCompatDelegate.MODE_NIGHT_YES
             NdiThemeMode.SYSTEM -> AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM
         }
+        val durationNanos = measureNanoTime {
+            AppCompatDelegate.setDefaultNightMode(nightMode)
+        }
         lastAppliedNightMode = nightMode
-        AppCompatDelegate.setDefaultNightMode(nightMode)
+        lastApplyLatencyMillis = durationNanos / 1_000_000
     }
 }

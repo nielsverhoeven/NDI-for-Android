@@ -168,3 +168,21 @@ Deferred gates:
 
 - Playwright e2e execution for feature 021 is intentionally deferred while e2e scenarios are rebuilt.
 - Deferment evidence and unblock command are tracked in `test-results/021-us2-playwright-regression.md`.
+
+## 9. Feature 025 Validation Snapshot (Fix Appearance Settings)
+
+Validation date: 2026-03-31
+
+Completed gates:
+
+- Android preflight and emulator evidence (`test-results/025-preflight-android-prereqs.md`)
+- Playwright command-contract validation (`test-results/025-preflight-node-playwright.md`)
+- Targeted appearance e2e scenarios for US1 and US2 (`test-results/025-us1-targeted-e2e.md`, `test-results/025-us2-targeted-e2e.md`)
+- Full appearance suite execution (`test-results/025-e2e-suite-rebuild-summary.md`)
+- Primary regression profile execution (`test-results/025-final-regression-summary.md`)
+- Release hardening verification (`test-results/025-release-hardening.md`)
+
+Feature-specific notes:
+
+- Hybrid Light/Dark validation uses persisted mode plus a deterministic app-bar luminance bucket token helper in `testing/e2e/tests/support/android-ui-driver.ts`.
+- Theme-mode latency validation is tracked as an automated assertion in the appearance suite with a <=1000ms threshold.

@@ -76,10 +76,16 @@
     <string name="settings_discovery_server_hint">hostname or hostname:port</string>
     <string name="settings_save_button">Save</string>
     <string name="settings_apply_button">Apply</string>
-    <string name="settings_open_theme_editor">Theme editor</string>
     <string name="settings_theme_mode_light">Light</string>
     <string name="settings_theme_mode_dark">Dark</string>
     <string name="settings_theme_mode_system">System default</string>
+    <string name="settings_accent_color_label">Accent color</string>
+    <string name="settings_accent_blue">Blue</string>
+    <string name="settings_accent_teal">Teal</string>
+    <string name="settings_accent_green">Green</string>
+    <string name="settings_accent_orange">Orange</string>
+    <string name="settings_accent_red">Red</string>
+    <string name="settings_accent_pink">Pink</string>
     <string name="settings_detail_general_hint">Adjust settings in each category, then click Apply to save.</string>
     <string name="settings_developer_mode_label">Developer Mode</string>
     <string name="settings_validation_invalid_format">Invalid server format. Use hostname or hostname:port.</string>

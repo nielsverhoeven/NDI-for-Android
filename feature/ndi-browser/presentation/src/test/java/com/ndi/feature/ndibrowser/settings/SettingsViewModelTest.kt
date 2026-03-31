@@ -17,6 +17,7 @@ import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertFalse
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -108,6 +109,38 @@ class SettingsViewModelTest {
 
         assertEquals(2, emissionCount)
         collector.cancel()
+    }
+
+    @Test
+    fun onThemeModeChanged_marksDirty_and_onSaveSettings_clearsDirty() = runTest(scheduler) {
+        val repository = FakeSettingsRepository()
+        val viewModel = SettingsViewModel(repository)
+        advanceUntilIdle()
+
+        viewModel.onThemeModeChanged(com.ndi.core.model.NdiThemeMode.DARK)
+        assertTrue(viewModel.uiState.value.isDirty)
+
+        viewModel.onSaveSettings()
+        advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.value.isDirty)
+        assertEquals(com.ndi.core.model.NdiThemeMode.DARK, repository.savedSnapshots.last().themeMode)
+    }
+
+    @Test
+    fun onAccentColorChanged_marksDirty_and_onSaveSettings_persistsAccent() = runTest(scheduler) {
+        val repository = FakeSettingsRepository()
+        val viewModel = SettingsViewModel(repository)
+        advanceUntilIdle()
+
+        viewModel.onAccentColorChanged(SettingsViewModel.ACCENT_BLUE)
+        assertTrue(viewModel.uiState.value.isDirty)
+
+        viewModel.onSaveSettings()
+        advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.value.isDirty)
+        assertEquals(SettingsViewModel.ACCENT_BLUE, repository.savedSnapshots.last().accentColorId)
     }
 }
 

@@ -7,7 +7,6 @@ import android.widget.LinearLayout
 import android.widget.RadioGroup
 import android.widget.TextView
 import androidx.core.view.isVisible
-import com.google.android.material.button.MaterialButton
 import com.google.android.material.materialswitch.MaterialSwitch
 import com.google.android.material.radiobutton.MaterialRadioButton
 import com.ndi.core.model.NdiThemeMode
@@ -20,12 +19,14 @@ class SettingsDetailRenderer(
     private val detailEmptyState: TextView,
     private val onDeveloperModeToggled: (Boolean) -> Unit,
     private val onThemeModeChanged: (NdiThemeMode) -> Unit,
+    private val onAccentColorChanged: (String) -> Unit,
 ) {
 
     fun render(
         state: SettingsDetailState,
         developerModeEnabled: Boolean,
         themeMode: NdiThemeMode,
+        accentColorId: String,
     ) {
         detailContent.removeAllViews()
         detailEmptyState.isVisible = state.emptyStateMessage != null
@@ -71,6 +72,42 @@ class SettingsDetailRenderer(
                     idsToMode[checkedId]?.let { onThemeModeChanged(it) }
                 }
                 detailContent.addView(radioGroup)
+
+                val accentLabel = TextView(context).apply {
+                    text = context.getString(R.string.settings_accent_color_label)
+                    setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_BodyMedium)
+                }
+                detailContent.addView(accentLabel)
+
+                val accentGroup = RadioGroup(context)
+                val accentIds = mapOf(
+                    SettingsViewModel.ACCENT_BLUE to View.generateViewId(),
+                    SettingsViewModel.ACCENT_TEAL to View.generateViewId(),
+                    SettingsViewModel.ACCENT_GREEN to View.generateViewId(),
+                    SettingsViewModel.ACCENT_ORANGE to View.generateViewId(),
+                    SettingsViewModel.ACCENT_RED to View.generateViewId(),
+                    SettingsViewModel.ACCENT_PINK to View.generateViewId(),
+                )
+                val idsToAccent = accentIds.entries.associate { it.value to it.key }
+                listOf(
+                    SettingsViewModel.ACCENT_BLUE to context.getString(R.string.settings_accent_blue),
+                    SettingsViewModel.ACCENT_TEAL to context.getString(R.string.settings_accent_teal),
+                    SettingsViewModel.ACCENT_GREEN to context.getString(R.string.settings_accent_green),
+                    SettingsViewModel.ACCENT_ORANGE to context.getString(R.string.settings_accent_orange),
+                    SettingsViewModel.ACCENT_RED to context.getString(R.string.settings_accent_red),
+                    SettingsViewModel.ACCENT_PINK to context.getString(R.string.settings_accent_pink),
+                ).forEach { (accent, label) ->
+                    val radio = MaterialRadioButton(context).apply {
+                        text = label
+                        id = accentIds[accent]!!
+                    }
+                    accentGroup.addView(radio)
+                }
+                accentGroup.check(accentIds[accentColorId] ?: accentIds[SettingsViewModel.ACCENT_TEAL]!!)
+                accentGroup.setOnCheckedChangeListener { _, checkedId ->
+                    idsToAccent[checkedId]?.let { onAccentColorChanged(it) }
+                }
+                detailContent.addView(accentGroup)
             }
             SettingsViewModel.CATEGORY_DISCOVERY -> {
                 // Discovery servers are managed inline via an embedded fragment.

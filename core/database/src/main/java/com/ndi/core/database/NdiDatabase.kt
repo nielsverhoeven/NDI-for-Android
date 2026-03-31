@@ -166,6 +166,9 @@ interface SettingsPreferenceDao {
     @Query("SELECT * FROM settings_preference WHERE id = 1")
     suspend fun get(): SettingsPreferenceEntity?
 
+    @Query("SELECT * FROM settings_preference WHERE id = 1")
+    fun observe(): Flow<SettingsPreferenceEntity?>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(entity: SettingsPreferenceEntity)
 }

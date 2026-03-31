@@ -82,13 +82,90 @@
 
                 </LinearLayout>
 
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/openThemeEditorButton"
-                    style="@style/Widget.Material3.Button.OutlinedButton"
-                    android:layout_width="wrap_content"
+                <TextView
+                    android:id="@+id/compactAppearanceLabel"
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="12dp"
-                    android:text="@string/settings_open_theme_editor" />
+                    android:text="@string/settings_detail_appearance_title"
+                    android:textAppearance="@style/TextAppearance.Material3.TitleMedium" />
+
+                <RadioGroup
+                    android:id="@+id/compactThemeModeGroup"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <com.google.android.material.radiobutton.MaterialRadioButton
+                        android:id="@+id/compactThemeModeLight"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/settings_theme_mode_light" />
+
+                    <com.google.android.material.radiobutton.MaterialRadioButton
+                        android:id="@+id/compactThemeModeDark"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/settings_theme_mode_dark" />
+
+                    <com.google.android.material.radiobutton.MaterialRadioButton
+                        android:id="@+id/compactThemeModeSystem"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/settings_theme_mode_system" />
+
+                </RadioGroup>
+
+                <TextView
+                    android:id="@+id/compactAccentLabel"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/settings_accent_color_label"
+                    android:textAppearance="@style/TextAppearance.Material3.BodyMedium" />
+
+                <RadioGroup
+                    android:id="@+id/compactAccentGroup"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <com.google.android.material.radiobutton.MaterialRadioButton
+                        android:id="@+id/compactAccentBlue"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/settings_accent_blue" />
+
+                    <com.google.android.material.radiobutton.MaterialRadioButton
+                        android:id="@+id/compactAccentTeal"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/settings_accent_teal" />
+
+                    <com.google.android.material.radiobutton.MaterialRadioButton
+                        android:id="@+id/compactAccentGreen"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/settings_accent_green" />
+
+                    <com.google.android.material.radiobutton.MaterialRadioButton
+                        android:id="@+id/compactAccentOrange"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/settings_accent_orange" />
+
+                    <com.google.android.material.radiobutton.MaterialRadioButton
+                        android:id="@+id/compactAccentRed"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/settings_accent_red" />
+
+                    <com.google.android.material.radiobutton.MaterialRadioButton
+                        android:id="@+id/compactAccentPink"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/settings_accent_pink" />
+
+                </RadioGroup>
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/openDiscoveryServersButton"

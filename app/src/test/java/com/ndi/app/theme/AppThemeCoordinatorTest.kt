@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -64,6 +65,36 @@ class AppThemeCoordinatorTest {
         advanceUntilIdle()
 
         assertEquals(ThemeAccentPalette.ACCENT_ORANGE, coordinator.activeAccentColorId.value)
+        coordinator.stop()
+    }
+
+    @Test
+    fun start_reactsToThemeModeUpdatesAfterStart() = runTest {
+        val repository = FakeThemeEditorRepository()
+        repository.emitThemeMode(NdiThemeMode.LIGHT)
+        val coordinator = AppThemeCoordinator(repository, this)
+
+        coordinator.start()
+        advanceUntilIdle()
+
+        repository.emitThemeMode(NdiThemeMode.DARK)
+        advanceUntilIdle()
+
+        assertEquals(androidx.appcompat.app.AppCompatDelegate.MODE_NIGHT_YES, coordinator.lastAppliedNightMode)
+        coordinator.stop()
+    }
+
+    @Test
+    fun applyNightMode_recordsLatencyMillis() = runTest {
+        val repository = FakeThemeEditorRepository()
+        val coordinator = AppThemeCoordinator(repository, this)
+
+        coordinator.start()
+        advanceUntilIdle()
+
+        val latency = coordinator.lastApplyLatencyMillis
+        checkNotNull(latency)
+        assertTrue(latency >= 0)
         coordinator.stop()
     }
 
