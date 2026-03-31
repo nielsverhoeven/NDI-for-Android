@@ -210,11 +210,15 @@ private class FakeSettingsPreferenceDao(
     initial: SettingsPreferenceEntity? = null,
 ) : SettingsPreferenceDao {
     private var entity: SettingsPreferenceEntity? = initial
+    private val state = MutableStateFlow(entity)
 
     override suspend fun get(): SettingsPreferenceEntity? = entity
 
+    override fun observe(): Flow<SettingsPreferenceEntity?> = state
+
     override suspend fun upsert(entity: SettingsPreferenceEntity) {
         this.entity = entity
+        state.value = entity
     }
 }
 
