@@ -19,7 +19,7 @@
 
 **Purpose**: Create the workflow file and establish its basic skeleton so all subsequent phases have a concrete file to edit.
 
-- [ ] T001 Create `.github/workflows/release.yml` with top-level `name: Release` and an empty `jobs:` block (no triggers yet) in `.github/workflows/release.yml`
+- [x] T001 Create `.github/workflows/release.yml` with top-level `name: Release` and an empty `jobs:` block (no triggers yet) in `.github/workflows/release.yml`
 
 **Checkpoint**: File exists at `.github/workflows/release.yml`
 
@@ -31,11 +31,11 @@
 
 **⚠️ CRITICAL**: All story phases depend on these steps being present in the workflow file.
 
-- [ ] T002 Add `release` job with `runs-on: windows-latest` and `permissions: contents: write`, then add `actions/checkout@v4` step with `persist-credentials: true` (required for the version commit-back in T012) in `.github/workflows/release.yml`
-- [ ] T003 [P] Add `actions/setup-java@v4` step (distribution: temurin, java-version: '21') matching the configuration in `android-ci.yml` in `.github/workflows/release.yml`
-- [ ] T004 [P] Add PowerShell step to expose `ANDROID_SDK_ROOT=$env:ANDROID_HOME` to `$GITHUB_ENV`, identical to the pattern in `android-ci.yml` in `.github/workflows/release.yml`
-- [ ] T005 Add Android prerequisites verification step: `pwsh ./scripts/verify-android-prereqs.ps1 -CiMode -AllowMissingNdiSdk` in `.github/workflows/release.yml`
-- [ ] T014 [P] Add `workflow_dispatch` trigger block with one `boolean` input: `prerelease` (description: "Mark as pre-release", default: `'true'`) in `.github/workflows/release.yml` — moved here from Phase 4 because T013 (US1 dry-run) requires `workflow_dispatch` to exist before it can be executed; the `prerelease` input is extended with detection logic in Phase 4 (T015–T016)
+- [x] T002 Add `release` job with `runs-on: windows-latest` and `permissions: contents: write`, then add `actions/checkout@v4` step with `persist-credentials: true` (required for the version commit-back in T012) in `.github/workflows/release.yml`
+- [x] T003 [P] Add `actions/setup-java@v4` step (distribution: temurin, java-version: '21') matching the configuration in `android-ci.yml` in `.github/workflows/release.yml`
+- [x] T004 [P] Add PowerShell step to expose `ANDROID_SDK_ROOT=$env:ANDROID_HOME` to `$GITHUB_ENV`, identical to the pattern in `android-ci.yml` in `.github/workflows/release.yml`
+- [x] T005 Add Android prerequisites verification step: `pwsh ./scripts/verify-android-prereqs.ps1 -CiMode -AllowMissingNdiSdk` in `.github/workflows/release.yml`
+- [x] T014 [P] Add `workflow_dispatch` trigger block with one `boolean` input: `prerelease` (description: "Mark as pre-release", default: `'true'`) in `.github/workflows/release.yml` — moved here from Phase 4 because T013 (US1 dry-run) requires `workflow_dispatch` to exist before it can be executed; the `prerelease` input is extended with detection logic in Phase 4 (T015–T016)
 
 **Checkpoint**: The `release` job skeleton builds on any runner with JDK 21 and the Android SDK available. The `workflow_dispatch` trigger is available for manual dry-run testing.
 
@@ -53,13 +53,13 @@
 
 ### Implementation for User Story 1
 
-- [ ] T006 [US1] Add `workflow_run` trigger block: `on.workflow_run.workflows: ['Android CI']`, `types: [completed]`, `branches: [main]`; add `if: github.event.workflow_run.conclusion == 'success'` on the `release` job to enforce the CI dependency per FR-001 and FR-009 in `.github/workflows/release.yml`
-- [ ] T007 [US1] Add `./gradlew verifyReleaseHardening` step (runs before the build, fails pipeline if `isMinifyEnabled` or `isShrinkResources` are disabled) in `.github/workflows/release.yml`
-- [ ] T008 [US1] Add `./gradlew assembleRelease` step in `.github/workflows/release.yml`
-- [ ] T009 [US1] Add post-build version extraction step: PowerShell reads `version.properties`, derives `VERSION_NAME`, `VERSION_CODE`, `TAG_NAME` (`v$VERSION_NAME`), and `APK_PATH` (`app/build/outputs/apk/release/ndi-for-android-$VERSION_NAME.apk`), writes all four to `$GITHUB_ENV` in `.github/workflows/release.yml`
-- [ ] T010 [US1] Add APK artifact verification step: PowerShell guard confirming `$env:APK_PATH` exists and has length > 0 bytes; if either check fails, write a diagnostic message identifying the expected path vs. actual state and exit with non-zero code, preventing the release step from running (FR-004, FR-005, FR-008) in `.github/workflows/release.yml`
-- [ ] T011 [US1] Add `softprops/action-gh-release@v2` publish step: `tag_name: ${{ env.TAG_NAME }}`, `name: "NDI for Android ${{ env.VERSION_NAME }}"`, `files: ${{ env.APK_PATH }}`, `fail_on_unmatched_files: true`, `generate_release_notes: false` (release notes added in Phase 5) — the action hard-fails on duplicate tags satisfying FR-011 in `.github/workflows/release.yml`
-- [ ] T012 [US1] Add version commit-back step: configure git user as `github-actions[bot]`; `git add version.properties`; `git commit -m "chore: bump version to ${{ env.VERSION_NAME }} (code ${{ env.VERSION_CODE }}) [skip ci]"`; `git push origin HEAD:main`; add `continue-on-error: true` and a follow-up step that logs a structured warning if the push was rejected (branch protection blocker), so release publication is not blocked by this step per contract invariant in `.github/workflows/release.yml`
+- [x] T006 [US1] Add `workflow_run` trigger block: `on.workflow_run.workflows: ['Android CI']`, `types: [completed]`, `branches: [main]`; add `if: github.event.workflow_run.conclusion == 'success'` on the `release` job to enforce the CI dependency per FR-001 and FR-009 in `.github/workflows/release.yml`
+- [x] T007 [US1] Add `./gradlew verifyReleaseHardening` step (runs before the build, fails pipeline if `isMinifyEnabled` or `isShrinkResources` are disabled) in `.github/workflows/release.yml`
+- [x] T008 [US1] Add `./gradlew assembleRelease` step in `.github/workflows/release.yml`
+- [x] T009 [US1] Add post-build version extraction step: PowerShell reads `version.properties`, derives `VERSION_NAME`, `VERSION_CODE`, `TAG_NAME` (`v$VERSION_NAME`), and `APK_PATH` (`app/build/outputs/apk/release/ndi-for-android-$VERSION_NAME.apk`), writes all four to `$GITHUB_ENV` in `.github/workflows/release.yml`
+- [x] T010 [US1] Add APK artifact verification step: PowerShell guard confirming `$env:APK_PATH` exists and has length > 0 bytes; if either check fails, write a diagnostic message identifying the expected path vs. actual state and exit with non-zero code, preventing the release step from running (FR-004, FR-005, FR-008) in `.github/workflows/release.yml`
+- [x] T011 [US1] Add `softprops/action-gh-release@v2` publish step wired to extracted step outputs (`tag_name`, `name`, `files`) with `fail_on_unmatched_files: true`; release notes generation is enabled in T018. The action hard-fails on duplicate tags, satisfying FR-011, in `.github/workflows/release.yml`
+- [x] T012 [US1] Add version commit-back step: configure git user as `github-actions[bot]`; `git add version.properties`; `git commit -m "chore: bump version to ${{ env.VERSION_NAME }} (code ${{ env.VERSION_CODE }}) [skip ci]"`; `git push origin HEAD:main`; add `continue-on-error: true` and a follow-up step that logs a structured warning if the push was rejected (branch protection blocker), so release publication is not blocked by this step per contract invariant in `.github/workflows/release.yml`
 
 **Checkpoint**: After T006–T012 and T013, the build-publish pipeline is verified end-to-end via `workflow_dispatch`. User Story 1 is independently deliverable. The automatic `workflow_run` trigger (FR-001) is validated in Phase 6 by T022.
 
@@ -77,10 +77,10 @@
 
 ### Implementation for User Story 2
 
-- [ ] T015 [US2] Add pre-release detection step: PowerShell computes `IS_PRERELEASE` — set to `'true'` if `github.ref != 'refs/heads/main'` OR if `github.event.inputs.prerelease == 'true'`; write to `$GITHUB_ENV`; this satisfies FR-013 in `.github/workflows/release.yml`
-- [ ] T016 [US2] Update the `softprops/action-gh-release` step (from T011) to set `prerelease: ${{ env.IS_PRERELEASE == 'true' }}` so the flag flows from the detection step into the release creation call in `.github/workflows/release.yml`
+- [x] T015 [US2] Add pre-release detection step: PowerShell computes `IS_PRERELEASE` — set to `'true'` if `github.ref != 'refs/heads/main'` OR if `github.event.inputs.prerelease == 'true'`; write to `$GITHUB_ENV`; this satisfies FR-013 in `.github/workflows/release.yml`
+- [x] T016 [US2] Update the `softprops/action-gh-release` step (from T011) to set `prerelease` from `steps.prerelease_mode.outputs.is_prerelease` so the flag flows from the detection step into the release creation call in `.github/workflows/release.yml`
 
-**Checkpoint**: After T014–T016 and T017, both manual production and manual pre-release triggers work correctly.
+**Checkpoint**: After T015–T017 (with T014 already completed in Phase 2), both manual production and manual pre-release triggers work correctly.
 
 ---
 
@@ -96,7 +96,7 @@
 
 ### Implementation for User Story 3
 
-- [ ] T018 [US3] Update the `softprops/action-gh-release` step (from T011) to add `generate_release_notes: true` — GitHub will auto-populate the release body from merged PRs and commits since the previous `v*` tag, satisfying FR-010 and handling the first-release edge case natively in `.github/workflows/release.yml`
+- [x] T018 [US3] Update the `softprops/action-gh-release` step (from T011) to add `generate_release_notes: true` — GitHub will auto-populate the release body from merged PRs and commits since the previous `v*` tag, satisfying FR-010 and handling the first-release edge case natively in `.github/workflows/release.yml`
 
 **Checkpoint**: After T018 and T019, every release entry has a non-empty auto-generated changelog. All three user stories are complete.
 
@@ -106,7 +106,7 @@
 
 **Purpose**: Failure observability, one-time repository setup documentation, and full end-to-end validation.
 
-- [ ] T020 [P] Add per-step failure annotations: for the `verifyReleaseHardening` step, APK verification step, and `softprops/action-gh-release` step, add `if: failure()` follow-up steps that echo structured diagnostics (`::error::` GitHub Actions annotation format) identifying which gate failed, the expected state, and the concrete unblocking command — satisfying FR-012 in `.github/workflows/release.yml`
+- [x] T020 [P] Add per-step failure annotations: for the `verifyReleaseHardening` step, APK verification step, and `softprops/action-gh-release` step, add `if: failure()` follow-up steps that echo structured diagnostics (`::error::` GitHub Actions annotation format) identifying which gate failed, the expected state, and the concrete unblocking command — satisfying FR-012 in `.github/workflows/release.yml`
 - [ ] T021 [P] Verify repository workflow permissions are set to **Read and Write** under **Settings → Actions → General → Workflow permissions** and confirm `github-actions[bot]` is listed as a branch protection bypass actor for `main`; update `specs/026-github-release-action/quickstart.md` with any corrections found during this check
 - [ ] T022 Run full end-to-end validation — this is the explicit validation of the `workflow_run` automatic-trigger path (FR-001, A3): open a pull request from this feature branch to `main`, merge it, observe the `Android CI` workflow complete successfully, then observe the `Release` workflow trigger automatically (verify the `workflow_run.conclusion == 'success'` guard fires correctly); confirm the complete pipeline (checkout → preflight → hardening → build → extract version → verify APK → publish release → commit-back) executes without error and a production release with one APK asset and non-empty release notes appears at `https://github.com/nielsverhoeven/NDI-for-Android/releases`; record the wall-clock time from merge to release-published and confirm it is under 15 minutes (SC-001)
 
@@ -184,9 +184,9 @@ T001 (file skeleton)
 | Phase | Tasks | Stories Covered |
 |-------|-------|----------------|
 | Phase 1: Setup | T001 | — |
-| Phase 2: Foundational | T002–T005 | All |
+| Phase 2: Foundational | T002–T005, T014 | All |
 | Phase 3: US1 (Automated Release) | T006–T013 | US1 |
-| Phase 4: US2 (Manual Trigger) | T015–T017 | US2 | T014 moved to Phase 2 |
+| Phase 4: US2 (Manual Trigger) | T015–T017 | US2 |
 | Phase 5: US3 (Release Notes) | T018–T019 | US3 |
 | Phase 6: Polish | T020–T022 | All |
 | **Total** | **22 tasks** | |
@@ -197,5 +197,5 @@ T001 (file skeleton)
 | US1 tasks | 8 (T006–T013) |
 | US2 tasks | 3 (T015–T017; T014 moved to Phase 2) |
 | US3 tasks | 2 (T018–T019) |
-| Parallelizable tasks | 6 (marked [P]) |
-| MVP scope (US1 only) | T001–T013 (13 tasks) |
+| Parallelizable tasks | 5 (marked [P]) |
+| MVP scope (US1 only) | T001–T014 (14 tasks) |

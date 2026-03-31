@@ -48,7 +48,7 @@ The workflow declares these permissions at the job level:
 
 No additional secrets beyond the built-in `GITHUB_TOKEN` are required for the initial scope (debug-signed APK).
 
-**Branch protection prerequisite**: The `github-actions[bot]` actor must be permitted to push to the `main` branch for the version commit-back step to succeed. If this cannot be permitted, the fallback `v{versionName}-{versionCode}` tag format is used and the commit-back step is skipped.
+**Branch protection prerequisite**: The `github-actions[bot]` actor must be permitted to push to the `main` branch for the version commit-back step to succeed. If this cannot be permitted, the workflow logs a warning and release publication still succeeds; maintainers then manually commit `version.properties` to `main`.
 
 ---
 
@@ -113,7 +113,7 @@ No additional secrets beyond the built-in `GITHUB_TOKEN` are required for the in
 | `Android CI` failed on main | Release workflow does not start (workflow_run only fires on success) |
 | Preflight (`verify-android-prereqs.ps1`) fails | Pipeline fails before build; no release created; error log identifies missing SDK/tool |
 | `verifyReleaseHardening` fails | Pipeline fails before build; error message identifies which hardening flag was disabled |
-| `assembleRelease` Gradle build fails | Pipeline fails; no release created; Gradle build log is available in Actions artifacts |
+| `assembleRelease` Gradle build fails | Pipeline fails; no release created; Gradle output is visible in the job logs and step outcomes are captured in the uploaded diagnostics artifact |
 | APK file missing or empty after build | Pipeline fails at artifact verification step; log reports expected path and actual state |
 | Duplicate git tag exists | `softprops/action-gh-release` fails with non-zero exit; release is NOT overwritten; error log names the duplicate tag |
 | `GITHUB_TOKEN` lacks `contents: write` | Release creation fails at the publish step; log identifies permission error |

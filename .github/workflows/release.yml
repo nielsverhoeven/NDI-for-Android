@@ -1,0 +1,229 @@
+name: Release
+
+on:
+  workflow_run:
+    workflows:
+      - Android CI
+    types:
+      - completed
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      prerelease:
+        description: Mark as pre-release
+        required: false
+        default: true
+        type: boolean
+
+jobs:
+  release:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    if: >-
+      ${{
+        github.event_name == 'workflow_dispatch' ||
+        (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
+      }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+
+      - name: Set up repo-supported JDK baseline
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Expose Android SDK root
+        shell: pwsh
+        run: |
+          "ANDROID_SDK_ROOT=$env:ANDROID_HOME" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Verify Android prerequisites
+        id: verify_prereqs
+        shell: pwsh
+        run: pwsh ./scripts/verify-android-prereqs.ps1 -CiMode -AllowMissingNdiSdk
+
+      - name: Annotate prerequisite failure
+        if: ${{ failure() && steps.verify_prereqs.outcome == 'failure' }}
+        shell: pwsh
+        run: |
+          Write-Host "::error::Prerequisite verification failed. Run: pwsh ./scripts/verify-android-prereqs.ps1 -CiMode -AllowMissingNdiSdk"
+
+      - name: Verify release hardening
+        id: verify_hardening
+        shell: pwsh
+        run: ./gradlew.bat verifyReleaseHardening
+
+      - name: Annotate release hardening failure
+        if: ${{ failure() && steps.verify_hardening.outcome == 'failure' }}
+        shell: pwsh
+        run: |
+          Write-Host "::error::Release hardening failed. Ensure app/build.gradle.kts keeps release isMinifyEnabled=true and isShrinkResources=true, then run ./gradlew.bat verifyReleaseHardening"
+
+      - name: Build release APK
+        shell: pwsh
+        run: ./gradlew.bat assembleRelease
+
+      - name: Extract post-build version metadata
+        id: extract_version
+        shell: pwsh
+        run: |
+          $props = @{}
+          Get-Content version.properties | ForEach-Object {
+            if ($_ -match '^\s*([^#=]+)=(.*)$') {
+              $props[$matches[1].Trim()] = $matches[2].Trim()
+            }
+          }
+
+          $versionName = $props['versionName']
+          $versionCode = $props['versionCode']
+
+          if ([string]::IsNullOrWhiteSpace($versionName) -or [string]::IsNullOrWhiteSpace($versionCode)) {
+            Write-Error 'version.properties is missing versionName and/or versionCode after build.'
+            exit 1
+          }
+
+          $tagName = "v$versionName"
+          $apkPath = "app/build/outputs/apk/release/ndi-for-android-$versionName.apk"
+
+          "VERSION_NAME=$versionName" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "VERSION_CODE=$versionCode" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "TAG_NAME=$tagName" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "APK_PATH=$apkPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "version_name=$versionName" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "version_code=$versionCode" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "tag_name=$tagName" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "apk_path=$apkPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      - name: Determine pre-release mode
+        id: prerelease_mode
+        shell: pwsh
+        run: |
+          $isPre = $false
+
+          if ('${{ github.ref }}' -ne 'refs/heads/main') {
+            $isPre = $true
+          }
+
+          if ('${{ github.event_name }}' -eq 'workflow_dispatch' -and '${{ github.event.inputs.prerelease }}' -eq 'true') {
+            $isPre = $true
+          }
+
+          if ($isPre) {
+            'IS_PRERELEASE=true' | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            'is_prerelease=true' | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          }
+          else {
+            'IS_PRERELEASE=false' | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            'is_prerelease=false' | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          }
+
+      - name: Verify release APK artifact
+        id: verify_apk
+        shell: pwsh
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:APK_PATH)) {
+            Write-Error 'APK_PATH was not set.'
+            exit 1
+          }
+
+          if (-not (Test-Path -Path $env:APK_PATH)) {
+            Write-Error "Expected APK not found at path: $env:APK_PATH"
+            exit 1
+          }
+
+          $file = Get-Item -Path $env:APK_PATH
+          if ($file.Length -le 0) {
+            Write-Error "APK exists but is empty: $env:APK_PATH"
+            exit 1
+          }
+
+      - name: Annotate APK verification failure
+        if: ${{ failure() && steps.verify_apk.outcome == 'failure' }}
+        shell: pwsh
+        run: |
+          Write-Host "::error::APK verification failed. Expected non-empty file at $env:APK_PATH after ./gradlew.bat assembleRelease"
+
+      - name: Publish GitHub release
+        id: publish_release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.extract_version.outputs.tag_name }}
+          name: NDI for Android ${{ steps.extract_version.outputs.version_name }}
+          files: ${{ steps.extract_version.outputs.apk_path }}
+          fail_on_unmatched_files: true
+          generate_release_notes: true
+          prerelease: ${{ steps.prerelease_mode.outputs.is_prerelease == 'true' }}
+
+      - name: Annotate publish failure
+        if: ${{ failure() && steps.publish_release.outcome == 'failure' }}
+        shell: pwsh
+        run: |
+          Write-Host "::error::Release publish failed. Common causes: duplicate tag ($env:TAG_NAME) or insufficient contents:write permissions for GITHUB_TOKEN."
+
+      - name: Commit version bump back to main
+        id: commit_back
+        if: ${{ github.ref == 'refs/heads/main' && steps.publish_release.outcome == 'success' }}
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+
+          if (git diff --quiet -- version.properties) {
+            Write-Host 'No version.properties changes detected; skipping commit-back.'
+            exit 0
+          }
+
+          git add version.properties
+          git commit -m "chore: bump version to $env:VERSION_NAME (code $env:VERSION_CODE) [skip ci]"
+          git push origin HEAD:main
+
+      - name: Warn when commit-back is blocked
+        if: ${{ github.ref == 'refs/heads/main' && steps.commit_back.outcome == 'failure' }}
+        shell: pwsh
+        run: |
+          Write-Host "::warning::Version commit-back failed (likely branch protection). Release publication already completed. Manually commit version.properties to main or allow github-actions[bot] bypass."
+
+      - name: Capture release diagnostics
+        if: ${{ always() }}
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path release-diagnostics -Force | Out-Null
+
+          @(
+            "event_name=${{ github.event_name }}"
+            "ref=${{ github.ref }}"
+            "workflow_run_conclusion=${{ github.event.workflow_run.conclusion }}"
+            "verify_prereqs_outcome=${{ steps.verify_prereqs.outcome }}"
+            "verify_hardening_outcome=${{ steps.verify_hardening.outcome }}"
+            "verify_apk_outcome=${{ steps.verify_apk.outcome }}"
+            "publish_release_outcome=${{ steps.publish_release.outcome }}"
+            "commit_back_outcome=${{ steps.commit_back.outcome }}"
+            "version_name=${{ steps.extract_version.outputs.version_name }}"
+            "version_code=${{ steps.extract_version.outputs.version_code }}"
+            "tag_name=${{ steps.extract_version.outputs.tag_name }}"
+            "apk_path=${{ steps.extract_version.outputs.apk_path }}"
+            "is_prerelease=${{ steps.prerelease_mode.outputs.is_prerelease }}"
+          ) | Set-Content -Path release-diagnostics/step-outcomes.txt
+
+          if (Test-Path -Path version.properties) {
+            Copy-Item -Path version.properties -Destination release-diagnostics/version.properties.snapshot -Force
+          }
+
+      - name: Upload release job artifacts
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-job-artifacts
+          if-no-files-found: ignore
+          path: |
+            app/build/outputs/apk/release/*.apk
+            release-diagnostics/*
+            version.properties

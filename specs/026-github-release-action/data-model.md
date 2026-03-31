@@ -96,7 +96,7 @@ The git commit that persists the incremented `version.properties` back to `main`
 
 **Notes**:
 - The `[skip ci]` token in the commit message prevents `android-ci.yml` from triggering on this commit, which would otherwise cause a `workflow_run` re-trigger and a duplicate release attempt.
-- If branch protection prevents bot push to `main`, this step is skipped and the fallback tag format `v{versionName}-{versionCode}` is used to ensure uniqueness without commit-back.
+- If branch protection prevents bot push to `main`, this step can fail and emit a warning while release publication still succeeds; maintainers then manually commit `version.properties` to `main`.
 
 ---
 

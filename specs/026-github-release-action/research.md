@@ -27,10 +27,10 @@
 
 **Alternatives considered**:
 - Read version BEFORE the build — rejected because the Gradle build always increments the version, so the pre-build value is already stale the moment the build starts.
-- Use a composite tag `v{versionName}+{versionCode}` for uniqueness without commit-back — available as a fallback if branch protection prevents bot pushes.
+- Use a composite tag `v{versionName}+{versionCode}` for uniqueness without commit-back — rejected for this iteration because FR-006 standardizes production tags to `v{versionName}`.
 - Write a separate version-bump PR — rejected as unnecessarily complex for a solo-developer workflow.
 
-**Prerequisite documented**: Branch protection rules on `main` must permit `github-actions[bot]` to push (commit-back step). If branch protection blocks this, the fallback tag format `v{versionName}-{versionCode}` removes the commit-back requirement while ensuring uniqueness.
+**Prerequisite documented**: Branch protection rules on `main` must permit `github-actions[bot]` to push (commit-back step). If branch protection blocks this, the workflow logs a warning and release publication still succeeds; maintainers then manually commit `version.properties` to `main`.
 
 ---
 
