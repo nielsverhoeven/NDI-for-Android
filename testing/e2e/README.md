@@ -104,6 +104,24 @@ This run executes:
 
 Any failed, skipped, or partial execution is treated as a gate failure.
 
+## Feature 024 Rebuilt Suite Index
+
+Rebuild feature artifacts for `024-rebuild-android-e2e` are grouped as:
+
+1. Core baseline smoke scenarios
+  - `tests/024-core-settings-smoke.spec.ts`
+  - `tests/024-core-navigation-smoke.spec.ts`
+2. Menu-focused scenarios
+  - `tests/024-settings-menu-rebuild.spec.ts`
+  - `tests/024-navigation-menu-rebuild.spec.ts`
+3. Developer mode scenarios
+  - `tests/024-developer-mode-rebuild.spec.ts`
+
+Transition evidence for the legacy-to-rebuilt handover is recorded under:
+
+- `test-results/024-transition-baseline-pre-rebuild.md`
+- `test-results/024-transition-handover-comparison.md`
+
 ## Scheduled Matrix Run
 
 Use matrix profiles (typically on a nightly schedule):
