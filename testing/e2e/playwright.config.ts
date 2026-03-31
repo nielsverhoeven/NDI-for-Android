@@ -5,5 +5,19 @@ export default defineConfig({
   reporter: 'list',
   use: {
     trace: 'on-first-retry'
-  }
+  },
+  projects: [
+    {
+      name: 'android-primary',
+      use: {
+        trace: 'on-first-retry'
+      }
+    },
+    {
+      name: 'android-secondary',
+      use: {
+        trace: 'on-first-retry'
+      }
+    }
+  ]
 });
