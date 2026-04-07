@@ -56,4 +56,28 @@ class SettingsCategorySelectionTest {
         assertEquals(1, detail.groups.size)
         assertEquals("about-details", detail.groups.first().id)
     }
+
+    @Test
+    fun categoryOrdering_remainsStableAcrossPhoneAndTabletContexts() = runTest(scheduler) {
+        val viewModel = SettingsViewModel(InMemorySettingsRepository())
+
+        viewModel.onLayoutContextChanged(widthDp = 411, isLandscape = false)
+        val phoneOrder = viewModel.uiState.value.settingsCategoryState.categories.map { it.id }
+
+        viewModel.onLayoutContextChanged(widthDp = 800, isLandscape = true)
+        advanceUntilIdle()
+        val tabletOrder = viewModel.uiState.value.settingsCategoryState.categories.map { it.id }
+
+        assertEquals(phoneOrder, tabletOrder)
+        assertEquals(
+            listOf(
+                SettingsViewModel.CATEGORY_GENERAL,
+                SettingsViewModel.CATEGORY_APPEARANCE,
+                SettingsViewModel.CATEGORY_DISCOVERY,
+                SettingsViewModel.CATEGORY_DEVELOPER,
+                SettingsViewModel.CATEGORY_ABOUT,
+            ),
+            tabletOrder,
+        )
+    }
 }

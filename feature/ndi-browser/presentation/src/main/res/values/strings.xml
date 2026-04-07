@@ -123,6 +123,9 @@
     <string name="settings_three_pane_main_nav_title">Navigation</string>
     <string name="settings_three_pane_categories_title">Categories</string>
     <string name="settings_three_pane_details_title">Details</string>
+    <string name="settings_profile_phone_baseline">phone-baseline</string>
+    <string name="settings_profile_phone_compact_height">phone-compact-height</string>
+    <string name="settings_profile_tablet_reference">tablet-reference</string>
     <string name="overlay_stream_direction">Direction: %1$s</string>
     <string name="overlay_stream_status">Status: %1$s</string>
     <string name="overlay_stream_source">Source: %1$s</string>

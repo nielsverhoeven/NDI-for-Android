@@ -44,4 +44,20 @@ class SettingsDetailStateFallbackTest {
         assertEquals(1, detail.groups.size)
         assertEquals("about-details", detail.groups.first().id)
     }
+
+    @Test
+    fun selectedState_restoresAfterLayoutRoundTrip() = runTest(scheduler) {
+        val viewModel = SettingsViewModel(InMemorySettingsRepository())
+
+        viewModel.onSettingsCategorySelected(SettingsViewModel.CATEGORY_APPEARANCE)
+        viewModel.onThemeModeChanged(com.ndi.core.model.NdiThemeMode.DARK)
+        viewModel.onSaveSettings()
+        viewModel.onLayoutContextChanged(widthDp = 840, isLandscape = true)
+        viewModel.onLayoutContextChanged(widthDp = 411, isLandscape = false)
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertEquals(SettingsViewModel.CATEGORY_APPEARANCE, state.settingsCategoryState.selectedCategoryId)
+        assertEquals(SettingsViewModel.CATEGORY_APPEARANCE, state.settingsDetailState.selectedCategoryId)
+    }
 }
