@@ -3,6 +3,8 @@ package com.ndi.feature.ndibrowser.source_list
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.ndi.core.model.DiscoveryCompatibilitySnapshot
+import com.ndi.core.model.DiscoveryCompatibilityStatus
 import com.ndi.core.model.DiscoverySnapshot
 import com.ndi.core.model.DiscoveryStatus
 import com.ndi.core.model.DiscoveryTrigger
@@ -23,6 +25,12 @@ import java.io.File
 data class SourceListUiState(
     val discoveryStatus: DiscoveryStatus = DiscoveryStatus.EMPTY,
     val sources: List<NdiSource> = emptyList(),
+    val compatibilitySnapshot: DiscoveryCompatibilitySnapshot = DiscoveryCompatibilitySnapshot(
+        recordedAtEpochMillis = 0L,
+        results = emptyList(),
+    ),
+    val hasPartialCompatibility: Boolean = false,
+    val compatibilityMessage: String? = null,
     val highlightedSourceId: String? = null,
     val errorMessage: String? = null,
     val refreshErrorMessage: String? = null,
@@ -63,6 +71,9 @@ class SourceListViewModel(
     init {
         viewModelScope.launch {
             discoveryRepository.observeDiscoveryState().collect(::onDiscoverySnapshot)
+        }
+        viewModelScope.launch {
+            discoveryRepository.observeCompatibilitySnapshot().collect(::onCompatibilitySnapshot)
         }
         viewModelScope.launch {
             discoveryRepository.observeAvailabilityHistory().collect { history ->
@@ -231,6 +242,32 @@ class SourceListViewModel(
             }
         }
         telemetryEmitter.emit(SourceListTelemetry.fromSnapshot(snapshot))
+    }
+
+    private fun onCompatibilitySnapshot(snapshot: DiscoveryCompatibilitySnapshot) {
+        val hasNonCompatible = snapshot.results.any {
+            it.status == DiscoveryCompatibilityStatus.BLOCKED ||
+                it.status == DiscoveryCompatibilityStatus.INCOMPATIBLE
+        }
+        val hasUsable = snapshot.results.any {
+            it.status == DiscoveryCompatibilityStatus.COMPATIBLE ||
+                it.status == DiscoveryCompatibilityStatus.LIMITED
+        }
+        val hasPartialCompatibility = hasNonCompatible && hasUsable
+        _uiState.update { current ->
+            current.copy(
+                compatibilitySnapshot = snapshot,
+                hasPartialCompatibility = hasPartialCompatibility,
+                compatibilityMessage = if (hasPartialCompatibility) {
+                    "Some discovery servers are not compatible; usable sources are still shown."
+                } else {
+                    null
+                },
+            )
+        }
+        if (hasPartialCompatibility) {
+            telemetryEmitter.emit(SourceListTelemetry.partialCompatibilityDetected(snapshot))
+        }
     }
 
     private fun enrichSourcesWithAvailability(sources: List<NdiSource>? = null): List<NdiSource> {

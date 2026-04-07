@@ -4,6 +4,7 @@ import com.ndi.core.database.UserSelectionDao
 import com.ndi.core.database.UserSelectionEntity
 import com.ndi.core.model.DiscoveryStatus
 import com.ndi.core.model.DiscoveryTrigger
+import com.ndi.core.model.DiscoveryCompatibilityStatus
 import com.ndi.core.model.NdiLogCategory
 import com.ndi.core.model.NdiLogLevel
 import com.ndi.core.model.NdiDiscoveryEndpoint
@@ -20,6 +21,7 @@ import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -165,6 +167,69 @@ class NdiDiscoveryRepositoryContractTest {
             it.category == NdiLogCategory.DISCOVERY &&
                 it.level == NdiLogLevel.INFO &&
                 it.messageRedacted.contains("sourceCount=1 totalWithLocal=2")
+        })
+    }
+
+    @Test
+    fun discoverSources_emitsMixedCompatibilityResults_whenSomeEndpointsAreBlocked() = runTest {
+        val repository = NdiDiscoveryRepositoryImpl(
+            bridge = FakeDiscoveryBridge(
+                sources = listOf(NdiSource("source-a", "Camera A", lastSeenAtEpochMillis = 1L)),
+                reachableHosts = setOf("first.local"),
+            ),
+            userSelectionDao = FakeUserSelectionDao(),
+            discoveryConfigRepository = FakeDiscoveryConfigRepository(
+                listOf(
+                    NdiDiscoveryEndpoint("first.local", 5959, 5959, usesDefaultPort = false),
+                    NdiDiscoveryEndpoint("second.local", 5960, 5960, usesDefaultPort = false),
+                ),
+            ),
+            scope = TestScope(StandardTestDispatcher(testScheduler)),
+        )
+
+        repository.discoverSources(DiscoveryTrigger.MANUAL)
+        val compatibility = repository.observeCompatibilitySnapshot().first()
+
+        assertTrue(compatibility.results.any {
+            it.targetId == "first.local:5959" && it.status == DiscoveryCompatibilityStatus.LIMITED
+        })
+        assertTrue(compatibility.results.any {
+            it.targetId == "second.local:5960" && it.status == DiscoveryCompatibilityStatus.BLOCKED
+        })
+        assertTrue(compatibility.results.any {
+            it.targetId == "configured-endpoints-overall" && it.status == DiscoveryCompatibilityStatus.LIMITED
+        })
+        assertFalse(compatibility.results.any {
+            it.targetId == "configured-endpoints-overall" && it.status == DiscoveryCompatibilityStatus.COMPATIBLE
+        })
+    }
+
+    @Test
+    fun discoverSources_emitsNonBlockedOverallCompatibility_whenAllConfiguredEndpointsReachable() = runTest {
+        val repository = NdiDiscoveryRepositoryImpl(
+            bridge = FakeDiscoveryBridge(
+                sources = listOf(NdiSource("source-a", "Camera A", lastSeenAtEpochMillis = 1L)),
+                reachableHosts = setOf("first.local", "second.local"),
+            ),
+            userSelectionDao = FakeUserSelectionDao(),
+            discoveryConfigRepository = FakeDiscoveryConfigRepository(
+                listOf(
+                    NdiDiscoveryEndpoint("first.local", 5959, 5959, usesDefaultPort = false),
+                    NdiDiscoveryEndpoint("second.local", 5960, 5960, usesDefaultPort = false),
+                ),
+            ),
+            scope = TestScope(StandardTestDispatcher(testScheduler)),
+        )
+
+        repository.discoverSources(DiscoveryTrigger.MANUAL)
+        val compatibility = repository.observeCompatibilitySnapshot().first()
+
+        assertTrue(compatibility.results.any {
+            it.targetId == "configured-endpoints-overall" &&
+                it.status == DiscoveryCompatibilityStatus.LIMITED
+        })
+        assertFalse(compatibility.results.any {
+            it.status == DiscoveryCompatibilityStatus.BLOCKED
         })
     }
 }

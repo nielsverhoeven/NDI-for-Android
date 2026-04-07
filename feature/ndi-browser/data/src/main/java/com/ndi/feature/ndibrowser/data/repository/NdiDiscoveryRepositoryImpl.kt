@@ -4,12 +4,16 @@ import android.util.Log
 import com.ndi.core.database.UserSelectionDao
 import com.ndi.core.model.DiscoverySnapshot
 import com.ndi.core.model.DiscoveryStatus
+import com.ndi.core.model.DiscoveryCompatibilityResult
+import com.ndi.core.model.DiscoveryCompatibilitySnapshot
+import com.ndi.core.model.DiscoveryCompatibilityStatus
 import com.ndi.core.model.DiscoveryTrigger
 import com.ndi.core.model.NdiLogCategory
 import com.ndi.core.model.NdiLogLevel
 import com.ndi.feature.ndibrowser.data.AvailabilityDebounceTracker
 import com.ndi.feature.ndibrowser.data.DiscoveryRefreshCoordinator
 import com.ndi.feature.ndibrowser.data.mapper.NdiSourceMapper
+import com.ndi.feature.ndibrowser.domain.repository.DiscoveryCompatibilityMatrixRepository
 import com.ndi.feature.ndibrowser.domain.repository.NdiDiscoveryConfigRepository
 import com.ndi.feature.ndibrowser.domain.repository.NdiDiscoveryRepository
 import com.ndi.feature.ndibrowser.domain.repository.SourceAvailabilityStatus
@@ -33,6 +37,8 @@ class NdiDiscoveryRepositoryImpl(
     private val refreshCoordinator: DiscoveryRefreshCoordinator = DiscoveryRefreshCoordinator(scope),
     private val availabilityTracker: AvailabilityDebounceTracker = AvailabilityDebounceTracker(),
     private val diagnosticsLogBuffer: DeveloperDiagnosticsLogBuffer? = null,
+    private val compatibilityClassifier: DiscoveryCompatibilityClassifier = DiscoveryCompatibilityClassifier(),
+    private val compatibilityMatrixRepository: DiscoveryCompatibilityMatrixRepository = DiscoveryCompatibilityMatrixRepositoryImpl(),
 ) : NdiDiscoveryRepository {
 
     private companion object {
@@ -42,6 +48,12 @@ class NdiDiscoveryRepositoryImpl(
     }
 
     private val discoveryState = MutableStateFlow(emptySnapshot())
+    private val compatibilityState = MutableStateFlow(
+        DiscoveryCompatibilitySnapshot(
+            recordedAtEpochMillis = 0L,
+            results = emptyList(),
+        ),
+    )
     private val availabilityHistory = MutableStateFlow<Map<String, SourceAvailabilityStatus>>(emptyMap())
 
     override suspend fun discoverSources(trigger: DiscoveryTrigger): DiscoverySnapshot {
@@ -80,13 +92,14 @@ class NdiDiscoveryRepositoryImpl(
             )
 
             if (endpoints.isNotEmpty()) {
-                val reachableEndpoints = withContext(Dispatchers.IO) {
-                    endpoints.count { endpoint ->
+                val endpointReachability = withContext(Dispatchers.IO) {
+                    endpoints.associateWith { endpoint ->
                         runCatching {
                             bridge.isDiscoveryServerReachable(endpoint.host, endpoint.resolvedPort)
                         }.getOrDefault(false)
                     }
                 }
+                val reachableEndpoints = endpointReachability.values.count { it }
                 val unreachableEndpoints = endpoints.size - reachableEndpoints
                 if (unreachableEndpoints > 0) {
                     diagnosticsLogBuffer?.appendLog(
@@ -102,6 +115,88 @@ class NdiDiscoveryRepositoryImpl(
             }
 
             val deduplicatedDiscovered = discovered.distinctBy { it.sourceId }
+            val endpointCompatibilityResults = if (endpoints.isEmpty()) {
+                listOf(
+                    DiscoveryCompatibilityResult(
+                        targetId = "default-network",
+                        status = compatibilityClassifier.classify(
+                            discoverySucceeded = deduplicatedDiscovered.isNotEmpty(),
+                            streamStartAttempted = false,
+                            streamStartSucceeded = false,
+                            blocked = false,
+                        ),
+                        discoveredSourceCount = deduplicatedDiscovered.size,
+                        streamStartAttempted = false,
+                        streamStartSucceeded = false,
+                        temporaryUnknownObserved = false,
+                        notes = "Derived from discovery-only pre-stream checks",
+                    ),
+                )
+            } else {
+                val endpointReachability = withContext(Dispatchers.IO) {
+                    endpoints.associateWith { endpoint ->
+                        runCatching {
+                            bridge.isDiscoveryServerReachable(endpoint.host, endpoint.resolvedPort)
+                        }.getOrDefault(false)
+                    }
+                }
+                endpoints.map { endpoint ->
+                    val reachable = endpointReachability[endpoint] == true
+                    val endpointDiscoverySucceeded = reachable && deduplicatedDiscovered.isNotEmpty()
+                    DiscoveryCompatibilityResult(
+                        targetId = "${endpoint.host}:${endpoint.resolvedPort}",
+                        status = compatibilityClassifier.classify(
+                            discoverySucceeded = endpointDiscoverySucceeded,
+                            streamStartAttempted = false,
+                            streamStartSucceeded = false,
+                            blocked = !reachable,
+                        ),
+                        discoveredSourceCount = if (reachable) deduplicatedDiscovered.size else 0,
+                        streamStartAttempted = false,
+                        streamStartSucceeded = false,
+                        temporaryUnknownObserved = false,
+                        notes = if (reachable) {
+                            "Endpoint reachable; discovery verified in pre-stream phase"
+                        } else {
+                            "Endpoint unreachable during discovery probe"
+                        },
+                    )
+                }
+            }
+            val overallStatus = deriveOverallCompatibilityStatus(endpointCompatibilityResults)
+            val hasNonCompatible = endpointCompatibilityResults.any {
+                it.status == DiscoveryCompatibilityStatus.BLOCKED ||
+                    it.status == DiscoveryCompatibilityStatus.INCOMPATIBLE
+            }
+            val hasUsable = endpointCompatibilityResults.any {
+                it.status == DiscoveryCompatibilityStatus.COMPATIBLE ||
+                    it.status == DiscoveryCompatibilityStatus.LIMITED
+            }
+            val overallCompatibilityResults = if (endpoints.isEmpty()) {
+                endpointCompatibilityResults
+            } else {
+                endpointCompatibilityResults + DiscoveryCompatibilityResult(
+                    targetId = "configured-endpoints-overall",
+                    status = overallStatus,
+                    discoveredSourceCount = deduplicatedDiscovered.size,
+                    streamStartAttempted = false,
+                    streamStartSucceeded = false,
+                    temporaryUnknownObserved = false,
+                    notes = if (hasNonCompatible && hasUsable) {
+                        "Partial compatibility: usable sources discovered while at least one endpoint is non-compatible"
+                    } else {
+                        "Aggregated from configured endpoint compatibility checks"
+                    },
+                )
+            }
+            compatibilityState.value = DiscoveryCompatibilitySnapshot(
+                recordedAtEpochMillis = System.currentTimeMillis(),
+                results = overallCompatibilityResults,
+            )
+            compatibilityMatrixRepository.upsertResults(
+                results = overallCompatibilityResults,
+                recordedAtEpochMillis = compatibilityState.value.recordedAtEpochMillis,
+            )
 
             diagnosticsLogBuffer?.appendLog(
                 category = NdiLogCategory.DISCOVERY,
@@ -209,6 +304,9 @@ class NdiDiscoveryRepositoryImpl(
 
     override fun observeDiscoveryState(): Flow<DiscoverySnapshot> = discoveryState.asStateFlow()
 
+    override fun observeCompatibilitySnapshot(): Flow<DiscoveryCompatibilitySnapshot> =
+        compatibilityState.asStateFlow()
+
     override fun startForegroundAutoRefresh(intervalSeconds: Int) {
         refreshCoordinator.start(intervalSeconds) {
             discoverSources(DiscoveryTrigger.FOREGROUND_TICK)
@@ -236,5 +334,23 @@ class NdiDiscoveryRepositoryImpl(
             sourceCount = 0,
             sources = emptyList(),
         )
+    }
+
+    private fun deriveOverallCompatibilityStatus(
+        endpointResults: List<DiscoveryCompatibilityResult>,
+    ): DiscoveryCompatibilityStatus {
+        if (endpointResults.isEmpty()) return DiscoveryCompatibilityStatus.PENDING
+        val hasIncompatible = endpointResults.any { it.status == DiscoveryCompatibilityStatus.INCOMPATIBLE }
+        if (hasIncompatible) return DiscoveryCompatibilityStatus.INCOMPATIBLE
+
+        val hasBlocked = endpointResults.any { it.status == DiscoveryCompatibilityStatus.BLOCKED }
+        val hasUsable = endpointResults.any {
+            it.status == DiscoveryCompatibilityStatus.COMPATIBLE ||
+                it.status == DiscoveryCompatibilityStatus.LIMITED
+        }
+        if (hasBlocked && hasUsable) return DiscoveryCompatibilityStatus.LIMITED
+        if (hasBlocked) return DiscoveryCompatibilityStatus.BLOCKED
+        if (hasUsable) return DiscoveryCompatibilityStatus.LIMITED
+        return DiscoveryCompatibilityStatus.PENDING
     }
 }

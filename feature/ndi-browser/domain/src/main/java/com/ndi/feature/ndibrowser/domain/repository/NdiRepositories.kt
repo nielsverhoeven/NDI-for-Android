@@ -2,6 +2,8 @@ package com.ndi.feature.ndibrowser.domain.repository
 
 import com.ndi.core.model.DiscoverySnapshot
 import com.ndi.core.model.DeveloperDiscoveryDiagnostics
+import com.ndi.core.model.DiscoveryCompatibilityResult
+import com.ndi.core.model.DiscoveryCompatibilitySnapshot
 import com.ndi.core.model.DiscoveryCheckType
 import com.ndi.core.model.DiscoveryServerCheckStatus
 import com.ndi.core.model.DiscoveryTrigger
@@ -36,6 +38,14 @@ interface NdiDiscoveryRepository {
     suspend fun discoverSources(trigger: DiscoveryTrigger): DiscoverySnapshot
 
     fun observeDiscoveryState(): Flow<DiscoverySnapshot>
+
+    fun observeCompatibilitySnapshot(): Flow<DiscoveryCompatibilitySnapshot> =
+        observeDiscoveryState().map {
+            DiscoveryCompatibilitySnapshot(
+                recordedAtEpochMillis = System.currentTimeMillis(),
+                results = emptyList(),
+            )
+        }
 
     fun startForegroundAutoRefresh(intervalSeconds: Int = 5)
 
@@ -352,6 +362,18 @@ interface DeveloperDiagnosticsRepository {
      */
     fun observeDiscoveryDiagnostics(): Flow<DeveloperDiscoveryDiagnostics> = emptyFlow()
 }
+
+interface DiscoveryCompatibilityMatrixRepository {
+    fun observeMatrixSnapshot(): Flow<DiscoveryCompatibilitySnapshot>
+
+    suspend fun upsertResults(
+        results: List<DiscoveryCompatibilityResult>,
+        recordedAtEpochMillis: Long = System.currentTimeMillis(),
+    )
+
+    suspend fun getCurrentMatrix(): DiscoveryCompatibilitySnapshot
+}
+
 interface SettingsLayoutModeResolver {
     fun resolve(widthDp: Int, isLandscape: Boolean): SettingsLayoutMode
 }

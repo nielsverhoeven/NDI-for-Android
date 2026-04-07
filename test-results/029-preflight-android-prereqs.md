@@ -1,0 +1,25 @@
+# 029 Android Prerequisites Preflight
+
+- Command: ./scripts/verify-android-prereqs.ps1
+- Exit code: 0
+
+## Output
+```text
+Android prerequisite verification
+[PASS] command:java - Found on PATH
+[PASS] command:javac - Found on PATH
+[PASS] command:adb - Found on PATH
+[PASS] command:cmake - Found on PATH
+[PASS] command:ninja - Found on PATH
+[PASS] optional-command:sdkmanager - Found on PATH
+[PASS] optional-command:avdmanager - Found on PATH
+[PASS] optional-command:emulator - Found on PATH
+[PASS] build:gradle - C:\gitrepos\NDI-for-Android\scripts\..\gradlew.bat
+[PASS] env:JAVA_HOME - C:\Program Files\Microsoft\jdk-21.0.10.7-hotspot
+[PASS] env:ANDROID_SDK_ROOT - C:\Users\Niels\AppData\Local\Android\Sdk
+[PASS] sdk:NDI - C:\Program Files\NDI\NDI 6 SDK (Android)
+[PASS] package:platform-tools - C:\Users\Niels\AppData\Local\Android\Sdk\platform-tools
+[PASS] package:platforms;android-34 - C:\Users\Niels\AppData\Local\Android\Sdk\platforms\\android-34
+[PASS] package:build-tools;34.0.0 - C:\Users\Niels\AppData\Local\Android\Sdk\build-tools\\34.0.0
+[PASS] package:emulator - C:\Users\Niels\AppData\Local\Android\Sdk\emulator
+```

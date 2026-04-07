@@ -1,6 +1,8 @@
 package com.ndi.feature.ndibrowser.source_list
 
 import androidx.navigation.NavDeepLinkRequest
+import com.ndi.core.model.DiscoveryCompatibilitySnapshot
+import com.ndi.core.model.DiscoveryCompatibilityStatus
 import com.ndi.core.model.DiscoverySnapshot
 import com.ndi.core.model.DiscoveryStatus
 import com.ndi.core.model.TelemetryEvent
@@ -109,6 +111,24 @@ object SourceListTelemetry {
             attributes = mapOf(
                 "sourceId" to sourceId,
                 "isAvailable" to isAvailable.toString(),
+            ),
+        )
+    }
+
+    fun partialCompatibilityDetected(snapshot: DiscoveryCompatibilitySnapshot): TelemetryEvent {
+        val blockedCount = snapshot.results.count { it.status == DiscoveryCompatibilityStatus.BLOCKED }
+        val incompatibleCount = snapshot.results.count { it.status == DiscoveryCompatibilityStatus.INCOMPATIBLE }
+        val compatibleOrLimitedCount = snapshot.results.count {
+            it.status == DiscoveryCompatibilityStatus.COMPATIBLE ||
+                it.status == DiscoveryCompatibilityStatus.LIMITED
+        }
+        return TelemetryEvent(
+            name = "discovery_partial_compatibility_detected",
+            timestampEpochMillis = snapshot.recordedAtEpochMillis,
+            attributes = mapOf(
+                "blockedCount" to blockedCount.toString(),
+                "incompatibleCount" to incompatibleCount.toString(),
+                "usableCount" to compatibleOrLimitedCount.toString(),
             ),
         )
     }

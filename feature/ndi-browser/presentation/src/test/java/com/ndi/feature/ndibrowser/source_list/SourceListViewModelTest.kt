@@ -1,5 +1,8 @@
 package com.ndi.feature.ndibrowser.source_list
 
+import com.ndi.core.model.DiscoveryCompatibilityResult
+import com.ndi.core.model.DiscoveryCompatibilitySnapshot
+import com.ndi.core.model.DiscoveryCompatibilityStatus
 import com.ndi.core.model.DiscoverySnapshot
 import com.ndi.core.model.DiscoveryStatus
 import com.ndi.core.model.DiscoveryTrigger
@@ -243,6 +246,63 @@ class SourceListViewModelTest {
         assertEquals(2, emissionCount)
         collector.cancel()
     }
+
+    @Test
+    fun compatibilitySnapshot_mixedOutcomes_setsPartialCompatibilityState() = runTest(mainDispatcherRule.dispatcher.scheduler) {
+        val repository = FakeDiscoveryRepository()
+        val viewModel = SourceListViewModel(repository, InMemoryUserSelectionRepository(), SourceListTelemetryEmitter {})
+
+        repository.emitCompatibility(
+            DiscoveryCompatibilitySnapshot(
+                recordedAtEpochMillis = 100L,
+                results = listOf(
+                    DiscoveryCompatibilityResult(
+                        targetId = "reachable.local:5959",
+                        status = DiscoveryCompatibilityStatus.LIMITED,
+                        discoveredSourceCount = 1,
+                        streamStartAttempted = false,
+                        streamStartSucceeded = false,
+                    ),
+                    DiscoveryCompatibilityResult(
+                        targetId = "unreachable.local:5959",
+                        status = DiscoveryCompatibilityStatus.BLOCKED,
+                        discoveredSourceCount = 0,
+                        streamStartAttempted = false,
+                        streamStartSucceeded = false,
+                    ),
+                ),
+            ),
+        )
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.hasPartialCompatibility)
+        assertTrue(viewModel.uiState.value.compatibilityMessage?.contains("not compatible") == true)
+    }
+
+    @Test
+    fun compatibilitySnapshot_noMixedOutcomes_clearsPartialCompatibilityState() = runTest(mainDispatcherRule.dispatcher.scheduler) {
+        val repository = FakeDiscoveryRepository()
+        val viewModel = SourceListViewModel(repository, InMemoryUserSelectionRepository(), SourceListTelemetryEmitter {})
+
+        repository.emitCompatibility(
+            DiscoveryCompatibilitySnapshot(
+                recordedAtEpochMillis = 100L,
+                results = listOf(
+                    DiscoveryCompatibilityResult(
+                        targetId = "reachable.local:5959",
+                        status = DiscoveryCompatibilityStatus.LIMITED,
+                        discoveredSourceCount = 1,
+                        streamStartAttempted = false,
+                        streamStartSucceeded = false,
+                    ),
+                ),
+            ),
+        )
+        advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.value.hasPartialCompatibility)
+        assertNull(viewModel.uiState.value.compatibilityMessage)
+    }
 }
 
 private class FakeDiscoveryRepository : NdiDiscoveryRepository {
@@ -256,6 +316,12 @@ private class FakeDiscoveryRepository : NdiDiscoveryRepository {
             sources = emptyList(),
         ),
     )
+    private val compatibilitySnapshots = MutableStateFlow(
+        DiscoveryCompatibilitySnapshot(
+            recordedAtEpochMillis = 0L,
+            results = emptyList(),
+        ),
+    )
 
     val discoveryRequests = mutableListOf<DiscoveryTrigger>()
     var autoRefreshStarted = false
@@ -267,6 +333,8 @@ private class FakeDiscoveryRepository : NdiDiscoveryRepository {
 
     override fun observeDiscoveryState(): Flow<DiscoverySnapshot> = snapshots
 
+    override fun observeCompatibilitySnapshot(): Flow<DiscoveryCompatibilitySnapshot> = compatibilitySnapshots
+
     override fun startForegroundAutoRefresh(intervalSeconds: Int) {
         autoRefreshStarted = true
     }
@@ -275,6 +343,10 @@ private class FakeDiscoveryRepository : NdiDiscoveryRepository {
 
     fun emit(snapshot: DiscoverySnapshot) {
         snapshots.value = snapshot
+    }
+
+    fun emitCompatibility(snapshot: DiscoveryCompatibilitySnapshot) {
+        compatibilitySnapshots.value = snapshot
     }
 }
 
