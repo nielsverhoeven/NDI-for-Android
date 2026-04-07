@@ -12,9 +12,13 @@ tools:
   - mermaidchart.vscode-mermaid-chart/mermaid-diagram-preview
   - mermaidchart.vscode-mermaid-chart/get_syntax_docs
 handoffs:
-    - label: Review Architecture
-      agent: reviewer
-      prompt: Review specs/<feature>/architecture.md for Android module boundaries, lifecycle safety, performance/reliability risks, and testability; produce specs/<feature>/architecture-review.md.
+    - label: NDI Expert Review
+      agent: ndi.expert
+      prompt: Review specs/<feature>/architecture.md for NDI integration correctness, lifecycle/retry/performance risk mitigations, and native bridge isolation; produce specs/<feature>/ndi-architecture-review.md.
+      send: false
+    - label: Constitution Compliance Review
+      agent: speckit.constitution
+      prompt: Review specs/<feature>/architecture.md for alignment with project constitution and rules; produce specs/<feature>/constitution-review.md.
       send: false
 ---
 
