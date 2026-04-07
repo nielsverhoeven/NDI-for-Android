@@ -92,6 +92,21 @@ class NdiDiscoveryRepositoryContractTest {
     }
 
     @Test
+    fun discoverSources_returnsEmptyWhenNoDiscoveredSourcesBeyondLocal() = runTest {
+        val repository = NdiDiscoveryRepositoryImpl(
+            bridge = FakeDiscoveryBridge(sources = emptyList()),
+            userSelectionDao = FakeUserSelectionDao(),
+            discoveryConfigRepository = FakeDiscoveryConfigRepository(),
+            scope = TestScope(StandardTestDispatcher(testScheduler)),
+        )
+
+        val snapshot = repository.discoverSources(DiscoveryTrigger.MANUAL)
+
+        assertEquals(DiscoveryStatus.EMPTY, snapshot.status)
+        assertEquals(listOf("device-screen:local"), snapshot.sources.map { it.sourceId })
+    }
+
+    @Test
     fun discoverSources_logsDiscoveryInfoForConfiguredServers() = runTest {
         val bridge = FakeDiscoveryBridge(sources = emptyList())
         val diagnostics = DeveloperDiagnosticsLogBuffer()
@@ -116,6 +131,40 @@ class NdiDiscoveryRepositoryContractTest {
             it.category == NdiLogCategory.DISCOVERY &&
                 it.level == NdiLogLevel.INFO &&
                 it.messageRedacted.contains("discovery via")
+        })
+    }
+
+    @Test
+    fun discoverSources_logsPartialEndpointReachabilityWhenSomeConfiguredServersAreUnavailable() = runTest {
+        val diagnostics = DeveloperDiagnosticsLogBuffer()
+        val repository = NdiDiscoveryRepositoryImpl(
+            bridge = FakeDiscoveryBridge(
+                sources = listOf(NdiSource("source-a", "Camera A", lastSeenAtEpochMillis = 1L)),
+                reachableHosts = setOf("first.local"),
+            ),
+            userSelectionDao = FakeUserSelectionDao(),
+            discoveryConfigRepository = FakeDiscoveryConfigRepository(
+                listOf(
+                    NdiDiscoveryEndpoint("first.local", 5959, 5959, usesDefaultPort = false),
+                    NdiDiscoveryEndpoint("second.local", 5960, 5960, usesDefaultPort = false),
+                ),
+            ),
+            scope = TestScope(StandardTestDispatcher(testScheduler)),
+            diagnosticsLogBuffer = diagnostics,
+        )
+
+        repository.discoverSources(DiscoveryTrigger.MANUAL)
+        val logs = diagnostics.observeRecentLogs().first()
+
+        assertTrue(logs.any {
+            it.category == NdiLogCategory.DISCOVERY &&
+                it.level == NdiLogLevel.WARN &&
+                it.messageRedacted.contains("reachability partial: reachable=1 unreachable=1 total=2")
+        })
+        assertTrue(logs.any {
+            it.category == NdiLogCategory.DISCOVERY &&
+                it.level == NdiLogLevel.INFO &&
+                it.messageRedacted.contains("sourceCount=1 totalWithLocal=2")
         })
     }
 }

@@ -116,7 +116,14 @@ class ViewerFragment : Fragment() {
                     viewModel.uiState
                 } else {
                     viewModel.uiState.combine(overlayFlow) { state, overlayDisplayState ->
-                        state.copy(overlayDisplayState = overlayDisplayState)
+                        val resolvedOverlay = viewModel.resolveOverlayDisplayState(overlayDisplayState)
+                        state.copy(
+                            overlayDisplayState = resolvedOverlay,
+                            developerModeEnabled = resolvedOverlay?.mode?.let {
+                                it != com.ndi.core.model.NdiOverlayMode.DISABLED
+                            } ?: false,
+                            developerModeAddresses = resolvedOverlay?.configuredAddresses.orEmpty(),
+                        )
                     }
                 }
 

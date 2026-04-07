@@ -8,6 +8,7 @@ data class OverlayDisplayState(
     val streamStatus: String?,
     val sessionId: String?,
     val recentLogs: List<String>,
+    val configuredAddresses: List<String> = emptyList(),
     val discoveryDiagnostics: DeveloperDiscoveryDiagnostics? = null,
 )
 
@@ -18,6 +19,7 @@ object DeveloperOverlayStateMapper {
         streamStatus: String?,
         sessionId: String?,
         recentLogs: List<String>,
+        configuredAddresses: List<String> = emptyList(),
         discoveryDiagnostics: DeveloperDiscoveryDiagnostics? = null,
     ): OverlayDisplayState {
         val mode = when {
@@ -30,6 +32,7 @@ object DeveloperOverlayStateMapper {
             streamStatus = if (mode == NdiOverlayMode.DISABLED) null else streamStatus,
             sessionId = if (mode == NdiOverlayMode.DISABLED) null else sessionId,
             recentLogs = if (mode == NdiOverlayMode.DISABLED) emptyList() else recentLogs,
+            configuredAddresses = if (mode == NdiOverlayMode.DISABLED) emptyList() else configuredAddresses,
             discoveryDiagnostics = if (mode == NdiOverlayMode.DISABLED) null else discoveryDiagnostics,
         )
     }

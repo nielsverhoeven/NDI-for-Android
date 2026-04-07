@@ -37,6 +37,8 @@ data class ViewerUiState(
     val recoveryElapsedSeconds: Int = 0,
     val manualReconnectVisible: Boolean = false,
     val overlayDisplayState: com.ndi.feature.ndibrowser.settings.OverlayDisplayState? = null,
+    val developerModeEnabled: Boolean = false,
+    val developerModeAddresses: List<String> = emptyList(),
     val restoredPreviewPath: String? = null,
     val isUnavailableRestore: Boolean = false,
 )
@@ -67,6 +69,7 @@ class ViewerViewModel(
     private val telemetryEmitter: ViewerTelemetryEmitter = ViewerDependencies.telemetryEmitter,
     private val qualityProfileRepository: QualityProfileRepository? = ViewerDependencies.qualityProfileRepositoryOrNull(),
     private val viewerContinuityRepository: ViewerContinuityRepository? = ViewerDependencies.viewerContinuityRepositoryOrNull(),
+    private val viewerDeveloperLogResolver: ViewerDeveloperLogResolver? = ViewerDependencies.viewerDeveloperLogResolverOrNull(),
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ViewerUiState())
@@ -227,6 +230,12 @@ class ViewerViewModel(
             _uiState.update { it.copy(activeQualityProfileId = profile.profileId) }
             telemetryEmitter.emit(ViewerRecoveryTelemetry.profileSelected(sourceId, profile.profileId))
         }
+    }
+
+    fun resolveOverlayDisplayState(
+        overlayDisplayState: com.ndi.feature.ndibrowser.settings.OverlayDisplayState?,
+    ): com.ndi.feature.ndibrowser.settings.OverlayDisplayState? {
+        return viewerDeveloperLogResolver?.resolve(overlayDisplayState) ?: overlayDisplayState
     }
 
     private fun startPlaybackOptimization(sourceId: String) {
@@ -446,6 +455,7 @@ class ViewerViewModel(
         private val telemetryEmitter: ViewerTelemetryEmitter = ViewerDependencies.telemetryEmitter,
         private val qualityProfileRepository: QualityProfileRepository? = ViewerDependencies.qualityProfileRepositoryOrNull(),
         private val viewerContinuityRepository: ViewerContinuityRepository? = ViewerDependencies.viewerContinuityRepositoryOrNull(),
+        private val viewerDeveloperLogResolver: ViewerDeveloperLogResolver? = ViewerDependencies.viewerDeveloperLogResolverOrNull(),
     ) : ViewModelProvider.Factory {
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
             require(modelClass.isAssignableFrom(ViewerViewModel::class.java))
@@ -455,6 +465,7 @@ class ViewerViewModel(
                 telemetryEmitter = telemetryEmitter,
                 qualityProfileRepository = qualityProfileRepository,
                 viewerContinuityRepository = viewerContinuityRepository,
+                viewerDeveloperLogResolver = viewerDeveloperLogResolver,
             ) as T
         }
     }
