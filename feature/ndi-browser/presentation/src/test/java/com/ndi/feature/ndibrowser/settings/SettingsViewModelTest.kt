@@ -142,6 +142,27 @@ class SettingsViewModelTest {
         assertFalse(viewModel.uiState.value.isDirty)
         assertEquals(SettingsViewModel.ACCENT_BLUE, repository.savedSnapshots.last().accentColorId)
     }
+
+    @Test
+    fun compactLayout_exposesAllSettingsSections() = runTest(scheduler) {
+        val viewModel = SettingsViewModel(FakeSettingsRepository())
+        advanceUntilIdle()
+
+        viewModel.onLayoutContextChanged(widthDp = 411, isLandscape = false)
+        advanceUntilIdle()
+
+        val ids = viewModel.uiState.value.settingsCategoryState.categories.map { it.id }
+        assertEquals(
+            listOf(
+                SettingsViewModel.CATEGORY_GENERAL,
+                SettingsViewModel.CATEGORY_APPEARANCE,
+                SettingsViewModel.CATEGORY_DISCOVERY,
+                SettingsViewModel.CATEGORY_DEVELOPER,
+                SettingsViewModel.CATEGORY_ABOUT,
+            ),
+            ids,
+        )
+    }
 }
 
 private class FakeSettingsRepository(

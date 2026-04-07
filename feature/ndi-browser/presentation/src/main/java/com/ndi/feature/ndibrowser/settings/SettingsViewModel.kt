@@ -12,6 +12,7 @@ import com.ndi.core.model.SettingsDetailGroup
 import com.ndi.core.model.SettingsDetailState
 import com.ndi.core.model.SettingsLayoutMode
 import com.ndi.feature.ndibrowser.domain.repository.NdiSettingsRepository
+import com.ndi.feature.ndibrowser.domain.repository.SettingsLayoutModeResolver
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -24,7 +25,7 @@ import kotlinx.coroutines.launch
 
 class SettingsViewModel(
     private val settingsRepository: NdiSettingsRepository,
-    private val layoutResolver: SettingsLayoutResolver = SettingsLayoutResolver,
+    private val layoutResolver: SettingsLayoutModeResolver = SettingsLayoutResolver,
 ) : ViewModel() {
 
     companion object {
@@ -76,7 +77,15 @@ class SettingsViewModel(
 
     fun onLayoutContextChanged(widthDp: Int, isLandscape: Boolean) {
         val mode = layoutResolver.resolve(widthDp, isLandscape)
-        val selectedCategoryId = _uiState.value.settingsCategoryState.selectedCategoryId ?: lastSelectedCategoryId
+        val currentSelection = _uiState.value.settingsCategoryState.selectedCategoryId
+        // On phone (COMPACT) keep existing selection if the user has already made one;
+        // otherwise start on the category menu (null = menu screen visible, detail hidden).
+        // On tablet/landscape (WIDE) always restore the last known selection.
+        val selectedCategoryId = if (mode == SettingsLayoutMode.COMPACT && currentSelection == null) {
+            null
+        } else {
+            currentSelection ?: lastSelectedCategoryId
+        }
         _uiState.value = _uiState.value.copy(
             layoutMode = mode,
             settingsCategoryState = buildCategoryState(
@@ -95,6 +104,17 @@ class SettingsViewModel(
                 source = SettingsCategorySelectionSource.USER_TAP,
             ),
             settingsDetailState = buildDetailState(categoryId),
+        )
+    }
+
+    /** Called when the user presses the back button in phone compact detail view. */
+    fun onCategoryBack() {
+        _uiState.value = _uiState.value.copy(
+            settingsCategoryState = buildCategoryState(
+                selectedCategoryId = null,
+                source = SettingsCategorySelectionSource.DEFAULT,
+            ),
+            settingsDetailState = buildDetailState(null),
         )
     }
 
@@ -176,7 +196,7 @@ class SettingsViewModel(
 
     class Factory(
         private val settingsRepository: NdiSettingsRepository,
-        private val layoutResolver: SettingsLayoutResolver,
+        private val layoutResolver: SettingsLayoutModeResolver,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
@@ -185,7 +205,7 @@ class SettingsViewModel(
     }
 
     private fun buildCategoryState(
-        selectedCategoryId: String,
+        selectedCategoryId: String?,
         source: SettingsCategorySelectionSource,
     ): SettingsCategoryState {
         return SettingsCategoryState(
@@ -201,7 +221,8 @@ class SettingsViewModel(
         )
     }
 
-    private fun buildDetailState(selectedCategoryId: String): SettingsDetailState {
+    private fun buildDetailState(selectedCategoryId: String?): SettingsDetailState {
+        if (selectedCategoryId == null) return SettingsDetailState(null, emptyList(), null, false)
         return when (selectedCategoryId) {
             CATEGORY_GENERAL -> SettingsDetailState(
                 selectedCategoryId = selectedCategoryId,

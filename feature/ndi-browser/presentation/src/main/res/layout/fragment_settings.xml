@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical">
@@ -226,6 +227,7 @@
                 android:layout_height="0dp"
                 android:layout_weight="1"
                 android:contentDescription="@string/settings_title"
+                android:clipToPadding="false"
                 android:scrollbars="vertical" />
 
         </LinearLayout>
@@ -238,6 +240,16 @@
             android:layout_weight="2"
             android:orientation="vertical"
             android:weightSum="1">
+
+            <!-- Back toolbar shown in phone-portrait mode when a detail page is open.
+                 Hidden in wide (tablet/landscape) mode. -->
+            <com.google.android.material.appbar.MaterialToolbar
+                android:id="@+id/settingsDetailToolbar"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:visibility="gone"
+                app:navigationIcon="@drawable/ic_back"
+                app:navigationContentDescription="@string/settings_back_content_description" />
 
             <!-- Normal detail content (shown for all categories except Discovery) -->
             <LinearLayout
@@ -259,11 +271,21 @@
                     android:paddingBottom="8dp"
                     android:textAppearance="@style/TextAppearance.Material3.TitleMedium" />
 
-                <LinearLayout
-                    android:id="@+id/settingsDetailContent"
+                <ScrollView
+                    android:id="@+id/settingsDetailScroll"
                     android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical" />
+                    android:layout_height="0dp"
+                    android:layout_weight="1"
+                    android:fillViewport="true"
+                    android:scrollbars="vertical">
+
+                    <LinearLayout
+                        android:id="@+id/settingsDetailContent"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical" />
+
+                </ScrollView>
 
                 <TextView
                     android:id="@+id/settingsDetailEmptyState"

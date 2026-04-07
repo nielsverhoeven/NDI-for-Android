@@ -4,6 +4,7 @@ import com.ndi.core.model.TelemetryEvent
 import com.ndi.feature.ndibrowser.domain.repository.DeveloperDiagnosticsRepository
 import com.ndi.feature.ndibrowser.domain.repository.DiscoveryServerRepository
 import com.ndi.feature.ndibrowser.domain.repository.NdiSettingsRepository
+import com.ndi.feature.ndibrowser.domain.repository.SettingsLayoutModeResolver
 import kotlinx.coroutines.flow.Flow
 
 fun interface SettingsTelemetryEmitter {
@@ -17,6 +18,8 @@ object SettingsDependencies {
     var overlayStateProvider: (() -> Flow<OverlayDisplayState?>)? = null
     var settingsNavigationBackProvider: (() -> Unit)? = null
     var telemetryEmitter: SettingsTelemetryEmitter = SettingsTelemetryEmitter {}
+    /** Override the layout resolver in tests to simulate specific form factors. */
+    var layoutResolverProvider: (() -> SettingsLayoutModeResolver)? = null
 
     fun requireSettingsRepository(): NdiSettingsRepository =
         requireNotNull(settingsRepositoryProvider) {
