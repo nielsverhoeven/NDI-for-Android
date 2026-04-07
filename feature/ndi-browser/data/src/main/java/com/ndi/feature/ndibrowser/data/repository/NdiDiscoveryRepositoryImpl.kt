@@ -79,19 +79,38 @@ class NdiDiscoveryRepositoryImpl(
                 },
             )
 
+            if (endpoints.isNotEmpty()) {
+                val reachableEndpoints = withContext(Dispatchers.IO) {
+                    endpoints.count { endpoint ->
+                        runCatching {
+                            bridge.isDiscoveryServerReachable(endpoint.host, endpoint.resolvedPort)
+                        }.getOrDefault(false)
+                    }
+                }
+                val unreachableEndpoints = endpoints.size - reachableEndpoints
+                if (unreachableEndpoints > 0) {
+                    diagnosticsLogBuffer?.appendLog(
+                        category = NdiLogCategory.DISCOVERY,
+                        level = NdiLogLevel.WARN,
+                        message = "discovery endpoint reachability partial: reachable=$reachableEndpoints unreachable=$unreachableEndpoints total=${endpoints.size}",
+                    )
+                }
+            }
+
             val discovered = withContext(Dispatchers.IO) {
                 sourceMapper.map(bridge.discoverSources())
             }
 
+            val deduplicatedDiscovered = discovered.distinctBy { it.sourceId }
+
             diagnosticsLogBuffer?.appendLog(
                 category = NdiLogCategory.DISCOVERY,
                 level = NdiLogLevel.INFO,
-                message = "discovery returned ${discovered.size} sources",
+                message = "discovery returned ${deduplicatedDiscovered.size} sources",
             )
 
             userSelectionDao.getSelection()
-            val sources = discovered
-                .distinctBy { it.sourceId }  // Deduplicate by canonical source ID
+            val sources = deduplicatedDiscovered
                 .toMutableList().apply {
                 add(
                     0,
@@ -105,7 +124,7 @@ class NdiDiscoveryRepositoryImpl(
                 )
             }
             val completedAt = System.currentTimeMillis()
-            val status = if (sources.isEmpty()) DiscoveryStatus.EMPTY else DiscoveryStatus.SUCCESS
+            val status = if (deduplicatedDiscovered.isEmpty()) DiscoveryStatus.EMPTY else DiscoveryStatus.SUCCESS
             DiscoverySnapshot(
                 snapshotId = UUID.randomUUID().toString(),
                 startedAtEpochMillis = startedAt,
@@ -117,7 +136,7 @@ class NdiDiscoveryRepositoryImpl(
                 diagnosticsLogBuffer?.appendLog(
                     category = NdiLogCategory.DISCOVERY,
                     level = NdiLogLevel.INFO,
-                    message = "discovery_refresh_completed status=${status.name} sourceCount=${sources.size}",
+                    message = "discovery_refresh_completed status=${status.name} sourceCount=${deduplicatedDiscovered.size} totalWithLocal=${sources.size}",
                 )
             }
         }.onFailure { e ->
@@ -142,10 +161,11 @@ class NdiDiscoveryRepositoryImpl(
             )
         }.also { snapshot ->
             if (snapshot.status != DiscoveryStatus.FAILURE) {
+                val discoveredSourceCount = snapshot.sources.count { it.sourceId != LOCAL_SCREEN_SOURCE_ID }
                 diagnosticsLogBuffer?.appendLog(
                     category = NdiLogCategory.DISCOVERY,
                     level = NdiLogLevel.INFO,
-                    message = "discovery ${snapshot.status.name.lowercase()} with ${snapshot.sourceCount} sources",
+                    message = "discovery ${snapshot.status.name.lowercase()} with $discoveredSourceCount discovered sources",
                 )
             }
             discoveryState.value = snapshot

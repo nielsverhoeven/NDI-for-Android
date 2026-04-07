@@ -21,7 +21,9 @@ class ViewerDeveloperLogResolver(
         }
 
         val resolvedLogs = state.recentLogs.map { line ->
-            line.replace(REDACTED_IP_TOKEN, replacement)
+            line
+                .replace(REDACTED_IP_TOKEN, replacement)
+                .replace(REDACTED_LEGACY_TOKEN, replacement)
         }
 
         return state.copy(recentLogs = resolvedLogs)
@@ -29,6 +31,7 @@ class ViewerDeveloperLogResolver(
 
     companion object {
         private const val REDACTED_IP_TOKEN = "[redacted-ip]"
+        private const val REDACTED_LEGACY_TOKEN = "[REDACTED]"
         private const val FALLBACK_NO_VALID_ADDRESSES = "not configured"
     }
 }

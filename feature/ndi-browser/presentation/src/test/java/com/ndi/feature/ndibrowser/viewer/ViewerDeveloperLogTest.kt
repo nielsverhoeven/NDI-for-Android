@@ -69,4 +69,34 @@ class ViewerDeveloperLogTest {
 
         assertEquals(listOf("Stream connected"), resolved?.recentLogs)
     }
+
+    @Test
+    fun replaces_redacted_token_when_port_suffix_is_present() {
+        val state = OverlayDisplayState(
+            mode = NdiOverlayMode.ACTIVE,
+            streamStatus = "ACTIVE",
+            sessionId = "session",
+            recentLogs = listOf("Connecting to [redacted-ip]:5959"),
+            configuredAddresses = listOf("192.168.1.10"),
+        )
+
+        val resolved = resolver.resolve(state)
+
+        assertEquals(listOf("Connecting to 192.168.1.10:5959"), resolved?.recentLogs)
+    }
+
+    @Test
+    fun replaces_legacy_redacted_token_variant() {
+        val state = OverlayDisplayState(
+            mode = NdiOverlayMode.ACTIVE,
+            streamStatus = "ACTIVE",
+            sessionId = "session",
+            recentLogs = listOf("Connecting to [REDACTED]:5959"),
+            configuredAddresses = listOf("192.168.1.10"),
+        )
+
+        val resolved = resolver.resolve(state)
+
+        assertEquals(listOf("Connecting to 192.168.1.10:5959"), resolved?.recentLogs)
+    }
 }

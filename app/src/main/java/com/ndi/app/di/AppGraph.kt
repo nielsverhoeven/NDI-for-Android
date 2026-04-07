@@ -192,8 +192,14 @@ class AppGraph private constructor(context: Context) {
             developerDiagnosticsRepository.observeDiscoveryDiagnostics(),
             discoveryConfigRepository.observeDiscoveryEndpoints(),
         ) { settings, overlayState, discoveryDiagnostics, discoveryEndpoints ->
+            val configuredAddressReplacement = addressValidator.getDisplayText(
+                discoveryEndpoints.map { it.host },
+            )
+
             val redactedLogs = overlayState.recentLogs.map { log ->
                 OverlayLogRedactor.redact(log.messageRedacted)
+                    .replace("[redacted-ip]", configuredAddressReplacement)
+                    .replace("[REDACTED]", configuredAddressReplacement)
             }
             val linesRedacted = overlayState.recentLogs.count { log ->
                 OverlayLogRedactor.redact(log.messageRedacted) != log.messageRedacted
