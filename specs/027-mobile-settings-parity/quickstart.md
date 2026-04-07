@@ -60,3 +60,20 @@ npm --prefix testing/e2e run test:pr:primary
 3. Tablet reference parity comparison result.
 4. Regression suite result (`test:pr:primary`).
 5. Failure classification: `code-failure` vs `blocked-environment` with unblock step.
+
+## 6. Current Execution Evidence (Feature 027)
+
+1. `test-results/027-preflight-android-prereqs.md`
+2. `test-results/027-preflight-dual-emulator.md`
+3. `test-results/027-preflight-node-playwright.md`
+4. `test-results/027-us1-phone-section-visibility.md`
+5. `test-results/027-us2-cross-screen-parity.md`
+6. `test-results/027-us3-orientation-continuity.md`
+7. `test-results/027-us1-regression.md`
+8. `test-results/027-us2-regression.md`
+9. `test-results/027-us3-regression.md`
+10. `test-results/027-unit-regression.md`
+11. `test-results/027-release-hardening.md`
+12. `test-results/027-material3-compliance.md`
+13. `test-results/027-final-regression-summary.md`
+14. `test-results/027-mobile-settings-parity-summary.md`
