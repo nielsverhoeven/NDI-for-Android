@@ -8,6 +8,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.activity.OnBackPressedCallback
 import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
@@ -17,6 +18,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import com.google.android.material.appbar.MaterialToolbar
 import com.ndi.feature.ndibrowser.presentation.R
 import com.ndi.core.model.TelemetryEvent
 import com.google.android.material.button.MaterialButton
@@ -55,7 +57,8 @@ class SettingsFragment : Fragment() {
     private val viewModel: SettingsViewModel by viewModels {
         SettingsViewModel.Factory(
             settingsRepository = SettingsDependencies.requireSettingsRepository(),
-            layoutResolver = SettingsLayoutResolver,
+            layoutResolver = SettingsDependencies.layoutResolverProvider?.invoke()
+                ?: SettingsLayoutResolver,
         )
     }
     private lateinit var screen: SettingsScreen
@@ -64,6 +67,7 @@ class SettingsFragment : Fragment() {
         const val DISCOVERY_FRAGMENT_TAG = "discovery_inline"
     }
     private var detailRenderer: SettingsDetailRenderer? = null
+    private var phoneBackCallback: OnBackPressedCallback? = null
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -96,6 +100,9 @@ class SettingsFragment : Fragment() {
         fragmentBinding.openDiscoveryServersButton.setOnClickListener {
             findNavController().navigate(Uri.parse("ndi://settings/discovery-servers"))
         }
+        // Phone compact mode: back arrow in the detail toolbar returns to the category menu.
+        fragmentBinding.root.findViewById<MaterialToolbar>(R.id.settingsDetailToolbar)
+            .setNavigationOnClickListener { viewModel.onCategoryBack() }
         return fragmentBinding.root
     }
 
@@ -119,6 +126,15 @@ class SettingsFragment : Fragment() {
                 }
             }
         }
+
+        // Phone compact mode: system back button returns from detail to the category menu.
+        val backCallback = object : OnBackPressedCallback(false) {
+            override fun handleOnBackPressed() {
+                viewModel.onCategoryBack()
+            }
+        }
+        requireActivity().onBackPressedDispatcher.addCallback(viewLifecycleOwner, backCallback)
+        phoneBackCallback = backCallback
 
         viewModel.onLayoutContextChanged(
             widthDp = resources.configuration.screenWidthDp,
@@ -149,6 +165,7 @@ class SettingsFragment : Fragment() {
 
     override fun onDestroyView() {
         detailRenderer = null
+        phoneBackCallback = null
         binding = null
         super.onDestroyView()
     }
@@ -156,16 +173,68 @@ class SettingsFragment : Fragment() {
     private fun renderTwoColumn(state: SettingsUiState) {
         val fragmentBinding = binding ?: return
         val showWide = state.layoutMode == SettingsLayoutMode.WIDE
-        fragmentBinding.settingsCompactContainer.isVisible = !showWide
-        fragmentBinding.root.findViewById<View>(R.id.settingsTwoColumnContainer).isVisible = showWide
-        if (!showWide) {
-            removeDiscoveryChildFragment()
-            return
+        val selectedCategoryId = state.settingsCategoryState.selectedCategoryId
+        val twoColumnContainer = fragmentBinding.root.findViewById<LinearLayout>(R.id.settingsTwoColumnContainer)
+        val menuPanel = fragmentBinding.root.findViewById<LinearLayout>(R.id.settingsMenuPanel)
+        val detailPanel = fragmentBinding.root.findViewById<LinearLayout>(R.id.settingsDetailPanel)
+        val detailToolbar = fragmentBinding.root.findViewById<MaterialToolbar>(R.id.settingsDetailToolbar)
+
+        fragmentBinding.settingsCompactContainer.isVisible = false
+        twoColumnContainer.isVisible = true
+
+        if (showWide) {
+            // Tablet / landscape: category menu and detail panel side by side.
+            twoColumnContainer.orientation = LinearLayout.HORIZONTAL
+            twoColumnContainer.weightSum = 3f
+            menuPanel.isVisible = true
+            detailPanel.isVisible = true
+            menuPanel.layoutParams = (menuPanel.layoutParams as LinearLayout.LayoutParams).apply {
+                width = 0
+                height = LinearLayout.LayoutParams.MATCH_PARENT
+                weight = 1f
+            }
+            detailPanel.layoutParams = (detailPanel.layoutParams as LinearLayout.LayoutParams).apply {
+                width = 0
+                height = LinearLayout.LayoutParams.MATCH_PARENT
+                weight = 2f
+            }
+            detailToolbar.isVisible = false
+        } else {
+            // Phone portrait: one pane at a time, Android-Settings-style navigation.
+            twoColumnContainer.orientation = LinearLayout.VERTICAL
+            twoColumnContainer.weightSum = 1f
+            val showDetail = selectedCategoryId != null
+            phoneBackCallback?.isEnabled = showDetail
+
+            if (showDetail) {
+                // Detail screen: full width, back arrow toolbar at the top.
+                menuPanel.isVisible = false
+                detailPanel.isVisible = true
+                detailPanel.layoutParams = (detailPanel.layoutParams as LinearLayout.LayoutParams).apply {
+                    width = LinearLayout.LayoutParams.MATCH_PARENT
+                    height = 0
+                    weight = 1f
+                }
+                val categoryTitle = state.settingsCategoryState.categories
+                    .firstOrNull { it.id == selectedCategoryId }?.title.orEmpty()
+                detailToolbar.isVisible = true
+                detailToolbar.title = categoryTitle
+            } else {
+                // Menu screen: full width list of categories.
+                menuPanel.isVisible = true
+                detailPanel.isVisible = false
+                menuPanel.layoutParams = (menuPanel.layoutParams as LinearLayout.LayoutParams).apply {
+                    width = LinearLayout.LayoutParams.MATCH_PARENT
+                    height = 0
+                    weight = 1f
+                }
+                detailToolbar.isVisible = false
+            }
         }
 
         settingsCategoryAdapter.submitCategories(state.settingsCategoryState.categories)
 
-        val isDiscovery = state.settingsCategoryState.selectedCategoryId == SettingsViewModel.CATEGORY_DISCOVERY
+        val isDiscovery = selectedCategoryId == SettingsViewModel.CATEGORY_DISCOVERY
         fragmentBinding.root.findViewById<View>(R.id.settingsDetailNormalContent).isVisible = !isDiscovery
         fragmentBinding.root.findViewById<View>(R.id.settingsDiscoveryContainer).isVisible = isDiscovery
 

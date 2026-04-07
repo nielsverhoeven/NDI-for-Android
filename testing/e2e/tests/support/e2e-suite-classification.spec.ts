@@ -50,4 +50,5 @@ test('US2 scenarios are grouped in us2-only profile', async () => {
   expect(us2Profile).toContain('us2-settings-menu');
   expect(us2Profile).toContain('us2-navigation-menu');
   expect(us2Profile).toContain('us2-appearance-settings');
+  expect(us2Profile).toContain('us2-mobile-settings-parity');
 });

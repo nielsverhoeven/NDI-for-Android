@@ -1,5 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <item name="settingsProfilePhoneBaseline" type="id" />
+    <item name="settingsProfilePhoneCompactHeight" type="id" />
+    <item name="settingsProfileTabletReference" type="id" />
+    <item name="settingsLayoutMenuPanel" type="id" />
+    <item name="settingsLayoutDetailPanel" type="id" />
     <item name="settingsCategoryGeneral" type="id" />
     <item name="settingsCategoryAppearance" type="id" />
     <item name="settingsCategoryDiscovery" type="id" />

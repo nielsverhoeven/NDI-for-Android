@@ -41,6 +41,17 @@ class SettingsScreenTest {
         assertTrue(state.groups.first().controls.contains("theme-mode"))
         assertTrue(state.groups.first().controls.contains("accent-palette"))
     }
+
+    @Test
+    fun discoverySelection_exposesDiscoveryControlGroupInCompactFlow() = runTest {
+        val viewModel = SettingsViewModel(CompactTestSettingsRepository())
+        viewModel.onLayoutContextChanged(widthDp = 411, isLandscape = false)
+        viewModel.onSettingsCategorySelected(SettingsViewModel.CATEGORY_DISCOVERY)
+
+        val state = viewModel.uiState.value.settingsDetailState
+        assertEquals(SettingsViewModel.CATEGORY_DISCOVERY, state.selectedCategoryId)
+        assertTrue(state.groups.first().controls.contains("discovery-servers"))
+    }
 }
 
 private class CompactTestSettingsRepository : NdiSettingsRepository {

@@ -10,8 +10,8 @@ import org.junit.runner.RunWith
 class SettingsLayoutModeTest {
 
     @Test
-    fun wideWidth_usesThreePaneMode() {
-        assertEquals(SettingsLayoutMode.THREE_COLUMN, SettingsLayoutResolver.resolve(widthDp = 720, isLandscape = false))
+    fun wideWidth_usesWideMode() {
+        assertEquals(SettingsLayoutMode.WIDE, SettingsLayoutResolver.resolve(widthDp = 720, isLandscape = false))
     }
 
     @Test
