@@ -35,6 +35,7 @@
 - [ ] Single-activity navigation compliance maintained
 - [ ] Repository-mediated data access preserved
 - [ ] TDD evidence planned (Red-Green-Refactor with failing-test-first path)
+- [ ] Existing tests are treated as regression protection first; any edits are limited to directly impacted behavior and explicitly justified
 - [ ] Unit test scope defined using JUnit
 - [ ] Playwright e2e scope defined for end-to-end flows
 - [ ] For visual UI additions/changes: emulator Playwright e2e tests are explicitly planned

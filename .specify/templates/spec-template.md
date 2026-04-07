@@ -84,6 +84,9 @@
   environment is ready before end-to-end validation begins.
 - If an external dependency can block execution, the spec MUST define how to
   record a blocked result and the concrete unblocking step.
+- The spec MUST identify any pre-existing tests that need updates because the
+  requested behavior is changing; if none are expected, state that existing
+  tests are regression protection and MUST remain unchanged.
 
 ### Edge Cases
 
@@ -117,11 +120,17 @@
   preflight checks before executing end-to-end or release gates.
 - **FR-009**: Validation reporting MUST classify each failed/blocked gate as
   code failure or environment blocker with reproduction details.
+- **FR-010**: Existing automated tests MUST be preserved as regression
+  protection; they MAY be changed only when the requested feature directly
+  changes the covered behavior or the test is separately proven invalid.
+- **FR-011**: Any change to a pre-existing automated test MUST document the
+  specific feature requirement or contract change that made the test update
+  necessary.
 
 *Example of marking unclear requirements:*
 
-- **FR-010**: System MUST authenticate users via [NEEDS CLARIFICATION: auth method not specified - email/password, SSO, OAuth?]
-- **FR-011**: System MUST retain user data for [NEEDS CLARIFICATION: retention period not specified]
+- **FR-012**: System MUST authenticate users via [NEEDS CLARIFICATION: auth method not specified - email/password, SSO, OAuth?]
+- **FR-013**: System MUST retain user data for [NEEDS CLARIFICATION: retention period not specified]
 
 ### Key Entities *(include if feature involves data)*
 

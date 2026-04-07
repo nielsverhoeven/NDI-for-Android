@@ -13,6 +13,9 @@ This guide documents how to validate settings-menu functionality and the broader
 5. [Timing Assertion Patterns](#5-timing-assertion-patterns)
 6. [Release Hardening Validation](#6-release-hardening-validation)
 7. [Contract Correlation](#7-contract-correlation)
+8. [Regression-First Test Triage Policy](#8-regression-first-test-triage-policy)
+9. [Feature 021 Validation Snapshot](#9-feature-021-validation-snapshot-viewer-persistence--source-availability)
+10. [Feature 025 Validation Snapshot](#10-feature-025-validation-snapshot-fix-appearance-settings)
 
 ## 1. Test Pyramid
 
@@ -153,7 +156,26 @@ When tests fail, map them to feature contracts:
 
 Use this mapping to determine whether failures are implementation bugs, test regressions, or contract drift.
 
-## 8. Feature 021 Validation Snapshot (Viewer Persistence + Source Availability)
+## 8. Regression-First Test Triage Policy
+
+When a pre-existing automated test fails during feature work, treat the failure
+as evidence of a regression in production code, shared integration behavior, or
+environment setup first.
+
+- Do not weaken, delete, or rewrite an existing test as the initial fix.
+- Change production code first unless the feature request explicitly changes the
+  behavior that the test covers.
+- Change an existing test only when one of these is true:
+  - the requested feature changes the documented behavior or contract;
+  - the test is independently proven incorrect, obsolete, or flaky; or
+  - supporting infrastructure changed and the old assertion is no longer the
+    correct way to verify the intended behavior.
+- Any change to an existing test must be minimal and should be traceable to the
+  specific feature requirement or contract that required the edit.
+
+This policy applies to JUnit, instrumentation, and Playwright tests.
+
+## 9. Feature 021 Validation Snapshot (Viewer Persistence + Source Availability)
 
 Validation date: 2026-03-29
 
@@ -169,7 +191,7 @@ Deferred gates:
 - Playwright e2e execution for feature 021 is intentionally deferred while e2e scenarios are rebuilt.
 - Deferment evidence and unblock command are tracked in `test-results/021-us2-playwright-regression.md`.
 
-## 9. Feature 025 Validation Snapshot (Fix Appearance Settings)
+## 10. Feature 025 Validation Snapshot (Fix Appearance Settings)
 
 Validation date: 2026-03-31
 

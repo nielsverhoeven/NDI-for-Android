@@ -1,18 +1,18 @@
 <!--
 Sync Impact Report
-Version change: 2.1.0 -> 2.2.0
+Version change: 2.2.0 -> 2.3.0
 Modified principles:
 - IV. Strict Test-Driven Development (NON-NEGOTIABLE) -> IV. Strict Test-Driven Development (NON-NEGOTIABLE)
-Added principles:
-- XII. Execution-Ready Validation Environments
+Added sections:
+- None
 Removed sections:
 - None
 Templates requiring updates:
 - updated: .specify/templates/plan-template.md
 - updated: .specify/templates/spec-template.md
 - updated: .specify/templates/tasks-template.md
+- updated: docs/testing.md
 - pending: .specify/templates/commands/*.md (directory not present)
-- updated: docs/README.md
 Follow-up TODOs:
 - None
 -->
@@ -53,8 +53,15 @@ Every feature and bug fix MUST follow Red-Green-Refactor. Developers MUST write
 or update failing tests first, then implement minimal code to pass, then
 refactor safely. Unit tests MUST use JUnit. End-to-end flows MUST default to
 Playwright. If Playwright is not feasible for a required end-to-end scenario, an
-alternative must be proposed with justification and approval. 
+alternative must be proposed with justification and approval.
 If existing Espresso tests are found when working on a feature, they must be converted to Playwright tests as part of the implementation.
+When pre-existing tests fail during feature work, the initial response MUST be
+to preserve the test and fix the production code or integration path causing
+the regression. Existing tests MAY be changed only when the feature request
+directly changes the covered behavior or when the test is independently proven
+incorrect, obsolete, or flaky and unrelated to the new functionality; such test
+changes MUST be minimal, explicitly justified, and scoped only to directly
+impacted coverage.
 Any feature that introduces or changes visual behavior MUST add Playwright e2e
 coverage executed on emulator(s) for the new or changed user-visible flow and
 MUST verify that all existing Playwright e2e tests still pass.
@@ -174,24 +181,27 @@ false failures and rework.
   proposed work to all twelve core principles.
 2. Every pull request MUST include evidence of test-first workflow:
   failing-test commit or equivalent verifiable history.
-3. Pull requests that touch UI MUST include Material 3 compliance verification.
-4. Pull requests that add permissions, background work, or new modules MUST
+3. Pull requests that modify pre-existing tests MUST identify the product or
+  contract change that required each test edit; unrelated regression tests MUST
+  remain unchanged.
+4. Pull requests that touch UI MUST include Material 3 compliance verification.
+5. Pull requests that add permissions, background work, or new modules MUST
   include explicit justification and reviewer sign-off from code owners.
-5. Release branches MUST pass unit, instrumentation/UI, and release build
+6. Release branches MUST pass unit, instrumentation/UI, and release build
   validation with R8/ProGuard enabled before merge, and MUST include
   Playwright end-to-end results unless a documented exception applies.
-6. Any feature that adds or changes visual UI behavior MUST include emulator-run
+7. Any feature that adds or changes visual UI behavior MUST include emulator-run
   Playwright e2e coverage for the changed functionality before merge.
-7. Any feature pull request that changes UI behavior MUST include evidence that
+8. Any feature pull request that changes UI behavior MUST include evidence that
   the existing Playwright e2e suite was executed and remains passing.
-8. Each release cycle MUST include a toolchain currency review covering
+9. Each release cycle MUST include a toolchain currency review covering
   compileSdk, targetSdk, AGP, Gradle, Kotlin, JDK/JBR, AndroidX/Jetpack, NDK,
   CMake, and required proprietary SDK compatibility.
-9. Features with emulator/device-dependent tests MUST run and record preflight
+10. Features with emulator/device-dependent tests MUST run and record preflight
   checks before executing end-to-end gates.
-10. Validation reports MUST distinguish code failures from environment-blocked
+11. Validation reports MUST distinguish code failures from environment-blocked
   gates and include explicit retry/unblock commands.
-11. Install and deployment validation steps MUST use deterministic APK artifact
+12. Install and deployment validation steps MUST use deterministic APK artifact
   selection when build tasks produce versioned filenames.
 
 ## Governance
@@ -222,4 +232,4 @@ Compliance review expectations:
 3. Periodic audits MUST be performed each release cycle to verify ongoing
   adherence and remove drift.
 
-**Version**: 2.2.0 | **Ratified**: 2026-03-15 | **Last Amended**: 2026-03-27
+**Version**: 2.3.0 | **Ratified**: 2026-03-15 | **Last Amended**: 2026-04-07
