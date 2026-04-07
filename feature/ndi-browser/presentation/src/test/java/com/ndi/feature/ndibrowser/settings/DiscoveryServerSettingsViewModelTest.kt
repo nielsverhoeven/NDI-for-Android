@@ -1,6 +1,8 @@
 package com.ndi.feature.ndibrowser.settings
 
 import com.ndi.core.model.DEFAULT_DISCOVERY_SERVER_PORT
+import com.ndi.core.model.CompatibilityGuidance
+import com.ndi.core.model.DiscoveryCompatibilityStatus
 import com.ndi.core.model.DeveloperDiscoveryDiagnostics
 import com.ndi.core.model.DiscoveryCheckOutcome
 import com.ndi.core.model.DiscoveryStatus
@@ -204,6 +206,14 @@ class DiscoveryServerSettingsViewModelTest {
                 latestDiscoveryRefreshAtEpochMillis = 1234L,
                 serverStatusRollup = emptyList(),
                 recentDiscoveryLogs = listOf("log"),
+                compatibilityGuidance = listOf(
+                    CompatibilityGuidance(
+                        targetId = "venue",
+                        status = DiscoveryCompatibilityStatus.BLOCKED,
+                        message = "blocked",
+                        recommendedNextStep = "verify endpoint",
+                    ),
+                ),
             ),
         )
         val diagnosticsViewModel = DiscoveryServerSettingsViewModel(
@@ -215,6 +225,10 @@ class DiscoveryServerSettingsViewModelTest {
         testDispatcher.scheduler.advanceUntilIdle()
 
         assertNotNull(diagnosticsViewModel.uiState.value.developerDiscoveryDiagnostics)
+        assertEquals(
+            1,
+            diagnosticsViewModel.uiState.value.developerDiscoveryDiagnostics?.compatibilityGuidance?.size,
+        )
     }
 
     @Test
@@ -233,6 +247,14 @@ class DiscoveryServerSettingsViewModelTest {
                 latestDiscoveryRefreshAtEpochMillis = 1234L,
                 serverStatusRollup = emptyList(),
                 recentDiscoveryLogs = listOf("log"),
+                compatibilityGuidance = listOf(
+                    CompatibilityGuidance(
+                        targetId = "venue",
+                        status = DiscoveryCompatibilityStatus.BLOCKED,
+                        message = "blocked",
+                        recommendedNextStep = "verify endpoint",
+                    ),
+                ),
             ),
         )
         val diagnosticsViewModel = DiscoveryServerSettingsViewModel(

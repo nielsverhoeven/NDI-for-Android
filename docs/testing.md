@@ -1,4 +1,4 @@
-<!-- Last updated: 2026-03-20 -->
+<!-- Last updated: 2026-04-07 -->
 
 # Testing and Validation Guide
 
@@ -16,6 +16,7 @@ This guide documents how to validate settings-menu functionality and the broader
 8. [Regression-First Test Triage Policy](#8-regression-first-test-triage-policy)
 9. [Feature 021 Validation Snapshot](#9-feature-021-validation-snapshot-viewer-persistence--source-availability)
 10. [Feature 025 Validation Snapshot](#10-feature-025-validation-snapshot-fix-appearance-settings)
+11. [Feature 029 Validation Snapshot](#11-feature-029-validation-snapshot-ndi-discovery-server-compatibility)
 
 ## 1. Test Pyramid
 
@@ -208,3 +209,42 @@ Feature-specific notes:
 
 - Hybrid Light/Dark validation uses persisted mode plus a deterministic app-bar luminance bucket token helper in `testing/e2e/tests/support/android-ui-driver.ts`.
 - Theme-mode latency validation is tracked as an automated assertion in the appearance suite with a <=1000ms threshold.
+
+## 11. Feature 029 Validation Snapshot (NDI Discovery Server Compatibility)
+
+Validation date: 2026-04-07
+
+Completed gates:
+
+- US1 discovery compatibility behavior tests pass:
+  - `:feature:ndi-browser:data:testDebugUnitTest --tests "com.ndi.feature.ndibrowser.data.NdiDiscoveryRepositoryContractTest" --tests "com.ndi.feature.ndibrowser.data.DiscoveryCompatibilityClassifierTest"`
+  - `:feature:ndi-browser:presentation:testDebugUnitTest --tests "com.ndi.feature.ndibrowser.source_list.SourceListViewModelTest"`
+- US2 matrix and diagnostics repository tests pass:
+  - `:feature:ndi-browser:data:testDebugUnitTest --tests "com.ndi.feature.ndibrowser.data.DiscoveryCompatibilityMatrixRepositoryTest" --tests "com.ndi.feature.ndibrowser.data.DeveloperDiagnosticsRepositoryImplTest"`
+- US3 diagnostics mapping/rendering tests pass:
+  - `:feature:ndi-browser:presentation:testDebugUnitTest --tests "com.ndi.feature.ndibrowser.settings.DeveloperOverlayStateMapperTest" --tests "com.ndi.feature.ndibrowser.settings.DiscoveryServerSettingsViewModelTest"`
+- Diagnostics Playwright scenario pass:
+  - `npx playwright test testing/e2e/tests/029-discovery-compatibility-diagnostics.spec.ts`
+- US3 profile regression pass:
+  - `pwsh -NoProfile -ExecutionPolicy Bypass -File .\testing\e2e\scripts\run-matrix-e2e.ps1 -Profiles us3-only`
+
+Validation posture note:
+
+- Phase tasks are complete for code-level and harness validation; runtime per-version endpoint verification remains operationally blocked until baseline and venue endpoint/version capture is provided.
+
+Evidence artifacts:
+
+- `test-results/029-compatibility-matrix.md`
+- `test-results/029-us1-venue-discovery.md`
+- `test-results/029-us2-test-change-traceability.md`
+- `test-results/029-us3-compatibility-diagnostics.md`
+- `test-results/029-us3-regression.md`
+- `test-results/029-us3-test-change-traceability.md`
+- `test-results/029-us1-test-change-traceability.md`
+- `test-results/029-unit-regression.md`
+- `test-results/029-release-hardening.md`
+- `test-results/029-final-validation-summary.md`
+
+Current blocker classification:
+
+- Runtime per-version baseline/venue endpoint validation remains `blocked` until target endpoint host and exact server version are captured in `specs/029-ndi-server-compatibility/validation/server-targets.md`.
