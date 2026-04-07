@@ -40,3 +40,41 @@ export async function measureApplyLatencyMs(action: () => Promise<void>): Promis
   await action();
   return Date.now() - start;
 }
+
+export async function renderViewerDeveloperLogLine(
+  developerModeEnabled: boolean,
+  configuredAddresses: string[],
+): Promise<string | null> {
+  await boundedWait(5);
+  if (!developerModeEnabled) {
+    return null;
+  }
+
+  const visibleAddresses = configuredAddresses
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0)
+    .slice(0, 5);
+
+  if (visibleAddresses.length === 0) {
+    return 'Configured addresses: not configured';
+  }
+
+  const suffix = configuredAddresses.length > 5 ? ', ...' : '';
+  return `Configured addresses: ${visibleAddresses.join(', ')}${suffix}`;
+}
+
+export async function renderViewerConnectionLogWithAddress(
+  developerModeEnabled: boolean,
+  configuredAddresses: string[],
+): Promise<string | null> {
+  await boundedWait(5);
+  if (!developerModeEnabled) {
+    return null;
+  }
+
+  const firstAddress = configuredAddresses
+    .map((value) => value.trim())
+    .find((value) => value.length > 0);
+
+  return `Connecting to ${firstAddress ?? 'not configured'}`;
+}

@@ -74,11 +74,13 @@ class DeveloperOverlayStateMapperTest {
             streamStatus = "ACTIVE",
             sessionId = "session-1234",
             recentLogs = listOf("stream active"),
+            configuredAddresses = listOf("192.168.1.10"),
             discoveryDiagnostics = sampleDiagnostics(),
         )
 
         assertNull(state.streamStatus)
         assertNull(state.discoveryDiagnostics)
+        assertEquals(emptyList<String>(), state.configuredAddresses)
     }
 
     @Test
@@ -88,11 +90,13 @@ class DeveloperOverlayStateMapperTest {
             streamStatus = "ACTIVE",
             sessionId = "session-1234",
             recentLogs = listOf("stream active"),
+            configuredAddresses = listOf("192.168.1.10", "ff02::1"),
             discoveryDiagnostics = sampleDiagnostics(),
         )
 
         assertNotNull(state.discoveryDiagnostics)
         assertEquals(1, state.discoveryDiagnostics?.serverStatusRollup?.size)
+        assertEquals(listOf("192.168.1.10", "ff02::1"), state.configuredAddresses)
     }
 
     private fun sampleDiagnostics(): DeveloperDiscoveryDiagnostics =

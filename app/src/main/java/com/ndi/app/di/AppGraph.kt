@@ -41,6 +41,7 @@ import com.ndi.feature.ndibrowser.data.repository.DeveloperDiagnosticsLogBuffer
 import com.ndi.feature.ndibrowser.data.repository.DiscoveryServerRepositoryImpl
 import com.ndi.feature.ndibrowser.data.repository.NdiDiscoveryConfigRepositoryImpl
 import com.ndi.feature.ndibrowser.data.repository.NdiSettingsRepositoryImpl
+import com.ndi.feature.ndibrowser.data.validation.AddressValidator
 import com.ndi.feature.ndibrowser.domain.repository.DeveloperDiagnosticsRepository
 import com.ndi.feature.ndibrowser.domain.repository.DiscoveryServerRepository
 import com.ndi.feature.ndibrowser.domain.repository.NdiDiscoveryConfigRepository
@@ -55,6 +56,7 @@ import com.ndi.feature.ndibrowser.settings.OverlayLogRedactor
 import com.ndi.feature.ndibrowser.settings.SettingsDependencies
 import com.ndi.feature.ndibrowser.settings.SettingsTelemetry
 import com.ndi.feature.ndibrowser.source_list.SourceListDependencies
+import com.ndi.feature.ndibrowser.viewer.ViewerDeveloperLogResolver
 import com.ndi.feature.ndibrowser.viewer.ViewerDependencies
 import com.ndi.feature.ndibrowser.domain.repository.QualityProfileRepository
 import com.ndi.sdkbridge.NativeNdiBridge
@@ -104,6 +106,8 @@ class AppGraph private constructor(context: Context) {
     )
 
     private val developerDiagnosticsLogBuffer = DeveloperDiagnosticsLogBuffer()
+    private val addressValidator = AddressValidator()
+    private val viewerDeveloperLogResolver = ViewerDeveloperLogResolver(addressValidator)
 
     val discoveryRepository: NdiDiscoveryRepository = NdiDiscoveryRepositoryImpl(
         bridge = NativeNdiBridge,
@@ -186,7 +190,8 @@ class AppGraph private constructor(context: Context) {
             settingsRepository.observeSettings(),
             developerDiagnosticsRepository.observeOverlayState(),
             developerDiagnosticsRepository.observeDiscoveryDiagnostics(),
-        ) { settings, overlayState, discoveryDiagnostics ->
+            discoveryConfigRepository.observeDiscoveryEndpoints(),
+        ) { settings, overlayState, discoveryDiagnostics, discoveryEndpoints ->
             val redactedLogs = overlayState.recentLogs.map { log ->
                 OverlayLogRedactor.redact(log.messageRedacted)
             }
@@ -204,6 +209,7 @@ class AppGraph private constructor(context: Context) {
                 streamStatus = overlayState.streamStatusLabel.takeIf { it.isNotBlank() },
                 sessionId = OverlayLogRedactor.redactSessionId(overlayState.sessionId),
                 recentLogs = redactedLogs,
+                configuredAddresses = discoveryEndpoints.map { it.host },
                 discoveryDiagnostics = discoveryDiagnostics.takeIf { settings.developerModeEnabled },
             )
         }.onEach { overlayDisplayState ->
@@ -234,6 +240,7 @@ class AppGraph private constructor(context: Context) {
         ViewerDependencies.userSelectionRepositoryProvider = { userSelectionRepository }
         ViewerDependencies.overlayStateProvider = { overlayDisplayStateFlow }
         ViewerDependencies.viewerContinuityRepositoryProvider = { viewerContinuityRepository }
+        ViewerDependencies.viewerDeveloperLogResolverProvider = { viewerDeveloperLogResolver }
         OutputDependencies.outputRepositoryProvider = { outputRepository }
         OutputDependencies.outputConfigurationRepositoryProvider = { outputConfigurationRepository }
         OutputDependencies.screenCaptureConsentRepositoryProvider = { screenCaptureConsentRepository }

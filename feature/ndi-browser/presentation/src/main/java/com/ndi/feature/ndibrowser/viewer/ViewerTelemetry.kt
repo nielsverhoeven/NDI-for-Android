@@ -18,6 +18,7 @@ object ViewerDependencies {
     var userSelectionRepositoryProvider: (() -> UserSelectionRepository)? = null
     var viewerContinuityRepositoryProvider: (() -> ViewerContinuityRepository)? = null
     var overlayStateProvider: (() -> Flow<OverlayDisplayState?>)? = null
+    var viewerDeveloperLogResolverProvider: (() -> ViewerDeveloperLogResolver)? = null
     var telemetryEmitter: ViewerTelemetryEmitter = ViewerTelemetryEmitter {}
 
     fun requireViewerRepository(): NdiViewerRepository {
@@ -39,6 +40,8 @@ object ViewerDependencies {
     fun viewerContinuityRepositoryOrNull(): ViewerContinuityRepository? = viewerContinuityRepositoryProvider?.invoke()
 
     fun overlayStateFlowOrNull(): Flow<OverlayDisplayState?>? = overlayStateProvider?.invoke()
+
+    fun viewerDeveloperLogResolverOrNull(): ViewerDeveloperLogResolver? = viewerDeveloperLogResolverProvider?.invoke()
 }
 
 object ViewerTelemetry {
