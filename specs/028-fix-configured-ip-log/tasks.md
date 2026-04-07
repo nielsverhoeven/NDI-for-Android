@@ -40,9 +40,9 @@
 
 ### 1.1 Validate Prerequisite Environment
 
-- [ ] T001 Run prerequisite validation for Android SDK and build tools in `./scripts/verify-android-prereqs.ps1`
-- [ ] T002 Confirm device authorization via adb and check emulator status in `./scripts/verify-e2e-dual-emulator-prereqs.ps1`
-- [ ] T003 [P] Create local session log for validation evidence in `test-results/028-ip-display-validation.md`
+- [X] T001 Run prerequisite validation for Android SDK and build tools in `./scripts/verify-android-prereqs.ps1`
+- [X] T002 Confirm device authorization via adb and check emulator status in `./scripts/verify-e2e-dual-emulator-prereqs.ps1`
+- [X] T003 [P] Create local session log for validation evidence in `test-results/028-ip-display-validation.md`
 
 ---
 
@@ -53,18 +53,18 @@
 **Goal**: Establish reusable address validation and resolution logic that all user stories depend on.  
 **Independent Test**: Can be tested in isolation by invoking address validation on representative IPv4/IPv6/hostname inputs and confirming correct pass/fail/fallback behavior.
 
-- [ ] T004 [P] Create address validation interface in `feature/ndi-browser/domain/src/main/java/com/ndi/feature/ndibrowser/domain/repository/AddressValidation.kt`
+- [X] T004 [P] Create address validation interface in `feature/ndi-browser/domain/src/main/java/com/ndi/feature/ndibrowser/domain/repository/AddressValidation.kt`
   - Define methods: `isValidAddress(value: String): Boolean`, `validateAndFilterAddresses(addresses: List<String>): List<String`, `getDisplayText(addresses: List<String>): String`
   - Support IPv4, IPv6, hostname validation rules
   
-- [ ] T005 [P] Implement single-address validation utility in `feature/ndi-browser/data/src/main/java/com/ndi/feature/ndibrowser/data/validation/AddressValidator.kt`
+- [X] T005 [P] Implement single-address validation utility in `feature/ndi-browser/data/src/main/java/com/ndi/feature/ndibrowser/data/validation/AddressValidator.kt`
   - Implement IPv4 regex pattern matching
   - Implement IPv6 regex pattern matching
   - Implement hostname pattern matching
   - Implement deduplication logic preserving order
   - Implement fallback text generation
   
-- [ ] T006 [P] Create developer mode address resolution in ViewModel layer in `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/viewer/ViewerDeveloperLogResolver.kt`
+- [X] T006 [P] Create developer mode address resolution in ViewModel layer in `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/viewer/ViewerDeveloperLogResolver.kt`
   - Resolve active configured address set at runtime
   - Query developer mode state
   - Integrate address validation and formatting
@@ -74,12 +74,12 @@
 **Goal**: Wire address state into existing ViewModel/logging architecture.  
 **Independent Test**: Can be tested by invoking data layer to retrieve configured addresses and verifying state transitions.
 
-- [ ] T007 [P] Update ViewerViewModel to expose developer mode address state in `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/viewer/ViewerViewModel.kt`
+- [X] T007 [P] Update ViewerViewModel to expose developer mode address state in `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/viewer/ViewerViewModel.kt`
   - Add `developerModeAddresses: StateFlow<List<String>>`
   - Add `developerModeEnabled: StateFlow<Boolean>`
   - Wire to existing developer mode configuration source
   
-- [ ] T008 [P] Create unit test for address validation in `feature/ndi-browser/presentation/src/test/java/com/ndi/feature/ndibrowser/viewer/AddressValidatorTest.kt`
+- [X] T008 [P] Create unit test for address validation in `feature/ndi-browser/presentation/src/test/java/com/ndi/feature/ndibrowser/viewer/AddressValidatorTest.kt`
   - Red: Test IPv4 validation pass cases (192.168.1.1, 0.0.0.0, 255.255.255.255)
   - Red: Test IPv4 rejection (999.999.999.999, incomplete octets)
   - Red: Test IPv6 validation (ff02::1, ::1, valid expanded forms)
@@ -99,30 +99,30 @@
 
 ### 3.1 Core Implementation (US1)
 
-- [ ] T009 [P] [US1] Locate existing View screen developer log emission point in `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/viewer/ViewerScreen.kt` or `ViewerViewModel.kt`
+- [X] T009 [P] [US1] Locate existing View screen developer log emission point in `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/viewer/ViewerScreen.kt` or `ViewerViewModel.kt`
   - Document current redacted placeholder location
   - Identify log event construction path
   - Note developer mode condition check point
   
-- [ ] T010 [US1] Create developer log entry data class in `feature/ndi-browser/data/src/main/java/com/ndi/feature/ndibrowser/data/logging/DeveloperLogEntry.kt`
+- [X] T010 [US1] Create developer log entry data class in `feature/ndi-browser/data/src/main/java/com/ndi/feature/ndibrowser/data/logging/DeveloperLogEntry.kt`
   - Fields: `timestamp: java.time.Instant, eventType: String, message: String, configuredAddresses: List<String>, isDeveloperModeEnabled: Boolean`
   - Use java.time.Instant for timestamp field (Kotlin stdlib compatible)
   - Constructor enforces suppression rule (addresses empty if dev mode off)
   
-- [ ] T011 [US1] Update View screen logging call to emit actual addresses in `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/viewer/ViewerScreen.kt`
+- [X] T011 [US1] Update View screen logging call to emit actual addresses in `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/viewer/ViewerScreen.kt`
   - Depends on T010 (requires DeveloperLogEntry data class)
   - Replace redacted placeholder emission with call to ViewerDeveloperLogResolver
   - Integrate address validation at emission site
   - Respect developer mode suppression
   
-- [ ] T012 [P] [US1] Add JUnit test for single-address log output in `feature/ndi-browser/presentation/src/test/java/com/ndi/feature/ndibrowser/viewer/ViewerDeveloperLogTest.kt`
+- [X] T012 [P] [US1] Add JUnit test for single-address log output in `feature/ndi-browser/presentation/src/test/java/com/ndi/feature/ndibrowser/viewer/ViewerDeveloperLogTest.kt`
   - Red: Test developer mode ON + one IPv4 address => log contains actual address string
   - Red: Test developer mode OFF => log suppression (no configured-address output)
   - Green: Implement log emission to satisfy both tests
 
 ### 3.2 End-to-End Validation (US1)
 
-- [ ] T013 [P] [US1] Create Playwright test for single-address developer log in `testing/e2e/tests/viewer-developer-log-single-address.spec.ts`
+- [X] T013 [P] [US1] Create Playwright test for single-address developer log in `testing/e2e/tests/viewer-developer-log-single-address.spec.ts`
   - Setup: Build app via `./gradlew.bat :app:installDebug`
   - Enable developer mode in test
   - Configure single IPv4 address (192.168.1.10)
@@ -130,7 +130,7 @@
   - Assert log output contains "192.168.1.10" (not redacted)
   - Assert no platform/emulator errors
   
-- [ ] T014 [US1] Add test assertion helper for log text extraction in `testing/e2e/helpers/viewer-log-assertions.ts`
+- [X] T014 [US1] Add test assertion helper for log text extraction in `testing/e2e/helpers/viewer-log-assertions.ts`
   - Helper: `extractConfiguredAddressFromLog(logText: string): string`
   - Helper: `assertLogContainsAddress(screen: Screen, expectedAddress: string): Promise<void>`
 
@@ -144,27 +144,27 @@
 
 ### 4.1 Multi-Address Support
 
-- [ ] T015 [P] [US2] Implement multi-address collection formatting utility in `feature/ndi-browser/data/src/main/java/com/ndi/feature/ndibrowser/data/validation/MultiAddressFormatter.kt`
+- [X] T015 [P] [US2] Implement multi-address collection formatting utility in `feature/ndi-browser/data/src/main/java/com/ndi/feature/ndibrowser/data/validation/MultiAddressFormatter.kt`
   - Method: `formatMultipleAddresses(addresses: List<String>, maxDisplay: Int = 5): String`
   - Deduplicates while preserving ordered insertion
   - Limit display to first 5 addresses per spec edge case requirement (test with 5+ scenarios in T019)
   - Formats as: "Configured addresses: 192.168.1.10, ff02::1, ndi-host.local"
   
-- [ ] T016 [P] [US2] Update ViewModel to collect multiple developer addresses in `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/viewer/ViewerViewModel.kt`
+- [X] T016 [P] [US2] Update ViewModel to collect multiple developer addresses in `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/viewer/ViewerViewModel.kt`
   - Extend Task T007: Add `developerModeAddressesList: StateFlow<List<String>>`
   - Ensure order is preserved from configuration source
   
-- [ ] T017 [US2] Add JUnit test for multi-address deduplication and order in `feature/ndi-browser/presentation/src/test/java/com/ndi/feature/ndibrowser/viewer/MultiAddressFormatterTest.kt`
+- [X] T017 [US2] Add JUnit test for multi-address deduplication and order in `feature/ndi-browser/presentation/src/test/java/com/ndi/feature/ndibrowser/viewer/MultiAddressFormatterTest.kt`
   - Red: Test 3 unique addresses (IPv4, IPv6, hostname) => all appear in order
   - Red: Test duplicate entries [192.168.1.10, 192.168.1.10] => deduplicated to single entry
   - Red: Test mixed duplicates [(192.168.1.10, ff02::1, 192.168.1.10)] => reordered to [192.168.1.10, ff02::1]
   - Green: Implement MultiAddressFormatter to pass all tests
   
-- [ ] T018 [P] [US2] Update log emission to use multi-address formatter in `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/viewer/ViewerScreen.kt`
+- [X] T018 [P] [US2] Update log emission to use multi-address formatter in `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/viewer/ViewerScreen.kt`
   - Integrate MultiAddressFormatter output into log message
   - Ensure deduplication happens at emission time
   
-- [ ] T019 [P] [US2] Create Playwright test for multi-address developer log in `testing/e2e/tests/viewer-developer-log-multi-address.spec.ts`
+- [X] T019 [P] [US2] Create Playwright test for multi-address developer log in `testing/e2e/tests/viewer-developer-log-multi-address.spec.ts`
   - Setup: Build and install app
   - Enable developer mode
   - Test scenario A: Configure 3 addresses [192.168.1.10, ff02::1, ndi-host.local]
@@ -174,7 +174,7 @@
     - Assert first 5 appear in log, additional truncated (per spec edge case)
     - Verify no misleading partial addresses
   
-- [ ] T020 [US2] Add helper to extract and validate multi-address output in `testing/e2e/helpers/viewer-log-assertions.ts`
+- [X] T020 [US2] Add helper to extract and validate multi-address output in `testing/e2e/helpers/viewer-log-assertions.ts`
   - Helper: `extractAllAddressesFromLog(logText: string): string[]`
   - Helper: `assertLogContainsAllAddressesInOrder(screen: Screen, expectedAddresses: string[]): Promise<void>`
 
@@ -188,20 +188,20 @@
 
 ### 5.1 Fallback Implementation
 
-- [ ] T021 [P] [US3] Create fallback message logic in `feature/ndi-browser/data/src/main/java/com/ndi/feature/ndibrowser/data/logging/DeveloperLogFallback.kt`
+- [X] T021 [P] [US3] Create fallback message logic in `feature/ndi-browser/data/src/main/java/com/ndi/feature/ndibrowser/data/logging/DeveloperLogFallback.kt`
   - Constant: `FALLBACK_NO_VALID_ADDRESSES = "Configured addresses: not configured"`
   - Method: `getFallbackMessage(reason: String): String`
   
-- [ ] T022 [US3] Update log emission to emit fallback when no valid addresses in `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/viewer/ViewerScreen.kt`
+- [X] T022 [US3] Update log emission to emit fallback when no valid addresses in `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/viewer/ViewerScreen.kt`
   - Check if validated address list is empty
   - Emit fallback message instead of empty/redacted output
   
-- [ ] T023 [P] [US3] Add JUnit test for fallback behavior in `feature/ndi-browser/presentation/src/test/java/com/ndi/feature/ndibrowser/viewer/DeveloperLogFallbackTest.kt`
+- [X] T023 [P] [US3] Add JUnit test for fallback behavior in `feature/ndi-browser/presentation/src/test/java/com/ndi/feature/ndibrowser/viewer/DeveloperLogFallbackTest.kt`
   - Red: Test empty address list => fallback message "not configured" appears
   - Red: Test all-malformed list => fallback message appears
   - Green: Implement fallback emission to pass both tests
   
-- [ ] T024 [P] [US3] Create Playwright test for fallback developer log in `testing/e2e/tests/viewer-developer-log-fallback.spec.ts`
+- [X] T024 [P] [US3] Create Playwright test for fallback developer log in `testing/e2e/tests/viewer-developer-log-fallback.spec.ts`
   - Setup: Build and install app
   - Enable developer mode
   - Clear all configured addresses (or set invalid entries)
@@ -209,7 +209,7 @@
   - Assert log contains fallback message "not configured"
   - Assert no redacted placeholders appear
   
-- [ ] T025 [US3] Add helper to verify fallback messaging in `testing/e2e/helpers/viewer-log-assertions.ts`
+- [X] T025 [US3] Add helper to verify fallback messaging in `testing/e2e/helpers/viewer-log-assertions.ts`
   - Helper: `assertLogShowsFallbackMessage(screen: Screen): Promise<void>`
 
 ---
@@ -221,16 +221,16 @@
 
 ### 6.1 Regression & Sign-Off
 
-- [ ] T026 [P] Run full Playwright regression suite against updated code in `testing/e2e`
+- [X] T026 [P] Run full Playwright regression suite against updated code in `testing/e2e`
   - Command: `./gradlew.bat :feature:ndi-browser:presentation:connectedAndroidTest`
   - Expected: 0 failing existing tests, all 3 new scenarios passing (T013, T019, T024)
   
-- [ ] T027 [P] Execute release hardening validation in `./scripts/verify-release-hardening.sh`
+- [X] T027 [P] Execute release hardening validation in `./scripts/verify-release-hardening.sh`
   - Confirm R8/ProGuard obfuscation rules present in `app/proguard-rules.pro`
   - Confirm `isMinifyEnabled=true` in `app/build.gradle.kts`
   - Run `./gradlew.bat :app:assembleRelease` and verify no errors
   
-- [ ] T028 Document validation evidence in `test-results/028-ip-display-validation.md`
+- [X] T028 Document validation evidence in `test-results/028-ip-display-validation.md`
   - Record preflight script output
   - Attach single-address scenario screenshot
   - Attach multi-address scenario screenshot
@@ -238,7 +238,7 @@
   - Record full regression test output
   - Note any environment blockers and unblocking commands
   
-- [ ] T029 Sign off on feature completion with validation Summary
+- [X] T029 Sign off on feature completion with validation Summary
   - Confirm SC-001 (100% dev-mode IP display): ✓
   - Confirm SC-002 (non-dev-mode suppression): ✓
   - Confirm SC-003 (multi-address accuracy): ✓
