@@ -92,4 +92,11 @@ class FakeAndroidDiscoveryServerRepository : com.ndi.feature.ndibrowser.domain.r
     override suspend fun reorderServers(idsInOrder: List<String>) = emptyList<com.ndi.core.model.DiscoveryServerEntry>()
     override suspend fun resolveActiveDiscoveryTarget() =
         throw UnsupportedOperationException()
+    override suspend fun performDiscoveryServerCheck(serverId: String, correlationId: String) =
+        throw UnsupportedOperationException()
+    override suspend fun recheckServer(serverId: String, correlationId: String) =
+        throw UnsupportedOperationException()
+    override suspend fun getServerCheckStatus(serverId: String): com.ndi.core.model.DiscoveryServerCheckStatus? = null
+    override fun observeServerCheckStatus(serverId: String): kotlinx.coroutines.flow.Flow<com.ndi.core.model.DiscoveryServerCheckStatus?> =
+        kotlinx.coroutines.flow.MutableStateFlow<com.ndi.core.model.DiscoveryServerCheckStatus?>(null)
 }

@@ -18,13 +18,13 @@ import org.junit.runner.RunWith
 class SettingsThreePaneUiTest {
 
     @Test
-    fun settingsFragment_containsThreePaneViewHierarchy() {
+    fun settingsFragment_containsTwoColumnViewHierarchy() {
         SettingsDependencies.settingsRepositoryProvider = { AndroidTestSettingsRepository() }
         launchFragmentInContainer<SettingsFragment>(
             themeResId = com.google.android.material.R.style.Theme_Material3_DayNight_NoActionBar,
         )
 
-        onView(withId(R.id.settingsThreePaneContainer)).check(matches(isDisplayed()))
+        onView(withId(R.id.settingsTwoColumnContainer)).check(matches(isDisplayed()))
     }
 }
 

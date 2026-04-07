@@ -43,4 +43,17 @@ class SettingsLayoutTransitionTest {
         assertEquals(SettingsLayoutMode.WIDE, viewModel.uiState.value.layoutMode)
         assertEquals(SettingsViewModel.CATEGORY_DEVELOPER, viewModel.uiState.value.settingsCategoryState.selectedCategoryId)
     }
+
+    @Test
+    fun compactHeightLandscapeProfile_remainsCompactAndUsable() = runTest(scheduler) {
+        val viewModel = SettingsViewModel(InMemorySettingsRepository())
+
+        viewModel.onLayoutContextChanged(widthDp = 420, isLandscape = true)
+        viewModel.onSettingsCategorySelected(SettingsViewModel.CATEGORY_DISCOVERY)
+        advanceUntilIdle()
+
+        assertEquals(SettingsLayoutMode.COMPACT, viewModel.uiState.value.layoutMode)
+        assertEquals(SettingsViewModel.CATEGORY_DISCOVERY, viewModel.uiState.value.settingsCategoryState.selectedCategoryId)
+        assertEquals(SettingsViewModel.CATEGORY_DISCOVERY, viewModel.uiState.value.settingsDetailState.selectedCategoryId)
+    }
 }
