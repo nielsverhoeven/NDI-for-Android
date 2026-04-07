@@ -1,6 +1,6 @@
 # NDI-for-Android Development Guidelines
 
-Auto-generated from all feature plans. Last updated: 2026-03-31
+Auto-generated from all feature plans. Last updated: 2026-04-07
 
 ## Active Technologies
 - Kotlin 1.9.24 with Android module source/jvm target 17; Gradle runtime verified with Android Studio JBR 21 + AGP 8.5.2, Gradle 8.7, AndroidX Navigation 2.7.7, Lifecycle 2.8.4, Coroutines 1.8.1, Room 2.6.1, Material 1.12.0, NDI 6 Android SDK native libraries (001-scan-ndi-sources)
