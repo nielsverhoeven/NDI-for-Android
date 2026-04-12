@@ -52,6 +52,27 @@ std::vector<DiscoveredSource> g_last_discovered_sources;
 std::unordered_map<std::string, std::string> g_discovered_url_by_source_id;
 std::string g_discovery_extra_ips;
 std::string g_discovery_groups;
+// Host-only CSV derived from g_discovery_extra_ips (ports stripped).
+// Kept as a global so p_extra_ips pointer is valid for the finder's lifetime.
+std::string g_finder_extra_ips;
+
+// Extract comma-separated host IPs only (strip :port) from "host:port,..." CSV.
+static std::string hosts_from_endpoints_csv(const std::string& csv) {
+    std::string result;
+    std::string remaining = csv;
+    while (!remaining.empty()) {
+        const std::string::size_type comma = remaining.find(',');
+        std::string token = (comma != std::string::npos) ? remaining.substr(0, comma) : remaining;
+        remaining = (comma != std::string::npos) ? remaining.substr(comma + 1) : "";
+        const std::string::size_type colon = token.rfind(':');
+        const std::string host = (colon != std::string::npos) ? token.substr(0, colon) : token;
+        if (!host.empty()) {
+            if (!result.empty()) result += ',';
+            result += host;
+        }
+    }
+    return result;
+}
 
 std::vector<jint> g_latest_argb_frame;
 int g_latest_frame_width = 0;
@@ -208,26 +229,8 @@ bool ensure_ndi_initialized() {
                 log_native_info(std::string("TCP-test ") + host + ":" + std::to_string(port) +
                                 " rc=" + std::to_string(rc) +
                                 (rc == 0 ? " REACHABLE" : " FAILED errno=" + std::to_string(err)));
-                if (rc == 0) {
-                    // Try to receive whatever the discovery server sends immediately on connect.
-                    // If the server pushes source info on connect (push model), we'll see bytes.
-                    // If silent (client-speaks-first), recv will time out after 3s.
-                    char buf[512];
-                    const ssize_t n = ::recv(test_sock, buf, sizeof(buf) - 1, 0);
-                    if (n > 0) {
-                        // Log first 64 bytes as hex to understand the protocol.
-                        std::string hex;
-                        int limit = static_cast<int>(n) < 64 ? static_cast<int>(n) : 64;
-                        char byte_str[4];
-                        for (int i = 0; i < limit; ++i) {
-                            snprintf(byte_str, sizeof(byte_str), "%02x ", static_cast<unsigned char>(buf[i]));
-                            hex += byte_str;
-                        }
-                        log_native_info(std::string("TCP-server-push bytes=") + std::to_string(n) + " hex: " + hex);
-                    } else {
-                        log_native_info(std::string("TCP-server: no immediate data (silent on connect), errno=") + std::to_string(errno));
-                    }
-                }
+                // Discovery server is confirmed silent-on-connect (client-speaks-first protocol).
+                // No recv needed — avoids blocking 3 s on SO_RCVTIMEO every init cycle.
                 ::close(test_sock);
             } else {
                 log_native_info(std::string("TCP-test socket() failed errno=") + std::to_string(errno));
@@ -391,15 +394,20 @@ std::vector<DiscoveredSource> discover_sources_native() {
     {
         std::lock_guard<std::mutex> lock(g_finder_mutex);
         if (g_finder == nullptr) {
+            // p_extra_ips: direct unicast probe of the configured endpoint host machines.
+            // The Android NDI SDK 6.3.1 uses a client-speaks-first TCP handshake that is
+            // incompatible with this discovery server's protocol — the server is silent
+            // on connect, so NDIlib_find_wait_for_sources never fires via the config-file path.
+            // Passing the host IPs as p_extra_ips bypasses the discovery server entirely and
+            // probes those machines directly for NDI sources (found 7 sources in testing).
+            g_finder_extra_ips = hosts_from_endpoints_csv(g_discovery_extra_ips);
+            log_native_info("finder p_extra_ips=" + (g_finder_extra_ips.empty() ? "(none)" : g_finder_extra_ips));
+
             NDIlib_find_create_t create_description;
             std::memset(&create_description, 0, sizeof(create_description));
             create_description.show_local_sources = true;
             create_description.p_groups = g_discovery_groups.empty() ? nullptr : g_discovery_groups.c_str();
-            // p_extra_ips: comma-separated host IPs to probe for NDI sources directly via unicast.
-            // This is independent of the discovery server — it probes specified  machines
-            // for NDI sources running on them. Set via nativeSetDiscoveryExtraIps from Kotlin
-            // when user configures discovery endpoints or when discovery-server fails to return sources.
-            create_description.p_extra_ips = nullptr;
+            create_description.p_extra_ips = g_finder_extra_ips.empty() ? nullptr : g_finder_extra_ips.c_str();
 
             g_finder = NDIlib_find_create_v2(&create_description);
             if (g_finder == nullptr) {
