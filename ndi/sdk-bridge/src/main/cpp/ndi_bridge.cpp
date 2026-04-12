@@ -49,6 +49,10 @@ struct DiscoveredSource {
 };
 
 std::vector<DiscoveredSource> g_last_discovered_sources;
+// True once we've completed at least one native discovery snapshot, even if
+// that snapshot is empty. This prevents back-to-back JNI calls from repeating
+// an expensive full discovery pass just because zero sources were returned.
+bool g_last_discovery_snapshot_valid = false;
 std::unordered_map<std::string, std::string> g_discovered_url_by_source_id;
 std::string g_discovery_extra_ips;
 std::string g_discovery_groups;
@@ -153,6 +157,20 @@ std::string discovery_endpoints_csv_snapshot() {
     return g_discovery_extra_ips;
 }
 
+std::string normalize_endpoint_for_native_sdk(const std::string& endpoint) {
+    const std::string ep = trim_copy(endpoint);
+    if (ep.empty()) {
+        return ep;
+    }
+    // Preserve explicit host:port endpoints as-is.
+    if (ep.find(':') != std::string::npos) {
+        return ep;
+    }
+    // Kotlin omits the default port (5959) for config-file compatibility.
+    // Native SDK APIs (env var and listener) are more reliable with explicit host:port.
+    return ep + ":5959";
+}
+
 // Clear NDI_DISCOVERY_SERVER so the Android NDI SDK falls back to reading
 // the config file at HOME/.ndi/ndi-config.v1.json (written by Kotlin).
 // On Android, setting NDI_DISCOVERY_SERVER via env var can conflict with
@@ -160,11 +178,22 @@ std::string discovery_endpoints_csv_snapshot() {
 // is the reliable mechanism on Android; the env var is cleared to prevent
 // it from overriding a valid JSON config.
 void apply_ndi_discovery_env() {
-    // On Android we configure discovery via HOME/.ndi/ndi-config.v1.json from Kotlin.
-    // Do not force NDI_DISCOVERY_SERVER here: SDK env parsing differences can override
-    // a valid config file and lead to empty source lists.
-    unsetenv("NDI_DISCOVERY_SERVER");
-    log_native_info("NDI_DISCOVERY_SERVER cleared (using ndi-config.v1.json)");
+    // Set NDI_DISCOVERY_SERVER to the first configured endpoint so the SDK uses it
+    // at init time (the SDK caches this value during NDIlib_initialize).
+    // We also write ndi-config.v1.json for completeness, but the env var is the
+    // primary mechanism on Android — the config file path alone gives 0 sources.
+    const std::string csv = discovery_endpoints_csv_snapshot();
+    if (csv.empty()) {
+        ::unsetenv("NDI_DISCOVERY_SERVER");
+        log_native_info("NDI_DISCOVERY_SERVER cleared (no endpoints configured)");
+        return;
+    }
+    // NDI_DISCOVERY_SERVER does not support comma-separated lists reliably on Android;
+    // use only the first endpoint.
+    const std::string first_ep = csv.substr(0, csv.find(','));
+    const std::string normalized_ep = normalize_endpoint_for_native_sdk(first_ep);
+    ::setenv("NDI_DISCOVERY_SERVER", normalized_ep.c_str(), 1);
+    log_native_info("NDI_DISCOVERY_SERVER=" + normalized_ep);
 }
 
 // Persistent finder — kept alive between discovery ticks so the SDK can
@@ -207,19 +236,24 @@ bool ensure_ndi_initialized() {
     // Native POSIX TCP reachability test — also peeks at what the discovery server
     // sends immediately on connect, to help diagnose protocol-level issues.
     {
-        const std::string& eps = g_discovery_extra_ips;
-        // Extract the first host:port from the comma-separated endpoint list.
-        std::string first_ep = eps.substr(0, eps.find(','));
-        const std::string::size_type colon = first_ep.rfind(':');
-        if (!first_ep.empty() && colon != std::string::npos) {
-            const std::string host = first_ep.substr(0, colon);
-            const int port = std::stoi(first_ep.substr(colon + 1));
+        // Use NDI_DISCOVERY_SERVER value (already set above) for the probe target.
+        const char* disc_env = getenv("NDI_DISCOVERY_SERVER");
+        const std::string probe_ep = disc_env ? disc_env : "";
+        if (!probe_ep.empty()) {
+            // Parse host and port; default to 5959 if no ':port' suffix.
+            std::string host;
+            int port = 5959;
+            const std::string::size_type colon = probe_ep.rfind(':');
+            if (colon != std::string::npos) {
+                host = probe_ep.substr(0, colon);
+                port = std::stoi(probe_ep.substr(colon + 1));
+            } else {
+                host = probe_ep;
+            }
             int test_sock = ::socket(AF_INET, SOCK_STREAM, 0);
             if (test_sock >= 0) {
-                struct timeval tv{};
-                tv.tv_sec = 3;
+                struct timeval tv{1, 0};  // 1s connect timeout
                 ::setsockopt(test_sock, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
-                ::setsockopt(test_sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
                 struct sockaddr_in addr{};
                 addr.sin_family = AF_INET;
                 addr.sin_port = htons(static_cast<uint16_t>(port));
@@ -229,11 +263,31 @@ bool ensure_ndi_initialized() {
                 log_native_info(std::string("TCP-test ") + host + ":" + std::to_string(port) +
                                 " rc=" + std::to_string(rc) +
                                 (rc == 0 ? " REACHABLE" : " FAILED errno=" + std::to_string(err)));
-                // Discovery server is confirmed silent-on-connect (client-speaks-first protocol).
-                // No recv needed — avoids blocking 3 s on SO_RCVTIMEO every init cycle.
+                if (rc == 0) {
+                    // Peek at initial bytes — tells us if server speaks first (NDI discovery
+                    // server typically sends the source registry on connect).
+                    struct timeval recv_tv{2, 0};  // 2s to wait for server greeting
+                    ::setsockopt(test_sock, SOL_SOCKET, SO_RCVTIMEO, &recv_tv, sizeof(recv_tv));
+                    char recv_buf[128] = {};
+                    const ssize_t n = ::recv(test_sock, recv_buf, sizeof(recv_buf) - 1, 0);
+                    if (n > 0) {
+                        std::string hex_str;
+                        const ssize_t show = std::min(n, (ssize_t)24);
+                        for (ssize_t i = 0; i < show; ++i) {
+                            char h[4]; snprintf(h, sizeof(h), "%02x ", (uint8_t)recv_buf[i]);
+                            hex_str += h;
+                        }
+                        log_native_info("TCP-test rx " + std::to_string(n) + "b: " + hex_str);
+                    } else {
+                        const int rx_err = errno;
+                        log_native_info("TCP-test rx: " + std::string(
+                            n == 0 ? "server closed connection"
+                                   : ("silent/timeout errno=" + std::to_string(rx_err))));
+                    }
+                }
                 ::close(test_sock);
             } else {
-                log_native_info(std::string("TCP-test socket() failed errno=") + std::to_string(errno));
+                log_native_info("TCP-test socket() failed errno=" + std::to_string(errno));
             }
         }
     }
@@ -293,9 +347,9 @@ std::string first_discovery_server_url_snapshot() {
     }
     const size_t comma = csv.find(',');
     if (comma == std::string::npos) {
-        return trim_copy(csv);
+        return normalize_endpoint_for_native_sdk(csv);
     }
-    return trim_copy(csv.substr(0, comma));
+    return normalize_endpoint_for_native_sdk(csv.substr(0, comma));
 }
 
 void append_send_listener_sources(std::vector<DiscoveredSource>& discovered) {
@@ -320,7 +374,14 @@ void append_send_listener_sources(std::vector<DiscoveredSource>& discovered) {
         log_native_info("send_listener created for " + server_url);
     }
 
-    NDIlib_send_listener_wait_for_senders(g_send_listener, 1200);
+    const bool connected = NDIlib_send_listener_is_connected(g_send_listener);
+    const char* active_server = NDIlib_send_listener_get_server_url(g_send_listener);
+    log_native_info(std::string("send_listener connected=") + (connected ? "true" : "false") +
+                    " server=" + (active_server != nullptr ? active_server : "(null)"));
+
+    // Keep listener wait short so UI refreshes stay responsive when the server
+    // has no immediately available sender updates.
+    NDIlib_send_listener_wait_for_senders(g_send_listener, 700);
 
     uint32_t sender_count = 0;
     const NDIlib_sender_t* senders = NDIlib_send_listener_get_senders(g_send_listener, &sender_count);
@@ -419,9 +480,9 @@ std::vector<DiscoveredSource> discover_sources_native() {
         local_finder = g_finder;
     }
 
-    // Wait outside the lock — blocks up to 5 s on first call, returns early
-    // once sources are known to the finder (subsequent ticks are typically fast).
-    const bool wait_changed = NDIlib_find_wait_for_sources(local_finder, 5000);
+    // Wait outside the lock — keep this bounded to avoid long "frozen" initial
+    // scans on Android when discovery server interaction is slow or incompatible.
+    const bool wait_changed = NDIlib_find_wait_for_sources(local_finder, 1500);
     log_native_info(std::string("finder wait_for_sources changed=") + (wait_changed ? "true" : "false"));
 
     // Dump /proc/self/net/tcp to check whether the NDI SDK opened a connection
@@ -494,10 +555,15 @@ std::vector<DiscoveredSource> discover_sources_native() {
     std::vector<DiscoveredSource> discovered;
     append_find_sources(g_finder, discovered);
 
-    // NOTE: NDIlib_send_listener_* is NOT a discovery fallback — it only sees
-    // NDI 6.3+ advertiser-protocol senders and misses all legacy NDIlib_send_create
-    // sources. Do not call append_send_listener_sources here.
-    log_native_info("discover total=" + std::to_string(discovered.size()));
+    // Also query discovery server via NDIlib_send_listener_t — a direct TCP-based
+    // API that fetches the server's registered sender list. On Android, the finder's
+    // mDNS path can't cross VLANs; send_listener may be able to where finder can't.
+    const size_t finder_count = discovered.size();
+    append_send_listener_sources(discovered);
+    const size_t listener_count = discovered.size() - finder_count;
+    log_native_info("discover finder=" + std::to_string(finder_count) +
+                    " send_listener=" + std::to_string(listener_count) +
+                    " total=" + std::to_string(discovered.size()));
     return discovered;
 }
 
@@ -741,6 +807,7 @@ Java_com_ndi_sdkbridge_NativeNdiBridge_nativeDiscoverSourceIds(
     {
         std::lock_guard<std::mutex> lock(g_state_mutex);
         g_last_discovered_sources = discovered;
+        g_last_discovery_snapshot_valid = true;
         g_discovered_url_by_source_id.clear();
         for (const auto& entry : discovered) {
             if (!entry.url_address.empty()) {
@@ -773,14 +840,13 @@ Java_com_ndi_sdkbridge_NativeNdiBridge_nativeDiscoverDisplayNames(
     bool needs_discovery = false;
     {
         std::lock_guard<std::mutex> check_lock(g_state_mutex);
-        needs_discovery = g_last_discovered_sources.empty();
+        needs_discovery = !g_last_discovery_snapshot_valid;
     }
     if (needs_discovery) {
         auto discovered = discover_sources_native();   // slow scan - NO mutex
         std::lock_guard<std::mutex> store_lock(g_state_mutex);
-        if (g_last_discovered_sources.empty()) {
-            g_last_discovered_sources = std::move(discovered);
-        }
+        g_last_discovered_sources = std::move(discovered);
+        g_last_discovery_snapshot_valid = true;
     }
     std::vector<std::string> display_names;
     {
@@ -830,6 +896,7 @@ Java_com_ndi_sdkbridge_NativeNdiBridge_nativeSetDiscoveryExtraIps(
         if (g_discovery_extra_ips != incoming) {
             g_discovery_extra_ips = incoming;
             g_last_discovered_sources.clear();
+            g_last_discovery_snapshot_valid = false;
             g_discovered_url_by_source_id.clear();
             changed = true;
         }
