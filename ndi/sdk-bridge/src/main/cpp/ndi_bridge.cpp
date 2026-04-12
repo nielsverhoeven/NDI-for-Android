@@ -132,37 +132,18 @@ std::string discovery_endpoints_csv_snapshot() {
     return g_discovery_extra_ips;
 }
 
-// Set NDI_DISCOVERY_SERVER to the full comma-separated endpoint list.
-// The NDI SDK (v5+) natively supports multiple discovery servers when
-// given a comma-delimited value — all are contacted simultaneously.
+// Clear NDI_DISCOVERY_SERVER so the Android NDI SDK falls back to reading
+// the config file at HOME/.ndi/ndi-config.v1.json (written by Kotlin).
+// On Android, setting NDI_DISCOVERY_SERVER via env var can conflict with
+// the config-file path and result in empty source lists.  The config file
+// is the reliable mechanism on Android; the env var is cleared to prevent
+// it from overriding a valid JSON config.
 void apply_ndi_discovery_env() {
-    // Canonical approach (per NDI SDK docs): set NDI_DISCOVERY_SERVER env var
-    // BEFORE NDIlib_initialize(). The SDK reads this once during init and caches it.
-    //
-    // Reading g_discovery_extra_ips here is safe without g_state_mutex because:
-    //   - In discover_sources_native path: g_discovery_call_mutex is held; the only
-    //     writer (nativeSetDiscoveryExtraIps) also requires g_discovery_call_mutex
-    //     before modifying g_discovery_extra_ips, so the value is stable.
-    //   - In start_receiver_native path: g_state_mutex is held by the caller, which
-    //     directly guards g_discovery_extra_ips.
-    // Acquiring g_state_mutex here would risk lock-order inversion with the
-    // start_receiver_native call that holds g_state_mutex and calls ensure_ndi_initialized.
-    const std::string endpoints = g_discovery_extra_ips;  // safe read — see comment above
-    if (endpoints.empty()) {
-        unsetenv("NDI_DISCOVERY_SERVER");
-        log_native_info("NDI_DISCOVERY_SERVER cleared (no endpoints configured)");
-    } else {
-        setenv("NDI_DISCOVERY_SERVER", endpoints.c_str(), 1);
-        log_native_info(std::string("NDI_DISCOVERY_SERVER=") + endpoints);
-    }
-
-    if (g_discovery_groups.empty()) {
-        unsetenv("NDI_GROUPS");
-        log_native_info("NDI_GROUPS cleared (no discovery group filter)");
-    } else {
-        setenv("NDI_GROUPS", g_discovery_groups.c_str(), 1);
-        log_native_info(std::string("NDI_GROUPS=") + g_discovery_groups);
-    }
+    // On Android we configure discovery via HOME/.ndi/ndi-config.v1.json from Kotlin.
+    // Do not force NDI_DISCOVERY_SERVER here: SDK env parsing differences can override
+    // a valid config file and lead to empty source lists.
+    unsetenv("NDI_DISCOVERY_SERVER");
+    log_native_info("NDI_DISCOVERY_SERVER cleared (using ndi-config.v1.json)");
 }
 
 // Persistent finder — kept alive between discovery ticks so the SDK can
