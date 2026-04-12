@@ -286,9 +286,12 @@ object NativeNdiBridge : NdiDiscoveryBridge, NdiViewerBridge, NdiOutputBridge {
         } else {
             resolvedHost
         }
-        // Always include the port explicitly. The Android NDI SDK does not reliably default
-        // to 5959 when the port is omitted from NDI_DISCOVERY_SERVER or ndi-config.v1.json.
-        return "$normalizedHost:${endpoint.resolvedPort}"
+        val ndiDefaultPort = 5959
+        return if (endpoint.resolvedPort == ndiDefaultPort) {
+            normalizedHost
+        } else {
+            "$normalizedHost:${endpoint.resolvedPort}"
+        }
     }
 
     /**
@@ -304,8 +307,9 @@ object NativeNdiBridge : NdiDiscoveryBridge, NdiViewerBridge, NdiOutputBridge {
             .map { endpoint ->
                 val resolvedHost = resolveDiscoveryExtraIps(endpoint.host)
                 val normalizedHost = if (resolvedHost.contains(':')) "[$resolvedHost]" else resolvedHost
-                // Always include explicit port — Android NDI SDK needs it even for 5959.
-                "$normalizedHost:${endpoint.resolvedPort}"
+                val ndiDefaultPort = 5959
+                if (endpoint.resolvedPort == ndiDefaultPort) normalizedHost
+                else "$normalizedHost:${endpoint.resolvedPort}"
             }
             .joinToString(",")
 
