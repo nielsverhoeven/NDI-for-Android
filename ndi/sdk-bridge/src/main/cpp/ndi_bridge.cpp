@@ -17,6 +17,14 @@
 // POSIX for setenv/unsetenv
 #include <stdlib.h>
 
+// POSIX networking — for native TCP reachability test
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <unistd.h>
+#include <errno.h>
+#include <sys/time.h>
+
 #ifdef NDI_SDK_AVAILABLE
 #include "Processing.NDI.Lib.h"
 #include "Processing.NDI.SendListener.h"
@@ -43,6 +51,7 @@ struct DiscoveredSource {
 std::vector<DiscoveredSource> g_last_discovered_sources;
 std::unordered_map<std::string, std::string> g_discovered_url_by_source_id;
 std::string g_discovery_extra_ips;
+std::string g_discovery_groups;
 
 std::vector<jint> g_latest_argb_frame;
 int g_latest_frame_width = 0;
@@ -127,11 +136,33 @@ std::string discovery_endpoints_csv_snapshot() {
 // The NDI SDK (v5+) natively supports multiple discovery servers when
 // given a comma-delimited value — all are contacted simultaneously.
 void apply_ndi_discovery_env() {
-    // On Android we configure discovery via HOME/.ndi/ndi-config.v1.json from Kotlin.
-    // Do not force NDI_DISCOVERY_SERVER here: SDK env parsing differences can override
-    // a valid config file and lead to empty source lists.
-    unsetenv("NDI_DISCOVERY_SERVER");
-    log_native_info("NDI_DISCOVERY_SERVER cleared (using ndi-config.v1.json)");
+    // Canonical approach (per NDI SDK docs): set NDI_DISCOVERY_SERVER env var
+    // BEFORE NDIlib_initialize(). The SDK reads this once during init and caches it.
+    //
+    // Reading g_discovery_extra_ips here is safe without g_state_mutex because:
+    //   - In discover_sources_native path: g_discovery_call_mutex is held; the only
+    //     writer (nativeSetDiscoveryExtraIps) also requires g_discovery_call_mutex
+    //     before modifying g_discovery_extra_ips, so the value is stable.
+    //   - In start_receiver_native path: g_state_mutex is held by the caller, which
+    //     directly guards g_discovery_extra_ips.
+    // Acquiring g_state_mutex here would risk lock-order inversion with the
+    // start_receiver_native call that holds g_state_mutex and calls ensure_ndi_initialized.
+    const std::string endpoints = g_discovery_extra_ips;  // safe read — see comment above
+    if (endpoints.empty()) {
+        unsetenv("NDI_DISCOVERY_SERVER");
+        log_native_info("NDI_DISCOVERY_SERVER cleared (no endpoints configured)");
+    } else {
+        setenv("NDI_DISCOVERY_SERVER", endpoints.c_str(), 1);
+        log_native_info(std::string("NDI_DISCOVERY_SERVER=") + endpoints);
+    }
+
+    if (g_discovery_groups.empty()) {
+        unsetenv("NDI_GROUPS");
+        log_native_info("NDI_GROUPS cleared (no discovery group filter)");
+    } else {
+        setenv("NDI_GROUPS", g_discovery_groups.c_str(), 1);
+        log_native_info(std::string("NDI_GROUPS=") + g_discovery_groups);
+    }
 }
 
 // Persistent finder — kept alive between discovery ticks so the SDK can
@@ -164,6 +195,65 @@ bool ensure_ndi_initialized() {
     // Must set NDI_DISCOVERY_SERVER BEFORE NDIlib_initialize; the SDK reads the
     // variable once during library initialization and caches the result.
     apply_ndi_discovery_env();
+
+    // Verify env vars are actually visible to the process before SDK init.
+    const char* home_val = getenv("HOME");
+    const char* disc_val = getenv("NDI_DISCOVERY_SERVER");
+    log_native_info(std::string("pre-init env HOME=") + (home_val ? home_val : "(null)"));
+    log_native_info(std::string("pre-init env NDI_DISCOVERY_SERVER=") + (disc_val ? disc_val : "(null)"));
+
+    // Native POSIX TCP reachability test — also peeks at what the discovery server
+    // sends immediately on connect, to help diagnose protocol-level issues.
+    {
+        const std::string& eps = g_discovery_extra_ips;
+        // Extract the first host:port from the comma-separated endpoint list.
+        std::string first_ep = eps.substr(0, eps.find(','));
+        const std::string::size_type colon = first_ep.rfind(':');
+        if (!first_ep.empty() && colon != std::string::npos) {
+            const std::string host = first_ep.substr(0, colon);
+            const int port = std::stoi(first_ep.substr(colon + 1));
+            int test_sock = ::socket(AF_INET, SOCK_STREAM, 0);
+            if (test_sock >= 0) {
+                struct timeval tv{};
+                tv.tv_sec = 3;
+                ::setsockopt(test_sock, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+                ::setsockopt(test_sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+                struct sockaddr_in addr{};
+                addr.sin_family = AF_INET;
+                addr.sin_port = htons(static_cast<uint16_t>(port));
+                ::inet_pton(AF_INET, host.c_str(), &addr.sin_addr);
+                const int rc = ::connect(test_sock, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr));
+                const int err = errno;
+                log_native_info(std::string("TCP-test ") + host + ":" + std::to_string(port) +
+                                " rc=" + std::to_string(rc) +
+                                (rc == 0 ? " REACHABLE" : " FAILED errno=" + std::to_string(err)));
+                if (rc == 0) {
+                    // Try to receive whatever the discovery server sends immediately on connect.
+                    // If the server pushes source info on connect (push model), we'll see bytes.
+                    // If silent (client-speaks-first), recv will time out after 3s.
+                    char buf[512];
+                    const ssize_t n = ::recv(test_sock, buf, sizeof(buf) - 1, 0);
+                    if (n > 0) {
+                        // Log first 64 bytes as hex to understand the protocol.
+                        std::string hex;
+                        int limit = static_cast<int>(n) < 64 ? static_cast<int>(n) : 64;
+                        char byte_str[4];
+                        for (int i = 0; i < limit; ++i) {
+                            snprintf(byte_str, sizeof(byte_str), "%02x ", static_cast<unsigned char>(buf[i]));
+                            hex += byte_str;
+                        }
+                        log_native_info(std::string("TCP-server-push bytes=") + std::to_string(n) + " hex: " + hex);
+                    } else {
+                        log_native_info(std::string("TCP-server: no immediate data (silent on connect), errno=") + std::to_string(errno));
+                    }
+                }
+                ::close(test_sock);
+            } else {
+                log_native_info(std::string("TCP-test socket() failed errno=") + std::to_string(errno));
+            }
+        }
+    }
+
     const bool result = NDIlib_initialize();
     g_ndi_initialized.store(result, std::memory_order_release);
     if (result) {
@@ -177,7 +267,9 @@ bool ensure_ndi_initialized() {
 void append_find_sources(NDIlib_find_instance_t find_instance, std::vector<DiscoveredSource>& discovered) {
     uint32_t source_count = 0;
     const NDIlib_source_t* sources = NDIlib_find_get_current_sources(find_instance, &source_count);
+    log_native_info("finder current source_count=" + std::to_string(source_count));
     if (sources == nullptr) {
+        log_native_info("finder sources pointer is null");
         return;
     }
 
@@ -321,7 +413,11 @@ std::vector<DiscoveredSource> discover_sources_native() {
             NDIlib_find_create_t create_description;
             std::memset(&create_description, 0, sizeof(create_description));
             create_description.show_local_sources = true;
-            create_description.p_groups = nullptr;
+            create_description.p_groups = g_discovery_groups.empty() ? nullptr : g_discovery_groups.c_str();
+            // p_extra_ips: comma-separated host IPs to probe for NDI sources directly via unicast.
+            // This is independent of the discovery server — it probes specified  machines
+            // for NDI sources running on them. Set via nativeSetDiscoveryExtraIps from Kotlin
+            // when user configures discovery endpoints or when discovery-server fails to return sources.
             create_description.p_extra_ips = nullptr;
 
             g_finder = NDIlib_find_create_v2(&create_description);
@@ -336,7 +432,68 @@ std::vector<DiscoveredSource> discover_sources_native() {
 
     // Wait outside the lock — blocks up to 5 s on first call, returns early
     // once sources are known to the finder (subsequent ticks are typically fast).
-    NDIlib_find_wait_for_sources(local_finder, 5000);
+    const bool wait_changed = NDIlib_find_wait_for_sources(local_finder, 5000);
+    log_native_info(std::string("finder wait_for_sources changed=") + (wait_changed ? "true" : "false"));
+
+    // Dump /proc/self/net/tcp to check whether the NDI SDK opened a connection
+    // to the discovery server. Each row: local-addr remote-addr state
+    // (state 01=ESTABLISHED, 02=SYN_SENT, 06=TIME_WAIT, 0A=LISTEN)
+    {
+        FILE* f = fopen("/proc/self/net/tcp", "r");
+        if (f) {
+            char line[256];
+            bool header = true;
+            while (fgets(line, sizeof(line), f)) {
+                if (header) { header = false; continue; }
+                // remote addr field is the 3rd space-separated token in hex big-endian
+                unsigned long local_hex = 0, remote_hex = 0, local_port = 0, remote_port = 0;
+                unsigned int state = 0;
+                // format: sl local_addr:port remote_addr:port state ...
+                int idx; unsigned long la, ra; unsigned la_p, ra_p, st;
+                if (sscanf(line, " %d: %lX:%X %lX:%X %X", &idx, &la, &la_p, &ra, &ra_p, &st) == 6) {
+                    // Port 5959 = 0x1747; log if remote port matches
+                    if (ra_p == 0x1747 || la_p == 0x1747) {
+                        // Reverse byte order (little-endian in /proc)
+                        unsigned a = (ra >> 0) & 0xff, b = (ra >> 8) & 0xff,
+                                 c = (ra >> 16) & 0xff, d = (ra >> 24) & 0xff;
+                        unsigned la0 = (la >> 0) & 0xff, la1 = (la >> 8) & 0xff,
+                                 la2 = (la >> 16) & 0xff, la3 = (la >> 24) & 0xff;
+                        log_native_info(std::string("tcp-port5959 local=") +
+                            std::to_string(la0) + "." + std::to_string(la1) + "." +
+                            std::to_string(la2) + "." + std::to_string(la3) + ":" + std::to_string(la_p) +
+                            " remote=" +
+                            std::to_string(a) + "." + std::to_string(b) + "." +
+                            std::to_string(c) + "." + std::to_string(d) + ":" + std::to_string(ra_p) +
+                            " state=" + std::to_string(st));
+                    }
+                }
+            }
+            fclose(f);
+        } else {
+            log_native_info("tcp-dump: cannot open /proc/self/net/tcp");
+        }
+        // Also check tcp6
+        FILE* f6 = fopen("/proc/self/net/tcp6", "r");
+        if (f6) {
+            char line[512];
+            bool header = true;
+            while (fgets(line, sizeof(line), f6)) {
+                if (header) { header = false; continue; }
+                int idx; unsigned int la_p, ra_p, st;
+                char la_hex[40], ra_hex[40];
+                if (sscanf(line, " %d: %39s %39s %X", &idx, la_hex, ra_hex, &st) == 4) {
+                    // Extract port from la_hex as last 4 hex chars after ':'
+                    la_p = ra_p = 0;
+                    char* lcolon = strchr(la_hex, ':'); if (lcolon) sscanf(lcolon+1, "%X", &la_p);
+                    char* rcolon = strchr(ra_hex, ':'); if (rcolon) sscanf(rcolon+1, "%X", &ra_p);
+                    if (la_p == 0x1747 || ra_p == 0x1747) {
+                        log_native_info(std::string("tcp6-port5959 ") + la_hex + " " + ra_hex + " state=" + std::to_string(st));
+                    }
+                }
+            }
+            fclose(f6);
+        }
+    }
 
     // Reacquire to safely read results; verify the finder hasn't been replaced.
     std::lock_guard<std::mutex> lock(g_finder_mutex);
@@ -348,11 +505,9 @@ std::vector<DiscoveredSource> discover_sources_native() {
     std::vector<DiscoveredSource> discovered;
     append_find_sources(g_finder, discovered);
 
-    // If legacy finder yields nothing, query the NDI 6 sender-listener plane.
-    if (discovered.empty()) {
-        append_send_listener_sources(discovered);
-    }
-
+    // NOTE: NDIlib_send_listener_* is NOT a discovery fallback — it only sees
+    // NDI 6.3+ advertiser-protocol senders and misses all legacy NDIlib_send_create
+    // sources. Do not call append_send_listener_sources here.
     log_native_info("discover total=" + std::to_string(discovered.size()));
     return discovered;
 }
