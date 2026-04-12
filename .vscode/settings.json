@@ -11,5 +11,5 @@
         ".specify/scripts/powershell/": true
     },
     "chat.agent.maxRequests": 500,
-    "chat.requestQueuing.defaultAction": "queue"
+    "chat.requestQueuing.defaultAction": "steer"
 }
