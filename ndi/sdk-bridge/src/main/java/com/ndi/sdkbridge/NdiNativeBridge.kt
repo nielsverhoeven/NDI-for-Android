@@ -227,48 +227,10 @@ object NativeNdiBridge : NdiDiscoveryBridge, NdiViewerBridge, NdiOutputBridge {
                 }
             }
 
-            // If discovery is still empty, probe alternate discovery ports per host.
-            // Some Discovery Service setups are configured on non-default ports.
-            if (nativeSources.isEmpty() && configuredEndpoints.isNotEmpty()) {
-                val fallbackPorts = listOf(5959, 5960, 5961)
-                val fallback = linkedMapOf<String, NdiSource>()
-
-                configuredEndpoints.forEach { endpoint ->
-                    val candidatePorts = buildList {
-                        add(endpoint.resolvedPort)
-                        fallbackPorts.forEach { candidate ->
-                            if (candidate != endpoint.resolvedPort) add(candidate)
-                        }
-                    }
-
-                    candidatePorts.forEach { port ->
-                        runCatching {
-                            val probeEndpoint = endpoint.copy(
-                                port = port,
-                                resolvedPort = port,
-                                usesDefaultPort = port == 5959,
-                            )
-                            setDiscoveryEndpoints(listOf(probeEndpoint))
-                            discoverNativeSourcesOnce()
-                        }.getOrDefault(emptyList()).forEach { source ->
-                            fallback.putIfAbsent(source.sourceId, source)
-                        }
-
-                        if (fallback.isNotEmpty()) {
-                            Log.i(
-                                "NdiDiscovery",
-                                "Discovery fallback found sources via ${endpoint.host}:$port",
-                            )
-                            return@forEach
-                        }
-                    }
-                }
-
-                runCatching { setDiscoveryEndpoints(configuredEndpoints) }
-                if (fallback.isNotEmpty()) {
-                    nativeSources = fallback.values.toList()
-                }
-            }
+            // Do not probe alternate discovery-server ports here.
+            // Discovery server endpoint port is explicit configuration (typically 5959),
+            // while source stream ports (5961, 5962, ...) are announced by the SDK in
+            // source URLs and are unrelated to discovery-server endpoint selection.
 
             Log.d("NdiDiscovery", "Found ${relaySources.size} relay sources, ${nativeSources.size} native sources")
 
@@ -288,15 +250,23 @@ object NativeNdiBridge : NdiDiscoveryBridge, NdiViewerBridge, NdiOutputBridge {
     }
 
     private fun discoverNativeSourcesOnce(): List<NdiSource> {
-        val sourceIds = runCatching { nativeDiscoverSourceIds() }.getOrDefault(emptyArray())
-        val displayNames = runCatching { nativeDiscoverDisplayNames() }.getOrDefault(emptyArray())
-        val now = System.currentTimeMillis()
-        return sourceIds.mapIndexed { index, sourceId ->
-            NdiSource(
-                sourceId = sourceId,
-                displayName = displayNames.getOrNull(index) ?: sourceId,
-                lastSeenAtEpochMillis = now,
-            )
+        // The NDI SDK finder uses multicast internally — both for mDNS source announcements
+        // and for discovery-server wake-up notifications (UDP multicast). Android drops all
+        // inbound multicast packets at the Wi-Fi driver level unless a MulticastLock is held,
+        // which causes NDIlib_find_wait_for_sources to never fire and source_count to stay 0.
+        // Holding the lock here ensures multicast reaches the native socket for the full
+        // duration of the blocking find call (~5 s on first poll).
+        return withMulticastLock {
+            val sourceIds = runCatching { nativeDiscoverSourceIds() }.getOrDefault(emptyArray())
+            val displayNames = runCatching { nativeDiscoverDisplayNames() }.getOrDefault(emptyArray())
+            val now = System.currentTimeMillis()
+            sourceIds.mapIndexed { index, sourceId ->
+                NdiSource(
+                    sourceId = sourceId,
+                    displayName = displayNames.getOrNull(index) ?: sourceId,
+                    lastSeenAtEpochMillis = now,
+                )
+            }
         }
     }
 
@@ -316,12 +286,9 @@ object NativeNdiBridge : NdiDiscoveryBridge, NdiViewerBridge, NdiOutputBridge {
         } else {
             resolvedHost
         }
-        val ndiDefaultPort = 5959
-        return if (endpoint.resolvedPort == ndiDefaultPort) {
-            normalizedHost
-        } else {
-            "$normalizedHost:${endpoint.resolvedPort}"
-        }
+        // Always include the port explicitly. The Android NDI SDK does not reliably default
+        // to 5959 when the port is omitted from NDI_DISCOVERY_SERVER or ndi-config.v1.json.
+        return "$normalizedHost:${endpoint.resolvedPort}"
     }
 
     /**
@@ -332,16 +299,17 @@ object NativeNdiBridge : NdiDiscoveryBridge, NdiViewerBridge, NdiOutputBridge {
      */
     private fun writeNdiConfigFile(endpoints: List<NdiDiscoveryEndpoint>) {
         val context = appContext ?: return
-        val ndiDefaultPort = 5959
         val discovery = endpoints
             .filter { it.host.isNotBlank() }
             .map { endpoint ->
                 val resolvedHost = resolveDiscoveryExtraIps(endpoint.host)
                 val normalizedHost = if (resolvedHost.contains(':')) "[$resolvedHost]" else resolvedHost
-                if (endpoint.resolvedPort == ndiDefaultPort) normalizedHost
-                else "$normalizedHost:${endpoint.resolvedPort}"
+                // Always include explicit port — Android NDI SDK needs it even for 5959.
+                "$normalizedHost:${endpoint.resolvedPort}"
             }
             .joinToString(",")
+
+        // Write to the app-private data dir (HOME-relative path).
         val ndiDir = java.io.File(context.dataDir, ".ndi")
         runCatching {
             ndiDir.mkdirs()
@@ -355,7 +323,24 @@ object NativeNdiBridge : NdiDiscoveryBridge, NdiViewerBridge, NdiOutputBridge {
                 Log.d("NdiDiscovery", "NDI config file removed (no endpoints)")
             }
         }.onFailure {
-            Log.w("NdiDiscovery", "Failed to write NDI config file: ${it.message}")
+            Log.w("NdiDiscovery", "Failed to write NDI config file (data dir): ${it.message}")
+        }
+
+        // Also write to external storage root — some Android NDI SDK builds read from
+        // /sdcard/.ndi/ndi-config.v1.json regardless of the HOME env var.
+        runCatching {
+            val sdcardNdiDir = java.io.File(android.os.Environment.getExternalStorageDirectory(), ".ndi")
+            sdcardNdiDir.mkdirs()
+            val sdcardConfigFile = java.io.File(sdcardNdiDir, "ndi-config.v1.json")
+            if (discovery.isNotBlank()) {
+                val json = """{"ndi":{"networks":{"ips":"","discovery":"$discovery"}}}"""
+                sdcardConfigFile.writeText(json)
+                Log.d("NdiDiscovery", "NDI config file written to sdcard: ${sdcardConfigFile.absolutePath}")
+            } else {
+                sdcardConfigFile.delete()
+            }
+        }.onFailure {
+            Log.d("NdiDiscovery", "Skipping sdcard NDI config write: ${it.message}")
         }
     }
 
