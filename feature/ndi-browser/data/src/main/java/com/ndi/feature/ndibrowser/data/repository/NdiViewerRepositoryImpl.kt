@@ -1,5 +1,6 @@
 package com.ndi.feature.ndibrowser.data.repository
 
+import android.util.Log
 import com.ndi.core.database.ViewerSessionDao
 import com.ndi.core.database.ViewerSessionEntity
 import com.ndi.core.model.PlaybackState
@@ -68,9 +69,19 @@ class NdiViewerRepositoryImpl(
             viewerSessionState.value = connectingSession
 
             runCatching {
+                val startTime = System.currentTimeMillis()
                 val firstFrame = withContext(Dispatchers.IO) {
+                    Log.i("NdiViewer", "startReceiver beginning for $sourceId")
                     bridge.startReceiver(sourceId)
-                    waitForFirstFrame(sourceId)
+                    val startRecvMs = System.currentTimeMillis() - startTime
+                    Log.i("NdiViewer", "startReceiver completed in ${startRecvMs}ms for $sourceId")
+                    
+                    Log.i("NdiViewer", "waitForFirstFrame beginning for $sourceId (5s timeout)")
+                    val frameTime = System.currentTimeMillis()
+                    val frame = waitForFirstFrame(sourceId)
+                    val waitMs = System.currentTimeMillis() - frameTime
+                    Log.i("NdiViewer", "waitForFirstFrame completed in ${waitMs}ms for $sourceId")
+                    frame
                 }
                 persistViewerContinuity(sourceId = sourceId, firstFrame = firstFrame)
                 val playingSession = connectingSession.copy(playbackState = PlaybackState.PLAYING)
