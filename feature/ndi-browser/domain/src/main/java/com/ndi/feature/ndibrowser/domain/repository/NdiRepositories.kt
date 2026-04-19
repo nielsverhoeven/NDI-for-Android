@@ -1,6 +1,8 @@
 package com.ndi.feature.ndibrowser.domain.repository
 
 import com.ndi.core.model.DiscoverySnapshot
+import com.ndi.core.model.CachedSourceRecord
+import com.ndi.core.model.CachedSourceValidationState
 import com.ndi.core.model.DeveloperDiscoveryDiagnostics
 import com.ndi.core.model.DiscoveryCompatibilityResult
 import com.ndi.core.model.DiscoveryCompatibilitySnapshot
@@ -61,6 +63,35 @@ interface NdiDiscoveryRepository {
      * Gets the current availability status for a specific source.
      */
     suspend fun getSourceAvailabilityStatus(sourceId: String): SourceAvailabilityStatus? = null
+}
+
+interface CachedSourceRepository {
+    fun observeCachedSources(): Flow<List<CachedSourceRecord>>
+
+    suspend fun getCachedSource(cacheKey: String): CachedSourceRecord?
+
+    suspend fun upsertCachedSource(record: CachedSourceRecord)
+
+    /**
+     * Insert-or-update from a live discovery scan.
+     * Inserts the full record for new sources; for existing sources updates only discovery
+     * fields and leaves [CachedSourceRecord.retainedPreviewImagePath] untouched.
+     */
+    suspend fun upsertFromDiscovery(record: CachedSourceRecord)
+
+    suspend fun upsertDiscoveryAssociation(
+        cacheKey: String,
+        discoveryServerId: String,
+        observedAtEpochMillis: Long = System.currentTimeMillis(),
+    )
+
+    suspend fun markValidationState(
+        cacheKey: String,
+        state: CachedSourceValidationState,
+        validationStartedAtEpochMillis: Long? = null,
+        validatedAtEpochMillis: Long? = null,
+        availableAtEpochMillis: Long? = null,
+    )
 }
 
 interface NdiViewerRepository {

@@ -6,6 +6,7 @@ import com.ndi.core.model.DiscoveryCompatibilityStatus
 import com.ndi.core.model.DiscoverySnapshot
 import com.ndi.core.model.DiscoveryStatus
 import com.ndi.core.model.TelemetryEvent
+import com.ndi.feature.ndibrowser.domain.repository.CachedSourceRepository
 import com.ndi.feature.ndibrowser.domain.repository.NdiDiscoveryRepository
 import com.ndi.feature.ndibrowser.domain.repository.UserSelectionRepository
 import com.ndi.feature.ndibrowser.domain.repository.ViewerContinuityRepository
@@ -25,6 +26,7 @@ object SourceListDependencies {
     var overlayStateProvider: (() -> Flow<com.ndi.feature.ndibrowser.settings.OverlayDisplayState?>)? = null
     var viewerContinuityRepositoryProvider: (() -> ViewerContinuityRepository)? = null
     var perSourceFrameRepositoryProvider: (() -> PerSourceFrameRepository)? = null
+    var cachedSourceRepositoryProvider: (() -> CachedSourceRepository)? = null
     var telemetryEmitter: SourceListTelemetryEmitter = SourceListTelemetryEmitter {}
 
     fun requireDiscoveryRepository(): NdiDiscoveryRepository {
@@ -49,6 +51,7 @@ object SourceListDependencies {
 
     fun viewerContinuityRepositoryOrNull(): ViewerContinuityRepository? = viewerContinuityRepositoryProvider?.invoke()
     fun perSourceFrameRepositoryOrNull(): PerSourceFrameRepository? = perSourceFrameRepositoryProvider?.invoke()
+    fun cachedSourceRepositoryOrNull(): CachedSourceRepository? = cachedSourceRepositoryProvider?.invoke()
 }
 
 object SourceListTelemetry {

@@ -31,6 +31,33 @@ data class NdiSource(
     val lastFramePreviewPath: String? = null,
 )
 
+enum class CachedSourceValidationState {
+    NOT_YET_VALIDATED,
+    VALIDATING,
+    AVAILABLE,
+    UNAVAILABLE,
+}
+
+data class CachedSourceRecord(
+    val cacheKey: String,
+    val stableSourceId: String? = null,
+    val lastObservedSourceId: String? = null,
+    val displayName: String,
+    val endpointHost: String,
+    val endpointPort: Int,
+    val endpointKey: String,
+    val validationState: CachedSourceValidationState = CachedSourceValidationState.NOT_YET_VALIDATED,
+    val lastAvailableAtEpochMillis: Long? = null,
+    val lastValidatedAtEpochMillis: Long? = null,
+    val lastValidationStartedAtEpochMillis: Long? = null,
+    val firstCachedAtEpochMillis: Long,
+    val lastDiscoveredAtEpochMillis: Long,
+    val retainedPreviewImagePath: String? = null,
+    val lastPreviewCapturedAtEpochMillis: Long? = null,
+    val updatedAtEpochMillis: Long,
+    val discoveryServerIds: List<String> = emptyList(),
+)
+
 data class DiscoverySnapshot(
     val snapshotId: String,
     val startedAtEpochMillis: Long,

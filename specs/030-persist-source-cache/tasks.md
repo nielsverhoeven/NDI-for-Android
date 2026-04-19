@@ -54,17 +54,17 @@
 
 ### Tests for User Story 1 (REQUIRED)
 
-- [ ] T013 [P] [US1] Add failing repository contract tests for cached-source merge and validation-state transitions in feature/ndi-browser/data/src/test/java/com/ndi/feature/ndibrowser/data/NdiDiscoveryRepositoryContractTest.kt
-- [ ] T014 [P] [US1] Add failing Home dashboard gating tests for canNavigateToView during VALIDATING/UNAVAILABLE states in feature/ndi-browser/data/src/test/java/com/ndi/feature/ndibrowser/data/repository/HomeDashboardRepositoryImplTest.kt
-- [ ] T015 [P] [US1] Add failing Source List presentation tests for cached row rendering and disabled View action in feature/ndi-browser/presentation/src/test/java/com/ndi/feature/ndibrowser/source_list/SourceListViewModelAvailabilityTest.kt
-- [ ] T016 [US1] Add failing Home ViewModel behavior tests for quick-action disable path in feature/ndi-browser/presentation/src/test/java/com/ndi/feature/ndibrowser/home/HomeViewModelTest.kt
+- [x] T013 [P] [US1] Add failing repository contract tests for cached-source merge and validation-state transitions in feature/ndi-browser/data/src/test/java/com/ndi/feature/ndibrowser/data/NdiDiscoveryRepositoryContractTest.kt
+- [x] T014 [P] [US1] Add failing Home dashboard gating tests for canNavigateToView during VALIDATING/UNAVAILABLE states in feature/ndi-browser/data/src/test/java/com/ndi/feature/ndibrowser/data/repository/HomeDashboardRepositoryImplTest.kt
+- [x] T015 [P] [US1] Add failing Source List presentation tests for cached row rendering and disabled View action in feature/ndi-browser/presentation/src/test/java/com/ndi/feature/ndibrowser/source_list/SourceListViewModelAvailabilityTest.kt
+- [x] T016 [US1] Add failing Home ViewModel behavior tests for quick-action disable path in feature/ndi-browser/presentation/src/test/java/com/ndi/feature/ndibrowser/home/HomeViewModelTest.kt
 - [ ] T017 [US1] Add Playwright emulator scenario for cached-source pre-validation visibility and disabled action in testing/e2e/tests/030-cached-source-validation.spec.ts
 
 ### Implementation for User Story 1
 
 - [x] T018 [US1] Implement cached-source read/emit/validation merge flow in feature/ndi-browser/data/src/main/java/com/ndi/feature/ndibrowser/data/repository/NdiDiscoveryRepositoryImpl.kt
 - [ ] T019 [US1] Update source availability debounce integration with persisted validation state in feature/ndi-browser/data/src/main/java/com/ndi/feature/ndibrowser/data/AvailabilityDebounceTracker.kt
-- [ ] T020 [US1] Implement Home snapshot gating from cached validation state in feature/ndi-browser/data/src/main/java/com/ndi/feature/ndibrowser/data/repository/HomeDashboardRepositoryImpl.kt
+- [x] T020 [US1] Implement Home snapshot gating from cached validation state in feature/ndi-browser/data/src/main/java/com/ndi/feature/ndibrowser/data/repository/HomeDashboardRepositoryImpl.kt
 - [ ] T021 [US1] Update Source List state modeling for persisted preview + validation state in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/source_list/SourceListViewModel.kt
 - [ ] T022 [US1] Render disabled/validating visual states in feature/ndi-browser/presentation/src/main/res/layout/fragment_source_list.xml and feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/source_list/SourceListScreen.kt
 - [ ] T023 [US1] Update Home quick-action rendering and disabled state behavior in feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/home/HomeScreen.kt

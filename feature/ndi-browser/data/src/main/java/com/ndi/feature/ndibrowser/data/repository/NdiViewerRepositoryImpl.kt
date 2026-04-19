@@ -7,6 +7,7 @@ import com.ndi.core.model.PlaybackState
 import com.ndi.core.model.ViewerVideoFrame
 import com.ndi.core.model.ViewerSession
 import com.ndi.feature.ndibrowser.data.ViewerReconnectCoordinator
+import com.ndi.feature.ndibrowser.domain.repository.CachedSourceRepository
 import com.ndi.feature.ndibrowser.domain.repository.LastViewedContext
 import com.ndi.feature.ndibrowser.domain.repository.NdiViewerRepository
 import com.ndi.feature.ndibrowser.domain.repository.PlaybackOptimizationState
@@ -20,6 +21,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
@@ -35,6 +37,7 @@ class NdiViewerRepositoryImpl(
     private val reconnectCoordinator: ViewerReconnectCoordinator = ViewerReconnectCoordinator(),
     private val viewerContinuityRepository: ViewerContinuityRepository? = null,
     private val perSourceFrameRepository: PerSourceFrameRepository? = null,
+    private val cachedSourceRepository: CachedSourceRepository? = null,
 ) : NdiViewerRepository {
 
     private val operationMutex = Mutex()
@@ -401,5 +404,25 @@ class NdiViewerRepositoryImpl(
                 lastFrameCapturedAtEpochMillis = capturedAt,
             ),
         )
+
+        // Persist preview path back to the source cache so it survives app restarts.
+        if (!previewPath.isNullOrBlank()) {
+            runCatching {
+                val repo = cachedSourceRepository ?: return@runCatching
+                val allRecords = repo.observeCachedSources().first()
+                val record = allRecords.firstOrNull { r ->
+                    r.lastObservedSourceId == sourceId || r.cacheKey == sourceId
+                } ?: return@runCatching
+                repo.upsertCachedSource(
+                    record.copy(
+                        retainedPreviewImagePath = previewPath,
+                        lastPreviewCapturedAtEpochMillis = capturedAt,
+                        updatedAtEpochMillis = capturedAt,
+                    ),
+                )
+            }.onFailure { e ->
+                Log.w("NdiViewer", "cached_preview_persist_failed sourceId=$sourceId: ${e.message}")
+            }
+        }
     }
 }

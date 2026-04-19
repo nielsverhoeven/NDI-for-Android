@@ -4,6 +4,8 @@ import android.util.Log
 import com.ndi.core.database.UserSelectionDao
 import com.ndi.core.model.DiscoverySnapshot
 import com.ndi.core.model.DiscoveryStatus
+import com.ndi.core.model.CachedSourceRecord
+import com.ndi.core.model.CachedSourceValidationState
 import com.ndi.core.model.DiscoveryCompatibilityResult
 import com.ndi.core.model.DiscoveryCompatibilitySnapshot
 import com.ndi.core.model.DiscoveryCompatibilityStatus
@@ -14,6 +16,7 @@ import com.ndi.feature.ndibrowser.data.AvailabilityDebounceTracker
 import com.ndi.feature.ndibrowser.data.DiscoveryRefreshCoordinator
 import com.ndi.feature.ndibrowser.data.mapper.NdiSourceMapper
 import com.ndi.feature.ndibrowser.domain.repository.DiscoveryCompatibilityMatrixRepository
+import com.ndi.feature.ndibrowser.domain.repository.CachedSourceRepository
 import com.ndi.feature.ndibrowser.domain.repository.NdiDiscoveryConfigRepository
 import com.ndi.feature.ndibrowser.domain.repository.NdiDiscoveryRepository
 import com.ndi.feature.ndibrowser.domain.repository.SourceAvailabilityStatus
@@ -39,6 +42,8 @@ class NdiDiscoveryRepositoryImpl(
     private val diagnosticsLogBuffer: DeveloperDiagnosticsLogBuffer? = null,
     private val compatibilityClassifier: DiscoveryCompatibilityClassifier = DiscoveryCompatibilityClassifier(),
     private val compatibilityMatrixRepository: DiscoveryCompatibilityMatrixRepository = DiscoveryCompatibilityMatrixRepositoryImpl(),
+    private val cachedSourceRepository: CachedSourceRepository? = null,
+    private val cachedSourceIdentityResolver: CachedSourceIdentityResolver = CachedSourceIdentityResolver(),
 ) : NdiDiscoveryRepository {
 
     private companion object {
@@ -204,6 +209,20 @@ class NdiDiscoveryRepositoryImpl(
                 message = "discovery returned ${deduplicatedDiscovered.size} sources",
             )
 
+            val nowEpochMillis = System.currentTimeMillis()
+            deduplicatedDiscovered
+                .filter { it.sourceId != LOCAL_SCREEN_SOURCE_ID }
+                .forEach { source ->
+                    // Non-fatal: persistence errors must not affect discovery return value.
+                    runCatching { persistDiscoveredSource(source, nowEpochMillis) }.onFailure { e ->
+                        diagnosticsLogBuffer?.appendLog(
+                            category = NdiLogCategory.DISCOVERY,
+                            level = NdiLogLevel.WARN,
+                            message = "cached_source_persist_failed source=${source.sourceId}: ${e.message}",
+                        )
+                    }
+                }
+
             userSelectionDao.getSelection()
             val sources = deduplicatedDiscovered
                 .toMutableList().apply {
@@ -352,5 +371,53 @@ class NdiDiscoveryRepositoryImpl(
         if (hasBlocked) return DiscoveryCompatibilityStatus.BLOCKED
         if (hasUsable) return DiscoveryCompatibilityStatus.LIMITED
         return DiscoveryCompatibilityStatus.PENDING
+    }
+
+    private suspend fun persistDiscoveredSource(
+        source: com.ndi.core.model.NdiSource,
+        nowEpochMillis: Long,
+    ) {
+        // Sources discovered via native NDI SDK (mDNS/multicast) have no endpointAddress;
+        // use a synthetic host derived from the sourceId so they are still persisted.
+        val parsed = parseEndpoint(source.endpointAddress)
+        val endpointHost = parsed?.first ?: source.sourceId.trim().lowercase()
+        val endpointPort = parsed?.second ?: 0
+        val cacheKey = cachedSourceIdentityResolver.buildCacheKey(source)
+
+        cachedSourceRepository?.upsertFromDiscovery(
+            CachedSourceRecord(
+                cacheKey = cacheKey,
+                stableSourceId = source.sourceId.takeIf { it.isNotBlank() },
+                lastObservedSourceId = source.sourceId.takeIf { it.isNotBlank() },
+                displayName = source.displayName,
+                endpointHost = endpointHost,
+                endpointPort = endpointPort,
+                endpointKey = "$endpointHost:$endpointPort",
+                validationState = if (source.isAvailable) {
+                    CachedSourceValidationState.AVAILABLE
+                } else {
+                    CachedSourceValidationState.UNAVAILABLE
+                },
+                lastAvailableAtEpochMillis = if (source.isAvailable) nowEpochMillis else null,
+                lastValidatedAtEpochMillis = nowEpochMillis,
+                lastValidationStartedAtEpochMillis = nowEpochMillis,
+                firstCachedAtEpochMillis = nowEpochMillis,
+                lastDiscoveredAtEpochMillis = nowEpochMillis,
+                retainedPreviewImagePath = source.lastFramePreviewPath,
+                lastPreviewCapturedAtEpochMillis = source.lastSeenAtEpochMillis,
+                updatedAtEpochMillis = nowEpochMillis,
+            ),
+        )
+    }
+
+    private fun parseEndpoint(endpointAddress: String?): Pair<String, Int>? {
+        val value = endpointAddress?.trim()?.takeIf { it.isNotBlank() } ?: return null
+        val splitIndex = value.lastIndexOf(':')
+        if (splitIndex <= 0 || splitIndex == value.lastIndex) return null
+
+        val host = value.substring(0, splitIndex).trim().lowercase()
+        val port = value.substring(splitIndex + 1).trim().toIntOrNull() ?: return null
+        if (host.isBlank() || port !in 1..65535) return null
+        return host to port
     }
 }

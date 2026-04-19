@@ -5,10 +5,12 @@ import android.os.Build
 import android.view.View
 import android.widget.LinearLayout
 import android.widget.RadioGroup
+import android.widget.ScrollView
 import android.widget.TextView
 import androidx.core.view.isVisible
 import com.google.android.material.materialswitch.MaterialSwitch
 import com.google.android.material.radiobutton.MaterialRadioButton
+import com.ndi.core.model.CachedSourceRecord
 import com.ndi.core.model.NdiThemeMode
 import com.ndi.core.model.SettingsDetailState
 import com.ndi.feature.ndibrowser.presentation.R
@@ -20,6 +22,7 @@ class SettingsDetailRenderer(
     private val onDeveloperModeToggled: (Boolean) -> Unit,
     private val onThemeModeChanged: (NdiThemeMode) -> Unit,
     private val onAccentColorChanged: (String) -> Unit,
+    private val cachedSources: () -> List<CachedSourceRecord> = { emptyList() },
 ) {
 
     fun render(
@@ -121,6 +124,65 @@ class SettingsDetailRenderer(
                     }
                 }
                 detailContent.addView(toggle)
+
+                if (developerModeEnabled) {
+                    // Cached source database inspection (read-only, Feature 030 US3)
+                    val dbHeader = TextView(context).apply {
+                        text = "Cached Source Registry"
+                        setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_TitleSmall)
+                        setPadding(0, 32, 0, 8)
+                    }
+                    detailContent.addView(dbHeader)
+
+                    val sources = cachedSources()
+                    if (sources.isEmpty()) {
+                        val empty = TextView(context).apply {
+                            text = "No cached sources yet. Discover NDI sources via the Source List to populate the registry."
+                            setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_BodyMedium)
+                        }
+                        detailContent.addView(empty)
+                    } else {
+                        sources.forEach { record ->
+                            val card = LinearLayout(context).apply {
+                                orientation = LinearLayout.VERTICAL
+                                val params = LinearLayout.LayoutParams(
+                                    LinearLayout.LayoutParams.MATCH_PARENT,
+                                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                                )
+                                params.setMargins(0, 8, 0, 8)
+                                layoutParams = params
+                                setBackgroundColor(0x11000000)
+                                setPadding(16, 12, 16, 12)
+                            }
+                            val displayLine = TextView(context).apply {
+                                text = record.displayName
+                                setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_LabelLarge)
+                            }
+                            val endpointLine = TextView(context).apply {
+                                text = "Endpoint: ${record.endpointHost}:${record.endpointPort}"
+                                setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_BodySmall)
+                            }
+                            val stateLine = TextView(context).apply {
+                                text = "State: ${record.validationState.name}"
+                                setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_BodySmall)
+                            }
+                            val keyLine = TextView(context).apply {
+                                text = "Key: ${record.cacheKey}"
+                                setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_BodySmall)
+                            }
+                            val tsLine = TextView(context).apply {
+                                text = "Last seen: ${java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.US).format(java.util.Date(record.lastDiscoveredAtEpochMillis))}"
+                                setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_BodySmall)
+                            }
+                            card.addView(displayLine)
+                            card.addView(endpointLine)
+                            card.addView(stateLine)
+                            card.addView(keyLine)
+                            card.addView(tsLine)
+                            detailContent.addView(card)
+                        }
+                    }
+                }
             }
             SettingsViewModel.CATEGORY_ABOUT -> {
                 val label = TextView(context).apply {

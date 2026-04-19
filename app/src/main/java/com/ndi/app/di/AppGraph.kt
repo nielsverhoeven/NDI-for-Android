@@ -8,6 +8,8 @@ import com.ndi.core.model.NdiOverlayMode
 import com.ndi.feature.ndibrowser.data.OutputRecoveryCoordinator
 import com.ndi.feature.ndibrowser.data.OutputSessionCoordinator
 import com.ndi.feature.ndibrowser.data.mapper.OutputSessionMapper
+import com.ndi.feature.ndibrowser.data.mapper.CachedSourceMapper
+import com.ndi.feature.ndibrowser.data.repository.CachedSourceRepositoryImpl
 import com.ndi.feature.ndibrowser.data.repository.HomeDashboardRepositoryImpl
 import com.ndi.feature.ndibrowser.data.repository.NdiDiscoveryRepositoryImpl
 import com.ndi.feature.ndibrowser.data.repository.NdiOutputRepositoryImpl
@@ -45,6 +47,7 @@ import com.ndi.feature.ndibrowser.data.repository.NdiDiscoveryConfigRepositoryIm
 import com.ndi.feature.ndibrowser.data.repository.NdiSettingsRepositoryImpl
 import com.ndi.feature.ndibrowser.data.validation.AddressValidator
 import com.ndi.feature.ndibrowser.domain.repository.DeveloperDiagnosticsRepository
+import com.ndi.feature.ndibrowser.domain.repository.CachedSourceRepository
 import com.ndi.feature.ndibrowser.domain.repository.DiscoveryServerRepository
 import com.ndi.feature.ndibrowser.domain.repository.NdiDiscoveryConfigRepository
 import com.ndi.feature.ndibrowser.domain.repository.NdiSettingsRepository
@@ -113,6 +116,12 @@ class AppGraph private constructor(context: Context) {
     private val compatibilityMatrixRepository = DiscoveryCompatibilityMatrixRepositoryImpl()
     private val viewerDeveloperLogResolver = ViewerDeveloperLogResolver(addressValidator)
 
+    val cachedSourceRepository: CachedSourceRepository = CachedSourceRepositoryImpl(
+        cachedSourceDao = database.cachedSourceDao(),
+        crossRefDao = database.cachedSourceDiscoveryServerCrossRefDao(),
+        mapper = CachedSourceMapper(),
+    )
+
     val discoveryRepository: NdiDiscoveryRepository = NdiDiscoveryRepositoryImpl(
         bridge = NativeNdiBridge,
         userSelectionDao = database.userSelectionDao(),
@@ -120,6 +129,7 @@ class AppGraph private constructor(context: Context) {
         diagnosticsLogBuffer = developerDiagnosticsLogBuffer,
         compatibilityClassifier = discoveryCompatibilityClassifier,
         compatibilityMatrixRepository = compatibilityMatrixRepository,
+        cachedSourceRepository = cachedSourceRepository,
     )
 
     val userSelectionRepository: UserSelectionRepository = UserSelectionRepositoryImpl(
@@ -141,6 +151,7 @@ class AppGraph private constructor(context: Context) {
         viewerSessionDao = database.viewerSessionDao(),
         viewerContinuityRepository = viewerContinuityRepository,
         perSourceFrameRepository = perSourceFrameRepository,
+        cachedSourceRepository = cachedSourceRepository,
     )
 
     val qualityProfileRepository: QualityProfileRepository = QualityProfileRepositoryImpl(
@@ -172,6 +183,7 @@ class AppGraph private constructor(context: Context) {
         outputRepository = outputRepository,
         viewerRepository = viewerRepository,
         userSelectionRepository = userSelectionRepository,
+        cachedSourceRepository = cachedSourceRepository,
     )
 
     val streamContinuityRepository: StreamContinuityRepository = StreamContinuityRepositoryImpl(
@@ -256,6 +268,7 @@ class AppGraph private constructor(context: Context) {
         SourceListDependencies.overlayStateProvider = { overlayDisplayStateFlow }
         SourceListDependencies.viewerContinuityRepositoryProvider = { viewerContinuityRepository }
             SourceListDependencies.perSourceFrameRepositoryProvider = { perSourceFrameRepository }
+        SourceListDependencies.cachedSourceRepositoryProvider = { cachedSourceRepository }
         ViewerDependencies.viewerRepositoryProvider = { viewerRepository }
         ViewerDependencies.qualityProfileRepositoryProvider = { qualityProfileRepository }
         ViewerDependencies.userSelectionRepositoryProvider = { userSelectionRepository }
@@ -279,6 +292,8 @@ class AppGraph private constructor(context: Context) {
         SettingsDependencies.overlayStateProvider = { overlayDisplayStateFlow }
         // Spec 018: Discovery server dependencies
         SettingsDependencies.discoveryServerRepositoryProvider = { discoveryServerRepository }
+        // Feature 030: Cached source database inspection
+        SettingsDependencies.cachedSourceRepositoryProvider = { cachedSourceRepository }
 
         ThemeEditorDependencies.themeEditorRepositoryProvider = { themeEditorRepository }
         ThemeEditorDependencies.telemetryEmitter = ThemeEditorTelemetryEmitter { event ->

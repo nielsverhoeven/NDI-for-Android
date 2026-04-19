@@ -8,6 +8,7 @@ import com.ndi.core.model.DiscoveryCompatibilityStatus
 import com.ndi.core.model.DiscoverySnapshot
 import com.ndi.core.model.DiscoveryStatus
 import com.ndi.core.model.DiscoveryTrigger
+import com.ndi.core.model.CachedSourceValidationState
 import com.ndi.core.model.NdiSource
 import com.ndi.feature.ndibrowser.domain.repository.NdiDiscoveryRepository
 import com.ndi.feature.ndibrowser.domain.repository.SourceAvailabilityStatus
@@ -82,6 +83,44 @@ class SourceListViewModel(
                 val enrichedSources = enrichSourcesWithAvailability()
                 _uiState.update { current ->
                     current.copy(sources = enrichedSources)
+                }
+            }
+        }
+        viewModelScope.launch {
+            // Seed the list from the persisted cache immediately so sources are visible
+            // on app restart before the first discovery scan completes.
+            SourceListDependencies.cachedSourceRepositoryOrNull()?.observeCachedSources()?.collect { cachedRecords ->
+                val previewMap = cachedRecords
+                    .filter { !it.retainedPreviewImagePath.isNullOrBlank() && File(it.retainedPreviewImagePath!!).exists() }
+                    .associate { record ->
+                        (record.lastObservedSourceId ?: record.cacheKey) to record.retainedPreviewImagePath!!
+                    }
+                // Only update the preview map from cache if the per-source frame repo hasn't populated it yet
+                if (lastViewedPreviewBySourceId.value.isEmpty() && previewMap.isNotEmpty()) {
+                    lastViewedPreviewBySourceId.value = previewMap
+                }
+                // Seed allPreviouslySources for any cached source not yet seen by live discovery.
+                // Always refresh each record so validation state and preview stay current.
+                cachedRecords.forEach { record ->
+                    val id = record.lastObservedSourceId ?: record.cacheKey
+                    // Keep live-discovery entry if it exists; only seed from cache if not yet discovered live.
+                    if (id !in allPreviouslySources) {
+                        allPreviouslySources[id] = NdiSource(
+                            sourceId = id,
+                            displayName = record.displayName,
+                            endpointAddress = if (record.endpointPort > 0) "${record.endpointHost}:${record.endpointPort}" else null,
+                            // Mark as unavailable until live discovery confirms availability
+                            isAvailable = record.validationState == CachedSourceValidationState.AVAILABLE,
+                            lastSeenAtEpochMillis = record.lastDiscoveredAtEpochMillis,
+                            lastFramePreviewPath = previewMap[id],
+                        )
+                    }
+                }
+                // Publish the seeded list whenever the current visible list is empty so that
+                // cached sources appear immediately — even if discovery is IN_PROGRESS.
+                if (_uiState.value.sources.isEmpty()) {
+                    val enriched = enrichSourcesWithAvailability(allPreviouslySources.values.toList())
+                    _uiState.update { current -> current.copy(sources = enriched) }
                 }
             }
         }

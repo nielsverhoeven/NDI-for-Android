@@ -19,6 +19,7 @@ import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.appbar.MaterialToolbar
+import com.ndi.core.model.CachedSourceRecord
 import com.ndi.feature.ndibrowser.presentation.R
 import com.ndi.core.model.TelemetryEvent
 import com.google.android.material.button.MaterialButton
@@ -68,6 +69,7 @@ class SettingsFragment : Fragment() {
     }
     private var detailRenderer: SettingsDetailRenderer? = null
     private var phoneBackCallback: OnBackPressedCallback? = null
+    private var latestCachedSources: List<CachedSourceRecord> = emptyList()
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -94,6 +96,7 @@ class SettingsFragment : Fragment() {
             onDeveloperModeToggled = viewModel::onDeveloperModeToggled,
             onThemeModeChanged = viewModel::onThemeModeChanged,
             onAccentColorChanged = viewModel::onAccentColorChanged,
+            cachedSources = { latestCachedSources },
         )
         fragmentBinding.root.findViewById<MaterialButton>(R.id.settingsApplyButton)
             .setOnClickListener { viewModel.onSaveSettings() }
@@ -115,6 +118,13 @@ class SettingsFragment : Fragment() {
                         screen.renderCompact(state)
                         renderTwoColumn(state)
                     }
+                }
+                launch {
+                    SettingsDependencies.cachedSourceRepositoryOrNull()
+                        ?.observeCachedSources()
+                        ?.collect { sources ->
+                            latestCachedSources = sources
+                        }
                 }
                 launch {
                     viewModel.closeSettingsEvents.collect {
