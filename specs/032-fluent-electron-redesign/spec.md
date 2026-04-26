@@ -11,6 +11,9 @@
 
 - Q: Which design language has governance priority for this redesign? -> A: The updated constitution principle V applies: Fluent + Electron design language compliance is mandatory.
 - Q: Is this a visual polish-only request or behavior-inclusive redesign? -> A: Behavior can be adjusted where needed to match Fluent + Electron interaction patterns, while preserving existing discovery, playback, and settings functional contracts.
+- Q: What rollout strategy should this redesign follow? -> A: Phased rollout by complete user flows; each shipped flow must be internally Fluent + Electron consistent.
+- Q: Which screens are explicitly in-scope for redesign in this feature? -> A: Source List, Viewer, Output, Settings, and top-level app navigation shell.
+- Q: Where should Fluent + Electron compliance evidence be captured? -> A: In feature-scoped validation artifacts under test-results with per-screen checklist entries.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -64,6 +67,7 @@ As a user on phone or tablet, I can use the redesigned interface with accessible
 - This feature changes visual behavior and must include emulator-run Playwright end-to-end coverage for all redesigned user-visible flows.
 - Existing Playwright end-to-end regression suites must be executed and remain passing.
 - Validation must include explicit Fluent + Electron compliance evidence for each redesigned surface, including typography, spacing, hierarchy, interaction states, and motion intent.
+- Redesign rollout is phased by complete user flows; any flow included in a release candidate must not mix legacy and redesigned visual language within that flow.
 
 ### Test Environment & Preconditions *(mandatory)*
 
@@ -96,6 +100,7 @@ As a user on phone or tablet, I can use the redesigned interface with accessible
 ### Functional Requirements
 
 - **FR-001**: System MUST introduce and apply a Fluent + Electron design language baseline for all redesigned surfaces in scope.
+- **FR-001a**: The in-scope redesign surfaces for this feature are Source List, Viewer, Output, Settings, and the top-level navigation shell.
 - **FR-002**: System MUST define reusable visual rules for typography, spacing, color roles, elevation, and state treatment aligned with Fluent + Electron principles.
 - **FR-003**: System MUST keep existing navigation contracts intact while updating navigation presentation and interaction affordances to Fluent + Electron patterns.
 - **FR-004**: Users MUST be able to complete source discovery, viewer, output, and settings tasks after redesign without additional required steps compared with current behavior.
@@ -105,6 +110,7 @@ As a user on phone or tablet, I can use the redesigned interface with accessible
 - **FR-008**: For visual additions/changes, system MUST include emulator-run Playwright e2e coverage for redesigned user flows.
 - **FR-009**: For visual additions/changes, system MUST execute and keep passing all existing Playwright e2e tests.
 - **FR-010**: For visual additions/changes, system MUST provide validation evidence demonstrating Fluent + Electron compliance for each redesigned screen.
+- **FR-010a**: Compliance evidence MUST be stored in feature-scoped artifacts under `test-results/` and include per-screen checklist outcomes with traceable test evidence links.
 - **FR-011**: For environment-dependent validations, system MUST run and record preflight checks before end-to-end or release gates.
 - **FR-012**: Validation reporting MUST classify each failed/blocked gate as code failure or environment blocker with reproduction details.
 - **FR-013**: Existing automated tests MUST be preserved as regression protection; tests MAY be changed only when the redesign directly changes expected behavior.
@@ -113,6 +119,7 @@ As a user on phone or tablet, I can use the redesigned interface with accessible
 - **FR-016**: System MUST maintain accessibility semantics and target contrast/readability thresholds consistent with Fluent guidance for text and controls.
 - **FR-017**: System MUST ensure redesigned interactions do not increase critical task failure rate for core flows in validation.
 - **FR-018**: System MUST avoid introducing design-language regressions where Material-default styling appears without documented Fluent + Electron mapping rationale.
+- **FR-019**: Redesign delivery MUST use phased rollout by complete user flows; no shipped in-scope flow may present mixed legacy and redesigned visual language within the same end-to-end user journey.
 
 ### Key Entities *(include if feature involves data)*
 
@@ -142,3 +149,4 @@ As a user on phone or tablet, I can use the redesigned interface with accessible
 - Existing module and navigation architecture remain authoritative and are preserved.
 - A phased migration is acceptable if each delivered flow is internally consistent with the Fluent + Electron language.
 - Teams will capture visual compliance evidence in test-results artifacts as part of normal validation.
+- The first implementation phase targets Source List, Viewer, Output, Settings, and top-level navigation shell, with additional surfaces handled in follow-on features if needed.
