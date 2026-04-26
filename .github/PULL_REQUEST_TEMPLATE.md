@@ -18,4 +18,4 @@
 
 - [ ] No unauthorized permission additions
 - [ ] Toolchain blocker status reviewed (`TOOLCHAIN-001` if applicable)
-- [ ] Material 3 and lifecycle safety checks completed
+- [ ] Fluent + Electron design-language and lifecycle safety checks completed

@@ -1,8 +1,8 @@
 <!--
 Sync Impact Report
-Version change: 2.2.0 -> 2.3.0
+Version change: 2.3.0 -> 3.0.0
 Modified principles:
-- IV. Strict Test-Driven Development (NON-NEGOTIABLE) -> IV. Strict Test-Driven Development (NON-NEGOTIABLE)
+- V. Material Design 3 Compliance -> V. Fluent + Electron Design Language Compliance
 Added sections:
 - None
 Removed sections:
@@ -11,7 +11,9 @@ Templates requiring updates:
 - updated: .specify/templates/plan-template.md
 - updated: .specify/templates/spec-template.md
 - updated: .specify/templates/tasks-template.md
-- updated: docs/testing.md
+- updated: .github/PULL_REQUEST_TEMPLATE.md
+- updated: .github/agents/copilot-instructions.md
+- updated: .github/agents/frontend-dev.agent.md
 - pending: .specify/templates/commands/*.md (directory not present)
 Follow-up TODOs:
 - None
@@ -72,14 +74,20 @@ stored fields and behaviors are preserved.
 Rationale: Enforced TDD keeps scope controlled, prevents regressions, and
 creates executable documentation of expected behavior.
 
-### V. Material Design 3 Compliance
+### V. Fluent + Electron Design Language Compliance
 
-New or modified UI MUST comply with Material Design 3 component, typography,
-color, and accessibility guidance unless a documented product exception is
-approved.
+New or modified UI MUST follow the repository design language defined as a
+combination of Microsoft Fluent Design System principles and Electron-inspired
+desktop utility patterns. Visual surfaces MUST use Fluent-consistent
+typography, spacing, elevation, motion intent, and accessibility semantics,
+while information architecture and interaction density MUST align with
+Electron-style productivity workflows where applicable. Material defaults MAY
+be used only when explicitly mapped to the Fluent + Electron design intent in
+feature validation evidence.
 
-Rationale: Design-system consistency improves usability, accessibility, and
-implementation speed.
+Rationale: A single, explicit Fluent + Electron language keeps UX coherent
+across mobile and desktop-style workflows while preserving accessibility and
+implementation consistency.
 
 ### VI. Battery-Conscious Execution
 
@@ -184,7 +192,8 @@ false failures and rework.
 3. Pull requests that modify pre-existing tests MUST identify the product or
   contract change that required each test edit; unrelated regression tests MUST
   remain unchanged.
-4. Pull requests that touch UI MUST include Material 3 compliance verification.
+4. Pull requests that touch UI MUST include Fluent + Electron design-language
+  compliance verification.
 5. Pull requests that add permissions, background work, or new modules MUST
   include explicit justification and reviewer sign-off from code owners.
 6. Release branches MUST pass unit, instrumentation/UI, and release build
@@ -232,4 +241,4 @@ Compliance review expectations:
 3. Periodic audits MUST be performed each release cycle to verify ongoing
   adherence and remove drift.
 
-**Version**: 2.3.0 | **Ratified**: 2026-03-15 | **Last Amended**: 2026-04-07
+**Version**: 3.0.0 | **Ratified**: 2026-03-15 | **Last Amended**: 2026-04-27

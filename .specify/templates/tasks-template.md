@@ -8,7 +8,7 @@ description: "Task list template for feature implementation"
 **Input**: Design documents from `/specs/[###-feature-name]/`
 **Prerequisites**: plan.md (required), spec.md (required for user stories), research.md, data-model.md, contracts/
 
-**Tests**: Tests are REQUIRED by constitution. Every user story MUST include test tasks and failing-test-first sequencing. Existing automated tests MUST be preserved as regression protection unless the feature directly changes the covered behavior; any such test update task MUST name the impacted requirement/contract. For visual UI additions/changes, include emulator-run Playwright e2e coverage and existing Playwright e2e regression validation tasks. For environment-dependent gates, include preflight tasks and blocked-gate evidence tasks.
+**Tests**: Tests are REQUIRED by constitution. Every user story MUST include test tasks and failing-test-first sequencing. Existing automated tests MUST be preserved as regression protection unless the feature directly changes the covered behavior; any such test update task MUST name the impacted requirement/contract. For visual UI additions/changes, include emulator-run Playwright e2e coverage, existing Playwright e2e regression validation tasks, and explicit Fluent + Electron design-language compliance evidence tasks. For environment-dependent gates, include preflight tasks and blocked-gate evidence tasks.
 
 **Organization**: Tasks are grouped by user story to enable independent implementation and testing of each story.
 
@@ -100,6 +100,7 @@ Examples of foundational tasks (adjust based on your project):
 - [ ] T011 [P] [US1] Integration test for [user journey] in tests/integration/test_[name].py
 - [ ] T0XX [P] [US1] Playwright e2e test on emulator for new/updated visual behavior in testing/e2e/tests/[name].spec.ts
 - [ ] T0XY [US1] Run existing Playwright e2e suite regression and record passing evidence in test-results/[name].md
+- [ ] T0XW [US1] Record Fluent + Electron design-language compliance evidence for updated UI in test-results/[name].md
 - [ ] T0XZ [US1] If blocked by external dependencies, record blocked status with reproduction details and unblock command in test-results/[name].md
 
 ### Implementation for User Story 1
@@ -129,6 +130,7 @@ Examples of foundational tasks (adjust based on your project):
 - [ ] T019 [P] [US2] Integration test for [user journey] in tests/integration/test_[name].py
 - [ ] T1XX [P] [US2] Playwright e2e test on emulator for new/updated visual behavior in testing/e2e/tests/[name].spec.ts
 - [ ] T1XY [US2] Run existing Playwright e2e suite regression and record passing evidence in test-results/[name].md
+- [ ] T1XW [US2] Record Fluent + Electron design-language compliance evidence for updated UI in test-results/[name].md
 - [ ] T1XZ [US2] If blocked by external dependencies, record blocked status with reproduction details and unblock command in test-results/[name].md
 
 ### Implementation for User Story 2
@@ -156,6 +158,7 @@ Examples of foundational tasks (adjust based on your project):
 - [ ] T025 [P] [US3] Integration test for [user journey] in tests/integration/test_[name].py
 - [ ] T2XX [P] [US3] Playwright e2e test on emulator for new/updated visual behavior in testing/e2e/tests/[name].spec.ts
 - [ ] T2XY [US3] Run existing Playwright e2e suite regression and record passing evidence in test-results/[name].md
+- [ ] T2XW [US3] Record Fluent + Electron design-language compliance evidence for updated UI in test-results/[name].md
 - [ ] T2XZ [US3] If blocked by external dependencies, record blocked status with reproduction details and unblock command in test-results/[name].md
 
 ### Implementation for User Story 3
