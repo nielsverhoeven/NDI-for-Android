@@ -32,6 +32,10 @@ import com.ndi.core.model.navigation.StreamContinuityState
 import com.ndi.core.model.navigation.TopLevelDestination
 import com.ndi.core.model.navigation.TopLevelDestinationState
 import com.ndi.core.model.navigation.ViewContinuityState
+import com.ndi.core.model.DiscoveryMode
+import com.ndi.core.model.DiscoveryModeSnapshot
+import com.ndi.core.model.DiscoveryRunResult
+import com.ndi.core.model.DiscoveryServerDiagnosticRecord
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.map
@@ -63,6 +67,41 @@ interface NdiDiscoveryRepository {
      * Gets the current availability status for a specific source.
      */
     suspend fun getSourceAvailabilityStatus(sourceId: String): SourceAvailabilityStatus? = null
+
+    // ---- T008: Discovery Routing Mode and Diagnostics ----
+
+    /**
+     * Selects discovery mode for a run based on enabled discovery server count.
+     * Returns mode snapshot with selection reason.
+     */
+    suspend fun selectDiscoveryMode(enabledServerCount: Int): DiscoveryModeSnapshot {
+        val mode = if (enabledServerCount == 0) DiscoveryMode.MULTICAST else DiscoveryMode.DISCOVERY_SERVER
+        val reason = if (enabledServerCount == 0) "enabledServerCount==0" else "enabledServerCount>=$enabledServerCount"
+        return DiscoveryModeSnapshot(
+            runId = generateRunId(),
+            startedAtEpochMillis = System.currentTimeMillis(),
+            enabledServerCount = enabledServerCount,
+            mode = mode,
+            modeSelectionReason = reason,
+        )
+    }
+
+    /**
+     * Observes the latest discovery run result with diagnostics.
+     */
+    fun observeLatestRunResult(): Flow<DiscoveryRunResult?> = emptyFlow()
+
+    /**
+     * Records the outcome of a discovery run for diagnostics and timeout enforcement.
+     */
+    suspend fun recordDiscoveryRunResult(result: DiscoveryRunResult) {}
+
+    /**
+     * Records per-server diagnostics for discovery-server mode runs.
+     */
+    suspend fun recordServerDiagnostics(diagnostics: DiscoveryServerDiagnosticRecord) {}
+
+    private fun generateRunId(): String = java.util.UUID.randomUUID().toString()
 }
 
 interface CachedSourceRepository {
@@ -382,6 +421,21 @@ interface NdiDiscoveryConfigRepository {
     suspend fun getCurrentEndpoints(): List<NdiDiscoveryEndpoint>
 
     suspend fun getCurrentEndpoint(): NdiDiscoveryEndpoint?
+
+    // ---- T013: Multicast Fallback Discovery - Enabled Server Count (US1 Phase 3) ----
+
+    /**
+     * Returns the count of enabled discovery servers.
+     * When count is 0, multicast/mDNS discovery should be used instead.
+     * When count >= 1, discovery-server-only mode should be used.
+     */
+    suspend fun getEnabledServerCount(): Int
+
+    /**
+     * Returns a snapshot of enabled discovery servers in order.
+     * When list is empty, multicast/mDNS discovery should be used instead.
+     */
+    suspend fun getEnabledServersSnapshot(): List<NdiDiscoveryEndpoint>
 }
 
 interface DeveloperDiagnosticsRepository {

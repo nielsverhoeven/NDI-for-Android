@@ -101,4 +101,56 @@ class NdiDiscoveryConfigRepositoryImplTest {
         assertEquals("first.local", endpoint?.host)
         assertEquals(5959, endpoint?.resolvedPort)
     }
+
+    // ---- T013: Multicast Fallback Discovery - Enabled Server Filtering (US1 Phase 3) ----
+
+    @Test
+    fun getEnabledServerCount_returnsZeroWhenNoServersConfigured() = runTest {
+        val count = repository.getEnabledServerCount()
+        assertEquals(0, count)
+    }
+
+    @Test
+    fun getEnabledServerCount_returnsZeroWhenAllServersDisabled() = runTest {
+        val entry1 = fakeDiscoveryRepo.addServer("first.local", "5959")
+        val entry2 = fakeDiscoveryRepo.addServer("second.local", "5960")
+        fakeDiscoveryRepo.setServerEnabled(entry1.id, false)
+        fakeDiscoveryRepo.setServerEnabled(entry2.id, false)
+
+        val count = repository.getEnabledServerCount()
+
+        assertEquals(0, count)
+    }
+
+    @Test
+    fun getEnabledServerCount_returnsCorrectCountWhenSomeServersEnabled() = runTest {
+        fakeDiscoveryRepo.addServer("first.local", "5959")
+        val entry2 = fakeDiscoveryRepo.addServer("second.local", "5960")
+        val entry3 = fakeDiscoveryRepo.addServer("third.local", "5961")
+        fakeDiscoveryRepo.setServerEnabled(entry2.id, false)
+
+        val count = repository.getEnabledServerCount()
+
+        assertEquals(2, count)
+    }
+
+    @Test
+    fun getEnabledServersSnapshot_returnsOnlyEnabledServersInOrder() = runTest {
+        fakeDiscoveryRepo.addServer("first.local", "5959")
+        val entry2 = fakeDiscoveryRepo.addServer("second.local", "5960")
+        fakeDiscoveryRepo.addServer("third.local", "5961")
+        fakeDiscoveryRepo.setServerEnabled(entry2.id, false)
+
+        val enabledServers = repository.getEnabledServersSnapshot()
+
+        assertEquals(2, enabledServers.size)
+        assertEquals(
+            listOf("first.local", "third.local"),
+            enabledServers.map { it.host },
+        )
+        assertEquals(
+            listOf(5959, 5961),
+            enabledServers.map { it.resolvedPort },
+        )
+    }
 }

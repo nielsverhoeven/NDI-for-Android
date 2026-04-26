@@ -18,6 +18,7 @@ This guide documents how to validate settings-menu functionality and the broader
 10. [Feature 025 Validation Snapshot](#10-feature-025-validation-snapshot-fix-appearance-settings)
 11. [Feature 029 Validation Snapshot](#11-feature-029-validation-snapshot-ndi-discovery-server-compatibility)
 12. [Feature 030 Validation Snapshot](#12-feature-030-validation-snapshot-persistent-source-cache)
+13. [Feature 031 Validation Snapshot](#13-feature-031-validation-snapshot-ndi-discovery-routing-reliability)
 
 ## 1. Test Pyramid
 
@@ -283,3 +284,77 @@ adb devices
 npm --prefix testing/e2e run test:pr:primary
 ./gradlew.bat :app:verifyReleaseHardening
 ```
+
+## 13. Feature 031 Validation Snapshot (NDI Discovery Routing Reliability)
+
+Validation date: 2026-04-26
+
+Current gate status (Phase 0 complete):
+
+- Android prerequisites preflight: PASS (`test-results/031-preflight-android-prereqs.md`)
+- Runtime device readiness (`adb devices`): NOT STARTED (`test-results/031-preflight-runtime.md` - ready for Phase 3 e2e)
+- Dual-emulator harness preflight: PASS (`test-results/031-preflight-dual-emulator.md`)
+- Playwright/Node environment: PASS (`test-results/031-preflight-node-playwright.md`)
+
+Phase 1 status (Setup & Validation):
+
+- Evidence file creation: Complete (`031-us1-multicast-fallback.md`, `031-us2-discovery-server-routing.md`, `031-us3-cache-relaunch.md`)
+- Command verification: Complete (`031-T005-command-verification.md`)
+- Quickstart artifact references: All verified accurate
+
+Planned US evidence files:
+
+- `test-results/031-us1-multicast-fallback.md` - Multicast fallback discovery
+- `test-results/031-us2-discovery-server-routing.md` - Discovery server directed lookup + performance measurement (SC-002)
+- `test-results/031-us3-cache-relaunch.md` - Cached source reuse after discovery
+- `test-results/031-us1-red-state.md` - US1 failing test baseline (before implementation)
+- `test-results/031-us2-red-state.md` - US2 failing test baseline (before implementation)
+- `test-results/031-us3-red-state.md` - US3 failing test baseline (before implementation)
+- `test-results/031-final-validation-summary.md` - Complete feature validation summary
+
+Feature-specific command set (Phase 0 validated):
+
+**Preflight Commands**:
+```powershell
+pwsh ./scripts/verify-android-prereqs.ps1
+adb devices
+pwsh ./testing/e2e/scripts/validate-command-contract.ps1
+npm --prefix testing/e2e exec playwright --version
+pwsh ./scripts/verify-e2e-dual-emulator-prereqs.ps1
+```
+
+**Unit Test Commands**:
+```powershell
+./gradlew.bat :feature:ndi-browser:data:testDebugUnitTest :feature:ndi-browser:presentation:testDebugUnitTest
+./gradlew.bat test
+```
+
+**E2E Test Commands**:
+```powershell
+npm --prefix testing/e2e run test:pr:primary
+pwsh -ExecutionPolicy Bypass -File ./testing/e2e/scripts/provision-dual-emulator.ps1
+pwsh -ExecutionPolicy Bypass -File ./testing/e2e/scripts/run-primary-pr-e2e.ps1 -Profile pr-primary
+```
+
+**Release Hardening**:
+```powershell
+./gradlew.bat :app:verifyReleaseHardening
+```
+
+Success criteria tracking:
+
+- **SC-001**: Multicast discovery ≥1 source (`test-results/031-us1-multicast-fallback.md`)
+- **SC-002**: Discovery-server 95%≤2s, 100%≤5s with ≥50 runs in `test-results/031-us2-discovery-server-routing.md`
+- **SC-003**: 100% stream/view starts use persisted source endpoint (not discovery-server endpoint)
+- **SC-004**: Cached sources appear before live discovery on relaunch/update (100% of runs with cache)
+- **SC-005**: Environment blockers classified separately from code failures (100% of validation reports)
+
+Feature phases and responsibilities:
+
+- **Phase 0** (Complete): Environment preflight validation
+- **Phase 1** (In Progress): Setup and evidence file preparation
+- **Phase 2** (Pending): Foundational infrastructure (shared models, contracts, persistence, wiring) - delegates to `android.app-builder`
+- **Phase 3** (Pending): US1 - Multicast Fallback Discovery (TDD cycle with failing-test-first) - delegates to `android.app-builder` + `frontend-dev`
+- **Phase 4** (Pending): US2 - Discovery Server Routing (TDD cycle + performance measurement) - delegates to `android.app-builder` + `ndi.expert`
+- **Phase 5** (Pending): US3 - Cache Relaunch (TDD cycle + offline-first validation) - delegates to `android.app-builder` + `frontend-dev`
+- **Phase 6** (Pending): Polish and final validation gates - delegates to `tester` + `reviewer` + `documenter`

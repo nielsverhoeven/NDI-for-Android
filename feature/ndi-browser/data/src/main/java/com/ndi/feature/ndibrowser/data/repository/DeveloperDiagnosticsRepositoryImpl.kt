@@ -11,8 +11,14 @@ import com.ndi.core.model.OutputState
 import com.ndi.core.model.PlaybackState
 import com.ndi.core.model.ViewerSession
 import com.ndi.core.model.CompatibilityGuidance
+import com.ndi.core.model.DiscoveryCheckOutcome
+import com.ndi.core.model.DiscoveryCheckType
 import com.ndi.core.model.DiscoveryCompatibilitySnapshot
 import com.ndi.core.model.DiscoveryCompatibilityStatus
+import com.ndi.core.model.DiscoveryFailureCategory
+import com.ndi.core.model.DiscoveryServerAttemptStatus
+import com.ndi.core.model.DiscoveryServerCheckStatus
+import com.ndi.core.model.DiscoveryServerDiagnosticRecord
 import com.ndi.feature.ndibrowser.domain.repository.DiscoveryCompatibilityMatrixRepository
 import com.ndi.feature.ndibrowser.domain.repository.DeveloperDiagnosticsRepository
 import com.ndi.feature.ndibrowser.domain.repository.NdiOutputRepository
@@ -219,14 +225,64 @@ class DeveloperDiagnosticsRepositoryImpl(
             "target=${guidance.targetId} status=${guidance.status.name.lowercase()} next=${guidance.recommendedNextStep}"
         }
 
+        val perServerDiagnostics = matrixSnapshot.results
+            .filter { it.targetId.contains(":") }
+            .map { result ->
+                val durationMillis = parseDurationMillis(result.notes)
+                val status = when {
+                    result.notes?.contains("timeout", ignoreCase = true) == true -> DiscoveryServerAttemptStatus.TIMEOUT
+                    result.status == DiscoveryCompatibilityStatus.BLOCKED -> DiscoveryServerAttemptStatus.UNREACHABLE
+                    result.status == DiscoveryCompatibilityStatus.INCOMPATIBLE -> DiscoveryServerAttemptStatus.ERROR
+                    else -> DiscoveryServerAttemptStatus.SUCCESS
+                }
+                DiscoveryServerDiagnosticRecord(
+                    runId = "compatibility-${matrixSnapshot.recordedAtEpochMillis}",
+                    serverId = result.targetId,
+                    endpoint = result.targetId,
+                    attemptStartedAtEpochMillis = matrixSnapshot.recordedAtEpochMillis,
+                    durationMillis = durationMillis,
+                    status = status,
+                    errorDetail = result.notes,
+                )
+            }
+
+        val serverRollup = perServerDiagnostics.map { diagnostic ->
+            val failureCategory = when (diagnostic.status) {
+                DiscoveryServerAttemptStatus.SUCCESS -> DiscoveryFailureCategory.NONE
+                DiscoveryServerAttemptStatus.TIMEOUT -> DiscoveryFailureCategory.TIMEOUT
+                DiscoveryServerAttemptStatus.UNREACHABLE -> DiscoveryFailureCategory.ENDPOINT_UNREACHABLE
+                DiscoveryServerAttemptStatus.ERROR -> DiscoveryFailureCategory.UNKNOWN
+            }
+            DiscoveryServerCheckStatus(
+                serverId = diagnostic.serverId,
+                checkType = DiscoveryCheckType.MANUAL_RECHECK,
+                outcome = if (diagnostic.status == DiscoveryServerAttemptStatus.SUCCESS) {
+                    DiscoveryCheckOutcome.SUCCESS
+                } else {
+                    DiscoveryCheckOutcome.FAILURE
+                },
+                checkedAtEpochMillis = matrixSnapshot.recordedAtEpochMillis,
+                failureCategory = failureCategory,
+                failureMessage = diagnostic.errorDetail,
+                correlationId = diagnostic.runId,
+            )
+        }
+
         return DeveloperDiscoveryDiagnostics(
             developerModeEnabled = false,
             latestDiscoveryRefreshStatus = null,
             latestDiscoveryRefreshAtEpochMillis = matrixSnapshot.recordedAtEpochMillis.takeIf { it > 0L },
-            serverStatusRollup = emptyList(),
+            serverStatusRollup = serverRollup,
             recentDiscoveryLogs = listOf(summary) + nonCompatibleLines + recentLogs.map { it.messageRedacted },
             compatibilityGuidance = compatibilityGuidance,
+            lastPerServerDiagnostics = perServerDiagnostics,
         )
+    }
+
+    private fun parseDurationMillis(notes: String?): Long {
+        if (notes.isNullOrBlank()) return 0L
+        val token = notes.split(';').firstOrNull { it.contains("durationMillis", ignoreCase = true) } ?: return 0L
+        return token.substringAfter('=').trim().toLongOrNull() ?: 0L
     }
 
     private fun idleViewerSession(): ViewerSession = ViewerSession(

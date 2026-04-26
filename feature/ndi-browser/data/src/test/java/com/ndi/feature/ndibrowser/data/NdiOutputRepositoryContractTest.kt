@@ -205,6 +205,31 @@ class NdiOutputRepositoryContractTest {
         assertEquals(OutputState.ACTIVE, session.state)
         assertEquals(0, bridge.discoveryReachabilityChecks)
     }
+
+    @Test
+    fun startOutput_rejectsDiscoveryServerEndpointAsStreamingTarget() = runTest {
+        val bridge = FakeOutputBridge(discoveryReachable = true)
+        val repository = NdiOutputRepositoryImpl(
+            outputSessionDao = InMemoryOutputSessionDao(),
+            outputBridge = bridge,
+            discoveryConfigRepository = FakeOutputDiscoveryConfigRepository(
+                listOf(
+                    NdiDiscoveryEndpoint(
+                        host = "discovery-a.local",
+                        port = 5959,
+                        resolvedPort = 5959,
+                        usesDefaultPort = false,
+                    ),
+                ),
+            ),
+            mapper = OutputSessionMapper(),
+        )
+
+        val result = runCatching { repository.startOutput("discovery-a.local:5959", "Live") }
+
+        assertTrue(result.isFailure)
+        assertTrue(result.exceptionOrNull()?.message?.contains("must not treat discovery server endpoint", ignoreCase = true) == true)
+    }
 }
 
 private class FakeOutputBridge(
@@ -290,4 +315,10 @@ private class FakeOutputDiscoveryConfigRepository(
     override suspend fun getCurrentEndpoints(): List<NdiDiscoveryEndpoint> = endpoints
 
     override suspend fun getCurrentEndpoint(): NdiDiscoveryEndpoint? = endpoints.firstOrNull()
+
+    // ---- T013: Multicast Fallback Discovery - Enabled Server Count (US1 Phase 3) ----
+
+    override suspend fun getEnabledServerCount(): Int = endpoints.size
+
+    override suspend fun getEnabledServersSnapshot(): List<NdiDiscoveryEndpoint> = endpoints
 }

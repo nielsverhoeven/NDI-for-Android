@@ -103,22 +103,25 @@ class SourceListViewModel(
                 // Always refresh each record so validation state and preview stay current.
                 cachedRecords.forEach { record ->
                     val id = record.lastObservedSourceId ?: record.cacheKey
-                    // Keep live-discovery entry if it exists; only seed from cache if not yet discovered live.
-                    if (id !in allPreviouslySources) {
-                        allPreviouslySources[id] = NdiSource(
-                            sourceId = id,
-                            displayName = record.displayName,
-                            endpointAddress = if (record.endpointPort > 0) "${record.endpointHost}:${record.endpointPort}" else null,
-                            // Mark as unavailable until live discovery confirms availability
-                            isAvailable = record.validationState == CachedSourceValidationState.AVAILABLE,
-                            lastSeenAtEpochMillis = record.lastDiscoveredAtEpochMillis,
-                            lastFramePreviewPath = previewMap[id],
-                        )
-                    }
+                    val existing = allPreviouslySources[id]
+                    allPreviouslySources[id] = NdiSource(
+                        sourceId = id,
+                        displayName = record.displayName,
+                        endpointAddress = if (record.endpointPort > 0) "${record.endpointHost}:${record.endpointPort}" else null,
+                        // Mark as unavailable until live discovery confirms availability.
+                        isAvailable = record.validationState == CachedSourceValidationState.AVAILABLE,
+                        lastSeenAtEpochMillis = record.lastDiscoveredAtEpochMillis,
+                        lastFramePreviewPath = previewMap[id] ?: existing?.lastFramePreviewPath,
+                    )
                 }
-                // Publish the seeded list whenever the current visible list is empty so that
-                // cached sources appear immediately — even if discovery is IN_PROGRESS.
-                if (_uiState.value.sources.isEmpty()) {
+                // Publish cached rows while discovery is not yet complete so startup/relaunch
+                // can show and refine cache-backed entries before live results arrive.
+                val currentState = _uiState.value
+                val shouldPublishCacheRows =
+                    currentState.sources.isEmpty() ||
+                        currentState.discoveryStatus == DiscoveryStatus.EMPTY ||
+                        currentState.discoveryStatus == DiscoveryStatus.IN_PROGRESS
+                if (shouldPublishCacheRows) {
                     val enriched = enrichSourcesWithAvailability(allPreviouslySources.values.toList())
                     _uiState.update { current -> current.copy(sources = enriched) }
                 }

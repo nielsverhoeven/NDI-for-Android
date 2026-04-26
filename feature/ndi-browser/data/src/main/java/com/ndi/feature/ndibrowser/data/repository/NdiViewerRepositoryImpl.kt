@@ -55,6 +55,7 @@ class NdiViewerRepositoryImpl(
 
     override suspend fun connectToSource(sourceId: String): ViewerSession {
         return operationMutex.withLock {
+            val streamTarget = resolveStreamTarget(sourceId)
             // Ensure any stale receiver state is cleared before opening a new stream,
             // especially when users reopen the same source immediately after backing out.
             withContext(Dispatchers.IO) {
@@ -75,13 +76,13 @@ class NdiViewerRepositoryImpl(
                 val startTime = System.currentTimeMillis()
                 val firstFrame = withContext(Dispatchers.IO) {
                     Log.i("NdiViewer", "startReceiver beginning for $sourceId")
-                    bridge.startReceiver(sourceId)
+                    bridge.startReceiver(streamTarget)
                     val startRecvMs = System.currentTimeMillis() - startTime
-                    Log.i("NdiViewer", "startReceiver completed in ${startRecvMs}ms for $sourceId")
+                    Log.i("NdiViewer", "startReceiver completed in ${startRecvMs}ms for target=$streamTarget source=$sourceId")
                     
                     Log.i("NdiViewer", "waitForFirstFrame beginning for $sourceId (5s timeout)")
                     val frameTime = System.currentTimeMillis()
-                    val frame = waitForFirstFrame(sourceId)
+                    val frame = waitForFirstFrame(streamTarget)
                     val waitMs = System.currentTimeMillis() - frameTime
                     Log.i("NdiViewer", "waitForFirstFrame completed in ${waitMs}ms for $sourceId")
                     frame
@@ -322,6 +323,7 @@ class NdiViewerRepositoryImpl(
     }
 
     private suspend fun retryInternal(sourceId: String, windowSeconds: Int, interruptionReason: String): ViewerSession {
+        val streamTarget = resolveStreamTarget(sourceId)
         val interruptedSession = ViewerSession(
             sessionId = UUID.randomUUID().toString(),
             selectedSourceId = sourceId,
@@ -338,8 +340,8 @@ class NdiViewerRepositoryImpl(
         val retryResult = reconnectCoordinator.retryWithinWindow(windowSeconds) {
             runCatching {
                 withContext(Dispatchers.IO) {
-                    bridge.startReceiver(sourceId)
-                    waitForFirstFrame(sourceId)
+                    bridge.startReceiver(streamTarget)
+                    waitForFirstFrame(streamTarget)
                 }
                 true
             }.getOrDefault(false)
@@ -367,6 +369,17 @@ class NdiViewerRepositoryImpl(
             }
             stoppedSession
         }
+    }
+
+    private suspend fun resolveStreamTarget(sourceId: String): String {
+        val repo = cachedSourceRepository ?: return sourceId
+        val records = runCatching { repo.observeCachedSources().first() }.getOrDefault(emptyList())
+        val matched = records.firstOrNull {
+            it.cacheKey == sourceId ||
+                it.lastObservedSourceId == sourceId ||
+                it.stableSourceId == sourceId
+        }
+        return matched?.endpointKey?.takeIf { it.isNotBlank() } ?: sourceId
     }
 
     private suspend fun waitForFirstFrame(sourceId: String, timeoutMillis: Long = 5_000L): ViewerVideoFrame? {

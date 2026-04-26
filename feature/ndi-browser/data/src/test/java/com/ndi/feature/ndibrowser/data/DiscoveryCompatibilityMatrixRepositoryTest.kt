@@ -56,6 +56,22 @@ class DiscoveryCompatibilityMatrixRepositoryTest {
         assertEquals(200L, snapshot.recordedAtEpochMillis)
     }
 
+    @Test
+    fun upsertResults_blockedTargetsAreAnnotatedAsEnvironmentBlockersWithTimingDiagnostics() = runTest {
+        val repository = DiscoveryCompatibilityMatrixRepositoryImpl()
+
+        repository.upsertResults(
+            results = listOf(result("discovery-a.local:5959", DiscoveryCompatibilityStatus.BLOCKED)),
+            recordedAtEpochMillis = 300L,
+        )
+
+        val snapshot = repository.getCurrentMatrix()
+
+        val blocked = snapshot.results.single { it.targetId == "discovery-a.local:5959" }
+        assertTrue(blocked.notes?.contains("environment blocker", ignoreCase = true) == true)
+        assertTrue(blocked.notes?.contains("durationMillis", ignoreCase = true) == true)
+    }
+
     private fun result(
         targetId: String,
         status: DiscoveryCompatibilityStatus,

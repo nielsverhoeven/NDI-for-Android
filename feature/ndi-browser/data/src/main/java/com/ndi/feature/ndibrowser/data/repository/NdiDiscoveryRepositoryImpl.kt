@@ -2,14 +2,21 @@ package com.ndi.feature.ndibrowser.data.repository
 
 import android.util.Log
 import com.ndi.core.database.UserSelectionDao
+import com.ndi.core.database.DiscoveryRunResultDao
+import com.ndi.core.database.DiscoveryServerDiagnosticRecordDao
 import com.ndi.core.model.DiscoverySnapshot
 import com.ndi.core.model.DiscoveryStatus
 import com.ndi.core.model.CachedSourceRecord
 import com.ndi.core.model.CachedSourceValidationState
+import com.ndi.core.model.DiscoveryRunResult
+import com.ndi.core.model.DiscoveryRunStatus
+import com.ndi.core.model.DiscoveryServerAttemptStatus
+import com.ndi.core.model.DiscoveryServerDiagnosticRecord
 import com.ndi.core.model.DiscoveryCompatibilityResult
 import com.ndi.core.model.DiscoveryCompatibilitySnapshot
 import com.ndi.core.model.DiscoveryCompatibilityStatus
 import com.ndi.core.model.DiscoveryTrigger
+import com.ndi.core.model.DiscoveryMode
 import com.ndi.core.model.NdiLogCategory
 import com.ndi.core.model.NdiLogLevel
 import com.ndi.feature.ndibrowser.data.AvailabilityDebounceTracker
@@ -29,6 +36,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.UUID
 
 class NdiDiscoveryRepositoryImpl(
@@ -44,7 +52,12 @@ class NdiDiscoveryRepositoryImpl(
     private val compatibilityMatrixRepository: DiscoveryCompatibilityMatrixRepository = DiscoveryCompatibilityMatrixRepositoryImpl(),
     private val cachedSourceRepository: CachedSourceRepository? = null,
     private val cachedSourceIdentityResolver: CachedSourceIdentityResolver = CachedSourceIdentityResolver(),
+    // ---- T010: Discovery run result and diagnostics DAOs ----
+    private val discoveryRunResultDao: DiscoveryRunResultDao? = null,
+    private val discoveryServerDiagnosticRecordDao: DiscoveryServerDiagnosticRecordDao? = null,
 ) : NdiDiscoveryRepository {
+
+    private class DiscoveryTimeoutException(message: String) : IllegalStateException(message)
 
     private companion object {
         const val LOCAL_SCREEN_SOURCE_ID = "device-screen:local"
@@ -60,21 +73,36 @@ class NdiDiscoveryRepositoryImpl(
         ),
     )
     private val availabilityHistory = MutableStateFlow<Map<String, SourceAvailabilityStatus>>(emptyMap())
+    private val latestRunResultState = MutableStateFlow<DiscoveryRunResult?>(null)
 
     override suspend fun discoverSources(trigger: DiscoveryTrigger): DiscoverySnapshot {
         val startedAt = System.currentTimeMillis()
+        var selectedMode = DiscoveryMode.MULTICAST
+        var selectedRunId = UUID.randomUUID().toString()
         discoveryState.value = discoveryState.value.copy(
             startedAtEpochMillis = startedAt,
             status = DiscoveryStatus.IN_PROGRESS,
         )
 
         return runCatching {
-            val endpoints = discoveryConfigRepository.getCurrentEndpoints()
-            runCatching { Log.d(TAG, "Discovery trigger=$trigger, endpoints=$endpoints") }
+            // ---- T016: Per-run multicast selection (US1 Phase 3) ----
+            // Select discovery mode based on enabled server count
+            val enabledServerCount = discoveryConfigRepository.getEnabledServerCount()
+            val modeSnapshot = selectDiscoveryMode(enabledServerCount)
+            selectedMode = modeSnapshot.mode
+            selectedRunId = modeSnapshot.runId
+
+            val endpoints = if (modeSnapshot.mode == com.ndi.core.model.DiscoveryMode.MULTICAST) {
+                emptyList()
+            } else {
+                discoveryConfigRepository.getEnabledServersSnapshot()
+            }
+
+            runCatching { Log.d(TAG, "Discovery trigger=$trigger, mode=${modeSnapshot.mode}, enabledServers=$enabledServerCount") }
             diagnosticsLogBuffer?.appendLog(
                 category = NdiLogCategory.DISCOVERY,
                 level = NdiLogLevel.INFO,
-                message = "discovery_refresh_started trigger=${trigger.name}",
+                message = "discovery_refresh_started trigger=${trigger.name} mode=${modeSnapshot.mode} reason=${modeSnapshot.modeSelectionReason}",
             )
 
             // Set ALL configured endpoints at once. The NDI SDK (v5+) supports a
@@ -115,8 +143,38 @@ class NdiDiscoveryRepositoryImpl(
                 }
             }
 
-            val discovered = withContext(Dispatchers.IO) {
-                sourceMapper.map(bridge.discoverSources())
+            val discoveredRaw = withContext(Dispatchers.IO) {
+                if (modeSnapshot.mode == DiscoveryMode.DISCOVERY_SERVER) {
+                    withTimeoutOrNull(5_000L) {
+                        sourceMapper.map(bridge.discoverSources())
+                    } ?: throw DiscoveryTimeoutException(
+                        buildString {
+                            append("discovery server timeout after 5000ms")
+                            if (endpoints.isNotEmpty()) {
+                                append(" endpoint=")
+                                append(endpoints.joinToString { "${it.host}:${it.resolvedPort}" })
+                            }
+                            append(" timestamp=")
+                            append(System.currentTimeMillis())
+                        },
+                    )
+                } else {
+                    sourceMapper.map(bridge.discoverSources())
+                }
+            }
+
+            val discovered = if (modeSnapshot.mode == DiscoveryMode.DISCOVERY_SERVER) {
+                val (valid, invalid) = discoveredRaw.partition { parseEndpoint(it.endpointAddress) != null }
+                if (invalid.isNotEmpty()) {
+                    diagnosticsLogBuffer?.appendLog(
+                        category = NdiLogCategory.DISCOVERY,
+                        level = NdiLogLevel.WARN,
+                        message = "filtered_invalid_discovery_records count=${invalid.size}",
+                    )
+                }
+                valid
+            } else {
+                discoveredRaw
             }
 
             val deduplicatedDiscovered = discovered.distinctBy { it.sourceId }
@@ -198,6 +256,37 @@ class NdiDiscoveryRepositoryImpl(
                 recordedAtEpochMillis = System.currentTimeMillis(),
                 results = overallCompatibilityResults,
             )
+
+            if (modeSnapshot.mode == DiscoveryMode.DISCOVERY_SERVER && endpoints.isNotEmpty()) {
+                val serverDiagnostics = endpoints.map { endpoint ->
+                    val endpointId = "${endpoint.host}:${endpoint.resolvedPort}"
+                    val reachable = runCatching {
+                        bridge.isDiscoveryServerReachable(endpoint.host, endpoint.resolvedPort)
+                    }.getOrDefault(false)
+                    DiscoveryServerDiagnosticRecord(
+                        runId = modeSnapshot.runId,
+                        serverId = endpointId,
+                        endpoint = endpointId,
+                        attemptStartedAtEpochMillis = startedAt,
+                        durationMillis = (System.currentTimeMillis() - startedAt).coerceAtLeast(0L),
+                        status = if (reachable) DiscoveryServerAttemptStatus.SUCCESS else DiscoveryServerAttemptStatus.UNREACHABLE,
+                        errorDetail = if (reachable) null else "endpoint unreachable",
+                    )
+                }
+                serverDiagnostics.forEach { recordServerDiagnostics(it) }
+            }
+
+            recordDiscoveryRunResult(
+                DiscoveryRunResult(
+                    runId = modeSnapshot.runId,
+                    mode = modeSnapshot.mode,
+                    durationMillis = (System.currentTimeMillis() - startedAt).coerceAtLeast(0L),
+                    status = DiscoveryRunStatus.SUCCESS,
+                    sourceCount = deduplicatedDiscovered.size,
+                    diagnosticCode = null,
+                    diagnosticMessage = null,
+                ),
+            )
             compatibilityMatrixRepository.upsertResults(
                 results = overallCompatibilityResults,
                 recordedAtEpochMillis = compatibilityState.value.recordedAtEpochMillis,
@@ -263,6 +352,59 @@ class NdiDiscoveryRepositoryImpl(
                 level = NdiLogLevel.ERROR,
                 message = "discovery failed: ${error.message ?: "unknown error"}",
             )
+            val timeoutFailure = selectedMode == DiscoveryMode.DISCOVERY_SERVER &&
+                (error is DiscoveryTimeoutException || (error.message?.contains("timeout", ignoreCase = true) == true))
+            val errorCode = if (timeoutFailure) "DISCOVERY_SERVER_TIMEOUT" else trigger.name
+            val enrichedMessage = if (timeoutFailure) {
+                val configuredEndpointText = discoveryConfigRepository.getEnabledServersSnapshot()
+                    .joinToString { "${it.host}:${it.resolvedPort}" }
+                    .ifBlank { "none" }
+                "${error.message ?: "discovery server timeout"}; endpoint=$configuredEndpointText; timestamp=${System.currentTimeMillis()}"
+            } else {
+                error.message
+            }
+
+            if (timeoutFailure) {
+                val timeoutRunId = selectedRunId
+                recordDiscoveryRunResult(
+                    DiscoveryRunResult(
+                        runId = timeoutRunId,
+                        mode = DiscoveryMode.DISCOVERY_SERVER,
+                        durationMillis = (System.currentTimeMillis() - startedAt).coerceAtLeast(0L),
+                        status = DiscoveryRunStatus.TIMEOUT,
+                        sourceCount = 0,
+                        diagnosticCode = errorCode,
+                        diagnosticMessage = enrichedMessage,
+                    ),
+                )
+                val enabledServers = discoveryConfigRepository.getEnabledServersSnapshot()
+                enabledServers.forEach { endpoint ->
+                    recordServerDiagnostics(
+                        DiscoveryServerDiagnosticRecord(
+                            runId = timeoutRunId,
+                            serverId = "${endpoint.host}:${endpoint.resolvedPort}",
+                            endpoint = "${endpoint.host}:${endpoint.resolvedPort}",
+                            attemptStartedAtEpochMillis = startedAt,
+                            durationMillis = (System.currentTimeMillis() - startedAt).coerceAtLeast(5_000L),
+                            status = DiscoveryServerAttemptStatus.TIMEOUT,
+                            errorDetail = enrichedMessage,
+                        ),
+                    )
+                }
+            } else {
+                recordDiscoveryRunResult(
+                    DiscoveryRunResult(
+                        runId = UUID.randomUUID().toString(),
+                        mode = selectedMode,
+                        durationMillis = (System.currentTimeMillis() - startedAt).coerceAtLeast(0L),
+                        status = DiscoveryRunStatus.FAILURE,
+                        sourceCount = 0,
+                        diagnosticCode = errorCode,
+                        diagnosticMessage = enrichedMessage,
+                    ),
+                )
+            }
+
             DiscoverySnapshot(
                 snapshotId = UUID.randomUUID().toString(),
                 startedAtEpochMillis = startedAt,
@@ -270,8 +412,8 @@ class NdiDiscoveryRepositoryImpl(
                 status = DiscoveryStatus.FAILURE,
                 sourceCount = 0,
                 sources = emptyList(),
-                errorCode = trigger.name,
-                errorMessage = error.message,
+                errorCode = errorCode,
+                errorMessage = enrichedMessage,
             )
         }.also { snapshot ->
             if (snapshot.status != DiscoveryStatus.FAILURE) {
@@ -419,5 +561,38 @@ class NdiDiscoveryRepositoryImpl(
         val port = value.substring(splitIndex + 1).trim().toIntOrNull() ?: return null
         if (host.isBlank() || port !in 1..65535) return null
         return host to port
+    }
+
+    override fun observeLatestRunResult(): Flow<DiscoveryRunResult?> = latestRunResultState.asStateFlow()
+
+    override suspend fun recordDiscoveryRunResult(result: DiscoveryRunResult) {
+        latestRunResultState.value = result
+        discoveryRunResultDao?.upsert(
+            com.ndi.core.database.DiscoveryRunResultEntity(
+                runId = result.runId,
+                mode = result.mode.name,
+                durationMillis = result.durationMillis,
+                status = result.status.name,
+                sourceCount = result.sourceCount,
+                diagnosticCode = result.diagnosticCode,
+                diagnosticMessage = result.diagnosticMessage,
+                recordedAtEpochMillis = System.currentTimeMillis(),
+            ),
+        )
+    }
+
+    override suspend fun recordServerDiagnostics(diagnostics: DiscoveryServerDiagnosticRecord) {
+        discoveryServerDiagnosticRecordDao?.upsert(
+            com.ndi.core.database.DiscoveryServerDiagnosticRecordEntity(
+                runId = diagnostics.runId,
+                serverId = diagnostics.serverId,
+                endpoint = diagnostics.endpoint,
+                attemptStartedAtEpochMillis = diagnostics.attemptStartedAtEpochMillis,
+                durationMillis = diagnostics.durationMillis,
+                status = diagnostics.status.name,
+                errorDetail = diagnostics.errorDetail,
+                recordedAtEpochMillis = System.currentTimeMillis(),
+            ),
+        )
     }
 }
