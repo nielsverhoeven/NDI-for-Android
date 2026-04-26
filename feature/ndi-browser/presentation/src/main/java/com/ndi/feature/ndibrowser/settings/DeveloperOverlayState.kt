@@ -10,6 +10,7 @@ data class OverlayDisplayState(
     val recentLogs: List<String>,
     val configuredAddresses: List<String> = emptyList(),
     val discoveryDiagnostics: DeveloperDiscoveryDiagnostics? = null,
+    val compatibilityMessages: List<String> = emptyList(),
 )
 
 object DeveloperOverlayStateMapper {
@@ -34,6 +35,13 @@ object DeveloperOverlayStateMapper {
             recentLogs = if (mode == NdiOverlayMode.DISABLED) emptyList() else recentLogs,
             configuredAddresses = if (mode == NdiOverlayMode.DISABLED) emptyList() else configuredAddresses,
             discoveryDiagnostics = if (mode == NdiOverlayMode.DISABLED) null else discoveryDiagnostics,
+            compatibilityMessages = if (mode == NdiOverlayMode.DISABLED || discoveryDiagnostics == null) {
+                emptyList()
+            } else {
+                discoveryDiagnostics.compatibilityGuidance.map { guidance ->
+                    "${guidance.targetId}: ${guidance.status.name.lowercase()} - ${guidance.recommendedNextStep}"
+                }
+            },
         )
     }
 }

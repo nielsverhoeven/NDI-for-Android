@@ -38,6 +38,8 @@ import com.ndi.app.theme.AppThemeCoordinator
 import com.ndi.app.navigation.NdiNavigation
 import com.ndi.feature.ndibrowser.data.repository.DeveloperDiagnosticsRepositoryImpl
 import com.ndi.feature.ndibrowser.data.repository.DeveloperDiagnosticsLogBuffer
+import com.ndi.feature.ndibrowser.data.repository.DiscoveryCompatibilityMatrixRepositoryImpl
+import com.ndi.feature.ndibrowser.data.repository.DiscoveryCompatibilityClassifier
 import com.ndi.feature.ndibrowser.data.repository.DiscoveryServerRepositoryImpl
 import com.ndi.feature.ndibrowser.data.repository.NdiDiscoveryConfigRepositoryImpl
 import com.ndi.feature.ndibrowser.data.repository.NdiSettingsRepositoryImpl
@@ -107,6 +109,8 @@ class AppGraph private constructor(context: Context) {
 
     private val developerDiagnosticsLogBuffer = DeveloperDiagnosticsLogBuffer()
     private val addressValidator = AddressValidator()
+    private val discoveryCompatibilityClassifier = DiscoveryCompatibilityClassifier()
+    private val compatibilityMatrixRepository = DiscoveryCompatibilityMatrixRepositoryImpl()
     private val viewerDeveloperLogResolver = ViewerDeveloperLogResolver(addressValidator)
 
     val discoveryRepository: NdiDiscoveryRepository = NdiDiscoveryRepositoryImpl(
@@ -114,6 +118,8 @@ class AppGraph private constructor(context: Context) {
         userSelectionDao = database.userSelectionDao(),
         discoveryConfigRepository = discoveryConfigRepository,
         diagnosticsLogBuffer = developerDiagnosticsLogBuffer,
+        compatibilityClassifier = discoveryCompatibilityClassifier,
+        compatibilityMatrixRepository = compatibilityMatrixRepository,
     )
 
     val userSelectionRepository: UserSelectionRepository = UserSelectionRepositoryImpl(
@@ -181,6 +187,7 @@ class AppGraph private constructor(context: Context) {
         viewerRepository = viewerRepository,
         outputRepository = outputRepository,
         logBuffer = developerDiagnosticsLogBuffer,
+        compatibilityMatrixRepository = compatibilityMatrixRepository,
     )
 
     private var previousOverlayMode: NdiOverlayMode? = null
@@ -210,13 +217,21 @@ class AppGraph private constructor(context: Context) {
                 )
             }
 
+            val sanitizedDiscoveryDiagnostics = discoveryDiagnostics.copy(
+                recentDiscoveryLogs = discoveryDiagnostics.recentDiscoveryLogs.map { line ->
+                    line
+                        .replace("[redacted-ip]", configuredAddressReplacement)
+                        .replace("[REDACTED]", configuredAddressReplacement)
+                },
+            )
+
             DeveloperOverlayStateMapper.map(
                 developerModeEnabled = settings.developerModeEnabled,
                 streamStatus = overlayState.streamStatusLabel.takeIf { it.isNotBlank() },
                 sessionId = OverlayLogRedactor.redactSessionId(overlayState.sessionId),
                 recentLogs = redactedLogs,
                 configuredAddresses = discoveryEndpoints.map { it.host },
-                discoveryDiagnostics = discoveryDiagnostics.takeIf { settings.developerModeEnabled },
+                discoveryDiagnostics = sanitizedDiscoveryDiagnostics.takeIf { settings.developerModeEnabled },
             )
         }.onEach { overlayDisplayState ->
             val currentMode = overlayDisplayState?.mode ?: NdiOverlayMode.DISABLED

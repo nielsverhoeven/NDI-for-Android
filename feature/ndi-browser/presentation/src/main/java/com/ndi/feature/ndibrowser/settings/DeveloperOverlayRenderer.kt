@@ -59,6 +59,14 @@ object DeveloperOverlayRenderer {
                     append("[${status.serverId.take(8)} ${status.outcome.name}] ")
                 }
             }
+
+            if (overlayDisplayState.compatibilityMessages.isNotEmpty()) {
+                append("\nCompatibility guidance:")
+                overlayDisplayState.compatibilityMessages.forEach { line ->
+                    append("\n- ")
+                    append(line)
+                }
+            }
         }
         discoveryDiagnosticsView.text = summary
         discoveryDiagnosticsView.isVisible = true

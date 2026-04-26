@@ -1,4 +1,4 @@
-<!-- Last updated: 2026-03-20 -->
+<!-- Last updated: 2026-04-07 -->
 
 # NDI Feature Implementation
 
@@ -13,6 +13,9 @@ This document describes the implemented NDI feature set in this repository, incl
 5. [Discovery Server Submenu Pattern](#5-discovery-server-submenu-pattern)
 6. [Copy-Paste Integration Patterns](#6-copy-paste-integration-patterns)
 7. [Related Documents](#7-related-documents)
+8. [Three-Pane Settings Workspace](#8-three-pane-settings-workspace-spec-019)
+9. [Per-Source Last Frame Retention](#9-per-source-last-frame-retention-spec-023)
+10. [Discovery Server Compatibility Matrix](#10-discovery-server-compatibility-matrix-spec-029)
 
 ## 1. Feature Areas
 
@@ -299,3 +302,43 @@ Validation snapshot for spec 023:
 - `:app:verifyReleaseHardening` passed.
 - Release bundle compilation remains blocked by a pre-existing DataBinding release-resource issue unrelated to spec 023.
 - Playwright coverage for spec 023 was intentionally deferred to the next feature specification cycle.
+
+## 10. Discovery Server Compatibility Matrix (Spec 029)
+
+Implemented behavior summary:
+
+- Discovery compatibility outcomes are classified using shared status taxonomy: `compatible`, `limited`, `incompatible`, `blocked`.
+- Discovery now persists per-target compatibility outcomes into an in-memory matrix repository keyed by target id.
+- Mixed-server outcomes preserve usable sources while recording non-compatible endpoints and aggregated partial outcomes.
+- Developer diagnostics now include actionable compatibility guidance lines (target, status, next step) through existing diagnostics surfaces.
+- Overlay mapping and rendering preserve compatibility diagnostics without introducing a dedicated UI surface.
+
+Primary implementation files:
+
+- `core/model/src/main/java/com/ndi/core/model/DeveloperDiscoveryDiagnostics.kt`
+- `feature/ndi-browser/domain/src/main/java/com/ndi/feature/ndibrowser/domain/repository/NdiRepositories.kt`
+- `feature/ndi-browser/data/src/main/java/com/ndi/feature/ndibrowser/data/repository/DiscoveryCompatibilityMatrixRepository.kt`
+- `feature/ndi-browser/data/src/main/java/com/ndi/feature/ndibrowser/data/repository/NdiDiscoveryRepositoryImpl.kt`
+- `feature/ndi-browser/data/src/main/java/com/ndi/feature/ndibrowser/data/repository/DeveloperDiagnosticsRepositoryImpl.kt`
+- `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/DeveloperOverlayState.kt`
+- `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/DeveloperOverlayRenderer.kt`
+- `app/src/main/java/com/ndi/app/di/AppGraph.kt`
+
+Operational validation commands:
+
+1. `./gradlew.bat :feature:ndi-browser:data:testDebugUnitTest --tests "com.ndi.feature.ndibrowser.data.DiscoveryCompatibilityMatrixRepositoryTest" --tests "com.ndi.feature.ndibrowser.data.DeveloperDiagnosticsRepositoryImplTest"`
+2. `./gradlew.bat :feature:ndi-browser:presentation:testDebugUnitTest --tests "com.ndi.feature.ndibrowser.settings.DeveloperOverlayStateMapperTest" --tests "com.ndi.feature.ndibrowser.settings.DiscoveryServerSettingsViewModelTest"`
+3. `pwsh -NoProfile -ExecutionPolicy Bypass -File .\testing\e2e\scripts\run-discovery-compatibility-matrix.ps1 -Profiles pr-primary`
+
+Known runtime limitation:
+
+- Full per-version matrix execution for baseline-latest and venue-failing remains blocked until concrete endpoint host/version values are available in the feature validation target list.
+
+Validation status:
+
+- Code-level compatibility behavior: pass.
+- Diagnostics mapping and Playwright contract/profile checks: pass.
+- Runtime per-target baseline/venue matrix: blocked pending endpoint and version capture.
+- Evidence references:
+	- `test-results/029-compatibility-matrix.md`
+	- `test-results/029-final-validation-summary.md`

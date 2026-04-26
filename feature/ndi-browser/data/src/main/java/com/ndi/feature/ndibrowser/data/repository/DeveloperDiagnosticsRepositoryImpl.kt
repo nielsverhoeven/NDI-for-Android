@@ -10,6 +10,10 @@ import com.ndi.core.model.OutputSession
 import com.ndi.core.model.OutputState
 import com.ndi.core.model.PlaybackState
 import com.ndi.core.model.ViewerSession
+import com.ndi.core.model.CompatibilityGuidance
+import com.ndi.core.model.DiscoveryCompatibilitySnapshot
+import com.ndi.core.model.DiscoveryCompatibilityStatus
+import com.ndi.feature.ndibrowser.domain.repository.DiscoveryCompatibilityMatrixRepository
 import com.ndi.feature.ndibrowser.domain.repository.DeveloperDiagnosticsRepository
 import com.ndi.feature.ndibrowser.domain.repository.NdiOutputRepository
 import com.ndi.feature.ndibrowser.domain.repository.NdiViewerRepository
@@ -27,11 +31,21 @@ class DeveloperDiagnosticsRepositoryImpl(
     private val viewerRepository: NdiViewerRepository? = null,
     private val outputRepository: NdiOutputRepository? = null,
     private val logBuffer: DeveloperDiagnosticsLogBuffer = DeveloperDiagnosticsLogBuffer(),
+    private val compatibilityMatrixRepository: DiscoveryCompatibilityMatrixRepository = DiscoveryCompatibilityMatrixRepositoryImpl(),
 ) : DeveloperDiagnosticsRepository {
 
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
     private val _overlayState = MutableStateFlow(defaultOverlayState())
+    private val _discoveryDiagnostics = MutableStateFlow(
+        DeveloperDiscoveryDiagnostics(
+            developerModeEnabled = false,
+            latestDiscoveryRefreshStatus = null,
+            latestDiscoveryRefreshAtEpochMillis = null,
+            serverStatusRollup = emptyList(),
+            recentDiscoveryLogs = emptyList(),
+        ),
+    )
 
     init {
         bindDiagnosticsStreams()
@@ -40,16 +54,7 @@ class DeveloperDiagnosticsRepositoryImpl(
     override fun observeOverlayState(): Flow<NdiDeveloperOverlayState> = _overlayState.asStateFlow()
 
     override fun observeRecentLogs(): Flow<List<NdiRedactedLogEntry>> = logBuffer.observeRecentLogs()
-    override fun observeDiscoveryDiagnostics(): Flow<DeveloperDiscoveryDiagnostics> =
-        MutableStateFlow(
-            DeveloperDiscoveryDiagnostics(
-                developerModeEnabled = false,
-                latestDiscoveryRefreshStatus = null,
-                latestDiscoveryRefreshAtEpochMillis = null,
-                serverStatusRollup = emptyList(),
-                recentDiscoveryLogs = emptyList(),
-            ),
-        ).asStateFlow()
+    override fun observeDiscoveryDiagnostics(): Flow<DeveloperDiscoveryDiagnostics> = _discoveryDiagnostics.asStateFlow()
 
 
     private fun bindDiagnosticsStreams() {
@@ -62,6 +67,14 @@ class DeveloperDiagnosticsRepositoryImpl(
                 buildOverlayState(viewerSession, outputSession, recentLogs)
             }.collect { state ->
                 _overlayState.value = state
+            }
+        }
+
+        scope.launch {
+            combine(compatibilityMatrixRepository.observeMatrixSnapshot(), logFlow) { matrixSnapshot, recentLogs ->
+                buildDiscoveryDiagnostics(matrixSnapshot, recentLogs)
+            }.collect { diagnostics ->
+                _discoveryDiagnostics.value = diagnostics
             }
         }
 
@@ -163,6 +176,57 @@ class DeveloperDiagnosticsRepositoryImpl(
         message: String,
     ) {
         logBuffer.appendLog(category, level, message)
+    }
+
+    private fun buildDiscoveryDiagnostics(
+        matrixSnapshot: DiscoveryCompatibilitySnapshot,
+        recentLogs: List<NdiRedactedLogEntry>,
+    ): DeveloperDiscoveryDiagnostics {
+        val compatible = matrixSnapshot.results.count { it.status == DiscoveryCompatibilityStatus.COMPATIBLE }
+        val limited = matrixSnapshot.results.count { it.status == DiscoveryCompatibilityStatus.LIMITED }
+        val incompatible = matrixSnapshot.results.count { it.status == DiscoveryCompatibilityStatus.INCOMPATIBLE }
+        val blocked = matrixSnapshot.results.count { it.status == DiscoveryCompatibilityStatus.BLOCKED }
+
+        val summary = "compatibility matrix: compatible=$compatible limited=$limited incompatible=$incompatible blocked=$blocked"
+        val compatibilityGuidance = matrixSnapshot.results
+            .filter {
+                it.status == DiscoveryCompatibilityStatus.INCOMPATIBLE ||
+                    it.status == DiscoveryCompatibilityStatus.BLOCKED ||
+                    it.status == DiscoveryCompatibilityStatus.LIMITED
+            }
+            .map { result ->
+                val nextStep = when (result.status) {
+                    DiscoveryCompatibilityStatus.BLOCKED -> "verify endpoint reachability and rerun validation"
+                    DiscoveryCompatibilityStatus.INCOMPATIBLE -> "retry stream-start verification on target"
+                    DiscoveryCompatibilityStatus.LIMITED -> "treat target as discovery-only until stream validation succeeds"
+                    else -> "no action required"
+                }
+                val message = when (result.status) {
+                    DiscoveryCompatibilityStatus.BLOCKED -> "Target is blocked by environment or endpoint availability"
+                    DiscoveryCompatibilityStatus.INCOMPATIBLE -> "Target is incompatible for stream start"
+                    DiscoveryCompatibilityStatus.LIMITED -> "Target currently supports discovery-only behavior"
+                    else -> "Target is compatible"
+                }
+                CompatibilityGuidance(
+                    targetId = result.targetId,
+                    status = result.status,
+                    message = message,
+                    recommendedNextStep = nextStep,
+                    evidenceRef = result.notes,
+                )
+            }
+        val nonCompatibleLines = compatibilityGuidance.map { guidance ->
+            "target=${guidance.targetId} status=${guidance.status.name.lowercase()} next=${guidance.recommendedNextStep}"
+        }
+
+        return DeveloperDiscoveryDiagnostics(
+            developerModeEnabled = false,
+            latestDiscoveryRefreshStatus = null,
+            latestDiscoveryRefreshAtEpochMillis = matrixSnapshot.recordedAtEpochMillis.takeIf { it > 0L },
+            serverStatusRollup = emptyList(),
+            recentDiscoveryLogs = listOf(summary) + nonCompatibleLines + recentLogs.map { it.messageRedacted },
+            compatibilityGuidance = compatibilityGuidance,
+        )
     }
 
     private fun idleViewerSession(): ViewerSession = ViewerSession(

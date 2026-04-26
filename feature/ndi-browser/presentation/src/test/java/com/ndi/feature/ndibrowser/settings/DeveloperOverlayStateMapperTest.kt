@@ -1,5 +1,7 @@
 package com.ndi.feature.ndibrowser.settings
 
+import com.ndi.core.model.CompatibilityGuidance
+import com.ndi.core.model.DiscoveryCompatibilityStatus
 import com.ndi.core.model.DeveloperDiscoveryDiagnostics
 import com.ndi.core.model.DiscoveryCheckOutcome
 import com.ndi.core.model.DiscoveryCheckType
@@ -10,6 +12,7 @@ import com.ndi.core.model.NdiOverlayMode
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.junit.runners.JUnit4
@@ -99,6 +102,34 @@ class DeveloperOverlayStateMapperTest {
         assertEquals(listOf("192.168.1.10", "ff02::1"), state.configuredAddresses)
     }
 
+    @Test
+    fun enabledState_mapsCompatibilityGuidanceToOverlayMessages() {
+        val state = DeveloperOverlayStateMapper.map(
+            developerModeEnabled = true,
+            streamStatus = "ACTIVE",
+            sessionId = "session-1234",
+            recentLogs = listOf("stream active"),
+            discoveryDiagnostics = sampleDiagnostics(),
+        )
+
+        assertEquals(1, state.compatibilityMessages.size)
+        assertTrue(state.compatibilityMessages.first().contains("server-compat"))
+        assertTrue(state.compatibilityMessages.first().contains("blocked"))
+    }
+
+    @Test
+    fun disabledState_clearsCompatibilityMessages() {
+        val state = DeveloperOverlayStateMapper.map(
+            developerModeEnabled = false,
+            streamStatus = "ACTIVE",
+            sessionId = "session-1234",
+            recentLogs = listOf("stream active"),
+            discoveryDiagnostics = sampleDiagnostics(),
+        )
+
+        assertTrue(state.compatibilityMessages.isEmpty())
+    }
+
     private fun sampleDiagnostics(): DeveloperDiscoveryDiagnostics =
         DeveloperDiscoveryDiagnostics(
             developerModeEnabled = true,
@@ -116,5 +147,13 @@ class DeveloperOverlayStateMapperTest {
                 ),
             ),
             recentDiscoveryLogs = listOf("redacted-log"),
+            compatibilityGuidance = listOf(
+                CompatibilityGuidance(
+                    targetId = "server-compat",
+                    status = DiscoveryCompatibilityStatus.BLOCKED,
+                    message = "Target is blocked",
+                    recommendedNextStep = "verify endpoint",
+                ),
+            ),
         )
     }
