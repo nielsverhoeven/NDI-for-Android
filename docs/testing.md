@@ -25,7 +25,7 @@ This guide documents how to validate settings-menu functionality and the broader
 |---|---|---|
 | Unit | Fast correctness checks for models, repos, ViewModels | `./gradlew.bat test` |
 | Instrumentation | UI/navigation checks on emulator/device | `./gradlew.bat connectedAndroidTest` |
-| E2E (dual-emulator) | Full publish/discover/view interoperability | `run-dual-emulator-e2e.ps1` |
+| E2E (Playwright / dual-emulator capable) | Full publish/discover/view interoperability | `pwsh ./testing/e2e/scripts/run-primary-pr-e2e.ps1 -Profile pr-primary` |
 
 ## 2. Unit Test Organization and Commands
 
@@ -78,26 +78,32 @@ Primary harness documentation: `testing/e2e/README.md`
 Preflight only:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\testing\e2e\scripts\run-dual-emulator-e2e.ps1 -EmulatorASerial emulator-5554 -EmulatorBSerial emulator-5556 -PreflightOnly
+pwsh ./scripts/verify-e2e-dual-emulator-prereqs.ps1
+pwsh -ExecutionPolicy Bypass -File .\testing\e2e\scripts\validate-command-contract.ps1
 ```
 
-Full dual-emulator run:
+Provision dual-emulator environment when a scenario requires it:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\testing\e2e\scripts\run-dual-emulator-e2e.ps1 -EmulatorASerial emulator-5554 -EmulatorBSerial emulator-5556
+pwsh -ExecutionPolicy Bypass -File .\testing\e2e\scripts\provision-dual-emulator.ps1
 ```
 
 Primary PR gate run (required for settings e2e feature scope):
 
 ```powershell
-npm --prefix testing/e2e run test:pr:primary
+pwsh -ExecutionPolicy Bypass -File .\testing\e2e\scripts\run-primary-pr-e2e.ps1 -Profile pr-primary
 ```
 
 Scheduled/nightly matrix run:
 
 ```powershell
-$env:E2E_MATRIX_PROFILES = "api34,api35"
-npm --prefix testing/e2e run test:matrix
+pwsh -ExecutionPolicy Bypass -File .\testing\e2e\scripts\run-matrix-e2e.ps1 -Profiles pr-primary,us2-only,us3-only
+```
+
+Playwright environment preflight for any feature-scoped e2e work:
+
+```powershell
+npm --prefix testing/e2e exec playwright --version
 ```
 
 Gate policy:
