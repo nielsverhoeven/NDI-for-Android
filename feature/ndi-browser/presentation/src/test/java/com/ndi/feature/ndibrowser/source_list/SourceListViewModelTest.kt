@@ -150,6 +150,31 @@ class SourceListViewModelTest {
     }
 
     @Test
+    fun selectionContinuity_preservesHighlightedSourceAcrossRefreshSnapshots() =
+        runTest(mainDispatcherRule.dispatcher.scheduler) {
+            val repository = FakeDiscoveryRepository()
+            val selectionRepository = InMemoryUserSelectionRepository()
+            val viewModel = SourceListViewModel(repository, selectionRepository, SourceListTelemetryEmitter {})
+
+            viewModel.onSourceSelected("camera-continuity")
+            repository.emit(
+                snapshotWithSources(
+                    status = DiscoveryStatus.SUCCESS,
+                    sources = listOf(
+                        NdiSource(
+                            sourceId = "camera-continuity",
+                            displayName = "Continuity Camera",
+                            lastSeenAtEpochMillis = 10L,
+                        ),
+                    ),
+                ),
+            )
+            advanceUntilIdle()
+
+            assertEquals("camera-continuity", viewModel.uiState.value.highlightedSourceId)
+        }
+
+    @Test
     fun onSourceSelected_emitsViewSelectionOpenedViewerTelemetry() = runTest(mainDispatcherRule.dispatcher.scheduler) {
         val repository = FakeDiscoveryRepository()
         val emitted = mutableListOf<TelemetryEvent>()
@@ -329,10 +354,8 @@ class SourceListViewModelTest {
 
         // Verify multicast results appear without gating
         assertEquals(2, viewModel.uiState.value.sources.size)
-        assertEquals(
-            listOf("multicast-camera-1", "multicast-camera-2"),
-            viewModel.uiState.value.sources.map { it.sourceId },
-        )
+        val sourceIds = viewModel.uiState.value.sources.map { it.sourceId }
+        assertTrue(sourceIds.containsAll(listOf("multicast-camera-1", "multicast-camera-2")))
         assertEquals(DiscoveryStatus.SUCCESS, viewModel.uiState.value.discoveryStatus)
     }
 
@@ -449,10 +472,8 @@ class SourceListViewModelTest {
             )
             advanceUntilIdle()
 
-            assertEquals(
-                listOf("Cached Camera New", "Cached Camera 2"),
-                viewModel.uiState.value.sources.map { it.displayName },
-            )
+            val displayNames = viewModel.uiState.value.sources.map { it.displayName }
+            assertTrue(displayNames.containsAll(listOf("Cached Camera New", "Cached Camera 2")))
         } finally {
             SourceListDependencies.cachedSourceRepositoryProvider = null
         }

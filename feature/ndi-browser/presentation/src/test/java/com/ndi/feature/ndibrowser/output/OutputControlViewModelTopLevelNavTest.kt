@@ -135,6 +135,25 @@ class OutputControlViewModelTopLevelNavTest {
             assertTrue(continuityRepository.clearInvoked)
             assertEquals(OutputState.STOPPED, continuityRepository.observeContinuityState().value.outputState)
         }
+
+    @Test
+    fun taskFlowInvariant_readyStateMaintainsStartAvailability() =
+        runTest(mainDispatcherRule.dispatcher.scheduler) {
+            val repository = NavAwareOutputRepository()
+            val vm = OutputControlViewModel(
+                repository,
+                NavAwareOutputConfigurationRepository(),
+                NavAwareConsentRepository(),
+                OutputTelemetryEmitter {},
+            )
+
+            repository.emitState(OutputState.READY, "camera-task-flow")
+            advanceUntilIdle()
+
+            assertEquals(OutputState.READY, vm.uiState.value.outputState)
+            assertTrue(vm.uiState.value.canStart)
+            assertFalse(vm.uiState.value.canRetry)
+        }
 }
 
 private class NavAwareOutputRepository : NdiOutputRepository {
