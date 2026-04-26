@@ -2,19 +2,23 @@ package com.ndi.feature.ndibrowser.data
 
 import com.ndi.core.database.UserSelectionDao
 import com.ndi.core.database.UserSelectionEntity
+import com.ndi.core.model.CachedSourceRecord
+import com.ndi.core.model.CachedSourceValidationState
+import com.ndi.core.model.DiscoveryCompatibilityStatus
 import com.ndi.core.model.DiscoveryStatus
 import com.ndi.core.model.DiscoveryTrigger
-import com.ndi.core.model.DiscoveryCompatibilityStatus
+import com.ndi.core.model.NdiDiscoveryEndpoint
 import com.ndi.core.model.NdiLogCategory
 import com.ndi.core.model.NdiLogLevel
-import com.ndi.core.model.NdiDiscoveryEndpoint
 import com.ndi.core.model.NdiSource
 import com.ndi.feature.ndibrowser.data.repository.DeveloperDiagnosticsLogBuffer
 import com.ndi.feature.ndibrowser.data.repository.NdiDiscoveryRepositoryImpl
+import com.ndi.feature.ndibrowser.domain.repository.CachedSourceRepository
 import com.ndi.feature.ndibrowser.domain.repository.NdiDiscoveryConfigRepository
 import com.ndi.sdkbridge.NdiDiscoveryBridge
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -232,6 +236,76 @@ class NdiDiscoveryRepositoryContractTest {
             it.status == DiscoveryCompatibilityStatus.BLOCKED
         })
     }
+
+    @Test
+    fun discoverSources_persistsDiscoveredSourceIntoCachedRepository() = runTest {
+        val cachedRepo = FakeCachedSourceRepository()
+        val repository = NdiDiscoveryRepositoryImpl(
+            bridge = FakeDiscoveryBridge(
+                sources = listOf(
+                    NdiSource(
+                        sourceId = "source-a",
+                        displayName = "Camera A",
+                        endpointAddress = "192.168.1.50:5960",
+                        isAvailable = true,
+                        lastSeenAtEpochMillis = 10L,
+                    ),
+                ),
+            ),
+            userSelectionDao = FakeUserSelectionDao(),
+            discoveryConfigRepository = FakeDiscoveryConfigRepository(),
+            scope = TestScope(StandardTestDispatcher(testScheduler)),
+            cachedSourceRepository = cachedRepo,
+        )
+
+        repository.discoverSources(DiscoveryTrigger.MANUAL)
+
+        assertEquals(1, cachedRepo.upserts.size)
+        assertEquals("source-a", cachedRepo.upserts.single().cacheKey)
+        assertEquals(CachedSourceValidationState.AVAILABLE, cachedRepo.upserts.single().validationState)
+    }
+
+    @Test
+    fun discoverSources_updatesValidationStateAcrossSubsequentDiscoveries() = runTest {
+        val cachedRepo = FakeCachedSourceRepository()
+        val bridge = SequenceDiscoveryBridge(
+            responses = mutableListOf(
+                listOf(
+                    NdiSource(
+                        sourceId = "source-a",
+                        displayName = "Camera A",
+                        endpointAddress = "192.168.1.50:5960",
+                        isAvailable = true,
+                        lastSeenAtEpochMillis = 10L,
+                    ),
+                ),
+                listOf(
+                    NdiSource(
+                        sourceId = "source-a",
+                        displayName = "Camera A",
+                        endpointAddress = "192.168.1.50:5960",
+                        isAvailable = false,
+                        lastSeenAtEpochMillis = 20L,
+                    ),
+                ),
+            ),
+        )
+        val repository = NdiDiscoveryRepositoryImpl(
+            bridge = bridge,
+            userSelectionDao = FakeUserSelectionDao(),
+            discoveryConfigRepository = FakeDiscoveryConfigRepository(),
+            scope = TestScope(StandardTestDispatcher(testScheduler)),
+            cachedSourceRepository = cachedRepo,
+        )
+
+        repository.discoverSources(DiscoveryTrigger.MANUAL)
+        repository.discoverSources(DiscoveryTrigger.MANUAL)
+
+        assertEquals(2, cachedRepo.upserts.size)
+        assertEquals(CachedSourceValidationState.AVAILABLE, cachedRepo.upserts[0].validationState)
+        assertEquals(CachedSourceValidationState.UNAVAILABLE, cachedRepo.upserts[1].validationState)
+        assertEquals(cachedRepo.upserts[0].cacheKey, cachedRepo.upserts[1].cacheKey)
+    }
 }
 
 private class FakeDiscoveryBridge(
@@ -282,4 +356,57 @@ private class FakeDiscoveryConfigRepository(
 
     override suspend fun applyDiscoveryEndpoint(endpoint: NdiDiscoveryEndpoint?) =
         throw NotImplementedError("Not implemented in test")
+}
+
+private class SequenceDiscoveryBridge(
+    private val responses: MutableList<List<NdiSource>>,
+) : NdiDiscoveryBridge {
+    override suspend fun discoverSources(): List<NdiSource> {
+        return if (responses.isEmpty()) emptyList() else responses.removeAt(0)
+    }
+
+    override fun setDiscoveryEndpoint(endpoint: NdiDiscoveryEndpoint?) = Unit
+}
+
+private class FakeCachedSourceRepository : CachedSourceRepository {
+    val upserts: MutableList<CachedSourceRecord> = mutableListOf()
+    private val state = MutableStateFlow<List<CachedSourceRecord>>(emptyList())
+
+    override fun observeCachedSources(): Flow<List<CachedSourceRecord>> = state
+
+    override suspend fun getCachedSource(cacheKey: String): CachedSourceRecord? {
+        return state.value.firstOrNull { it.cacheKey == cacheKey }
+    }
+
+    override suspend fun upsertCachedSource(record: CachedSourceRecord) {
+        upserts += record
+        val next = state.value.filterNot { it.cacheKey == record.cacheKey } + record
+        state.value = next
+    }
+
+    override suspend fun upsertFromDiscovery(record: CachedSourceRecord) {
+        upserts += record
+        val existing = state.value.firstOrNull { it.cacheKey == record.cacheKey }
+        val merged = if (existing != null) {
+            record.copy(retainedPreviewImagePath = existing.retainedPreviewImagePath)
+        } else {
+            record
+        }
+        val next = state.value.filterNot { it.cacheKey == record.cacheKey } + merged
+        state.value = next
+    }
+
+    override suspend fun upsertDiscoveryAssociation(
+        cacheKey: String,
+        discoveryServerId: String,
+        observedAtEpochMillis: Long,
+    ) = Unit
+
+    override suspend fun markValidationState(
+        cacheKey: String,
+        state: CachedSourceValidationState,
+        validationStartedAtEpochMillis: Long?,
+        validatedAtEpochMillis: Long?,
+        availableAtEpochMillis: Long?,
+    ) = Unit
 }

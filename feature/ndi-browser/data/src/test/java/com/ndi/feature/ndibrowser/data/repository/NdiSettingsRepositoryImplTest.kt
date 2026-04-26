@@ -204,6 +204,49 @@ class NdiSettingsRepositoryImplTest {
         assertEquals("10.0.0.5", discoveryDao.getAll().first().hostOrIp)
         assertNull(settingsDao.get()?.discoveryServerInput)
     }
+
+    @Test
+    fun init_legacyMigration_preservesExistingSettingsAndDiscoveryRows() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val settingsDao = FakeSettingsPreferenceDao(
+            SettingsPreferenceEntity(
+                id = 1,
+                discoveryServerInput = "old-server.local:5960",
+                developerModeEnabled = true,
+                themeMode = "DARK",
+                accentColorId = "accent_coral",
+                updatedAtEpochMillis = 1234L,
+            ),
+        )
+        val discoveryDao = FakeDiscoveryServerDao(
+            initial = listOf(
+                DiscoveryServerEntity(
+                    id = "existing-a",
+                    hostOrIp = "10.1.0.8",
+                    port = 5959,
+                    enabled = true,
+                    orderIndex = 0,
+                    createdAtEpochMillis = 10L,
+                    updatedAtEpochMillis = 20L,
+                ),
+            ),
+        )
+
+        NdiSettingsRepositoryImpl(
+            settingsDao = settingsDao,
+            discoveryServerDao = discoveryDao,
+            scope = kotlinx.coroutines.CoroutineScope(dispatcher),
+        )
+        advanceUntilIdle()
+
+        val persistedSettings = settingsDao.get()!!
+        assertEquals(1, discoveryDao.getAll().size)
+        assertEquals("existing-a", discoveryDao.getAll().first().id)
+        assertNull(persistedSettings.discoveryServerInput)
+        assertTrue(persistedSettings.developerModeEnabled)
+        assertEquals("DARK", persistedSettings.themeMode)
+        assertEquals("accent_coral", persistedSettings.accentColorId)
+    }
 }
 
 private class FakeSettingsPreferenceDao(

@@ -12,6 +12,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -59,10 +60,34 @@ class HomeViewModelTest {
             val events = mutableListOf<HomeNavigationEvent>()
             val job = launch { vm.navigationEvents.collect { events.add(it) } }
 
+            advanceUntilIdle()
             vm.onOpenViewActionPressed()
             advanceUntilIdle()
 
             assertTrue(events.any { it is HomeNavigationEvent.OpenView })
+            job.cancel()
+        }
+
+    @Test
+    fun onOpenViewActionPressed_whenSnapshotBlocksView_doesNotEmitNavigationEvent() =
+        runTest(mainDispatcherRule.dispatcher.scheduler) {
+            val repo = FakeHomeDashboardRepository(
+                initialSnapshot = HomeDashboardSnapshot(
+                    generatedAtEpochMillis = 0L,
+                    streamStatus = OutputState.READY,
+                    viewPlaybackStatus = PlaybackState.STOPPED,
+                    canNavigateToView = false,
+                ),
+            )
+            val vm = HomeViewModel(repo, HomeTelemetryEmitter {})
+            val events = mutableListOf<HomeNavigationEvent>()
+            val job = launch { vm.navigationEvents.collect { events.add(it) } }
+
+            advanceUntilIdle()
+            vm.onOpenViewActionPressed()
+            advanceUntilIdle()
+
+            assertFalse(events.any { it is HomeNavigationEvent.OpenView })
             job.cancel()
         }
 
@@ -84,14 +109,14 @@ class HomeViewModelTest {
     }
 }
 
-private class FakeHomeDashboardRepository : HomeDashboardRepository {
-    private val _snapshots = MutableStateFlow(
-        HomeDashboardSnapshot(
-            generatedAtEpochMillis = 0L,
-            streamStatus = OutputState.READY,
-            viewPlaybackStatus = PlaybackState.STOPPED,
-        ),
-    )
+private class FakeHomeDashboardRepository(
+    initialSnapshot: HomeDashboardSnapshot = HomeDashboardSnapshot(
+        generatedAtEpochMillis = 0L,
+        streamStatus = OutputState.READY,
+        viewPlaybackStatus = PlaybackState.STOPPED,
+    ),
+) : HomeDashboardRepository {
+    private val _snapshots = MutableStateFlow(initialSnapshot)
     var refreshCount = 0
 
     override fun observeDashboardSnapshot(): Flow<HomeDashboardSnapshot> = _snapshots

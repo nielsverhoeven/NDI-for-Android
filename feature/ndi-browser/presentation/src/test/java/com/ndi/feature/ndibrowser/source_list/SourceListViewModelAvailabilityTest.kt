@@ -114,6 +114,50 @@ class SourceListViewModelAvailabilityTest {
         }
     }
 
+    @Test
+    fun testUnavailableSourceRowRemainsVisibleAfterDiscoveryMisses() =
+        runTest(mainDispatcherRule.dispatcher.scheduler) {
+            val repository = FakeDiscoveryRepositoryWithAvailability()
+            val viewModel = SourceListViewModel(repository, InMemoryUserSelectionRepositoryForAvailability(), SourceListTelemetryEmitter {})
+
+            val cam1 = NdiSource(
+                sourceId = "cam1-id",
+                displayName = "Cam1",
+                endpointAddress = "192.168.1.1:5960",
+                lastSeenAtEpochMillis = System.currentTimeMillis(),
+            )
+            repository.emit(
+                DiscoverySnapshot(
+                    snapshotId = UUID.randomUUID().toString(),
+                    startedAtEpochMillis = 1L,
+                    completedAtEpochMillis = 2L,
+                    sources = listOf(cam1),
+                    status = DiscoveryStatus.SUCCESS,
+                    sourceCount = 1,
+                ),
+            )
+            viewModel.onScreenVisible()
+            advanceUntilIdle()
+
+            repeat(2) {
+                repository.emit(
+                    DiscoverySnapshot(
+                        snapshotId = UUID.randomUUID().toString(),
+                        startedAtEpochMillis = (3 + it * 2).toLong(),
+                        completedAtEpochMillis = (4 + it * 2).toLong(),
+                        sources = emptyList(),
+                        status = DiscoveryStatus.SUCCESS,
+                        sourceCount = 0,
+                    ),
+                )
+                advanceUntilIdle()
+            }
+
+            val cachedRow = viewModel.uiState.value.sources.find { it.sourceId == "cam1-id" }
+            assertTrue("Unavailable source row should remain visible as cached entry", cachedRow != null)
+            assertFalse("Cached row should be marked unavailable after debounce misses", cachedRow?.isAvailable ?: true)
+        }
+
     /**
      * T028: Tests that selecting an unavailable source does not trigger navigation.
      */

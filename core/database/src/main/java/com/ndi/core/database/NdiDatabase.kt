@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.room.Dao
 import androidx.room.Database
 import androidx.room.Entity
+import androidx.room.ForeignKey
+import androidx.room.Index
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.PrimaryKey
@@ -233,6 +235,62 @@ data class DiscoveryServerCheckStatusEntity(
     val correlationId: String,
 )
 
+@Entity(
+    tableName = "cached_sources",
+    indices = [
+        Index(value = ["endpointKey"]),
+        Index(value = ["stableSourceId"]),
+    ],
+)
+data class CachedSourceEntity(
+    @PrimaryKey
+    val cacheKey: String,
+    val stableSourceId: String?,
+    val lastObservedSourceId: String?,
+    val displayName: String,
+    val endpointHost: String,
+    val endpointPort: Int,
+    val endpointKey: String,
+    val validationState: String,
+    val lastAvailableAtEpochMillis: Long?,
+    val lastValidatedAtEpochMillis: Long?,
+    val lastValidationStartedAtEpochMillis: Long?,
+    val firstCachedAtEpochMillis: Long,
+    val lastDiscoveredAtEpochMillis: Long,
+    val retainedPreviewImagePath: String?,
+    val lastPreviewCapturedAtEpochMillis: Long?,
+    val updatedAtEpochMillis: Long,
+)
+
+@Entity(
+    tableName = "cached_source_discovery_server_xref",
+    primaryKeys = ["cacheKey", "discoveryServerId"],
+    foreignKeys = [
+        ForeignKey(
+            entity = CachedSourceEntity::class,
+            parentColumns = ["cacheKey"],
+            childColumns = ["cacheKey"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+        ForeignKey(
+            entity = DiscoveryServerEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["discoveryServerId"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
+    indices = [
+        Index(value = ["cacheKey"]),
+        Index(value = ["discoveryServerId"]),
+    ],
+)
+data class CachedSourceDiscoveryServerCrossRefEntity(
+    val cacheKey: String,
+    val discoveryServerId: String,
+    val firstObservedAtEpochMillis: Long,
+    val lastObservedAtEpochMillis: Long,
+)
+
 @Dao
 interface DiscoveryServerCheckStatusDao {
     @Query("SELECT * FROM discovery_server_check_status WHERE serverId = :serverId LIMIT 1")
@@ -248,6 +306,100 @@ interface DiscoveryServerCheckStatusDao {
     suspend fun upsert(entity: DiscoveryServerCheckStatusEntity)
 }
 
+@Dao
+interface CachedSourceDao {
+    @Query("SELECT * FROM cached_sources ORDER BY updatedAtEpochMillis DESC")
+    fun observeAll(): Flow<List<CachedSourceEntity>>
+
+    @Query("SELECT * FROM cached_sources WHERE cacheKey = :cacheKey LIMIT 1")
+    suspend fun getByKey(cacheKey: String): CachedSourceEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entity: CachedSourceEntity)
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertIfAbsent(entity: CachedSourceEntity)
+
+    /**
+     * Update all discovery-sourced fields while PRESERVING the retained preview image path.
+     * Use this from discovery persistence code so thumbnail images are not wiped by a new scan.
+     */
+    @Query(
+        """
+        UPDATE cached_sources
+        SET lastObservedSourceId = :lastObservedSourceId,
+            displayName = :displayName,
+            endpointHost = :endpointHost,
+            endpointPort = :endpointPort,
+            endpointKey = :endpointKey,
+            validationState = :validationState,
+            lastAvailableAtEpochMillis = COALESCE(:lastAvailableAtEpochMillis, lastAvailableAtEpochMillis),
+            lastValidatedAtEpochMillis = :lastValidatedAtEpochMillis,
+            lastDiscoveredAtEpochMillis = :lastDiscoveredAtEpochMillis,
+            updatedAtEpochMillis = :updatedAtEpochMillis
+        WHERE cacheKey = :cacheKey
+        """,
+    )
+    suspend fun updateFromDiscovery(
+        cacheKey: String,
+        lastObservedSourceId: String?,
+        displayName: String,
+        endpointHost: String,
+        endpointPort: Int,
+        endpointKey: String,
+        validationState: String,
+        lastAvailableAtEpochMillis: Long?,
+        lastValidatedAtEpochMillis: Long?,
+        lastDiscoveredAtEpochMillis: Long,
+        updatedAtEpochMillis: Long,
+    )
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(entities: List<CachedSourceEntity>)
+
+    @Query(
+        """
+        UPDATE cached_sources
+        SET validationState = :validationState,
+            lastValidationStartedAtEpochMillis = COALESCE(:startedAtEpochMillis, lastValidationStartedAtEpochMillis),
+            lastValidatedAtEpochMillis = COALESCE(:validatedAtEpochMillis, lastValidatedAtEpochMillis),
+            lastAvailableAtEpochMillis = COALESCE(:availableAtEpochMillis, lastAvailableAtEpochMillis),
+            updatedAtEpochMillis = :updatedAtEpochMillis
+        WHERE cacheKey = :cacheKey
+        """,
+    )
+    suspend fun updateValidationState(
+        cacheKey: String,
+        validationState: String,
+        startedAtEpochMillis: Long?,
+        validatedAtEpochMillis: Long?,
+        availableAtEpochMillis: Long?,
+        updatedAtEpochMillis: Long,
+    )
+}
+
+@Dao
+interface CachedSourceDiscoveryServerCrossRefDao {
+    @Query("SELECT * FROM cached_source_discovery_server_xref WHERE cacheKey = :cacheKey")
+    suspend fun getByCacheKey(cacheKey: String): List<CachedSourceDiscoveryServerCrossRefEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entity: CachedSourceDiscoveryServerCrossRefEntity)
+
+    @Query(
+        """
+        UPDATE cached_source_discovery_server_xref
+        SET lastObservedAtEpochMillis = :lastObservedAtEpochMillis
+        WHERE cacheKey = :cacheKey AND discoveryServerId = :discoveryServerId
+        """,
+    )
+    suspend fun updateLastObserved(
+        cacheKey: String,
+        discoveryServerId: String,
+        lastObservedAtEpochMillis: Long,
+    )
+}
+
 @Database(
     entities = [
         UserSelectionEntity::class,
@@ -259,8 +411,10 @@ interface DiscoveryServerCheckStatusDao {
         SettingsPreferenceEntity::class,
         DiscoveryServerEntity::class,
         DiscoveryServerCheckStatusEntity::class,
+        CachedSourceEntity::class,
+        CachedSourceDiscoveryServerCrossRefEntity::class,
     ],
-    version = 8,
+    version = 9,
     exportSchema = false,
 )
 abstract class NdiDatabase : RoomDatabase() {
@@ -281,6 +435,8 @@ abstract class NdiDatabase : RoomDatabase() {
 
     abstract fun discoveryServerDao(): DiscoveryServerDao
     abstract fun discoveryServerCheckStatusDao(): DiscoveryServerCheckStatusDao
+    abstract fun cachedSourceDao(): CachedSourceDao
+    abstract fun cachedSourceDiscoveryServerCrossRefDao(): CachedSourceDiscoveryServerCrossRefDao
 
 
     companion object {
@@ -457,6 +613,53 @@ abstract class NdiDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS cached_sources (
+                        cacheKey TEXT NOT NULL,
+                        stableSourceId TEXT,
+                        lastObservedSourceId TEXT,
+                        displayName TEXT NOT NULL,
+                        endpointHost TEXT NOT NULL,
+                        endpointPort INTEGER NOT NULL,
+                        endpointKey TEXT NOT NULL,
+                        validationState TEXT NOT NULL,
+                        lastAvailableAtEpochMillis INTEGER,
+                        lastValidatedAtEpochMillis INTEGER,
+                        lastValidationStartedAtEpochMillis INTEGER,
+                        firstCachedAtEpochMillis INTEGER NOT NULL,
+                        lastDiscoveredAtEpochMillis INTEGER NOT NULL,
+                        retainedPreviewImagePath TEXT,
+                        lastPreviewCapturedAtEpochMillis INTEGER,
+                        updatedAtEpochMillis INTEGER NOT NULL,
+                        PRIMARY KEY(cacheKey)
+                    )
+                    """.trimIndent(),
+                )
+
+                database.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS cached_source_discovery_server_xref (
+                        cacheKey TEXT NOT NULL,
+                        discoveryServerId TEXT NOT NULL,
+                        firstObservedAtEpochMillis INTEGER NOT NULL,
+                        lastObservedAtEpochMillis INTEGER NOT NULL,
+                        PRIMARY KEY(cacheKey, discoveryServerId),
+                        FOREIGN KEY(cacheKey) REFERENCES cached_sources(cacheKey) ON DELETE CASCADE,
+                        FOREIGN KEY(discoveryServerId) REFERENCES discovery_servers(id) ON DELETE CASCADE
+                    )
+                    """.trimIndent(),
+                )
+
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_cached_sources_endpointKey ON cached_sources(endpointKey)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_cached_sources_stableSourceId ON cached_sources(stableSourceId)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_cached_source_xref_cacheKey ON cached_source_discovery_server_xref(cacheKey)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_cached_source_xref_discoveryServerId ON cached_source_discovery_server_xref(discoveryServerId)")
+            }
+        }
+
         @Volatile
         private var instance: NdiDatabase? = null
 
@@ -467,7 +670,16 @@ abstract class NdiDatabase : RoomDatabase() {
                     NdiDatabase::class.java,
                     "ndi_database",
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
+                    .addMigrations(
+                        MIGRATION_1_2,
+                        MIGRATION_2_3,
+                        MIGRATION_3_4,
+                        MIGRATION_4_5,
+                        MIGRATION_5_6,
+                        MIGRATION_6_7,
+                        MIGRATION_7_8,
+                        MIGRATION_8_9,
+                    )
                     .build()
                     .also { instance = it }
             }

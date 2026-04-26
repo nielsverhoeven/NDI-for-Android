@@ -17,6 +17,7 @@ This guide documents how to validate settings-menu functionality and the broader
 9. [Feature 021 Validation Snapshot](#9-feature-021-validation-snapshot-viewer-persistence--source-availability)
 10. [Feature 025 Validation Snapshot](#10-feature-025-validation-snapshot-fix-appearance-settings)
 11. [Feature 029 Validation Snapshot](#11-feature-029-validation-snapshot-ndi-discovery-server-compatibility)
+12. [Feature 030 Validation Snapshot](#12-feature-030-validation-snapshot-persistent-source-cache)
 
 ## 1. Test Pyramid
 
@@ -248,3 +249,31 @@ Evidence artifacts:
 Current blocker classification:
 
 - Runtime per-version baseline/venue endpoint validation remains `blocked` until target endpoint host and exact server version are captured in `specs/029-ndi-server-compatibility/validation/server-targets.md`.
+
+## 12. Feature 030 Validation Snapshot (Persistent Source Cache)
+
+Validation date: 2026-04-19
+
+Current gate status:
+
+- Android prerequisites preflight: PASS (`test-results/030-preflight-android-prereqs.md`)
+- Dual-emulator harness preflight: PASS (`test-results/030-preflight-dual-emulator.md`)
+- Runtime device readiness (`adb devices`): BLOCKED (`test-results/030-preflight-runtime.md`)
+
+Planned US evidence files:
+
+- `test-results/030-us1-cache-validation.md`
+- `test-results/030-us2-endpoint-handoff.md`
+- `test-results/030-us3-developer-inspection.md`
+- `test-results/030-final-validation-summary.md`
+
+Feature-specific command set (validated):
+
+```powershell
+pwsh ./scripts/verify-android-prereqs.ps1
+pwsh ./scripts/verify-e2e-dual-emulator-prereqs.ps1
+adb devices
+./gradlew.bat :feature:ndi-browser:data:testDebugUnitTest :feature:ndi-browser:presentation:testDebugUnitTest
+npm --prefix testing/e2e run test:pr:primary
+./gradlew.bat :app:verifyReleaseHardening
+```

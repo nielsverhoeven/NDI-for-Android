@@ -73,6 +73,11 @@ class HomeViewModel(
     }
 
     fun onOpenViewActionPressed() {
+        val canNavigateToView = _uiState.value.snapshot?.canNavigateToView ?: false
+        if (!canNavigateToView) {
+            return
+        }
+
         telemetryEmitter.emit(
             TelemetryEvent(
                 name = TelemetryEvent.HOME_ACTION_OPEN_VIEW,
