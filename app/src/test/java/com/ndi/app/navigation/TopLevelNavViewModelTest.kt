@@ -240,6 +240,30 @@ class TopLevelNavViewModelTest {
         assertTrue(items.containsKey(TopLevelDestination.SETTINGS))
         assertEquals(R.drawable.ic_nav_settings, items[TopLevelDestination.SETTINGS]?.iconResId)
     }
+
+    @Test
+    fun shellStyleState_homeUsesPrimaryHierarchyAndBottomNavByDefault() =
+        runTest(mainDispatcherRule.dispatcher.scheduler) {
+            val vm = TopLevelNavViewModel(FakeNavigationRepository())
+            vm.onAppLaunch(LaunchContext.LAUNCHER)
+            advanceUntilIdle()
+
+            val style = vm.uiState.value.shellStyleState
+            assertEquals(ShellHierarchyLevel.PRIMARY, style.hierarchyLevel)
+            assertEquals(ShellContainer.BOTTOM_NAV, style.shellContainer)
+            assertTrue(style.showSelectionIndicator)
+        }
+
+    @Test
+    fun shellStyleState_tabletWidthUsesNavRailContainer() =
+        runTest(mainDispatcherRule.dispatcher.scheduler) {
+            val vm = TopLevelNavViewModel(FakeNavigationRepository())
+            vm.onAppLaunch(LaunchContext.LAUNCHER)
+            vm.onScreenWidthChanged(800)
+            advanceUntilIdle()
+
+            assertEquals(ShellContainer.NAV_RAIL, vm.uiState.value.shellStyleState.shellContainer)
+        }
 }
 
 private class FakeNavigationRepository(

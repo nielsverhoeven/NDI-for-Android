@@ -28,6 +28,11 @@ data class TopLevelNavUiState(
     val selectedDestination: TopLevelDestination = TopLevelDestination.HOME,
     val navLayoutProfile: NavigationLayoutProfile = NavigationLayoutProfile.PHONE_BOTTOM_NAV,
     val destinationItems: List<TopLevelDestinationItem> = emptyList(),
+    val shellStyleState: TopLevelShellStyleState = TopLevelShellStyleState(
+        hierarchyLevel = ShellHierarchyLevel.PRIMARY,
+        shellContainer = ShellContainer.BOTTOM_NAV,
+        showSelectionIndicator = true,
+    ),
 )
 
 sealed interface TopLevelNavEvent {
@@ -67,6 +72,7 @@ class TopLevelNavViewModel(
                 it.copy(
                     selectedDestination = initial,
                     destinationItems = buildDestinationItems(initial),
+                    shellStyleState = coordinator.resolveShellStyleState(initial, it.navLayoutProfile),
                 )
             }
             navigationRepository.saveLastTopLevelDestination(initial)
@@ -93,6 +99,7 @@ class TopLevelNavViewModel(
                     it.copy(
                         selectedDestination = destination,
                         destinationItems = buildDestinationItems(destination),
+                        shellStyleState = coordinator.resolveShellStyleState(destination, it.navLayoutProfile),
                     )
                 }
                 telemetryEmitter.emit(
@@ -110,7 +117,12 @@ class TopLevelNavViewModel(
 
     fun onScreenWidthChanged(widthDp: Int) {
         val profile = coordinator.resolveLayoutProfile(widthDp)
-        _uiState.update { it.copy(navLayoutProfile = profile) }
+        _uiState.update {
+            it.copy(
+                navLayoutProfile = profile,
+                shellStyleState = coordinator.resolveShellStyleState(it.selectedDestination, profile),
+            )
+        }
     }
 
     /**
@@ -128,6 +140,7 @@ class TopLevelNavViewModel(
                 it.copy(
                     selectedDestination = resolved,
                     destinationItems = buildDestinationItems(resolved),
+                    shellStyleState = coordinator.resolveShellStyleState(resolved, it.navLayoutProfile),
                 )
             }
             when {
@@ -152,6 +165,7 @@ class TopLevelNavViewModel(
             it.copy(
                 selectedDestination = destination,
                 destinationItems = buildDestinationItems(destination),
+                shellStyleState = coordinator.resolveShellStyleState(destination, it.navLayoutProfile),
             )
         }
 

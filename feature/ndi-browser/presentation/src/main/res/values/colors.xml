@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Fluent + Electron baseline tokens scoped to presentation module (feature 032) -->
+    <color name="fluent_electron_surface_card">#FFFFFFFF</color>
+    <color name="fluent_electron_stroke_subtle">#1F1A1A1A</color>
+    <color name="fluent_electron_text_secondary">#FF4B5563</color>
+</resources>

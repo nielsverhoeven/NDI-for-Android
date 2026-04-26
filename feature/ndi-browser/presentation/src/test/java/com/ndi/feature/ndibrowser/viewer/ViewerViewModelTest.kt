@@ -14,6 +14,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Rule
 import org.junit.Test
 import java.util.UUID
@@ -72,6 +73,19 @@ class ViewerViewModelTest {
         assertEquals(2, emissionCount)
 
         collector.cancel()
+    }
+
+    @Test
+    fun presentationContract_playingStateHidesRecoveryActions() = runTest(mainDispatcherRule.dispatcher.scheduler) {
+        val repository = FakeViewerRepository()
+        val viewModel = ViewerViewModel(repository, InMemorySelectionRepository(), ViewerTelemetryEmitter {})
+
+        viewModel.onViewerOpened("camera-contract")
+        advanceUntilIdle()
+
+        assertEquals(PlaybackState.PLAYING, viewModel.uiState.value.playbackState)
+        assertFalse(viewModel.uiState.value.recoveryActionsVisible)
+        assertEquals(null, viewModel.uiState.value.interruptionMessage)
     }
 }
 

@@ -243,6 +243,25 @@ class OutputControlViewModelTest {
         assertEquals(1, repository.startCalls)
         collector.cancel()
     }
+
+    @Test
+    fun presentationContract_interruptedStateEnablesRetryAndShowsRecoveryActions() =
+        runTest(mainDispatcherRule.dispatcher.scheduler) {
+            val repository = FakeOutputRepository()
+            val viewModel = OutputControlViewModel(
+                repository,
+                InMemoryOutputConfigurationRepository(),
+                InMemoryScreenCaptureConsentRepository(),
+                OutputTelemetryEmitter {},
+            )
+
+            repository.emitState(OutputState.INTERRUPTED, sourceId = "camera-7")
+            advanceUntilIdle()
+
+            assertEquals(OutputState.INTERRUPTED, viewModel.uiState.value.outputState)
+            assertTrue(viewModel.uiState.value.canRetry)
+            assertTrue(viewModel.uiState.value.showRecoveryActions)
+        }
 }
 
 private class FakeOutputRepository(

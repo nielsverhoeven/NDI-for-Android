@@ -65,6 +65,11 @@ class TopLevelNavigationHost(
         else -> null
     }
 
+    fun resolveShellStyleState(
+        selectedDestination: TopLevelDestination,
+        profile: NavigationLayoutProfile,
+    ): TopLevelShellStyleState = coordinator.resolveShellStyleState(selectedDestination, profile)
+
     private fun TopLevelDestination.toNavId(): Int? = when (this) {
         TopLevelDestination.HOME -> R.id.homeDashboardFragment
         TopLevelDestination.STREAM -> R.id.streamFragment

@@ -154,5 +154,28 @@ class TopLevelNavigationCoordinatorTest {
     fun isNoOp_returnsTrueForSettingsReselect() {
         assertTrue(coordinator.isNoOp(TopLevelDestination.SETTINGS, TopLevelDestination.SETTINGS))
     }
+
+    @Test
+    fun resolveShellStyleState_homeOnPhone_isPrimaryBottomNav() {
+        val style = coordinator.resolveShellStyleState(
+            selectedDestination = TopLevelDestination.HOME,
+            profile = NavigationLayoutProfile.PHONE_BOTTOM_NAV,
+        )
+
+        assertEquals(ShellHierarchyLevel.PRIMARY, style.hierarchyLevel)
+        assertEquals(ShellContainer.BOTTOM_NAV, style.shellContainer)
+        assertTrue(style.showSelectionIndicator)
+    }
+
+    @Test
+    fun resolveShellStyleState_nonHomeOnTablet_isSecondaryNavRail() {
+        val style = coordinator.resolveShellStyleState(
+            selectedDestination = TopLevelDestination.SETTINGS,
+            profile = NavigationLayoutProfile.TABLET_NAV_RAIL,
+        )
+
+        assertEquals(ShellHierarchyLevel.SECONDARY, style.hierarchyLevel)
+        assertEquals(ShellContainer.NAV_RAIL, style.shellContainer)
+    }
 }
 
