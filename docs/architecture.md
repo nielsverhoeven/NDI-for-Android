@@ -1,8 +1,8 @@
-<!-- Last updated: 2026-03-20 -->
+<!-- Last updated: 2026-04-27 -->
 
 # Architecture Guide
 
-This guide describes the implemented architecture for NDI-for-Android, including the spec 006 settings and developer overlay flow.
+This guide describes the implemented architecture for NDI-for-Android, including the spec 006 settings/developer overlay flow and the spec 032 Fluent + Electron redesign baseline.
 
 ## Table of Contents
 
@@ -135,3 +135,16 @@ Implemented lifecycle patterns to keep UI safe:
 - View bindings are nulled in `onDestroyView`.
 - Source List foreground refresh starts in `onStart` and stops in `onStop`.
 - Overlay rendering is pure render-time logic and driven by state.
+
+## 8. Fluent + Electron Baseline (Spec 032)
+
+Feature 032 introduces a presentation-only design-language baseline without changing repository contracts:
+
+- App-level semantic tokens were added in `app/src/main/res/values/colors.xml` and `app/src/main/res/values/themes.xml`.
+- Presentation module mirrors required color tokens in `feature/ndi-browser/presentation/src/main/res/values/colors.xml` to keep module boundaries intact.
+- Top-level shell style semantics are explicit in `TopLevelShellStyleState` via `TopLevelNavigationCoordinator.resolveShellStyleState`.
+- Home dashboard uses shared token mapping through `FluentElectronHomeTokens`.
+
+Boundary guarantee:
+
+- No direct Room/database access was introduced in presentation during spec 032 implementation.

@@ -17,9 +17,9 @@
 
 **Purpose**: Ensure runtime dependencies are ready before implementation/validation.
 
-- [ ] T001 Verify Android prerequisites and capture output in `test-results/032-preflight.md` using `scripts/verify-android-prereqs.ps1`
-- [ ] T002 Verify dual-emulator prerequisites and capture output in `test-results/032-preflight.md` using `scripts/verify-e2e-dual-emulator-prereqs.ps1`
-- [ ] T003 Verify device/emulator connectivity and Playwright contract (`adb devices`, `testing/e2e/scripts/validate-command-contract.ps1`) and append to `test-results/032-preflight.md`
+- [x] T001 Verify Android prerequisites and capture output in `test-results/032-preflight.md` using `scripts/verify-android-prereqs.ps1`
+- [x] T002 Verify dual-emulator prerequisites and capture output in `test-results/032-preflight.md` using `scripts/verify-e2e-dual-emulator-prereqs.ps1`
+- [x] T003 Verify device/emulator connectivity and Playwright contract (`adb devices`, `testing/e2e/scripts/validate-command-contract.ps1`) and append to `test-results/032-preflight.md`
 
 **Checkpoint**: Environment is confirmed ready or blockers are explicitly documented.
 
@@ -29,9 +29,9 @@
 
 **Purpose**: Create redesign-specific validation scaffolding and artifacts.
 
-- [ ] T004 Create feature evidence index at `test-results/032-fluent-electron-validation-index.md` listing required per-screen compliance artifacts
-- [ ] T005 [P] Create Playwright spec scaffold for redesign flows at `testing/e2e/tests/032-fluent-electron-redesign.spec.ts`
-- [ ] T006 [P] Create Fluent + Electron checklist template for this feature at `test-results/032-fluent-electron-checklist-template.md`
+- [x] T004 Create feature evidence index at `test-results/032-fluent-electron-validation-index.md` listing required per-screen compliance artifacts
+- [x] T005 [P] Create Playwright spec scaffold for redesign flows at `testing/e2e/tests/032-fluent-electron-redesign.spec.ts`
+- [x] T006 [P] Create Fluent + Electron checklist template for this feature at `test-results/032-fluent-electron-checklist-template.md`
 
 ---
 
@@ -41,12 +41,12 @@
 
 **CRITICAL**: No user story implementation before this phase completes.
 
-- [ ] T007 Define Fluent + Electron token resource roles in `app/src/main/res/values/colors.xml` and `app/src/main/res/values/themes.xml`
-- [ ] T008 [P] Add shared presentation token helpers in `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/home/HomeScreen.kt` (or a new UI helper in same module) and wire token usage baseline
-- [ ] T009 [P] Add top-level navigation shell baseline updates in `app/src/main/java/com/ndi/app/navigation/TopLevelNavigationHost.kt` and `app/src/main/java/com/ndi/app/navigation/TopLevelNavigationCoordinator.kt`
-- [ ] T010 Add/adjust unit tests for top-level navigation style-state invariants in `app/src/test/java/com/ndi/app/navigation/TopLevelNavViewModelTest.kt` and `app/src/test/java/com/ndi/app/navigation/TopLevelNavigationCoordinatorTest.kt` (failing first)
-- [ ] T011 Add contract-level artifact checklist requirements in `specs/032-fluent-electron-redesign/contracts/fluent-electron-redesign-contract.md` only if implementation reveals missing enforceable checks
-- [ ] T012 Run baseline unit tests (`:app:testDebugUnitTest`, `:feature:ndi-browser:presentation:testDebugUnitTest`) and capture in `test-results/032-foundation-tests.md`
+- [x] T007 Define Fluent + Electron token resource roles in `app/src/main/res/values/colors.xml` and `app/src/main/res/values/themes.xml`
+- [x] T008 [P] Add shared presentation token helpers in `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/home/HomeScreen.kt` (or a new UI helper in same module) and wire token usage baseline
+- [x] T009 [P] Add top-level navigation shell baseline updates in `app/src/main/java/com/ndi/app/navigation/TopLevelNavigationHost.kt` and `app/src/main/java/com/ndi/app/navigation/TopLevelNavigationCoordinator.kt`
+- [x] T010 Add/adjust unit tests for top-level navigation style-state invariants in `app/src/test/java/com/ndi/app/navigation/TopLevelNavViewModelTest.kt` and `app/src/test/java/com/ndi/app/navigation/TopLevelNavigationCoordinatorTest.kt` (failing first)
+- [x] T011 Add contract-level artifact checklist requirements in `specs/032-fluent-electron-redesign/contracts/fluent-electron-redesign-contract.md` only if implementation reveals missing enforceable checks
+- [x] T012 Run baseline unit tests (`:app:testDebugUnitTest`, `:feature:ndi-browser:presentation:testDebugUnitTest`) and capture in `test-results/032-foundation-tests.md`
 
 **Checkpoint**: Design-language baseline is reusable and test-guarded.
 
@@ -60,21 +60,21 @@
 
 ### Tests for User Story 1 (REQUIRED)
 
-- [ ] T013 [P] [US1] Add failing unit tests for Source List visual-state mapping in `feature/ndi-browser/presentation/src/test/java/com/ndi/feature/ndibrowser/source_list/SourceListUiStateTest.kt`
-- [ ] T014 [P] [US1] Add failing unit tests for Viewer state presentation contracts in `feature/ndi-browser/presentation/src/test/java/com/ndi/feature/ndibrowser/viewer/ViewerViewModelTest.kt`
-- [ ] T015 [P] [US1] Add failing unit tests for Output visual-state presentation in `feature/ndi-browser/presentation/src/test/java/com/ndi/feature/ndibrowser/output/OutputControlViewModelTest.kt`
-- [ ] T016 [P] [US1] Expand `testing/e2e/tests/032-fluent-electron-redesign.spec.ts` with shell-consistency and state-transition checks on emulator
-- [ ] T017 [US1] Run existing Playwright regression suite and append results to `test-results/032-us1-regression.md`
-- [ ] T018 [US1] Record US1 Fluent + Electron compliance evidence in `test-results/032-fluent-electron-nav-shell.md`
+- [x] T013 [P] [US1] Add failing unit tests for Source List visual-state mapping in `feature/ndi-browser/presentation/src/test/java/com/ndi/feature/ndibrowser/source_list/SourceListUiStateTest.kt`
+- [x] T014 [P] [US1] Add failing unit tests for Viewer state presentation contracts in `feature/ndi-browser/presentation/src/test/java/com/ndi/feature/ndibrowser/viewer/ViewerViewModelTest.kt`
+- [x] T015 [P] [US1] Add failing unit tests for Output visual-state presentation in `feature/ndi-browser/presentation/src/test/java/com/ndi/feature/ndibrowser/output/OutputControlViewModelTest.kt`
+- [x] T016 [P] [US1] Expand `testing/e2e/tests/032-fluent-electron-redesign.spec.ts` with shell-consistency and state-transition checks on emulator
+- [x] T017 [US1] Run existing Playwright regression suite and append results to `test-results/032-us1-regression.md`
+- [x] T018 [US1] Record US1 Fluent + Electron compliance evidence in `test-results/032-fluent-electron-nav-shell.md`
 - [ ] T019 [US1] If blocked by environment, record blocker classification and remediation in `test-results/032-us1-regression.md`
 
 ### Implementation for User Story 1
 
-- [ ] T020 [P] [US1] Apply Fluent + Electron shell updates in `app/src/main/java/com/ndi/app/navigation/TopLevelNavigationHost.kt`
-- [ ] T021 [P] [US1] Apply Source List redesign treatment in `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/source_list/SourceListScreen.kt` and `feature/ndi-browser/presentation/src/main/res/layout/fragment_source_list.xml`
-- [ ] T022 [P] [US1] Apply Viewer redesign treatment in `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/viewer/ViewerScreen.kt` and `feature/ndi-browser/presentation/src/main/res/layout/fragment_viewer.xml`
-- [ ] T023 [P] [US1] Apply Output redesign treatment in `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/output/OutputControlScreen.kt` and `feature/ndi-browser/presentation/src/main/res/layout/fragment_output_control.xml`
-- [ ] T024 [US1] Validate no mixed legacy/redesigned UI appears within shipped US1 flow and record in `test-results/032-fluent-electron-nav-shell.md`
+- [x] T020 [P] [US1] Apply Fluent + Electron shell updates in `app/src/main/java/com/ndi/app/navigation/TopLevelNavigationHost.kt`
+- [x] T021 [P] [US1] Apply Source List redesign treatment in `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/source_list/SourceListScreen.kt` and `feature/ndi-browser/presentation/src/main/res/layout/fragment_source_list.xml`
+- [x] T022 [P] [US1] Apply Viewer redesign treatment in `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/viewer/ViewerScreen.kt` and `feature/ndi-browser/presentation/src/main/res/layout/fragment_viewer.xml`
+- [x] T023 [P] [US1] Apply Output redesign treatment in `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/output/OutputControlScreen.kt` and `feature/ndi-browser/presentation/src/main/res/layout/fragment_output_control.xml`
+- [x] T024 [US1] Validate no mixed legacy/redesigned UI appears within shipped US1 flow and record in `test-results/032-fluent-electron-nav-shell.md`
 
 **Checkpoint**: US1 shell and major surfaces are visually coherent and independently testable.
 
@@ -88,22 +88,22 @@
 
 ### Tests for User Story 2 (REQUIRED)
 
-- [ ] T025 [P] [US2] Add failing tests for Source List selection continuity in `feature/ndi-browser/presentation/src/test/java/com/ndi/feature/ndibrowser/source_list/SourceListViewModelTest.kt`
-- [ ] T026 [P] [US2] Add failing tests for Viewer task-completion invariants in `feature/ndi-browser/presentation/src/test/java/com/ndi/feature/ndibrowser/viewer/ViewerViewModelTopLevelNavTest.kt`
-- [ ] T027 [P] [US2] Add failing tests for Output control task flow in `feature/ndi-browser/presentation/src/test/java/com/ndi/feature/ndibrowser/output/OutputControlViewModelTopLevelNavTest.kt`
-- [ ] T028 [P] [US2] Add failing tests for settings persistence behavior invariants in `feature/ndi-browser/presentation/src/test/java/com/ndi/feature/ndibrowser/settings/SettingsViewModelTest.kt`
-- [ ] T029 [P] [US2] Extend `testing/e2e/tests/032-fluent-electron-redesign.spec.ts` with end-to-end task completion checks (discover -> view/output -> settings)
-- [ ] T030 [US2] Run existing Playwright regression suite and capture in `test-results/032-us2-regression.md`
-- [ ] T031 [US2] Record US2 Fluent + Electron compliance evidence in `test-results/032-fluent-electron-source-list-viewer.md` and `test-results/032-fluent-electron-output.md`
+- [x] T025 [P] [US2] Add failing tests for Source List selection continuity in `feature/ndi-browser/presentation/src/test/java/com/ndi/feature/ndibrowser/source_list/SourceListViewModelTest.kt`
+- [x] T026 [P] [US2] Add failing tests for Viewer task-completion invariants in `feature/ndi-browser/presentation/src/test/java/com/ndi/feature/ndibrowser/viewer/ViewerViewModelTopLevelNavTest.kt`
+- [x] T027 [P] [US2] Add failing tests for Output control task flow in `feature/ndi-browser/presentation/src/test/java/com/ndi/feature/ndibrowser/output/OutputControlViewModelTopLevelNavTest.kt`
+- [x] T028 [P] [US2] Add failing tests for settings persistence behavior invariants in `feature/ndi-browser/presentation/src/test/java/com/ndi/feature/ndibrowser/settings/SettingsViewModelTest.kt`
+- [x] T029 [P] [US2] Extend `testing/e2e/tests/032-fluent-electron-redesign.spec.ts` with end-to-end task completion checks (discover -> view/output -> settings)
+- [x] T030 [US2] Run existing Playwright regression suite and capture in `test-results/032-us2-regression.md`
+- [x] T031 [US2] Record US2 Fluent + Electron compliance evidence in `test-results/032-fluent-electron-source-list-viewer.md` and `test-results/032-fluent-electron-output.md`
 - [ ] T032 [US2] If blocked by environment, record blocker classification and remediation in `test-results/032-us2-regression.md`
 
 ### Implementation for User Story 2
 
-- [ ] T033 [P] [US2] Refine Source List flow UI interactions in `feature/ndi-browser/presentation/src/main/res/layout/item_ndi_source.xml` and `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/source_list/SourceListScreen.kt`
-- [ ] T034 [P] [US2] Refine Viewer flow visual hierarchy in `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/viewer/ViewerScreen.kt`
-- [ ] T035 [P] [US2] Refine Output flow control hierarchy in `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/output/OutputControlScreen.kt`
-- [ ] T036 [P] [US2] Refine settings flow visual treatment in `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/SettingsFragment.kt` and `feature/ndi-browser/presentation/src/main/res/layout/fragment_settings.xml`
-- [ ] T037 [US2] Verify behavior contracts remain unchanged (discovery/playback/persistence) and log verification in `test-results/032-us2-behavior-contract.md`
+- [x] T033 [P] [US2] Refine Source List flow UI interactions in `feature/ndi-browser/presentation/src/main/res/layout/item_ndi_source.xml` and `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/source_list/SourceListScreen.kt`
+- [x] T034 [P] [US2] Refine Viewer flow visual hierarchy in `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/viewer/ViewerScreen.kt`
+- [x] T035 [P] [US2] Refine Output flow control hierarchy in `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/output/OutputControlScreen.kt`
+- [x] T036 [P] [US2] Refine settings flow visual treatment in `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/SettingsFragment.kt` and `feature/ndi-browser/presentation/src/main/res/layout/fragment_settings.xml`
+- [x] T037 [US2] Verify behavior contracts remain unchanged (discovery/playback/persistence) and log verification in `test-results/032-us2-behavior-contract.md`
 
 **Checkpoint**: US2 core flows remain functionally complete with redesigned UI.
 
@@ -117,21 +117,21 @@
 
 ### Tests for User Story 3 (REQUIRED)
 
-- [ ] T038 [P] [US3] Add failing layout/adaptivity tests in `feature/ndi-browser/presentation/src/test/java/com/ndi/feature/ndibrowser/settings/SettingsLayoutTransitionTest.kt`
-- [ ] T039 [P] [US3] Add failing accessibility readability/focus tests in `feature/ndi-browser/presentation/src/test/java/com/ndi/feature/ndibrowser/settings/SettingsScreenTest.kt`
-- [ ] T040 [P] [US3] Add failing source-list adaptivity tests in `feature/ndi-browser/presentation/src/test/java/com/ndi/feature/ndibrowser/source_list/SourceListUiStateTest.kt`
-- [ ] T041 [P] [US3] Extend `testing/e2e/tests/032-fluent-electron-redesign.spec.ts` with phone/tablet/orientation/text-scale scenarios
-- [ ] T042 [US3] Run existing Playwright regression suite and capture in `test-results/032-us3-regression.md`
-- [ ] T043 [US3] Record US3 Fluent + Electron compliance evidence in `test-results/032-fluent-electron-settings.md`
-- [ ] T044 [US3] Record accessibility/adaptive validation outcomes in `test-results/032-fluent-electron-accessibility.md`
+- [x] T038 [P] [US3] Add failing layout/adaptivity tests in `feature/ndi-browser/presentation/src/test/java/com/ndi/feature/ndibrowser/settings/SettingsLayoutTransitionTest.kt`
+- [x] T039 [P] [US3] Add failing accessibility readability/focus tests in `feature/ndi-browser/presentation/src/test/java/com/ndi/feature/ndibrowser/settings/SettingsScreenTest.kt`
+- [x] T040 [P] [US3] Add failing source-list adaptivity tests in `feature/ndi-browser/presentation/src/test/java/com/ndi/feature/ndibrowser/source_list/SourceListUiStateTest.kt`
+- [x] T041 [P] [US3] Extend `testing/e2e/tests/032-fluent-electron-redesign.spec.ts` with phone/tablet/orientation/text-scale scenarios
+- [x] T042 [US3] Run existing Playwright regression suite and capture in `test-results/032-us3-regression.md`
+- [x] T043 [US3] Record US3 Fluent + Electron compliance evidence in `test-results/032-fluent-electron-settings.md`
+- [x] T044 [US3] Record accessibility/adaptive validation outcomes in `test-results/032-fluent-electron-accessibility.md`
 - [ ] T045 [US3] If blocked by environment, record blocker classification and remediation in `test-results/032-us3-regression.md`
 
 ### Implementation for User Story 3
 
-- [ ] T046 [P] [US3] Implement adaptive layout refinements in `feature/ndi-browser/presentation/src/main/res/layout/fragment_settings_three_pane.xml` and `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/SettingsLayoutResolver.kt`
-- [ ] T047 [P] [US3] Implement readability/focus updates in `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/SettingsDetailRenderer.kt`
-- [ ] T048 [P] [US3] Apply adaptive refinements to Source List and Viewer layouts in `feature/ndi-browser/presentation/src/main/res/layout/fragment_source_list.xml` and `feature/ndi-browser/presentation/src/main/res/layout/fragment_viewer.xml`
-- [ ] T049 [US3] Verify no blocked primary actions at increased text scale and record in `test-results/032-fluent-electron-accessibility.md`
+- [x] T046 [P] [US3] Implement adaptive layout refinements in `feature/ndi-browser/presentation/src/main/res/layout/fragment_settings_three_pane.xml` and `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/SettingsLayoutResolver.kt`
+- [x] T047 [P] [US3] Implement readability/focus updates in `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/settings/SettingsDetailRenderer.kt`
+- [x] T048 [P] [US3] Apply adaptive refinements to Source List and Viewer layouts in `feature/ndi-browser/presentation/src/main/res/layout/fragment_source_list.xml` and `feature/ndi-browser/presentation/src/main/res/layout/fragment_viewer.xml`
+- [x] T049 [US3] Verify no blocked primary actions at increased text scale and record in `test-results/032-fluent-electron-accessibility.md`
 
 **Checkpoint**: US3 adaptive/accessibility expectations are met and independently testable.
 
@@ -141,12 +141,12 @@
 
 **Purpose**: Finalize evidence, regression confidence, and release readiness.
 
-- [ ] T050 [P] Consolidate per-screen compliance evidence into `test-results/032-fluent-electron-regression-summary.md`
-- [ ] T051 Run full module/unit validation: `:app:testDebugUnitTest`, `:feature:ndi-browser:presentation:testDebugUnitTest`, `:feature:ndi-browser:data:testDebugUnitTest`; capture in `test-results/032-final-unit-suite.md`
-- [ ] T052 Run release hardening gate `:app:verifyReleaseHardening` and capture output in `test-results/032-release-hardening.md`
-- [ ] T053 [P] Update developer docs for redesign guidance in `docs/architecture.md` and `docs/README.md`
-- [ ] T054 [P] Verify contract/spec/plan/tasks consistency across `specs/032-fluent-electron-redesign/spec.md`, `specs/032-fluent-electron-redesign/plan.md`, `specs/032-fluent-electron-redesign/contracts/fluent-electron-redesign-contract.md`, and `specs/032-fluent-electron-redesign/tasks.md`
-- [ ] T055 Capture final pass/fail/blocker classification and sign-off notes in `test-results/032-fluent-electron-regression-summary.md`
+- [x] T050 [P] Consolidate per-screen compliance evidence into `test-results/032-fluent-electron-regression-summary.md`
+- [x] T051 Run full module/unit validation: `:app:testDebugUnitTest`, `:feature:ndi-browser:presentation:testDebugUnitTest`, `:feature:ndi-browser:data:testDebugUnitTest`; capture in `test-results/032-final-unit-suite.md`
+- [x] T052 Run release hardening gate `:app:verifyReleaseHardening` and capture output in `test-results/032-release-hardening.md`
+- [x] T053 [P] Update developer docs for redesign guidance in `docs/architecture.md` and `docs/README.md`
+- [x] T054 [P] Verify contract/spec/plan/tasks consistency across `specs/032-fluent-electron-redesign/spec.md`, `specs/032-fluent-electron-redesign/plan.md`, `specs/032-fluent-electron-redesign/contracts/fluent-electron-redesign-contract.md`, and `specs/032-fluent-electron-redesign/tasks.md`
+- [x] T055 Capture final pass/fail/blocker classification and sign-off notes in `test-results/032-fluent-electron-regression-summary.md`
 
 ---
 
