@@ -252,11 +252,18 @@ class SourceListViewModel(
                     filteredSources.forEach { source ->
                         allPreviouslySources[source.sourceId] = source
                     }
-                    // Combine newly seen sources with all previously seen sources to preserve unavailable ones
-                    val allSourceIds = (filteredSources.map { it.sourceId } + allPreviouslySources.keys).toSet()
-                    val combinedSources = allSourceIds.mapNotNull { sourceId ->
-                        filteredSources.find { it.sourceId == sourceId }
-                            ?: allPreviouslySources[sourceId]
+                    // Combine newly seen sources with previously seen sources, but suppress stale
+                    // duplicates when a live-discovered equivalent source is already present.
+                    val combinedSources = buildList {
+                        addAll(filteredSources)
+                        allPreviouslySources.values.forEach { previous ->
+                            val alreadyPresent = filteredSources.any { live ->
+                                isEquivalentSource(live, previous)
+                            }
+                            if (!alreadyPresent) {
+                                add(previous)
+                            }
+                        }
                     }
 
                     val highlightedSourceId = it.highlightedSourceId?.takeIf { selected ->
@@ -313,7 +320,7 @@ class SourceListViewModel(
     }
 
     private fun enrichSourcesWithAvailability(sources: List<NdiSource>? = null): List<NdiSource> {
-        val sourcesToEnrich = sources ?: _uiState.value.sources
+        val sourcesToEnrich = deduplicateForDisplay(sources ?: _uiState.value.sources)
         val availability = availabilityHistory.value
         val previouslyConnected = previouslyConnectedIds.value
         val previewBySourceId = lastViewedPreviewBySourceId.value
@@ -331,8 +338,48 @@ class SourceListViewModel(
         }
     }
 
+    private fun deduplicateForDisplay(sources: List<NdiSource>): List<NdiSource> {
+        val sorted = sources.sortedWith(
+            compareByDescending<NdiSource> { !it.endpointAddress.isNullOrBlank() }
+                .thenByDescending { it.lastSeenAtEpochMillis }
+                .thenBy { it.displayName.lowercase() }
+                .thenBy { it.sourceId.lowercase() },
+        )
+
+        val seenEndpoints = mutableSetOf<String>()
+        val seenDisplayNames = mutableSetOf<String>()
+        val deduped = mutableListOf<NdiSource>()
+
+        sorted.forEach { source ->
+            val endpointKey = source.endpointAddress?.trim()?.lowercase().orEmpty()
+            val displayKey = source.displayName.trim().lowercase()
+
+            val duplicateByEndpoint = endpointKey.isNotBlank() && endpointKey in seenEndpoints
+            val duplicateByDisplayOnly = endpointKey.isBlank() && displayKey in seenDisplayNames
+
+            if (!duplicateByEndpoint && !duplicateByDisplayOnly) {
+                deduped += source
+                if (endpointKey.isNotBlank()) seenEndpoints += endpointKey
+                if (displayKey.isNotBlank()) seenDisplayNames += displayKey
+            }
+        }
+
+        return deduped
+    }
+
     private fun filterViewableSources(sources: List<NdiSource>): List<NdiSource> {
         return sources.filterNot(::isCurrentDeviceSource)
+    }
+
+    private fun isEquivalentSource(live: NdiSource, previous: NdiSource): Boolean {
+        val liveEndpoint = live.endpointAddress?.trim()?.lowercase().orEmpty()
+        val previousEndpoint = previous.endpointAddress?.trim()?.lowercase().orEmpty()
+        if (liveEndpoint.isNotBlank() && previousEndpoint.isNotBlank()) {
+            return liveEndpoint == previousEndpoint
+        }
+
+        // Fallback for older cached rows that may not have endpointAddress yet.
+        return live.displayName.trim().equals(previous.displayName.trim(), ignoreCase = true)
     }
 
     private fun isCurrentDeviceSource(source: NdiSource): Boolean {
