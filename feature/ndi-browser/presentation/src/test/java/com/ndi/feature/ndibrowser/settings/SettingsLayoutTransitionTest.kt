@@ -56,4 +56,14 @@ class SettingsLayoutTransitionTest {
         assertEquals(SettingsViewModel.CATEGORY_DISCOVERY, viewModel.uiState.value.settingsCategoryState.selectedCategoryId)
         assertEquals(SettingsViewModel.CATEGORY_DISCOVERY, viewModel.uiState.value.settingsDetailState.selectedCategoryId)
     }
+
+    @Test
+    fun adaptiveContract_wideThresholdUsesWideLayout() = runTest(scheduler) {
+        val viewModel = SettingsViewModel(InMemorySettingsRepository())
+
+        viewModel.onLayoutContextChanged(widthDp = 700, isLandscape = false)
+        advanceUntilIdle()
+
+        assertEquals(SettingsLayoutMode.WIDE, viewModel.uiState.value.layoutMode)
+    }
 }
