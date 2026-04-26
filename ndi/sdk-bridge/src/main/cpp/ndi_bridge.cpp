@@ -862,6 +862,39 @@ Java_com_ndi_sdkbridge_NativeNdiBridge_nativeDiscoverDisplayNames(
 #endif
 }
 
+extern "C" JNIEXPORT jobjectArray JNICALL
+Java_com_ndi_sdkbridge_NativeNdiBridge_nativeDiscoverUrlAddresses(
+    JNIEnv* env,
+    jobject /* this */
+) {
+#ifdef NDI_SDK_AVAILABLE
+    // Keep the same snapshot semantics/order as IDs and display names.
+    bool needs_discovery = false;
+    {
+        std::lock_guard<std::mutex> check_lock(g_state_mutex);
+        needs_discovery = !g_last_discovery_snapshot_valid;
+    }
+    if (needs_discovery) {
+        auto discovered = discover_sources_native();
+        std::lock_guard<std::mutex> store_lock(g_state_mutex);
+        g_last_discovered_sources = std::move(discovered);
+        g_last_discovery_snapshot_valid = true;
+    }
+
+    std::vector<std::string> url_addresses;
+    {
+        std::lock_guard<std::mutex> read_lock(g_state_mutex);
+        url_addresses.reserve(g_last_discovered_sources.size());
+        for (const auto& entry : g_last_discovered_sources) {
+            url_addresses.push_back(entry.url_address);
+        }
+    }
+    return to_java_string_array(env, url_addresses);
+#else
+    return env->NewObjectArray(0, env->FindClass("java/lang/String"), nullptr);
+#endif
+}
+
 extern "C" JNIEXPORT void JNICALL
 Java_com_ndi_sdkbridge_NativeNdiBridge_nativeSetAppDataDir(
     JNIEnv* env,
