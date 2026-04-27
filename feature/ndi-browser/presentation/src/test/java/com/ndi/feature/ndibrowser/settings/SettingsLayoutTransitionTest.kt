@@ -11,8 +11,10 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import java.io.File
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class SettingsLayoutTransitionTest {
@@ -65,5 +67,17 @@ class SettingsLayoutTransitionTest {
         advanceUntilIdle()
 
         assertEquals(SettingsLayoutMode.WIDE, viewModel.uiState.value.layoutMode)
+    }
+
+    @Test
+    fun adaptiveLayoutContract_compactAndWideLayoutsKeepUpdatedButtonSpacing() {
+        val compactSettings = File("src/main/res/layout/fragment_settings.xml").readText()
+        val compactOutput = File("src/main/res/layout/fragment_output_control.xml").readText()
+        val wideSettings = File("src/main/res/layout/fragment_settings_three_pane.xml").readText()
+
+        assertTrue(compactSettings.contains("android:layout_marginTop=\"16dp\""))
+        assertTrue(compactOutput.contains("android:layout_marginTop=\"16dp\""))
+        assertTrue(wideSettings.contains("android:paddingStart=\"12dp\""))
+        assertTrue(wideSettings.contains("android:paddingEnd=\"12dp\""))
     }
 }
