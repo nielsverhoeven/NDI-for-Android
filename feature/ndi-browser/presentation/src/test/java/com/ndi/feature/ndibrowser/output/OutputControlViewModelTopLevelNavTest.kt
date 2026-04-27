@@ -26,6 +26,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
+import java.io.File
 import java.util.UUID
 
 /**
@@ -154,6 +155,15 @@ class OutputControlViewModelTopLevelNavTest {
             assertTrue(vm.uiState.value.canStart)
             assertFalse(vm.uiState.value.canRetry)
         }
+
+    @Test
+    fun consistencyContract_outputButtonsUseOnlyNdiBrowserStyles() {
+        val outputLayout = File("src/main/res/layout/fragment_output_control.xml").readText()
+
+        assertTrue(outputLayout.contains("style=\"@style/Widget.NdiBrowser.Button\""))
+        assertTrue(outputLayout.contains("style=\"@style/Widget.NdiBrowser.Button.Tonal\""))
+        assertFalse(outputLayout.contains("Widget.Material3.Button"))
+    }
 }
 
 private class NavAwareOutputRepository : NdiOutputRepository {

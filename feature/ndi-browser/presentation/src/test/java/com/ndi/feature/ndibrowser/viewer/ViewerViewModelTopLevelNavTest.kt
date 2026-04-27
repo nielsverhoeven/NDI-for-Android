@@ -13,8 +13,10 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertFalse
 import org.junit.Rule
 import org.junit.Test
+import java.io.File
 import java.util.UUID
 
 /**
@@ -84,6 +86,15 @@ class ViewerViewModelTopLevelNavTest {
             assertEquals(PlaybackState.STOPPED, vm.uiState.value.playbackState)
             assertTrue(viewerRepo.stopCalls >= 1)
         }
+
+    @Test
+    fun consistencyContract_viewerButtonsUseOnlyNdiBrowserStyles() {
+        val viewerLayout = File("src/main/res/layout/fragment_viewer.xml").readText()
+
+        assertTrue(viewerLayout.contains("style=\"@style/Widget.NdiBrowser.Button.Outlined\""))
+        assertTrue(viewerLayout.contains("style=\"@style/Widget.NdiBrowser.Button\""))
+        assertFalse(viewerLayout.contains("Widget.Material3.Button"))
+    }
 }
 
 private class NavViewerRepository : NdiViewerRepository {
