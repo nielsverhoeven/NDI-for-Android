@@ -15,9 +15,11 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import java.util.UUID
+import java.io.File
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ViewerViewModelTest {
@@ -86,6 +88,17 @@ class ViewerViewModelTest {
         assertEquals(PlaybackState.PLAYING, viewModel.uiState.value.playbackState)
         assertFalse(viewModel.uiState.value.recoveryActionsVisible)
         assertEquals(null, viewModel.uiState.value.interruptionMessage)
+    }
+
+    @Test
+    fun fluentButtonShapeContract_viewerButtonsUseCanonicalStyles() {
+        val viewerLayout = File("src/main/res/layout/fragment_viewer.xml").readText()
+
+        assertTrue(viewerLayout.contains("android:id=\"@+id/qualityButton\""))
+        assertTrue(viewerLayout.contains("style=\"@style/Widget.NdiBrowser.Button.Outlined\""))
+        assertTrue(viewerLayout.contains("android:id=\"@+id/retryButton\""))
+        assertTrue(viewerLayout.contains("android:id=\"@+id/backToListButton\""))
+        assertTrue(viewerLayout.contains("style=\"@style/Widget.NdiBrowser.Button\""))
     }
 }
 
