@@ -32,13 +32,13 @@ The agent network is organized into three rings:
 
 ```
 User → orchestrator
-  → github.issues-manager (Stage -1: create branch feature/<N>-<slug> or bugfix/<N>-<slug>)
+  [if implementing] → github.issues-manager (Stage -1: create branch feature/<N>-<slug> or bugfix/<N>-<slug>)
   → github.issues-manager (enrich issue)
   → feature.clarifier (resolve ambiguities)
   → feature.planner (create spec + plan)
   → architect (validate plan against constitution)
   → feature.breakdown (tasks → GitHub issues)
-  → implementer (write code)
+  → implementer (write code on issue branch)
     ↕ maui.expert (MAUI API guidance)
     ↕ ndi.expert (NDI SDK guidance)
   → github.action-manager (validate CI on PR/branch)
@@ -47,6 +47,8 @@ User → orchestrator
   → documenter (update docs)
   → github.issues-manager (close issue with summary)
 ```
+
+> Pipeline entry point depends on user intent. Enrichment, planning, and clarification requests do not trigger branch creation. Implementation requests always start at Stage -1. Bulk mode processes issues one at a time with user confirmation between each.
 
 ## Reusable Skills
 

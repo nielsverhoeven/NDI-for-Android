@@ -88,12 +88,46 @@ If `docs/constitution.md` does not exist:
 
 ---
 
+## Trigger Recognition
+
+Before entering the pipeline, identify what the user is asking for and enter at the correct stage. **Do not run the full pipeline for every request.**
+
+| User intent | Entry point | Branch created? |
+|---|---|---|
+| "enrich issue N" | Stage 0 only — stop after enrichment | ❌ |
+| "plan feature N" | Stage 0 → Stage 2 — stop after plan | ❌ |
+| "clarify issue N" | Stage 0 → Stage 1 — stop after clarification | ❌ |
+| "implement issue N" / "start work on N" / "build feature N" | Stage -1 → full pipeline | ✅ |
+| "implement all open issues" | Bulk mode — see below | ✅ per issue |
+| "check CI for PR N" | Stage 5.5 only | ❌ |
+| "document feature N" | Stage 7 only | ❌ |
+
+When in doubt about intent, ask the user to confirm before creating a branch or starting implementation.
+
+---
+
+## Bulk Implementation Mode
+
+When the user asks to implement **all open issues** (or a filtered set such as "all feature issues"):
+
+1. Delegate to `github.issues-manager` → List Issues to get the full open issue list.
+2. Present the list to the user and confirm which issues to process.
+3. For each issue **one at a time** (never in parallel):
+   a. Enter the full pipeline at Stage -1 (create branch).
+   b. Complete all stages through Stage 8 (issue closure).
+   c. Confirm with the user before starting the next issue.
+4. Never switch to a new issue while the current one is still in progress.
+
+---
+
 ## Feature Development Pipeline
 
 Run stages sequentially. Each stage has an entry condition (what must be true before it starts) and an exit gate (what must be true before the next stage begins).
 
 ### Stage -1 — Branch Setup
-- **Entry**: A GitHub issue number is provided.
+> **Triggered only when implementation is being started** (user intent: implement, build, start work). Do not create a branch for enrichment, planning, or clarification requests.
+
+- **Entry**: User has asked to implement or start work on a specific issue.
 - **Action**: Delegate to `github.issues-manager` → Create Branch.
   - Determine branch type from issue labels: `bug` label → `bugfix/`, anything else → `feature/`
   - Derive a kebab-case slug from the issue title (max 5 words, lowercase, hyphens)
@@ -103,7 +137,7 @@ Run stages sequentially. Each stage has an entry condition (what must be true be
 - **Exit gate**: Branch exists on remote, is checked out locally, and appears in the GitHub issue's "Development" sidebar.
 
 ### Stage 0 — Issue Enrichment
-- **Entry**: Feature branch is checked out.
+- **Entry**: A GitHub issue number is provided. If arriving from Stage -1, the feature branch is already checked out. If invoked standalone, no branch is required.
 - **Action**: Delegate to `github.issues-manager` → Enrich Issue.
 - **Exit gate**: Issue body contains a structured technical brief and `<!-- enriched-by-copilot -->` marker.
 
@@ -174,7 +208,9 @@ Never proceed with a known constitution violation silently.
 - Never modify source code directly — delegate to `implementer`.
 - Never modify architecture docs directly — delegate to `architect`.
 - Always read `docs/constitution.md` before starting any feature work.
-- All implementation work happens on the issue branch created in Stage -1. Never work on `main` directly.
+- **Only create a branch when implementation is explicitly requested** — not for enrichment, planning, or clarification.
+- All implementation work happens on the issue branch. Never commit implementation to `main` directly.
+- In bulk mode, complete one issue fully before starting the next. Always confirm with the user between issues.
 
 ---
 
