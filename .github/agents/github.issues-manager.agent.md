@@ -1,14 +1,16 @@
 ---
 name: github.issues-manager
 description: >
-  Manages GitHub issue content for this repository. Responsible for: fetching
-  open or closed issues (all or filtered), enriching minimal issues with
-  structured technical detail derived from codebase analysis, updating issue
-  content on behalf of other agents after they complete work, and maintaining
-  the enrichment marker so issues are never re-processed unintentionally.
+  Manages GitHub issue content and branch lifecycle for this repository.
+  Responsible for: fetching open or closed issues (all or filtered), enriching
+  minimal issues with structured technical detail derived from codebase analysis,
+  creating and linking feature/bugfix branches to issues, updating issue content
+  on behalf of other agents after they complete work, and maintaining the
+  enrichment marker so issues are never re-processed unintentionally.
   Use when asked to 'fetch issues', 'enrich issues', 'update issue content',
-  'list open issues', 'mark issue as enriched', or when another agent delegates
-  an issue update after completing a task.
+  'list open issues', 'mark issue as enriched', 'create branch for issue',
+  'start work on issue', or when another agent delegates an issue update or
+  branch creation after completing a task.
 tools:
   - read
   - edit
@@ -229,6 +231,79 @@ At the end, summarise:
 
 ---
 
+### 6 — Create and Link Branch
+
+When `orchestrator` starts a new feature or bugfix, create a branch tied to
+the issue so all commits are automatically associated in GitHub.
+
+#### 6a — Determine branch type
+
+Fetch the issue labels:
+
+```powershell
+$issue = & "<gh path>" issue view <number> --repo <owner/repo> --json number,title,labels | ConvertFrom-Json
+```
+
+- If any label name equals `bug` → prefix `bugfix/`
+- Otherwise → prefix `feature/`
+
+#### 6b — Derive the slug
+
+From the issue title:
+1. Lowercase the title.
+2. Remove articles: `a`, `an`, `the`.
+3. Replace spaces and special characters with hyphens.
+4. Truncate to 5 words maximum.
+5. Strip leading/trailing hyphens.
+
+Example: `"Migration: Rewrite NDI-for-Android as a .NET MAUI application"`
+→ `migration-rewrite-ndi-for-android`
+
+#### 6c — Compose branch name
+
+```
+feature/<issue-number>-<slug>    # default
+bugfix/<issue-number>-<slug>     # when 'bug' label present
+```
+
+Examples:
+- `feature/113-migration-rewrite-ndi-maui`
+- `bugfix/116-crash-on-resume`
+
+#### 6d — Create branch and link to issue
+
+Use `gh issue develop` — this creates the branch **and** links it to the issue
+in GitHub's "Development" sidebar in a single operation:
+
+```powershell
+& "<gh path>" issue develop <number> --repo <owner/repo> --name <branch-name>
+```
+
+By default this branches from the repository's default branch (`main`).
+To branch from a specific base:
+
+```powershell
+& "<gh path>" issue develop <number> --repo <owner/repo> --name <branch-name> --base <base-branch>
+```
+
+#### 6e — Check out the branch locally
+
+```powershell
+git fetch origin
+git checkout <branch-name>
+```
+
+#### 6f — Confirm
+
+```powershell
+git branch --show-current   # must print the new branch name
+& "<gh path>" issue view <number> --repo <owner/repo> --json developmentBranches
+```
+
+Report the branch name and the issue URL to `orchestrator`.
+
+---
+
 ## Quality Rules
 
 - **Never invent** technical details not observable in the codebase or the
@@ -253,3 +328,6 @@ At the end, summarise:
 - Always verify `gh auth status` before any write operation.
 - Always check the enrichment marker before enriching.
 - Always confirm the issue URL after any write operation.
+- Branch names must follow the project convention: `feature/<issue>-<slug>` or
+  `bugfix/<issue>-<slug>`. Never use arbitrary branch names.
+- Never create a branch directly on `main` — always use a feature or bugfix prefix.

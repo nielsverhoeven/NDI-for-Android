@@ -15,6 +15,10 @@ tools:
   - web
   - todo
 handoffs:
+  - label: Create Branch
+    agent: github.issues-manager
+    prompt: Create a linked branch for this issue following the project branch naming convention (feature/<issue>-<slug> or bugfix/<issue>-<slug>), connect it to the issue in GitHub, and check it out locally.
+    send: false
   - label: Enrich Issue
     agent: github.issues-manager
     prompt: Enrich the GitHub issue for this feature request so it contains a full technical brief before planning starts.
@@ -88,8 +92,18 @@ If `docs/constitution.md` does not exist:
 
 Run stages sequentially. Each stage has an entry condition (what must be true before it starts) and an exit gate (what must be true before the next stage begins).
 
-### Stage 0 — Issue Enrichment
+### Stage -1 — Branch Setup
 - **Entry**: A GitHub issue number is provided.
+- **Action**: Delegate to `github.issues-manager` → Create Branch.
+  - Determine branch type from issue labels: `bug` label → `bugfix/`, anything else → `feature/`
+  - Derive a kebab-case slug from the issue title (max 5 words, lowercase, hyphens)
+  - Branch name: `feature/<issue-number>-<slug>` or `bugfix/<issue-number>-<slug>`
+  - Create the branch via `gh issue develop` so it is automatically linked to the issue in GitHub
+  - Check out the branch locally
+- **Exit gate**: Branch exists on remote, is checked out locally, and appears in the GitHub issue's "Development" sidebar.
+
+### Stage 0 — Issue Enrichment
+- **Entry**: Feature branch is checked out.
 - **Action**: Delegate to `github.issues-manager` → Enrich Issue.
 - **Exit gate**: Issue body contains a structured technical brief and `<!-- enriched-by-copilot -->` marker.
 
@@ -160,3 +174,15 @@ Never proceed with a known constitution violation silently.
 - Never modify source code directly — delegate to `implementer`.
 - Never modify architecture docs directly — delegate to `architect`.
 - Always read `docs/constitution.md` before starting any feature work.
+- All implementation work happens on the issue branch created in Stage -1. Never work on `main` directly.
+
+---
+
+## Branch Naming Reference
+
+| Issue type | Branch pattern | Example |
+|---|---|---|
+| Feature (default) | `feature/<issue>-<slug>` | `feature/115-ndi-source-discovery` |
+| Bug (`bug` label) | `bugfix/<issue>-<slug>` | `bugfix/116-crash-on-resume` |
+
+Slug rules: lowercase, hyphens, max 5 words derived from the issue title. Strip articles (a, an, the) and filler words.

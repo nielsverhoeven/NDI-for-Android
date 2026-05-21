@@ -32,6 +32,7 @@ The agent network is organized into three rings:
 
 ```
 User → orchestrator
+  → github.issues-manager (Stage -1: create branch feature/<N>-<slug> or bugfix/<N>-<slug>)
   → github.issues-manager (enrich issue)
   → feature.clarifier (resolve ambiguities)
   → feature.planner (create spec + plan)
@@ -83,9 +84,23 @@ Skills live in `.github/skills/<skill-name>/SKILL.md` and are invoked with `/ski
 - Feature-level GitHub issues carry label `feature`.
 - Only `github.issues-manager` writes back to GitHub issues on behalf of other agents.
 
+## Branch Naming Convention
+
+Every issue gets a dedicated branch created by `github.issues-manager` (Operation 6) before any work begins.
+
+| Issue type | Branch pattern | Example |
+|---|---|---|
+| Feature (default) | `feature/<issue>-<slug>` | `feature/115-ndi-source-discovery` |
+| Bug (`bug` label) | `bugfix/<issue>-<slug>` | `bugfix/116-crash-on-resume` |
+
+**Slug rules**: lowercase, hyphens, max 5 words from the issue title, articles stripped.
+
+Branches are created via `gh issue develop` so they appear linked in the GitHub issue's "Development" sidebar. All implementation commits go on this branch — never directly on `main`.
+
 ## Workflow Reliability Rules
 - Always read `docs/constitution.md` before starting any feature work.
 - GitHub is the single source of truth — all features must have a GitHub issue.
+- Every issue must have a linked branch before implementation starts (Stage -1).
 - Validate `gh auth status` before any GitHub write operation.
 - Run `dotnet build` after every implementation task — do not accumulate build failures.
 - Never skip a test stage — fix or explicitly document blockers.

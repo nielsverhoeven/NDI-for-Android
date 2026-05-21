@@ -62,6 +62,13 @@ If the user has already identified a specific issue number, skip straight to Ste
 > been enriched. Never re-enrich an issue that carries this marker unless the
 > user explicitly instructs you to with `--force` or equivalent wording.
 
+> **Branch prerequisite:** Enrichment is normally invoked after a feature branch
+> has been created for the issue (via `gh issue develop`). If no branch exists
+> yet and the caller is `orchestrator`, remind it to run the branch creation step
+> first (Operation 6 of `github.issues-manager`). If the caller is a user
+> directly, proceed with enrichment regardless — branch creation is not a hard
+> gate for enrichment when invoked standalone.
+
 ---
 
 ## Step 4 — Fetch the full issue
