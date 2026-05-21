@@ -1,16 +1,16 @@
 ---
 name: github.issues-manager
 description: >
-  Manages GitHub issue content and branch lifecycle for this repository.
-  Responsible for: fetching open or closed issues (all or filtered), enriching
-  minimal issues with structured technical detail derived from codebase analysis,
-  creating and linking feature/bugfix branches to issues, updating issue content
-  on behalf of other agents after they complete work, and maintaining the
+  Manages the full GitHub issue lifecycle for this repository: creating new issues
+  from user descriptions, fetching open or closed issues (all or filtered),
+  enriching minimal issues with structured technical detail derived from codebase
+  analysis, creating and linking feature/bugfix branches to issues, updating issue
+  content on behalf of other agents after they complete work, and maintaining the
   enrichment marker so issues are never re-processed unintentionally.
-  Use when asked to 'fetch issues', 'enrich issues', 'update issue content',
-  'list open issues', 'mark issue as enriched', 'create branch for issue',
-  'start work on issue', or when another agent delegates an issue update or
-  branch creation after completing a task.
+  Use when asked to 'create issue', 'new issue', 'fetch issues', 'enrich issues',
+  'update issue content', 'list open issues', 'mark issue as enriched',
+  'create branch for issue', 'start work on issue', or when another agent
+  delegates an issue create, update, or branch creation.
 tools:
   - read
   - edit
@@ -304,6 +304,92 @@ Report the branch name and the issue URL to `orchestrator`.
 
 ---
 
+### 7 — Create New Issue
+
+When a user (or `orchestrator`) wants to create a brand-new GitHub issue from
+a natural-language description, produce a well-formed issue with the right
+title, label, and initial body before enrichment runs.
+
+#### 7a — Gather intent from the user
+
+Ask (or infer from context) the following — resolve as many as possible without
+asking:
+
+| Field | How to resolve |
+|---|---|
+| **Type** | Does the user describe a bug / broken behaviour? → `bug`. Otherwise → `feature`. |
+| **Summary** | One sentence from the user's description. |
+| **Scope** | Which area of the app is affected (NDI bridge, UI, data layer, CI, docs…)? |
+| **Why** | Why is this needed? Value or problem statement. |
+
+If type, summary, or scope cannot be inferred, ask exactly one question covering
+all missing fields before proceeding.
+
+#### 7b — Derive a clean title
+
+From the user's description, compose a concise imperative-style title:
+- Feature: `"Add <capability>"` / `"Implement <feature>"` / `"Migrate <component>"`
+- Bug: `"Fix <symptom> in <component>"`
+- Max 60 characters.
+
+#### 7c — Compose the initial issue body
+
+Write a minimal but useful body. The full enrichment runs in the next step —
+this body just captures the raw intent so nothing is lost:
+
+```markdown
+## Description
+<One paragraph from the user's description, in their words.>
+
+## Type
+Feature / Bug
+
+## Reported by
+orchestrator agent on behalf of user — <ISO-8601 date>
+```
+
+#### 7d — Choose labels
+
+| Condition | Labels to apply |
+|---|---|
+| Feature work | `feature` |
+| Bug report | `bug` |
+| NDI SDK involved | add `ndi` if the label exists |
+| CI/workflow only | add `ci` if the label exists |
+
+Check available labels first:
+```powershell
+& "<gh path>" label list --repo <owner/repo>
+```
+Only apply labels that exist in the repository.
+
+#### 7e — Create the issue
+
+```powershell
+& "<gh path>" issue create --repo <owner/repo> `
+  --title "<title>" `
+  --body "<body>" `
+  --label "<label1>,<label2>"
+```
+
+Capture the returned issue URL and extract the issue number from it.
+
+#### 7f — Confirm and return
+
+```powershell
+& "<gh path>" issue view <number> --repo <owner/repo> --json number,title,url,labels
+```
+
+Report to `orchestrator`:
+- Issue number
+- Issue URL
+- Title
+- Labels applied
+
+`orchestrator` will then proceed to Stage 0 (enrich the new issue).
+
+---
+
 ## Quality Rules
 
 - **Never invent** technical details not observable in the codebase or the
@@ -318,6 +404,8 @@ Report the branch name and the issue URL to `orchestrator`.
   silently overwrite existing content.
 - If the NDI SDK or another proprietary dependency makes a claim unverifiable,
   flag it explicitly in the "Key Challenges" section rather than omitting it.
+- **New issues must have a clear title and type before creation** — do not
+  create a vague or untitled issue.
 
 ---
 

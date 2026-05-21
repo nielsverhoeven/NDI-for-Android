@@ -15,6 +15,10 @@ tools:
   - web
   - todo
 handoffs:
+  - label: Create Issue
+    agent: github.issues-manager
+    prompt: Create a new GitHub issue from the user's description. Derive a clean title, choose the correct label (feature/bug), write a minimal initial body, and return the issue number.
+    send: false
   - label: Create Branch
     agent: github.issues-manager
     prompt: Create a linked branch for this issue following the project branch naming convention (feature/<issue>-<slug> or bugfix/<issue>-<slug>), connect it to the issue in GitHub, and check it out locally.
@@ -94,6 +98,7 @@ Before entering the pipeline, identify what the user is asking for and enter at 
 
 | User intent | Entry point | Branch created? |
 |---|---|---|
+| "create issue / new feature / I want to build X" | Stage -2 → Stage 0 → **Approval gate** → Stage -1 (if approved) | ✅ only after approval |
 | "enrich issue N" | Stage 0 only — stop after enrichment | ❌ |
 | "plan feature N" | Stage 0 → Stage 2 — stop after plan | ❌ |
 | "clarify issue N" | Stage 0 → Stage 1 — stop after clarification | ❌ |
@@ -123,6 +128,42 @@ When the user asks to implement **all open issues** (or a filtered set such as "
 ## Feature Development Pipeline
 
 Run stages sequentially. Each stage has an entry condition (what must be true before it starts) and an exit gate (what must be true before the next stage begins).
+
+### Stage -2 — Issue Creation
+> **Triggered only when the user wants to create a new issue** from a natural-language description. Skip this stage if the user provides an existing issue number.
+
+- **Entry**: User describes a new feature or bug they want tracked.
+- **Action**: Delegate to `github.issues-manager` → Create New Issue (Operation 7).
+  - Infer issue type (feature/bug), title, and scope from the user's description.
+  - If type or title cannot be inferred, ask one clarifying question before proceeding.
+  - Create the issue in GitHub with the correct label.
+- **Exit gate**: Issue exists in GitHub with a number, clean title, and correct label. Report the issue URL to the user.
+
+### Stage -2 → 0 — Enrichment After Creation
+
+After Stage -2 completes, immediately proceed to Stage 0 (enrich the new issue). The user does not need to ask separately.
+
+### ⚠️ Approval Gate — Before Implementation
+
+After Stage 0 (Issue Enrichment) completes for a **newly created issue**, present the enriched issue to the user and **explicitly ask for approval** before proceeding:
+
+```
+Issue #<N> has been created and enriched. Here is a summary:
+
+Title: <title>
+URL: <url>
+
+Key points:
+- <3–5 bullet summary of the enriched issue>
+
+Shall I proceed with implementation? (yes / no / I want to change something first)
+```
+
+- **Yes** → Proceed to Stage -1 (create branch) and then the full pipeline.
+- **No** → Stop. Leave the issue open and enriched for future use.
+- **Change first** → Apply the requested change (re-enrich or update the issue), then re-present for approval.
+
+> For existing issues where the user explicitly says "implement issue N", skip this approval gate — the intent is already clear.
 
 ### Stage -1 — Branch Setup
 > **Triggered only when implementation is being started** (user intent: implement, build, start work). Do not create a branch for enrichment, planning, or clarification requests.

@@ -32,9 +32,11 @@ The agent network is organized into three rings:
 
 ```
 User → orchestrator
-  [if implementing] → github.issues-manager (Stage -1: create branch feature/<N>-<slug> or bugfix/<N>-<slug>)
-  → github.issues-manager (enrich issue)
-  → feature.clarifier (resolve ambiguities)
+  [if new issue] → github.issues-manager (Stage -2: create issue with title + label)
+                 → github.issues-manager (Stage 0: enrich new issue)
+                 → [APPROVAL GATE] user confirms before implementation starts
+  [if existing issue + implement] → github.issues-manager (Stage -1: create branch)
+  [if enrich/plan/clarify only]  → github.issues-manager / feature.clarifier / feature.planner
   → feature.planner (create spec + plan)
   → architect (validate plan against constitution)
   → feature.breakdown (tasks → GitHub issues)
@@ -48,7 +50,7 @@ User → orchestrator
   → github.issues-manager (close issue with summary)
 ```
 
-> Pipeline entry point depends on user intent. Enrichment, planning, and clarification requests do not trigger branch creation. Implementation requests always start at Stage -1. Bulk mode processes issues one at a time with user confirmation between each.
+> **Trigger rules**: Pipeline entry depends on user intent. New issue creation always goes through Stage -2 → Stage 0 → Approval Gate before any branch or implementation work begins. Existing issue implementation starts at Stage -1. Enrichment, planning, and clarification are standalone operations that never create branches.
 
 ## Reusable Skills
 
@@ -81,9 +83,11 @@ Skills live in `.github/skills/<skill-name>/SKILL.md` and are invoked with `/ski
 
 ## GitHub Issue Conventions
 - All features start from a GitHub issue enriched by `github.issues-manager`.
+- Issues can originate from the user (existing issue number) or be created fresh by `orchestrator` → `github.issues-manager` (Operation 7) from a natural-language description.
 - Enriched issues contain the marker `<!-- enriched-by-copilot -->` as their last line.
+- **Approval is required** before implementation starts on a newly created issue — `orchestrator` presents the enriched issue and waits for explicit user confirmation.
 - Task-level GitHub issues are created by `feature.breakdown` with label `task`.
-- Feature-level GitHub issues carry label `feature`.
+- Feature-level GitHub issues carry label `feature`; bug issues carry label `bug`.
 - Only `github.issues-manager` writes back to GitHub issues on behalf of other agents.
 
 ## Branch Naming Convention
