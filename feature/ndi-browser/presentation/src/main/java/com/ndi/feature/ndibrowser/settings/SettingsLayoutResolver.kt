@@ -9,7 +9,8 @@ object SettingsLayoutResolver : SettingsLayoutModeResolver {
     private const val COMPACT_HEIGHT_PROFILE_MAX_WIDTH_DP = 430
 
     override fun resolve(widthDp: Int, isLandscape: Boolean): SettingsLayoutMode {
-        val isWide = widthDp >= WIDE_LAYOUT_BREAKPOINT_DP
+        val isCompactHeightLandscape = isCompactHeightPhoneProfile(widthDp, isLandscape)
+        val isWide = widthDp >= WIDE_LAYOUT_BREAKPOINT_DP && !isCompactHeightLandscape
         return if (isWide) {
             SettingsLayoutMode.WIDE
         } else {

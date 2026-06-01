@@ -38,9 +38,10 @@ class DiscoveryCompatibilityMatrixRepositoryImpl : DiscoveryCompatibilityMatrixR
             if (filtered.isEmpty()) return
 
             filtered.forEach { result ->
-                val existing = storedByTargetId[result.targetId]
+                val normalized = normalizeResult(result)
+                val existing = storedByTargetId[normalized.targetId]
                 if (existing == null || recordedAtEpochMillis >= existing.recordedAtEpochMillis) {
-                    storedByTargetId[result.targetId] = StoredResult(result, recordedAtEpochMillis)
+                    storedByTargetId[normalized.targetId] = StoredResult(normalized, recordedAtEpochMillis)
                 }
             }
 
@@ -57,4 +58,19 @@ class DiscoveryCompatibilityMatrixRepositoryImpl : DiscoveryCompatibilityMatrixR
     }
 
     override suspend fun getCurrentMatrix(): DiscoveryCompatibilitySnapshot = matrixSnapshot.value
+
+    private fun normalizeResult(result: DiscoveryCompatibilityResult): DiscoveryCompatibilityResult {
+        if (!result.notes.isNullOrBlank()) return result
+        return when (result.status) {
+            DiscoveryCompatibilityStatus.BLOCKED -> result.copy(
+                notes = "environment blocker; durationMillis=unknown; status=BLOCKED",
+            )
+
+            DiscoveryCompatibilityStatus.INCOMPATIBLE -> result.copy(
+                notes = "code-path incompatible; durationMillis=unknown; status=INCOMPATIBLE",
+            )
+
+            else -> result
+        }
+    }
 }

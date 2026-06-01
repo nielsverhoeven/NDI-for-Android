@@ -12,8 +12,11 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Assert.assertFalse
 import org.junit.Rule
 import org.junit.Test
+import java.io.File
 import java.util.UUID
 
 /**
@@ -64,6 +67,33 @@ class ViewerViewModelTopLevelNavTest {
 
         // Only stopViewing should be called, not any pause API
         assertEquals(1, viewerRepo.stopCalls)
+    }
+
+    @Test
+    fun taskCompletionInvariant_openThenLeave_keepsDeterministicPlaybackStates() =
+        runTest(mainDispatcherRule.dispatcher.scheduler) {
+            val viewerRepo = NavViewerRepository()
+            val vm = ViewerViewModel(viewerRepo, NavUserSelectionRepository(), ViewerTelemetryEmitter {})
+
+            vm.onViewerOpened("camera-task")
+            advanceUntilIdle()
+            val openedState = vm.uiState.value.playbackState
+
+            vm.onBackToListPressed()
+            advanceUntilIdle()
+
+            assertEquals(PlaybackState.PLAYING, openedState)
+            assertEquals(PlaybackState.STOPPED, vm.uiState.value.playbackState)
+            assertTrue(viewerRepo.stopCalls >= 1)
+        }
+
+    @Test
+    fun consistencyContract_viewerButtonsUseOnlyNdiBrowserStyles() {
+        val viewerLayout = File("src/main/res/layout/fragment_viewer.xml").readText()
+
+        assertTrue(viewerLayout.contains("style=\"@style/Widget.NdiBrowser.Button.Outlined\""))
+        assertTrue(viewerLayout.contains("style=\"@style/Widget.NdiBrowser.Button\""))
+        assertFalse(viewerLayout.contains("Widget.Material3.Button"))
     }
 }
 

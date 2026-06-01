@@ -6,8 +6,11 @@ import com.ndi.core.model.DiscoveryCompatibilityStatus
 import com.ndi.core.model.DiscoverySnapshot
 import com.ndi.core.model.DiscoveryStatus
 import com.ndi.core.model.DiscoveryTrigger
+import com.ndi.core.model.CachedSourceRecord
+import com.ndi.core.model.CachedSourceValidationState
 import com.ndi.core.model.NdiSource
 import com.ndi.core.model.TelemetryEvent
+import com.ndi.feature.ndibrowser.domain.repository.CachedSourceRepository
 import com.ndi.feature.ndibrowser.testutil.MainDispatcherRule
 import com.ndi.feature.ndibrowser.domain.repository.NdiDiscoveryRepository
 import com.ndi.feature.ndibrowser.domain.repository.UserSelectionRepository
@@ -145,6 +148,31 @@ class SourceListViewModelTest {
         assertEquals("camera-42", emitted)
         collector.cancel()
     }
+
+    @Test
+    fun selectionContinuity_preservesHighlightedSourceAcrossRefreshSnapshots() =
+        runTest(mainDispatcherRule.dispatcher.scheduler) {
+            val repository = FakeDiscoveryRepository()
+            val selectionRepository = InMemoryUserSelectionRepository()
+            val viewModel = SourceListViewModel(repository, selectionRepository, SourceListTelemetryEmitter {})
+
+            viewModel.onSourceSelected("camera-continuity")
+            repository.emit(
+                snapshotWithSources(
+                    status = DiscoveryStatus.SUCCESS,
+                    sources = listOf(
+                        NdiSource(
+                            sourceId = "camera-continuity",
+                            displayName = "Continuity Camera",
+                            lastSeenAtEpochMillis = 10L,
+                        ),
+                    ),
+                ),
+            )
+            advanceUntilIdle()
+
+            assertEquals("camera-continuity", viewModel.uiState.value.highlightedSourceId)
+        }
 
     @Test
     fun onSourceSelected_emitsViewSelectionOpenedViewerTelemetry() = runTest(mainDispatcherRule.dispatcher.scheduler) {
@@ -303,6 +331,153 @@ class SourceListViewModelTest {
         assertFalse(viewModel.uiState.value.hasPartialCompatibility)
         assertNull(viewModel.uiState.value.compatibilityMessage)
     }
+
+    // ---- T014: Multicast Fallback Discovery - Presentation Tests (US1 Phase 3) ----
+
+    @Test
+    fun onDiscoverySnapshot_surfacesMulticastResultsWithoutGating() = runTest(mainDispatcherRule.dispatcher.scheduler) {
+        val repository = FakeDiscoveryRepository()
+        val viewModel = SourceListViewModel(repository, InMemoryUserSelectionRepository(), SourceListTelemetryEmitter {})
+
+        // Simulate multicast discovery result (no enabled servers configured)
+        repository.emit(
+            snapshotWithSources(
+                status = DiscoveryStatus.SUCCESS,
+                sources = listOf(
+                    NdiSource(sourceId = "device-screen:local", displayName = "This Device", lastSeenAtEpochMillis = 1L),
+                    NdiSource(sourceId = "multicast-camera-1", displayName = "Multicast Camera 1", lastSeenAtEpochMillis = 2L),
+                    NdiSource(sourceId = "multicast-camera-2", displayName = "Multicast Camera 2", lastSeenAtEpochMillis = 3L),
+                ),
+            ),
+        )
+        advanceUntilIdle()
+
+        // Verify multicast results appear without gating
+        assertEquals(2, viewModel.uiState.value.sources.size)
+        val sourceIds = viewModel.uiState.value.sources.map { it.sourceId }
+        assertTrue(sourceIds.containsAll(listOf("multicast-camera-1", "multicast-camera-2")))
+        assertEquals(DiscoveryStatus.SUCCESS, viewModel.uiState.value.discoveryStatus)
+    }
+
+    @Test
+    fun emptyMulticastDiscovery_showsEmptyStateWithoutError() = runTest(mainDispatcherRule.dispatcher.scheduler) {
+        val repository = FakeDiscoveryRepository()
+        val viewModel = SourceListViewModel(repository, InMemoryUserSelectionRepository(), SourceListTelemetryEmitter {})
+
+        // Simulate empty multicast discovery result
+        repository.emit(
+            snapshotWithSources(
+                status = DiscoveryStatus.EMPTY,
+                sources = listOf(NdiSource(sourceId = "device-screen:local", displayName = "This Device", lastSeenAtEpochMillis = 1L)),
+            ),
+        )
+        advanceUntilIdle()
+
+        assertEquals(0, viewModel.uiState.value.sources.size)
+        assertEquals(DiscoveryStatus.EMPTY, viewModel.uiState.value.discoveryStatus)
+        assertNull(viewModel.uiState.value.refreshErrorMessage)
+    }
+
+    // ---- T039: Cache Visibility on Relaunch - Presentation Tests (US3 Phase 5) ----
+
+    @Test
+    fun startup_emitsCachedSourcesBeforeLiveDiscoveryCompletes_FR008() = runTest(mainDispatcherRule.dispatcher.scheduler) {
+        val repository = FakeDiscoveryRepository()
+        val cachedRepository = FakeCachedSourceRepository()
+        SourceListDependencies.cachedSourceRepositoryProvider = { cachedRepository }
+
+        try {
+            repository.emit(snapshotWithSources(status = DiscoveryStatus.IN_PROGRESS, sources = emptyList()))
+            val viewModel = SourceListViewModel(repository, InMemoryUserSelectionRepository(), SourceListTelemetryEmitter {})
+
+            cachedRepository.emit(
+                listOf(
+                    cachedRecord(
+                        stableSourceId = "cached-camera-1",
+                        displayName = "Cached Camera 1",
+                        endpointHost = "10.3.0.1",
+                        endpointPort = 5960,
+                        lastDiscoveredAt = 1_500L,
+                        lastValidatedAt = 1_500L,
+                    ),
+                ),
+            )
+            advanceUntilIdle()
+
+            assertEquals(DiscoveryStatus.IN_PROGRESS, viewModel.uiState.value.discoveryStatus)
+            assertEquals(listOf("cached-camera-1"), viewModel.uiState.value.sources.map { it.sourceId })
+
+            repository.emit(
+                snapshotWithSources(
+                    status = DiscoveryStatus.SUCCESS,
+                    sources = listOf(
+                        NdiSource(sourceId = "live-camera-1", displayName = "Live Camera 1", lastSeenAtEpochMillis = 2_000L),
+                    ),
+                ),
+            )
+            advanceUntilIdle()
+
+            assertEquals(DiscoveryStatus.SUCCESS, viewModel.uiState.value.discoveryStatus)
+            assertTrue(viewModel.uiState.value.sources.any { it.sourceId == "live-camera-1" })
+        } finally {
+            SourceListDependencies.cachedSourceRepositoryProvider = null
+        }
+    }
+
+    @Test
+    fun cacheFlow_updatesWhileLiveDiscoveryStillInProgress_separateFromLiveFlow() = runTest(mainDispatcherRule.dispatcher.scheduler) {
+        val repository = FakeDiscoveryRepository()
+        val cachedRepository = FakeCachedSourceRepository()
+        SourceListDependencies.cachedSourceRepositoryProvider = { cachedRepository }
+
+        try {
+            repository.emit(snapshotWithSources(status = DiscoveryStatus.IN_PROGRESS, sources = emptyList()))
+            val viewModel = SourceListViewModel(repository, InMemoryUserSelectionRepository(), SourceListTelemetryEmitter {})
+
+            cachedRepository.emit(
+                listOf(
+                    cachedRecord(
+                        stableSourceId = "cached-camera-1",
+                        displayName = "Cached Camera Old",
+                        endpointHost = "10.4.0.1",
+                        endpointPort = 5960,
+                        lastDiscoveredAt = 1_000L,
+                        lastValidatedAt = 1_000L,
+                    ),
+                ),
+            )
+            advanceUntilIdle()
+
+            assertEquals(listOf("Cached Camera Old"), viewModel.uiState.value.sources.map { it.displayName })
+
+            cachedRepository.emit(
+                listOf(
+                    cachedRecord(
+                        stableSourceId = "cached-camera-1",
+                        displayName = "Cached Camera New",
+                        endpointHost = "10.4.0.9",
+                        endpointPort = 5961,
+                        lastDiscoveredAt = 1_500L,
+                        lastValidatedAt = 1_500L,
+                    ),
+                    cachedRecord(
+                        stableSourceId = "cached-camera-2",
+                        displayName = "Cached Camera 2",
+                        endpointHost = "10.4.0.2",
+                        endpointPort = 5960,
+                        lastDiscoveredAt = 1_500L,
+                        lastValidatedAt = 1_500L,
+                    ),
+                ),
+            )
+            advanceUntilIdle()
+
+            val displayNames = viewModel.uiState.value.sources.map { it.displayName }
+            assertTrue(displayNames.containsAll(listOf("Cached Camera New", "Cached Camera 2")))
+        } finally {
+            SourceListDependencies.cachedSourceRepositoryProvider = null
+        }
+    }
 }
 
 private class FakeDiscoveryRepository : NdiDiscoveryRepository {
@@ -358,6 +533,66 @@ private class InMemoryUserSelectionRepository : UserSelectionRepository {
     }
 
     override suspend fun getLastSelectedSource(): String? = sourceId
+}
+
+private class FakeCachedSourceRepository : CachedSourceRepository {
+    private val records = MutableStateFlow<List<CachedSourceRecord>>(emptyList())
+
+    override fun observeCachedSources(): Flow<List<CachedSourceRecord>> = records
+
+    override suspend fun getCachedSource(cacheKey: String): CachedSourceRecord? {
+        return records.value.firstOrNull { it.cacheKey == cacheKey }
+    }
+
+    override suspend fun upsertCachedSource(record: CachedSourceRecord) {
+        records.value = records.value.filterNot { it.cacheKey == record.cacheKey } + record
+    }
+
+    override suspend fun upsertFromDiscovery(record: CachedSourceRecord) {
+        upsertCachedSource(record)
+    }
+
+    override suspend fun upsertDiscoveryAssociation(
+        cacheKey: String,
+        discoveryServerId: String,
+        observedAtEpochMillis: Long,
+    ) = Unit
+
+    override suspend fun markValidationState(
+        cacheKey: String,
+        state: CachedSourceValidationState,
+        validationStartedAtEpochMillis: Long?,
+        validatedAtEpochMillis: Long?,
+        availableAtEpochMillis: Long?,
+    ) = Unit
+
+    fun emit(rows: List<CachedSourceRecord>) {
+        records.value = rows
+    }
+}
+
+private fun cachedRecord(
+    stableSourceId: String,
+    displayName: String,
+    endpointHost: String,
+    endpointPort: Int,
+    lastDiscoveredAt: Long,
+    lastValidatedAt: Long?,
+): CachedSourceRecord {
+    return CachedSourceRecord(
+        cacheKey = "$stableSourceId@$endpointHost:$endpointPort",
+        stableSourceId = stableSourceId,
+        lastObservedSourceId = stableSourceId,
+        displayName = displayName,
+        endpointHost = endpointHost,
+        endpointPort = endpointPort,
+        endpointKey = "$endpointHost:$endpointPort",
+        validationState = CachedSourceValidationState.UNAVAILABLE,
+        lastValidatedAtEpochMillis = lastValidatedAt,
+        firstCachedAtEpochMillis = lastDiscoveredAt,
+        lastDiscoveredAtEpochMillis = lastDiscoveredAt,
+        updatedAtEpochMillis = lastDiscoveredAt,
+    )
 }
 
 private fun successSnapshot(): DiscoverySnapshot {

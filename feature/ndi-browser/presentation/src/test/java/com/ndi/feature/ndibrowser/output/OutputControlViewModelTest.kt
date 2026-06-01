@@ -24,6 +24,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Rule
 import org.junit.Test
 import java.util.UUID
+import java.io.File
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class OutputControlViewModelTest {
@@ -242,6 +243,36 @@ class OutputControlViewModelTest {
         assertEquals("device-screen:local", promptSourceId)
         assertEquals(1, repository.startCalls)
         collector.cancel()
+    }
+
+    @Test
+    fun presentationContract_interruptedStateEnablesRetryAndShowsRecoveryActions() =
+        runTest(mainDispatcherRule.dispatcher.scheduler) {
+            val repository = FakeOutputRepository()
+            val viewModel = OutputControlViewModel(
+                repository,
+                InMemoryOutputConfigurationRepository(),
+                InMemoryScreenCaptureConsentRepository(),
+                OutputTelemetryEmitter {},
+            )
+
+            repository.emitState(OutputState.INTERRUPTED, sourceId = "camera-7")
+            advanceUntilIdle()
+
+            assertEquals(OutputState.INTERRUPTED, viewModel.uiState.value.outputState)
+            assertTrue(viewModel.uiState.value.canRetry)
+            assertTrue(viewModel.uiState.value.showRecoveryActions)
+        }
+
+    @Test
+    fun fluentButtonShapeContract_outputButtonsUseCanonicalStyles() {
+        val outputLayout = File("src/main/res/layout/fragment_output_control.xml").readText()
+
+        assertTrue(outputLayout.contains("android:id=\"@+id/startButton\""))
+        assertTrue(outputLayout.contains("style=\"@style/Widget.NdiBrowser.Button\""))
+        assertTrue(outputLayout.contains("android:id=\"@+id/stopButton\""))
+        assertTrue(outputLayout.contains("android:id=\"@+id/retryButton\""))
+        assertTrue(outputLayout.contains("style=\"@style/Widget.NdiBrowser.Button.Tonal\""))
     }
 }
 

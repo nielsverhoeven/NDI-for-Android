@@ -15,6 +15,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import java.io.File
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class SettingsScreenTest {
@@ -51,6 +52,39 @@ class SettingsScreenTest {
         val state = viewModel.uiState.value.settingsDetailState
         assertEquals(SettingsViewModel.CATEGORY_DISCOVERY, state.selectedCategoryId)
         assertTrue(state.groups.first().controls.contains("discovery-servers"))
+    }
+
+    @Test
+    fun accessibilityContract_appearanceControlsRemainReadableAndFocusable() = runTest {
+        val viewModel = SettingsViewModel(CompactTestSettingsRepository())
+        viewModel.onLayoutContextChanged(widthDp = 411, isLandscape = false)
+        viewModel.onSettingsCategorySelected(SettingsViewModel.CATEGORY_APPEARANCE)
+
+        val controls = viewModel.uiState.value.settingsDetailState.groups.first().controls
+        assertTrue(controls.contains("theme-mode"))
+        assertTrue(controls.contains("accent-palette"))
+    }
+
+    @Test
+    fun readabilityAndFocusContract_compactSettingsButtonsRemainActionable() {
+        val settingsLayout = File("src/main/res/layout/fragment_settings.xml").readText()
+
+        assertTrue(settingsLayout.contains("android:id=\"@+id/saveSettingsButton\""))
+        assertTrue(settingsLayout.contains("android:id=\"@+id/openDiscoveryServersButton\""))
+        assertTrue(settingsLayout.contains("android:layout_marginTop=\"16dp\""))
+    }
+
+    @Test
+    fun fluentButtonShapeContract_settingsButtonsUseCanonicalStyles() {
+        val settingsLayout = File("src/main/res/layout/fragment_settings.xml").readText()
+        val settingsNavPanel = File("src/main/res/layout/view_settings_main_navigation_panel.xml").readText()
+
+        assertTrue(settingsLayout.contains("android:id=\"@+id/saveSettingsButton\""))
+        assertTrue(settingsLayout.contains("android:id=\"@+id/settingsApplyButton\""))
+        assertTrue(settingsLayout.contains("style=\"@style/Widget.NdiBrowser.Button\""))
+        assertTrue(settingsLayout.contains("android:id=\"@+id/openDiscoveryServersButton\""))
+        assertTrue(settingsLayout.contains("style=\"@style/Widget.NdiBrowser.Button.Outlined\""))
+        assertTrue(settingsNavPanel.contains("style=\"@style/Widget.NdiBrowser.Button.Outlined\""))
     }
 }
 

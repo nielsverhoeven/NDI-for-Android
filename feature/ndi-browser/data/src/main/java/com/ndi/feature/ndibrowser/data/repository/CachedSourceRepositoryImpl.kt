@@ -8,6 +8,7 @@ import com.ndi.core.model.CachedSourceValidationState
 import com.ndi.feature.ndibrowser.data.mapper.CachedSourceMapper
 import com.ndi.feature.ndibrowser.domain.repository.CachedSourceRepository
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
 class CachedSourceRepositoryImpl(
@@ -38,21 +39,36 @@ class CachedSourceRepositoryImpl(
     }
 
     override suspend fun upsertFromDiscovery(record: CachedSourceRecord) {
+        val canonicalKey = resolveCanonicalKey(record)
+        val normalizedRecord = if (canonicalKey == record.cacheKey) {
+            record
+        } else {
+            record.copy(cacheKey = canonicalKey)
+        }
+
+        val existingEntity = cachedSourceDao.getByKey(normalizedRecord.cacheKey)
+        val mergedRecord = normalizedRecord.copy(
+            // Preserve last-seen validation metadata when a rediscovery payload does not
+            // include a fresh validated timestamp.
+            lastValidatedAtEpochMillis =
+                normalizedRecord.lastValidatedAtEpochMillis ?: existingEntity?.lastValidatedAtEpochMillis,
+        )
+
         // Insert the full row if new; for existing rows update only discovery fields
         // so the retained preview image path is never wiped by a discovery scan.
-        cachedSourceDao.insertIfAbsent(mapper.toEntity(record))
+        cachedSourceDao.insertIfAbsent(mapper.toEntity(mergedRecord))
         cachedSourceDao.updateFromDiscovery(
-            cacheKey = record.cacheKey,
-            lastObservedSourceId = record.lastObservedSourceId,
-            displayName = record.displayName,
-            endpointHost = record.endpointHost,
-            endpointPort = record.endpointPort,
-            endpointKey = record.endpointKey,
-            validationState = record.validationState.name,
-            lastAvailableAtEpochMillis = record.lastAvailableAtEpochMillis,
-            lastValidatedAtEpochMillis = record.lastValidatedAtEpochMillis,
-            lastDiscoveredAtEpochMillis = record.lastDiscoveredAtEpochMillis,
-            updatedAtEpochMillis = record.updatedAtEpochMillis,
+            cacheKey = mergedRecord.cacheKey,
+            lastObservedSourceId = mergedRecord.lastObservedSourceId,
+            displayName = mergedRecord.displayName,
+            endpointHost = mergedRecord.endpointHost,
+            endpointPort = mergedRecord.endpointPort,
+            endpointKey = mergedRecord.endpointKey,
+            validationState = mergedRecord.validationState.name,
+            lastAvailableAtEpochMillis = mergedRecord.lastAvailableAtEpochMillis,
+            lastValidatedAtEpochMillis = mergedRecord.lastValidatedAtEpochMillis,
+            lastDiscoveredAtEpochMillis = mergedRecord.lastDiscoveredAtEpochMillis,
+            updatedAtEpochMillis = mergedRecord.updatedAtEpochMillis,
         )
     }
 
@@ -96,5 +112,11 @@ class CachedSourceRepositoryImpl(
             availableAtEpochMillis = availableAtEpochMillis,
             updatedAtEpochMillis = System.currentTimeMillis(),
         )
+    }
+
+    private suspend fun resolveCanonicalKey(record: CachedSourceRecord): String {
+        val stableId = record.stableSourceId?.takeIf { it.isNotBlank() } ?: return record.cacheKey
+        val existing = cachedSourceDao.observeAll().first().firstOrNull { it.stableSourceId == stableId }
+        return existing?.cacheKey ?: record.cacheKey
     }
 }

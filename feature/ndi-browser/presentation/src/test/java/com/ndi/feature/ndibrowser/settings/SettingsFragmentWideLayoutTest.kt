@@ -16,6 +16,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import java.io.File
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class SettingsFragmentWideLayoutTest {
@@ -42,6 +43,15 @@ class SettingsFragmentWideLayoutTest {
         assertEquals(SettingsLayoutMode.WIDE, state.layoutMode)
         assertTrue(state.settingsDetailState.groups.first().controls.contains("theme-mode"))
         assertTrue(state.settingsDetailState.groups.first().controls.contains("accent-palette"))
+    }
+
+    @Test
+    fun readabilityContract_wideLayoutRetainsClearDetailAndNavigationSpacing() {
+        val wideLayout = File("src/main/res/layout/fragment_settings_three_pane.xml").readText()
+
+        assertTrue(wideLayout.contains("android:id=\"@+id/settingsMainNavigationPanel\""))
+        assertTrue(wideLayout.contains("android:id=\"@+id/settingsDetailContent\""))
+        assertTrue(wideLayout.contains("android:paddingTop=\"12dp\""))
     }
 }
 

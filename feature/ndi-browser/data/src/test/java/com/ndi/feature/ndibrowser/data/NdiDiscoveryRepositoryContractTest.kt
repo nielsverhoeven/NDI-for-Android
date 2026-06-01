@@ -1,5 +1,9 @@
 package com.ndi.feature.ndibrowser.data
 
+import com.ndi.core.database.DiscoveryRunResultDao
+import com.ndi.core.database.DiscoveryRunResultEntity
+import com.ndi.core.database.DiscoveryServerDiagnosticRecordDao
+import com.ndi.core.database.DiscoveryServerDiagnosticRecordEntity
 import com.ndi.core.database.UserSelectionDao
 import com.ndi.core.database.UserSelectionEntity
 import com.ndi.core.model.CachedSourceRecord
@@ -7,6 +11,7 @@ import com.ndi.core.model.CachedSourceValidationState
 import com.ndi.core.model.DiscoveryCompatibilityStatus
 import com.ndi.core.model.DiscoveryStatus
 import com.ndi.core.model.DiscoveryTrigger
+import com.ndi.core.model.DiscoveryMode
 import com.ndi.core.model.NdiDiscoveryEndpoint
 import com.ndi.core.model.NdiLogCategory
 import com.ndi.core.model.NdiLogLevel
@@ -145,7 +150,14 @@ class NdiDiscoveryRepositoryContractTest {
         val diagnostics = DeveloperDiagnosticsLogBuffer()
         val repository = NdiDiscoveryRepositoryImpl(
             bridge = FakeDiscoveryBridge(
-                sources = listOf(NdiSource("source-a", "Camera A", lastSeenAtEpochMillis = 1L)),
+                sources = listOf(
+                    NdiSource(
+                        "source-a",
+                        "Camera A",
+                        endpointAddress = "10.0.0.1:5960",
+                        lastSeenAtEpochMillis = 1L,
+                    ),
+                ),
                 reachableHosts = setOf("first.local"),
             ),
             userSelectionDao = FakeUserSelectionDao(),
@@ -178,7 +190,14 @@ class NdiDiscoveryRepositoryContractTest {
     fun discoverSources_emitsMixedCompatibilityResults_whenSomeEndpointsAreBlocked() = runTest {
         val repository = NdiDiscoveryRepositoryImpl(
             bridge = FakeDiscoveryBridge(
-                sources = listOf(NdiSource("source-a", "Camera A", lastSeenAtEpochMillis = 1L)),
+                sources = listOf(
+                    NdiSource(
+                        "source-a",
+                        "Camera A",
+                        endpointAddress = "10.0.0.1:5960",
+                        lastSeenAtEpochMillis = 1L,
+                    ),
+                ),
                 reachableHosts = setOf("first.local"),
             ),
             userSelectionDao = FakeUserSelectionDao(),
@@ -212,7 +231,14 @@ class NdiDiscoveryRepositoryContractTest {
     fun discoverSources_emitsNonBlockedOverallCompatibility_whenAllConfiguredEndpointsReachable() = runTest {
         val repository = NdiDiscoveryRepositoryImpl(
             bridge = FakeDiscoveryBridge(
-                sources = listOf(NdiSource("source-a", "Camera A", lastSeenAtEpochMillis = 1L)),
+                sources = listOf(
+                    NdiSource(
+                        "source-a",
+                        "Camera A",
+                        endpointAddress = "10.0.0.1:5960",
+                        lastSeenAtEpochMillis = 1L,
+                    ),
+                ),
                 reachableHosts = setOf("first.local", "second.local"),
             ),
             userSelectionDao = FakeUserSelectionDao(),
@@ -306,6 +332,100 @@ class NdiDiscoveryRepositoryContractTest {
         assertEquals(CachedSourceValidationState.UNAVAILABLE, cachedRepo.upserts[1].validationState)
         assertEquals(cachedRepo.upserts[0].cacheKey, cachedRepo.upserts[1].cacheKey)
     }
+
+    // ---- T012: Multicast Fallback Discovery Tests (US1 Phase 3) ----
+
+    @Test
+    fun selectDiscoveryMode_returnsMulticastWhenNoEnabledServersExist() = runTest {
+        val repository = NdiDiscoveryRepositoryImpl(
+            bridge = FakeDiscoveryBridge(sources = emptyList()),
+            userSelectionDao = FakeUserSelectionDao(),
+            discoveryConfigRepository = FakeDiscoveryConfigRepository(),
+            scope = TestScope(StandardTestDispatcher(testScheduler)),
+        )
+
+        val modeSnapshot = repository.selectDiscoveryMode(enabledServerCount = 0)
+
+        assertEquals(com.ndi.core.model.DiscoveryMode.MULTICAST, modeSnapshot.mode)
+        assertEquals(0, modeSnapshot.enabledServerCount)
+        assertEquals("enabledServerCount==0", modeSnapshot.modeSelectionReason)
+    }
+
+    @Test
+    fun selectDiscoveryMode_returnsDiscoveryServerWhenEnabledServersExist() = runTest {
+        val repository = NdiDiscoveryRepositoryImpl(
+            bridge = FakeDiscoveryBridge(sources = emptyList()),
+            userSelectionDao = FakeUserSelectionDao(),
+            discoveryConfigRepository = FakeDiscoveryConfigRepository(),
+            scope = TestScope(StandardTestDispatcher(testScheduler)),
+        )
+
+        val modeSnapshot = repository.selectDiscoveryMode(enabledServerCount = 2)
+
+        assertEquals(com.ndi.core.model.DiscoveryMode.DISCOVERY_SERVER, modeSnapshot.mode)
+        assertEquals(2, modeSnapshot.enabledServerCount)
+        assertTrue(modeSnapshot.modeSelectionReason.contains("enabledServerCount>="))
+    }
+
+    @Test
+    fun discoverSources_usesMulticastModeWhenNoEnabledServersConfigured() = runTest {
+        val bridge = FakeDiscoveryBridge(
+            sources = listOf(
+                NdiSource("camera-1", "Camera 1", lastSeenAtEpochMillis = 1L),
+                NdiSource("camera-2", "Camera 2", lastSeenAtEpochMillis = 2L),
+            ),
+        )
+        val cachedRepo = FakeCachedSourceRepository()
+        val repository = NdiDiscoveryRepositoryImpl(
+            bridge = bridge,
+            userSelectionDao = FakeUserSelectionDao(),
+            discoveryConfigRepository = FakeDiscoveryConfigRepository(emptyList()),
+            scope = TestScope(StandardTestDispatcher(testScheduler)),
+            cachedSourceRepository = cachedRepo,
+        )
+
+        val snapshot = repository.discoverSources(DiscoveryTrigger.MANUAL)
+
+        assertEquals(DiscoveryStatus.SUCCESS, snapshot.status)
+        // Verify multicast sources appear (device-screen:local + 2 discovered sources)
+        assertEquals(3, snapshot.sources.size)
+        assertEquals(
+            listOf("device-screen:local", "camera-1", "camera-2"),
+            snapshot.sources.map { it.sourceId },
+        )
+        // Verify discovered sources are persisted to cache
+        assertEquals(2, cachedRepo.upserts.size)
+    }
+
+    // ---- T023: Discovery-server timeout + no same-run fallback (US2 Phase 4) ----
+
+    @Test
+    fun discoverSources_discoveryServerMode_timeoutFailsWithoutSameRunMulticastFallback() = runTest {
+        val bridge = TimeoutDiscoveryBridge()
+        val runResultDao = FakeDiscoveryRunResultDao()
+        val diagnosticsDao = FakeDiscoveryServerDiagnosticRecordDao()
+        val repository = NdiDiscoveryRepositoryImpl(
+            bridge = bridge,
+            userSelectionDao = FakeUserSelectionDao(),
+            discoveryConfigRepository = FakeDiscoveryConfigRepository(
+                listOf(NdiDiscoveryEndpoint("discovery-a.local", 5959, 5959, usesDefaultPort = false)),
+            ),
+            scope = TestScope(StandardTestDispatcher(testScheduler)),
+            discoveryRunResultDao = runResultDao,
+            discoveryServerDiagnosticRecordDao = diagnosticsDao,
+        )
+
+        val snapshot = repository.discoverSources(DiscoveryTrigger.MANUAL)
+
+        assertEquals(DiscoveryStatus.FAILURE, snapshot.status)
+        assertEquals("DISCOVERY_SERVER_TIMEOUT", snapshot.errorCode)
+        assertTrue(snapshot.errorMessage?.contains("discovery-a.local:5959") == true)
+        assertTrue(snapshot.errorMessage?.contains("timestamp=") == true)
+        assertEquals(1, bridge.configuredEndpointCalls.size)
+        assertTrue(bridge.configuredEndpointCalls.single().isNotEmpty())
+        assertEquals("TIMEOUT", runResultDao.latest?.status)
+        assertTrue(diagnosticsDao.records.any { it.endpoint == "discovery-a.local:5959" && it.status == "TIMEOUT" })
+    }
 }
 
 private class FakeDiscoveryBridge(
@@ -356,6 +476,12 @@ private class FakeDiscoveryConfigRepository(
 
     override suspend fun applyDiscoveryEndpoint(endpoint: NdiDiscoveryEndpoint?) =
         throw NotImplementedError("Not implemented in test")
+
+    // ---- T013: Multicast Fallback Discovery - Enabled Server Count (US1 Phase 3) ----
+
+    override suspend fun getEnabledServerCount(): Int = endpoints.size
+
+    override suspend fun getEnabledServersSnapshot(): List<NdiDiscoveryEndpoint> = endpoints
 }
 
 private class SequenceDiscoveryBridge(
@@ -366,6 +492,52 @@ private class SequenceDiscoveryBridge(
     }
 
     override fun setDiscoveryEndpoint(endpoint: NdiDiscoveryEndpoint?) = Unit
+}
+
+private class TimeoutDiscoveryBridge : NdiDiscoveryBridge {
+    val configuredEndpointCalls: MutableList<List<NdiDiscoveryEndpoint>> = mutableListOf()
+
+    override suspend fun discoverSources(): List<NdiSource> {
+        error("simulated timeout from discovery server")
+    }
+
+    override fun setDiscoveryEndpoints(endpoints: List<NdiDiscoveryEndpoint>) {
+        configuredEndpointCalls += endpoints
+    }
+
+    override fun setDiscoveryEndpoint(endpoint: NdiDiscoveryEndpoint?) {
+        configuredEndpointCalls += listOfNotNull(endpoint)
+    }
+}
+
+private class FakeDiscoveryRunResultDao : DiscoveryRunResultDao {
+    private val state = MutableStateFlow<DiscoveryRunResultEntity?>(null)
+    var latest: DiscoveryRunResultEntity? = null
+
+    override suspend fun getLatest(): DiscoveryRunResultEntity? = latest
+
+    override fun observeLatest(): Flow<DiscoveryRunResultEntity?> = state
+
+    override suspend fun upsert(entity: DiscoveryRunResultEntity) {
+        latest = entity
+        state.value = entity
+    }
+}
+
+private class FakeDiscoveryServerDiagnosticRecordDao : DiscoveryServerDiagnosticRecordDao {
+    val records: MutableList<DiscoveryServerDiagnosticRecordEntity> = mutableListOf()
+
+    override suspend fun getByRunId(runId: String): List<DiscoveryServerDiagnosticRecordEntity> {
+        return records.filter { it.runId == runId }
+    }
+
+    override suspend fun upsert(entity: DiscoveryServerDiagnosticRecordEntity) {
+        records += entity
+    }
+
+    override suspend fun upsertAll(entities: List<DiscoveryServerDiagnosticRecordEntity>) {
+        records += entities
+    }
 }
 
 private class FakeCachedSourceRepository : CachedSourceRepository {

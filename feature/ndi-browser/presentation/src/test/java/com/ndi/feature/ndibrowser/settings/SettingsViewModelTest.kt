@@ -163,6 +163,24 @@ class SettingsViewModelTest {
             ids,
         )
     }
+
+    @Test
+    fun persistenceInvariant_savedAppearanceValues_areReloadedFromRepository() = runTest(scheduler) {
+        val repository = FakeSettingsRepository()
+        val viewModel = SettingsViewModel(repository)
+        advanceUntilIdle()
+
+        viewModel.onThemeModeChanged(com.ndi.core.model.NdiThemeMode.DARK)
+        viewModel.onAccentColorChanged(SettingsViewModel.ACCENT_ORANGE)
+        viewModel.onSaveSettings()
+        advanceUntilIdle()
+
+        val reloaded = SettingsViewModel(repository)
+        advanceUntilIdle()
+
+        assertEquals(com.ndi.core.model.NdiThemeMode.DARK, reloaded.uiState.value.themeMode)
+        assertEquals(SettingsViewModel.ACCENT_ORANGE, reloaded.uiState.value.accentColorId)
+    }
 }
 
 private class FakeSettingsRepository(

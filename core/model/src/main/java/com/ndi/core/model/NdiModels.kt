@@ -38,6 +38,47 @@ enum class CachedSourceValidationState {
     UNAVAILABLE,
 }
 
+// ---- T007: Discovery Routing Models ----
+
+enum class DiscoveryMode {
+    MULTICAST,
+    DISCOVERY_SERVER,
+}
+
+data class DiscoveryModeSnapshot(
+    val runId: String,
+    val startedAtEpochMillis: Long,
+    val enabledServerCount: Int,
+    val mode: DiscoveryMode,
+    val modeSelectionReason: String,
+)
+
+data class DiscoveredSourceEndpoint(
+    val canonicalSourceId: String,
+    val displayName: String,
+    val endpointHost: String,
+    val endpointPort: Int,
+    val discoveredAtEpochMillis: Long,
+    val originMode: DiscoveryMode,
+    val originServerId: String? = null,
+)
+
+enum class DiscoveryRunStatus {
+    SUCCESS,
+    TIMEOUT,
+    FAILURE,
+}
+
+data class DiscoveryRunResult(
+    val runId: String,
+    val mode: DiscoveryMode,
+    val durationMillis: Long,
+    val status: DiscoveryRunStatus,
+    val sourceCount: Int,
+    val diagnosticCode: String? = null,
+    val diagnosticMessage: String? = null,
+)
+
 data class CachedSourceRecord(
     val cacheKey: String,
     val stableSourceId: String? = null,

@@ -73,6 +73,9 @@
 - If this feature adds or changes visual behavior, the spec MUST include a
   regression requirement to execute all existing Playwright e2e tests and
   keep them passing.
+- If this feature adds or changes visual behavior, the spec MUST define
+  verification criteria proving compliance with the repository Fluent +
+  Electron design language.
 - If no visual behavior changes are included, state "No visual change" with a
   short justification.
 

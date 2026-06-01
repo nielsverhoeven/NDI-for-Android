@@ -8,6 +8,7 @@
     android:minHeight="72dp"
     android:clickable="true"
     android:focusable="true"
+    app:shapeAppearanceOverlay="@style/ShapeAppearance.NdiBrowser.Button"
     app:cardUseCompatPadding="true"
     app:strokeWidth="1dp">
 

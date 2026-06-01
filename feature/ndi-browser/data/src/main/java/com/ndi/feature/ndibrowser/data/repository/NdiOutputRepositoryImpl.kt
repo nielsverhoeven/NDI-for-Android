@@ -15,6 +15,7 @@ import com.ndi.core.model.OutputState
 import com.ndi.feature.ndibrowser.data.OutputRecoveryCoordinator
 import com.ndi.feature.ndibrowser.data.OutputSessionCoordinator
 import com.ndi.feature.ndibrowser.data.mapper.OutputSessionMapper
+import com.ndi.feature.ndibrowser.domain.repository.CachedSourceRepository
 import com.ndi.feature.ndibrowser.domain.repository.NdiDiscoveryConfigRepository
 import com.ndi.feature.ndibrowser.domain.repository.NdiOutputRepository
 import com.ndi.feature.ndibrowser.domain.repository.ScreenCaptureConsentRepository
@@ -23,6 +24,7 @@ import com.ndi.sdkbridge.NdiOutputBridge
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
@@ -34,6 +36,7 @@ class NdiOutputRepositoryImpl(
     private val outputSessionDao: OutputSessionDao,
     private val outputBridge: NdiOutputBridge,
     private val discoveryConfigRepository: NdiDiscoveryConfigRepository = NoopNdiDiscoveryConfigRepository(),
+    private val cachedSourceRepository: CachedSourceRepository? = null,
     private val screenCaptureConsentRepository: ScreenCaptureConsentRepository = NoopScreenCaptureConsentRepository(),
     private val mapper: OutputSessionMapper = OutputSessionMapper(),
     private val coordinator: OutputSessionCoordinator = OutputSessionCoordinator(),
@@ -105,6 +108,13 @@ class NdiOutputRepositoryImpl(
             }
 
             val configuredEndpoints = discoveryConfigRepository.getCurrentEndpoints()
+
+            if (inputKind == OutputInputKind.DISCOVERED_NDI && isDiscoveryServerEndpointTarget(inputSourceId, configuredEndpoints)) {
+                throw IllegalArgumentException(
+                    "Output must not treat discovery server endpoint as stream endpoint; use discovered source endpoint instead",
+                )
+            }
+
             if (configuredEndpoints.isNotEmpty()) {
                 val discoveryReachable = withContext(Dispatchers.IO) {
                     var anyReachable = false
@@ -140,10 +150,11 @@ class NdiOutputRepositoryImpl(
                 }
             }
 
+            val streamTarget = resolveOutputTarget(inputSourceId)
             val isReachable = if (inputKind == OutputInputKind.DEVICE_SCREEN) {
                 true
             } else {
-                withContext(Dispatchers.IO) { outputBridge.isSourceReachable(inputSourceId) }
+                withContext(Dispatchers.IO) { outputBridge.isSourceReachable(streamTarget) }
             }
             if (!isReachable) {
                 val interrupted = current.copy(
@@ -173,7 +184,7 @@ class NdiOutputRepositoryImpl(
                     if (inputKind == OutputInputKind.DEVICE_SCREEN) {
                         outputBridge.startLocalScreenShareSender(starting.outboundStreamName)
                     } else {
-                        outputBridge.startSender(inputSourceId, starting.outboundStreamName)
+                        outputBridge.startSender(streamTarget, starting.outboundStreamName)
                     }
                 }
             }.onFailure { error ->
@@ -281,6 +292,28 @@ class NdiOutputRepositoryImpl(
         }
     }
 
+    private suspend fun resolveOutputTarget(inputSourceId: String): String {
+        val repo = cachedSourceRepository ?: return inputSourceId
+        val records = runCatching { repo.observeCachedSources().first() }.getOrDefault(emptyList())
+        val matched = records.firstOrNull {
+            it.cacheKey == inputSourceId ||
+                it.lastObservedSourceId == inputSourceId ||
+                it.stableSourceId == inputSourceId
+        }
+        return matched?.endpointKey?.takeIf { it.isNotBlank() } ?: inputSourceId
+    }
+
+    private fun isDiscoveryServerEndpointTarget(
+        inputSourceId: String,
+        configuredEndpoints: List<NdiDiscoveryEndpoint>,
+    ): Boolean {
+        val normalizedTarget = inputSourceId.trim().lowercase()
+        return configuredEndpoints.any { endpoint ->
+            normalizedTarget == "${endpoint.host}:${endpoint.resolvedPort}".lowercase() ||
+                normalizedTarget == endpoint.host.lowercase()
+        }
+    }
+
     override fun observeOutputHealth(): Flow<OutputHealthSnapshot> = outputHealthState.asStateFlow()
 
     private fun OutputSession.toEntity(): OutputSessionEntity {
@@ -339,5 +372,11 @@ private class NoopNdiDiscoveryConfigRepository : NdiDiscoveryConfigRepository {
     override suspend fun getCurrentEndpoints(): List<NdiDiscoveryEndpoint> = endpointState.value
 
     override suspend fun getCurrentEndpoint(): NdiDiscoveryEndpoint? = endpointState.value.firstOrNull()
+
+    // ---- T013: Multicast Fallback Discovery - Enabled Server Count (US1 Phase 3) ----
+
+    override suspend fun getEnabledServerCount(): Int = endpointState.value.size
+
+    override suspend fun getEnabledServersSnapshot(): List<NdiDiscoveryEndpoint> = endpointState.value
 }
 

@@ -5,6 +5,10 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:layout_marginBottom="12dp"
+    app:cardBackgroundColor="@color/fluent_electron_surface_card"
+    app:shapeAppearanceOverlay="@style/ShapeAppearance.Material3.Corner.Medium"
+    app:strokeColor="@color/fluent_electron_stroke_subtle"
+    app:strokeWidth="1dp"
     app:cardUseCompatPadding="true">
 
     <LinearLayout
@@ -32,6 +36,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="4dp"
+            android:textColor="@color/fluent_electron_text_secondary"
             android:textAppearance="@style/TextAppearance.Material3.BodyMedium" />
 
         <TextView
@@ -65,7 +70,7 @@
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/viewStreamButton"
-                style="@style/Widget.Material3.Button.TonalButton"
+                style="@style/Widget.NdiBrowser.Button.Tonal"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="12dp"

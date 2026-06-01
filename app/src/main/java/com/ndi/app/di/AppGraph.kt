@@ -122,6 +122,13 @@ class AppGraph private constructor(context: Context) {
         mapper = CachedSourceMapper(),
     )
 
+    private val cachedSourceWarmupFlow: StateFlow<List<com.ndi.core.model.CachedSourceRecord>> =
+        cachedSourceRepository.observeCachedSources().stateIn(
+            scope = appScope,
+            started = SharingStarted.Eagerly,
+            initialValue = emptyList(),
+        )
+
     val discoveryRepository: NdiDiscoveryRepository = NdiDiscoveryRepositoryImpl(
         bridge = NativeNdiBridge,
         userSelectionDao = database.userSelectionDao(),
@@ -130,6 +137,9 @@ class AppGraph private constructor(context: Context) {
         compatibilityClassifier = discoveryCompatibilityClassifier,
         compatibilityMatrixRepository = compatibilityMatrixRepository,
         cachedSourceRepository = cachedSourceRepository,
+        // ---- T010: Wiring discovery run result and diagnostic DAOs ----
+        discoveryRunResultDao = database.discoveryRunResultDao(),
+        discoveryServerDiagnosticRecordDao = database.discoveryServerDiagnosticRecordDao(),
     )
 
     val userSelectionRepository: UserSelectionRepository = UserSelectionRepositoryImpl(
@@ -164,6 +174,7 @@ class AppGraph private constructor(context: Context) {
         outputSessionDao = database.outputSessionDao(),
         outputBridge = NativeNdiBridge,
         discoveryConfigRepository = discoveryConfigRepository,
+        cachedSourceRepository = cachedSourceRepository,
         screenCaptureConsentRepository = screenCaptureConsentRepository,
         mapper = OutputSessionMapper(),
         coordinator = OutputSessionCoordinator(),
@@ -261,6 +272,9 @@ class AppGraph private constructor(context: Context) {
         )
 
     init {
+        // Keep a warm cache snapshot active as soon as AppGraph is initialized.
+        cachedSourceWarmupFlow
+
         SourceListDependencies.discoveryRepositoryProvider = { discoveryRepository }
         SourceListDependencies.userSelectionRepositoryProvider = { userSelectionRepository }
         SourceListDependencies.viewerNavigationRequestProvider = NdiNavigation::viewerRequest

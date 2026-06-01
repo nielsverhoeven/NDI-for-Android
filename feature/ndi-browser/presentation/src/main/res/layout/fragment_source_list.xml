@@ -2,6 +2,7 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:background="@color/fluent_electron_surface_card"
     android:orientation="vertical"
     android:padding="16dp">
 
@@ -9,6 +10,7 @@
         android:id="@+id/topAppBar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:layout_marginBottom="4dp"
         android:title="@string/ndi_source_list_title" />
 
     <include
@@ -21,6 +23,7 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="16dp"
         android:text="@string/ndi_discovery_empty"
+        android:textAppearance="@style/TextAppearance.Material3.BodyLarge"
         android:visibility="gone" />
 
     <TextView
@@ -29,6 +32,7 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="16dp"
         android:text="@string/ndi_discovery_error"
+        android:textAppearance="@style/TextAppearance.Material3.BodyLarge"
         android:visibility="gone" />
 
     <TextView
@@ -47,6 +51,7 @@
         android:layout_marginTop="16dp"
         android:layout_weight="1"
         android:clipToPadding="false"
+        android:contentDescription="@string/ndi_source_list_title"
         android:paddingBottom="24dp" />
 
     <LinearLayout
@@ -64,8 +69,10 @@
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/refreshButton"
+                style="@style/Widget.NdiBrowser.Button"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:minHeight="48dp"
                 android:contentDescription="@string/ndi_source_refresh_button_content_description"
                 android:text="@string/ndi_source_list_refresh" />
 

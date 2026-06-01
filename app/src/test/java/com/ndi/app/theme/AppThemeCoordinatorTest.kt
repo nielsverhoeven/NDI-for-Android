@@ -12,6 +12,7 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class AppThemeCoordinatorTest {
@@ -96,6 +97,15 @@ class AppThemeCoordinatorTest {
         checkNotNull(latency)
         assertTrue(latency >= 0)
         coordinator.stop()
+    }
+
+    @Test
+    fun fluentButtonRadiusContract_usesCanonicalEightDpShapeToken() {
+        val themesXml = File("src/main/res/values/themes.xml").readText()
+
+        assertTrue(themesXml.contains("@dimen/ndi_button_corner_radius"))
+        assertTrue(themesXml.contains("<item name=\"materialButtonStyle\">@style/Widget.NdiApp.Button</item>"))
+        assertTrue(themesXml.contains("<style name=\"ShapeAppearance.NdiApp.Button\""))
     }
 
     private class FakeThemeEditorRepository : ThemeEditorRepository {
