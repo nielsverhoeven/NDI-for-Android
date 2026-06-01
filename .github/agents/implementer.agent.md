@@ -94,14 +94,42 @@ After implementing each task:
 3. Confirm the acceptance condition from `tasks.md` is met
 4. Mark the task as complete in `tasks.md`
 
-### 5. Commit Convention
-Use conventional commits:
+### 5. Update the GitHub Issue
+After the task passes verification, **always update the corresponding GitHub issue**:
+```
+gh issue comment <issue-number> --body "## ✅ Implementation complete
+
+**Task**: T###
+**Branch**: <current-branch>
+
+### What was implemented
+- <bullet list of what was built>
+
+### Verification
+- `dotnet build` ✅
+- `dotnet test` ✅ (<N> tests passed)
+
+### Commits
+- <short-sha> — <commit message>"
+```
+Then close the task issue:
+```
+gh issue close <issue-number> --comment "Closed: implementation complete and verified."
+```
+
+### 6. Commit Convention
+Use conventional commits. **Every commit must reference the GitHub issue number** so GitHub auto-links the commit to the issue:
 ```
 feat(<layer>): <what was implemented>
 
+Closes #<github-issue-number>
 Task: T###
 Issue: #<github-issue-number>
+
+Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
 ```
+
+The `Closes #N` keyword causes GitHub to show the commit in the issue timeline and link the PR to the issue. Use `Refs #N` instead of `Closes #N` for commits that are partial (task not yet fully done).
 
 ---
 
