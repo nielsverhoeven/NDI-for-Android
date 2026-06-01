@@ -6,12 +6,33 @@ import org.junit.Test
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Assert.assertEquals
+import java.io.File
 
 /**
  * Tests for UI state computation for availability badges and view action enablement.
  * T029: Add failing UI model test for Previously Connected badge visibility.
  */
 class SourceListUiStateTest {
+
+    @Test
+    fun fluentButtonShapeContract_sourceListButtonsUseCanonicalStyles() {
+        val sourceListLayout = File("src/main/res/layout/fragment_source_list.xml").readText()
+        val sourceRowLayout = File("src/main/res/layout/item_ndi_source.xml").readText()
+
+        assertTrue(sourceListLayout.contains("android:id=\"@+id/refreshButton\""))
+        assertTrue(sourceListLayout.contains("style=\"@style/Widget.NdiBrowser.Button\""))
+        assertTrue(sourceRowLayout.contains("android:id=\"@+id/viewStreamButton\""))
+        assertTrue(sourceRowLayout.contains("style=\"@style/Widget.NdiBrowser.Button.Tonal\""))
+    }
+
+    @Test
+    fun consistencyContract_sourceListLayoutsContainNoLegacyMaterialButtonStyles() {
+        val sourceListLayout = File("src/main/res/layout/fragment_source_list.xml").readText()
+        val sourceRowLayout = File("src/main/res/layout/item_ndi_source.xml").readText()
+
+        assertFalse(sourceListLayout.contains("Widget.Material3.Button"))
+        assertFalse(sourceRowLayout.contains("Widget.Material3.Button"))
+    }
 
     @Test
     fun visualStateContract_loadingAndErrorStates_areDistinct() {

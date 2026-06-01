@@ -9,34 +9,38 @@
 
     <com.google.android.material.button.MaterialButton
         android:id="@+id/settingsMainNavHome"
-        style="@style/Widget.Material3.Button.OutlinedButton"
+        style="@style/Widget.NdiBrowser.Button.Outlined"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="@string/settings_main_nav_home"
+        app:shapeAppearanceOverlay="@style/ShapeAppearance.NdiBrowser.Button"
         app:iconGravity="textStart" />
 
     <com.google.android.material.button.MaterialButton
         android:id="@+id/settingsMainNavStream"
-        style="@style/Widget.Material3.Button.OutlinedButton"
+        style="@style/Widget.NdiBrowser.Button.Outlined"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="8dp"
+        app:shapeAppearanceOverlay="@style/ShapeAppearance.NdiBrowser.Button"
         android:text="@string/settings_main_nav_stream" />
 
     <com.google.android.material.button.MaterialButton
         android:id="@+id/settingsMainNavView"
-        style="@style/Widget.Material3.Button.OutlinedButton"
+        style="@style/Widget.NdiBrowser.Button.Outlined"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="8dp"
+        app:shapeAppearanceOverlay="@style/ShapeAppearance.NdiBrowser.Button"
         android:text="@string/settings_main_nav_view" />
 
     <com.google.android.material.button.MaterialButton
         android:id="@+id/settingsMainNavSettings"
-        style="@style/Widget.Material3.Button"
+        style="@style/Widget.NdiBrowser.Button"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="8dp"
+        app:shapeAppearanceOverlay="@style/ShapeAppearance.NdiBrowser.Button"
         android:text="@string/settings_main_nav_settings" />
 
 </LinearLayout>

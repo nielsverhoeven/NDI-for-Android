@@ -7,6 +7,7 @@
         <item name="colorSurfaceContainer">@color/fluent_electron_surface_card</item>
         <item name="android:textColorPrimary">@color/fluent_electron_text_primary</item>
         <item name="android:textColorSecondary">@color/fluent_electron_text_secondary</item>
+        <item name="materialButtonStyle">@style/Widget.NdiApp.Button</item>
     </style>
 
     <style name="Theme.NDIforAndroid" parent="android:Theme.Material.Light.NoActionBar" />
@@ -101,6 +102,22 @@
 
     <style name="TextAppearance.NdiApp.FluentElectron.StatusNegative" parent="TextAppearance.Material3.LabelMedium">
         <item name="android:textColor">@color/fluent_electron_state_error</item>
+    </style>
+
+    <style name="ShapeAppearance.NdiApp.Button" parent="ShapeAppearance.Material3.Corner.Full">
+        <item name="cornerSize">@dimen/ndi_button_corner_radius</item>
+    </style>
+
+    <style name="Widget.NdiApp.Button" parent="Widget.Material3.Button">
+        <item name="shapeAppearance">@style/ShapeAppearance.NdiApp.Button</item>
+    </style>
+
+    <style name="Widget.NdiApp.Button.Outlined" parent="Widget.Material3.Button.OutlinedButton">
+        <item name="shapeAppearance">@style/ShapeAppearance.NdiApp.Button</item>
+    </style>
+
+    <style name="Widget.NdiApp.Button.Tonal" parent="Widget.Material3.Button.TonalButton">
+        <item name="shapeAppearance">@style/ShapeAppearance.NdiApp.Button</item>
     </style>
 
 </resources>

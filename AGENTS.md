@@ -1,50 +1,113 @@
 # AGENTS.md
 
 ## Start Here
-- Canonical module graph is in `settings.gradle.kts`: `:app`, `:core:model`, `:core:database`, `:core:testing`, `:feature:ndi-browser:{domain,data,presentation}`, `:ndi:sdk-bridge`.
-- Existing AI guidance lives in `.github/agents/copilot-instructions.md` (there is no root `.github/copilot-instructions.md` in this repo).
-- Behavior authority is spec-driven: `specs/001-scan-ndi-sources/contracts/ndi-feature-contract.md`, `specs/001-scan-ndi-sources/tasks.md`, `specs/002-stream-ndi-source/contracts/ndi-output-feature-contract.md`, and `specs/002-stream-ndi-source/tasks.md`.
+- Constitution lives at `docs/constitution.md` — read it before any feature work. If it does not exist, invoke the `architect` agent to create it.
+- Architecture lives at `docs/architecture.md` — maintained by `architect`.
+- GitHub is the single source of truth for features and tasks. All feature work begins from a GitHub issue.
+- This app is a **.NET MAUI (C#) application** integrating the **NDI SDK** for video source discovery, streaming, and output on Android.
 
-## Architecture Rules (Project-Specific)
-- Keep app composition in `app`: `app/src/main/java/com/ndi/app/di/AppGraph.kt` wires repositories and feature dependency providers.
-- Use service-locator objects already in feature presentation (`SourceListDependencies`, `ViewerDependencies`, `OutputDependencies`) from `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/source_list/SourceListTelemetry.kt`, `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/viewer/ViewerTelemetry.kt`, and `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/output/OutputTelemetry.kt`.
-- Domain contracts stay in `feature/ndi-browser/domain/src/main/java/com/ndi/feature/ndibrowser/domain/repository/NdiRepositories.kt`; implement them only in `feature/ndi-browser/data`.
-- Room persistence is centralized in `core/database/src/main/java/com/ndi/core/database/NdiDatabase.kt`; do not add direct DB access from presentation.
-- Native NDI integration is isolated to `ndi/sdk-bridge` (`ndi/sdk-bridge/src/main/java/com/ndi/sdkbridge/NdiNativeBridge.kt`, `ndi/sdk-bridge/src/main/cpp/CMakeLists.txt`).
+## Agent Network
 
-## Data Flow and Navigation
-- Follow `Fragment -> ViewModel -> Repository`: see `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/source_list/SourceListScreen.kt` and `feature/ndi-browser/presentation/src/main/java/com/ndi/feature/ndibrowser/viewer/ViewerScreen.kt`.
-- Collect flows with lifecycle awareness (`repeatOnLifecycle`) and clear bindings in `onDestroyView` (same files above).
-- Preserve foreground-only discovery refresh (`onStart`/`onStop` -> `startForegroundAutoRefresh`/`stopForegroundAutoRefresh`) in `SourceListScreen.kt` and `SourceListViewModel.kt`.
-- Viewer routing uses deep links (`ndi://viewer/{sourceId}`) defined in `app/src/main/res/navigation/main_nav_graph.xml` and built by `app/src/main/java/com/ndi/app/navigation/NdiNavigation.kt`.
-- Output routing uses deep links (`ndi://output/{sourceId}`) defined in `app/src/main/res/navigation/main_nav_graph.xml` and built by `app/src/main/java/com/ndi/app/navigation/NdiNavigation.kt`.
-- No-autoplay continuity is intentional: selection is highlighted on relaunch, not auto-opened (`SourcePreselectionController.kt`, `MainActivity.kt`, `tasks.md` US2).
+The agent network is organized into three rings:
 
-## Build, Validation, and CI Workflow
-- Run prerequisite gate first: `scripts/verify-android-prereqs.ps1` (docs: `docs/android-prerequisites.md`).
-- Validate wrapper/toolchain before major changes: `./gradlew --version` (or `./gradlew.bat --version` on Windows) per `docs/ndi-feature.md`.
-- Keep release hardening enabled in `app/build.gradle.kts` (`isMinifyEnabled=true`, `isShrinkResources=true`) and guard with `verifyReleaseHardening`.
-- CI runs on Windows and executes prereq checks with `-CiMode -AllowMissingNdiSdk`: `.github/workflows/android-ci.yml`.
-- Dual-emulator validation harness is in `testing/e2e` (`testing/e2e/README.md`, `testing/e2e/scripts/run-dual-emulator-e2e.ps1`) and is the default e2e path for `specs/002-stream-ndi-source/tasks.md`.
+### Orchestration
+- **`orchestrator`** — main entry point for all feature development. Drives the full pipeline from GitHub issue to shipped, tested, documented code. Co-owns `docs/constitution.md` with `architect`.
 
-## Housekeeping
-- Use the `cleaner` agent (`.github/agents/cleaner.agent.md`) for dead code removal, unused resource pruning, redundant test deduplication, and dev-environment housekeeping. It collaborates with `reviewer` (sign-off), `tester` (regression gate), and `speckit.constitution` (principle updates) automatically.
+### Domain Experts (consulted, never primary entry points)
+- **`architect`** — owns the constitution and architecture documentation. Validates all feature plans. Consults `maui.expert` and `ndi.expert` for technology decisions.
+- **`maui.expert`** — authoritative .NET MAUI knowledge. Answers implementation questions from official docs (https://learn.microsoft.com/en-us/dotnet/maui/, https://github.com/dotnet/maui).
+- **`ndi.expert`** — authoritative NDI SDK knowledge. Answers integration questions from official docs (https://docs.ndi.video/).
 
-## Agent Collaboration for NDI
-- Use the `ndi.expert` agent (`.github/agents/ndi.expert.agent.md`) for NDI SDK integration decisions grounded in `https://docs.ndi.video/`.
-- For feature execution, pair `ndi.expert` (NDI protocol/SDK correctness) with `android.app-builder` (Android implementation) under `speckit.implement` orchestration.
+### Feature Pipeline (invoked by orchestrator in order)
+1. **`github.issues-manager`** — enriches and updates GitHub issues. Single agent authorized to write issue content.
+2. **`feature.clarifier`** — resolves spec ambiguities through targeted questions. Writes answers back to the GitHub issue.
+3. **`feature.planner`** — translates an enriched issue into a feature spec and technical plan.
+4. **`feature.breakdown`** — breaks the plan into dependency-ordered tasks and creates GitHub issues for each.
+5. **`implementer`** — writes the .NET MAUI code for each task. Consults `maui.expert` and `ndi.expert`.
+6. **`github.action-manager`** — validates CI after implementation. Classifies failures and delegates fixes to `implementer`, `tester`, or `orchestrator`.
+7. **`tester`** — runs all test stages, plans and generates new tests, heals broken tests.
+8. **`documenter`** — updates project documentation to reflect implemented features.
 
-## Conventions That Prevent Regressions
-- Keep telemetry emission patterns in place (`SourceListTelemetry.kt`, `ViewerTelemetry.kt`, `ViewerRecoveryTelemetry.kt`, `OutputTelemetry.kt`).
-- Keep retry semantics bounded to 15 seconds (`ViewerViewModel.kt`, `NdiViewerRepositoryImpl.kt`, `ViewerReconnectCoordinator.kt`, `OutputControlViewModel.kt`, `NdiOutputRepositoryImpl.kt`, `OutputRecoveryCoordinator.kt`).
-- Avoid editing legacy template path `app/src/main/java/com/example/ndi_for_android/*` unless explicitly migrating; active app path is `com.ndi.app` in `app/src/main/AndroidManifest.xml`.
-- Respect toolchain baseline in `gradle/libs.versions.toml` and `gradle/wrapper/gradle-wrapper.properties` (AGP 9.0.0, Gradle 9.2.1, Kotlin 2.2.10, SDK 34 with JDK 21 toolchain and Java 17 bytecode target) unless doing an intentional coordinated upgrade.
+## Feature Development Flow
+
+```
+User → orchestrator
+  [if new issue] → github.issues-manager (Stage -2: create issue with title + label)
+                 → github.issues-manager (Stage 0: enrich new issue)
+                 → [APPROVAL GATE] user confirms before implementation starts
+  [if existing issue + implement] → github.issues-manager (Stage -1: create branch)
+  [if enrich/plan/clarify only]  → github.issues-manager / feature.clarifier / feature.planner
+  → feature.planner (create spec + plan)
+  → architect (validate plan against constitution)
+  → feature.breakdown (tasks → GitHub issues)
+  → implementer (write code on issue branch)
+    ↕ maui.expert (MAUI API guidance)
+    ↕ ndi.expert (NDI SDK guidance)
+  → github.action-manager (validate CI on PR/branch)
+    ↕ implementer / tester (fix failures if any)
+  → tester (run all stages)
+  → documenter (update docs)
+  → github.issues-manager (close issue with summary)
+```
+
+> **Trigger rules**: Pipeline entry depends on user intent. New issue creation always goes through Stage -2 → Stage 0 → Approval Gate before any branch or implementation work begins. Existing issue implementation starts at Stage -1. Enrichment, planning, and clarification are standalone operations that never create branches.
+
+## Reusable Skills
+
+Skills live in `.github/skills/<skill-name>/SKILL.md` and are invoked with `/skill-name` from any agent.
+
+| Skill | Purpose |
+|---|---|
+| `github-issue-enrichment` | Enrich a GitHub issue with full technical brief; marks issue to prevent re-processing |
+| `github-actions-manager` | List workflows, inspect YAML health, check for timeouts and deprecated actions |
+| `github-action-runs-manager` | Fetch run status by PR/branch/commit, retrieve failure logs, classify root causes |
+
+## Constitution
+
+- Location: `docs/constitution.md`
+- Owned by: `architect` (amendments) + `orchestrator` (enforcement)
+- Contains: technology stack, architecture principles, NDI bridge pattern, testing standards, development agreements
+- Every agent must read `docs/constitution.md` before starting work on any feature.
+- Constitution amendments require `architect` review and version increment.
+
+## Technology Stack (summary — see constitution for details)
+- **Platform**: .NET MAUI targeting `net9.0-android`
+- **Language**: C#
+- **UI**: MAUI Shell + XAML
+- **MVVM**: CommunityToolkit.Mvvm
+- **DI**: Microsoft.Extensions.DependencyInjection via MauiProgram.cs
+- **Persistence**: SQLite-net or EF Core + SQLite
+- **NDI bridge**: P/Invoke against `libndi.so` or Android Binding Library (decision in constitution)
+- **Build**: dotnet CLI
+- **Tests**: xUnit, dotnet test
+
+## GitHub Issue Conventions
+- All features start from a GitHub issue enriched by `github.issues-manager`.
+- Issues can originate from the user (existing issue number) or be created fresh by `orchestrator` → `github.issues-manager` (Operation 7) from a natural-language description.
+- Enriched issues contain the marker `<!-- enriched-by-copilot -->` as their last line.
+- **Approval is required** before implementation starts on a newly created issue — `orchestrator` presents the enriched issue and waits for explicit user confirmation.
+- Task-level GitHub issues are created by `feature.breakdown` with label `task`.
+- Feature-level GitHub issues carry label `feature`; bug issues carry label `bug`.
+- Only `github.issues-manager` writes back to GitHub issues on behalf of other agents.
+
+## Branch Naming Convention
+
+Every issue gets a dedicated branch created by `github.issues-manager` (Operation 6) before any work begins.
+
+| Issue type | Branch pattern | Example |
+|---|---|---|
+| Feature (default) | `feature/<issue>-<slug>` | `feature/115-ndi-source-discovery` |
+| Bug (`bug` label) | `bugfix/<issue>-<slug>` | `bugfix/116-crash-on-resume` |
+
+**Slug rules**: lowercase, hyphens, max 5 words from the issue title, articles stripped.
+
+Branches are created via `gh issue develop` so they appear linked in the GitHub issue's "Development" sidebar. All implementation commits go on this branch — never directly on `main`.
 
 ## Workflow Reliability Rules
-- Use local workspace files as the source of truth when present; do not fetch or rely on remote repository contents for files that already exist in the workspace.
-- Before any bulk GitHub issue or PR automation, validate that the MCP server is running and authenticated for interacting with Github.
-- For task-to-issue flows, validate any existing `[#NNN]` reference before reusing it; if the reference is invalid, stale, inaccessible, or does not resolve to the intended issue, replace it.
-- Create issues conservatively in small batches and checkpoint the local identifier-to-issue mapping in the workspace before continuing.
-- After task-to-issue operations, verify that the local `tasks.md` file was actually updated and that every task/user-story line contains exactly one valid issue token.
-- Avoid repeated no-op or placeholder subagent calls; delegate once to the best-fit agent when delegation is useful, then execute the work directly.
-- If remote repository contents do not yet include a local spec or `tasks.md` path, treat the local workspace file as authoritative for planning and task conversion.
+- Always read `docs/constitution.md` before starting any feature work.
+- GitHub is the single source of truth — all features must have a GitHub issue.
+- Every issue must have a linked branch before implementation starts (Stage -1).
+- Validate `gh auth status` before any GitHub write operation.
+- Run `dotnet build` after every implementation task — do not accumulate build failures.
+- Never skip a test stage — fix or explicitly document blockers.
+- Constitution violations must be escalated to `orchestrator`; never proceed silently.

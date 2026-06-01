@@ -83,13 +83,14 @@
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/addDiscoveryServerButton"
+                style="@style/Widget.NdiBrowser.Button"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/discovery_add_server_button" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/saveEditButton"
-                style="@style/Widget.Material3.Button.OutlinedButton"
+                style="@style/Widget.NdiBrowser.Button.Outlined"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="8dp"
@@ -98,7 +99,7 @@
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/cancelEditButton"
-                style="@style/Widget.Material3.Button.TextButton"
+                style="@style/Widget.NdiBrowser.Button.Outlined"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="4dp"
