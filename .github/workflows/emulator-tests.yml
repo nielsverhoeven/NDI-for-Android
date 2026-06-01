@@ -11,7 +11,7 @@ jobs:
   emulator-tests:
     name: Android Emulator UI Tests
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 45
 
     env:
       APPIUM_SERVER_URL: http://127.0.0.1:4723/
@@ -73,8 +73,10 @@ jobs:
           script: |
             adb install "$APK_PATH"
             appium --port 4723 --log-level error &
+            APPIUM_PID=$!
             sleep 15
             ANDROID_APK_PATH="$APK_PATH" dotnet test tests/MauiApp.UITests/MauiApp.UITests.csproj -c Release --logger "trx;LogFileName=emulator-test-results.trx" --results-directory test-results
+            kill $APPIUM_PID 2>/dev/null || true
 
       - name: Upload emulator test results
         if: always()
