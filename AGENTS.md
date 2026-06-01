@@ -88,6 +88,9 @@ Skills live in `.github/skills/<skill-name>/SKILL.md` and are invoked with `/ski
 - **Approval is required** before implementation starts on a newly created issue — `orchestrator` presents the enriched issue and waits for explicit user confirmation.
 - Task-level GitHub issues are created by `feature.breakdown` with label `task`.
 - Feature-level GitHub issues carry label `feature`; bug issues carry label `bug`.
+- Parent/child hierarchy is mandatory: the feature issue is the parent, and all task issues are child issues linked to that parent.
+- Do not create a duplicate parent issue during breakdown when a feature parent issue already exists.
+- Any detected hierarchy mismatch must be repaired by `github.issues-manager` before implementation continues.
 - Only `github.issues-manager` writes back to GitHub issues on behalf of other agents.
 
 ## Branch Naming Convention

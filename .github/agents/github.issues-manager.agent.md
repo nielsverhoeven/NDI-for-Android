@@ -5,7 +5,8 @@ description: >
   from user descriptions, fetching open or closed issues (all or filtered),
   enriching minimal issues with structured technical detail derived from codebase
   analysis, creating and linking feature/bugfix branches to issues, updating issue
-  content on behalf of other agents after they complete work, and maintaining the
+  content on behalf of other agents after they complete work, administrating
+  parent/child issue relationships for feature/task hierarchies, and maintaining the
   enrichment marker so issues are never re-processed unintentionally.
   Use when asked to 'create issue', 'new issue', 'fetch issues', 'enrich issues',
   'update issue content', 'list open issues', 'mark issue as enriched',
@@ -51,6 +52,8 @@ you to:
   (e.g. `tester`, `documenter`, `architect`, `implementer`)
 - **Gate** enrichment so the same issue is never re-processed unless explicitly
   forced
+- **Administer hierarchy** so feature issues remain parents and task issues remain
+  children, with links kept accurate over time
 
 You must never modify source code or specs directly — your scope is GitHub
 issue content only.
@@ -123,6 +126,13 @@ gh issue view <number> --repo <owner/repo> --json number,title,body,labels,assig
 Return the full structured payload to the calling agent. Do not summarise or
 truncate — callers need the full body.
 
+When hierarchy context is required, also resolve:
+- parent issue (if this issue is a child)
+- child issues (if this issue is a parent)
+
+Prefer `gh issue view` fields where available. If unavailable in the local GH
+CLI version, use `gh api graphql` to fetch issue relationship metadata.
+
 ---
 
 ### 3 — Enrich an Issue
@@ -168,6 +178,9 @@ Structure the body with these sections (omit sections that do not apply):
 The HTML comment `<!-- enriched-by-copilot -->` **must be the absolute last
 line** of the body. It is invisible in GitHub's rendered Markdown.
 
+Do not modify issue hierarchy during enrichment unless explicitly asked. Enrichment
+updates issue content, not parent/child links.
+
 #### 3d — Update the issue
 
 ```powershell
@@ -208,6 +221,10 @@ and wants to write a status update or findings back to an issue:
 4. Write the updated body back via `gh issue edit`.
 5. Do **not** touch any other section of the body.
 
+Before writing, verify whether the issue is part of a feature/task hierarchy. If
+it is, preserve that relationship exactly unless the caller explicitly requests a
+hierarchy change.
+
 ---
 
 ### 5 — Bulk Enrichment Scan
@@ -228,6 +245,9 @@ At the end, summarise:
 - How many were already enriched (skipped)
 - How many were newly enriched
 - Any that failed (with reason)
+
+If hierarchy anomalies are discovered while scanning (for example task issues
+without a parent), report them explicitly to the caller.
 
 ---
 
@@ -321,6 +341,7 @@ asking:
 | **Summary** | One sentence from the user's description. |
 | **Scope** | Which area of the app is affected (NDI bridge, UI, data layer, CI, docs…)? |
 | **Why** | Why is this needed? Value or problem statement. |
+| **Parent issue (optional)** | Parent feature issue number when creating a task/sub-issue. |
 
 If type, summary, or scope cannot be inferred, ask exactly one question covering
 all missing fields before proceeding.
@@ -374,6 +395,19 @@ Only apply labels that exist in the repository.
 
 Capture the returned issue URL and extract the issue number from it.
 
+If a parent issue number is provided, link the new issue as a child of that
+parent immediately after creation.
+
+Preferred command (when supported by local GH CLI):
+```powershell
+& "<gh path>" issue edit <child-number> --repo <owner/repo> --add-parent <parent-number>
+```
+
+Fallback when `--add-parent` is unavailable:
+- use `gh api graphql` with the relevant issue relationship mutation supported by
+  the repository
+- verify the link was created before returning success
+
 #### 7f — Confirm and return
 
 ```powershell
@@ -385,8 +419,28 @@ Report to `orchestrator`:
 - Issue URL
 - Title
 - Labels applied
+- Parent issue link status (linked / not requested / failed)
 
 `orchestrator` will then proceed to Stage 0 (enrich the new issue).
+
+---
+
+### 8 — Sync Parent/Child Hierarchy
+
+Use this operation when breakdown, implementation, or issue maintenance needs
+hierarchy verification or repair.
+
+Inputs:
+- Parent feature issue number
+- Child task issue numbers (expected set)
+
+Steps:
+1. Fetch current parent children list and each child's current parent.
+2. For each expected child not linked to the parent, add the link.
+3. For each child linked to a different parent, report and relink only when
+  caller explicitly approves repair.
+4. Confirm all expected children are linked to the expected parent.
+5. Return a reconciliation report: added, unchanged, conflicted, failed.
 
 ---
 
@@ -406,6 +460,10 @@ Report to `orchestrator`:
   flag it explicitly in the "Key Challenges" section rather than omitting it.
 - **New issues must have a clear title and type before creation** — do not
   create a vague or untitled issue.
+- **Never invert hierarchy**: feature issues are parents; task issues are
+  children.
+- **Never silently re-parent** a child issue; report conflicts and require
+  explicit caller approval before changing parent linkage.
 
 ---
 
@@ -419,3 +477,5 @@ Report to `orchestrator`:
 - Branch names must follow the project convention: `feature/<issue>-<slug>` or
   `bugfix/<issue>-<slug>`. Never use arbitrary branch names.
 - Never create a branch directly on `main` — always use a feature or bugfix prefix.
+- For feature/task workflows, verify parent/child links after issue creation,
+  task breakdown, and final issue updates.

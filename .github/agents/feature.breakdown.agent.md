@@ -37,6 +37,7 @@ You convert an approved feature plan into a dependency-ordered task list and cre
 2. `docs/features/<feature-name>/plan.md` — technical approach
 3. `docs/constitution.md` — mandatory task categories (testing, documentation, etc.)
 4. `docs/architecture.md` — module structure to assign tasks to the right layer
+5. Parent feature issue number — the existing feature issue that must own all task child issues
 
 ---
 
@@ -110,9 +111,10 @@ Create `docs/features/<feature-name>/tasks.md`:
 
 After generating `tasks.md`, delegate to `github.issues-manager`:
 - Create one GitHub issue per task (label: `task`)
-- Create one parent GitHub issue for the feature (label: `feature`)
+- Use the existing feature issue as the parent issue (do not create a replacement parent issue when one already exists)
 - Write issue numbers back into `tasks.md`
 - Link task issues as sub-issues of the parent feature issue
+- If a task issue is linked to the wrong parent, request hierarchy repair via `github.issues-manager` before implementation starts
 
 ---
 
@@ -122,3 +124,4 @@ After generating `tasks.md`, delegate to `github.issues-manager`:
 - No task may span multiple layers — split if needed.
 - Always include testing and documentation tasks — they are not optional.
 - Never create tasks that violate `docs/constitution.md` principles.
+- Never invert issue hierarchy: feature issue is parent; task issues are children.
