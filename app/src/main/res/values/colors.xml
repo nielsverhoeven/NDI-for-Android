@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="purple_200">#FFBB86FC</color>
+    <color name="purple_500">#FF6200EE</color>
+    <color name="purple_700">#FF3700B3</color>
+    <color name="teal_200">#FF03DAC5</color>
+    <color name="teal_700">#FF018786</color>
+    <color name="black">#FF000000</color>
+    <color name="white">#FFFFFFFF</color>
+    <color name="theme_accent_blue">#1565C0</color>
+    <color name="theme_accent_teal">#00897B</color>
+    <color name="theme_accent_green">#2E7D32</color>
+    <color name="theme_accent_orange">#EF6C00</color>
+    <color name="theme_accent_red">#C62828</color>
+    <color name="theme_accent_pink">#AD1457</color>
+
+    <!-- Fluent + Electron semantic baseline tokens (feature 032) -->
+    <color name="fluent_electron_surface_root">#FFF6F8FC</color>
+    <color name="fluent_electron_surface_card">#FFFFFFFF</color>
+    <color name="fluent_electron_stroke_subtle">#1F1A1A1A</color>
+    <color name="fluent_electron_text_primary">#FF111827</color>
+    <color name="fluent_electron_text_secondary">#FF4B5563</color>
+    <color name="fluent_electron_state_success">#FF0F766E</color>
+    <color name="fluent_electron_state_warning">#FFB45309</color>
+    <color name="fluent_electron_state_error">#FFB42318</color>
+</resources>

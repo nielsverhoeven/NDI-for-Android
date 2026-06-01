@@ -1,13 +1,48 @@
-name: E2E Matrix Nightly (disabled)
-# Superseded by maui-ci.yml. The testing/e2e paths no longer exist.
+name: E2E Matrix Nightly
+
 on:
+  schedule:
+    - cron: '0 3 * * *'
   workflow_dispatch:
-    inputs:
-      reason:
-        description: 'Disabled — testing/e2e removed in #133.'
-        required: false
+
 jobs:
-  noop:
-    runs-on: ubuntu-latest
+  e2e-matrix:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        profile: [api34, api35]
+
     steps:
-      - run: echo "E2E Matrix Nightly is disabled. See maui-ci.yml."
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: testing/e2e/package-lock.json
+
+      - name: Install e2e dependencies
+        shell: pwsh
+        run: npm --prefix testing/e2e ci
+
+      - name: Validate command contract (dry-run)
+        shell: pwsh
+        run: pwsh ./testing/e2e/scripts/validate-command-contract.ps1 -Execute
+
+      - name: Run matrix profiles
+        shell: pwsh
+        env:
+          E2E_MATRIX_PROFILES: ${{ matrix.profile }}
+        run: npm --prefix testing/e2e run test:matrix
+
+      - name: Upload matrix artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-matrix-artifacts-${{ matrix.profile }}
+          path: |
+            testing/e2e/artifacts/**
+            testing/e2e/test-results/**
+            testing/e2e/playwright-report/**

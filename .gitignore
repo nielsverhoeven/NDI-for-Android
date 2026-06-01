@@ -1,43 +1,35 @@
-# .NET / MAUI build artifacts
-**/bin/
-**/obj/
-
-# Android / Gradle (legacy — Kotlin source removed in #133)
 .gradle/
 build/
 **/build/
+# .NET build artifacts
+**/bin/
+**/obj/
+out/
+.idea/
+.vscode/
 *.iml
 *.class
 *.jar
-local.properties
-.cxx/
-**/.cxx/
-externalNativeBuild/
-captures/
-/.kotlin/
-
-# IDE
-.idea/
-.vscode/
-
-# OS / editor
+!gradle/wrapper/gradle-wrapper.jar
 *.log
 *.tmp
 *.swp
 .env*
 .DS_Store
 Thumbs.db
-
-# Node / Playwright (legacy test infra)
 node_modules/
 testing/e2e/node_modules/
 testing/e2e/playwright-report/
 testing/e2e/test-results/
 testing/e2e/artifacts/
-testing/e2e/testing/e2e/
-
-# Misc
 test-results/_tmp_*.txt
+local.properties
+.cxx/
+**/.cxx/
+externalNativeBuild/
+captures/
+/.kotlin/
 exports/*.apk
 crash_capture.txt
 live_log.txt
+testing/e2e/testing/e2e/

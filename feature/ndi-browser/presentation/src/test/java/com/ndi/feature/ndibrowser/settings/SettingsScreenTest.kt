@@ -1,0 +1,109 @@
+package com.ndi.feature.ndibrowser.settings
+
+import com.ndi.core.model.NdiSettingsSnapshot
+import com.ndi.feature.ndibrowser.domain.repository.NdiSettingsRepository
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.setMain
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Before
+import org.junit.Test
+import java.io.File
+
+@OptIn(ExperimentalCoroutinesApi::class)
+class SettingsScreenTest {
+
+    private val dispatcher = StandardTestDispatcher()
+
+    @Before
+    fun setUp() {
+        Dispatchers.setMain(dispatcher)
+    }
+
+    @After
+    fun tearDown() {
+        Dispatchers.resetMain()
+    }
+
+    @Test
+    fun appearanceSelection_exposesInlineAppearanceControlContract() = runTest {
+        val viewModel = SettingsViewModel(CompactTestSettingsRepository())
+        viewModel.onSettingsCategorySelected(SettingsViewModel.CATEGORY_APPEARANCE)
+
+        val state = viewModel.uiState.value.settingsDetailState
+        assertEquals(SettingsViewModel.CATEGORY_APPEARANCE, state.selectedCategoryId)
+        assertTrue(state.groups.first().controls.contains("theme-mode"))
+        assertTrue(state.groups.first().controls.contains("accent-palette"))
+    }
+
+    @Test
+    fun discoverySelection_exposesDiscoveryControlGroupInCompactFlow() = runTest {
+        val viewModel = SettingsViewModel(CompactTestSettingsRepository())
+        viewModel.onLayoutContextChanged(widthDp = 411, isLandscape = false)
+        viewModel.onSettingsCategorySelected(SettingsViewModel.CATEGORY_DISCOVERY)
+
+        val state = viewModel.uiState.value.settingsDetailState
+        assertEquals(SettingsViewModel.CATEGORY_DISCOVERY, state.selectedCategoryId)
+        assertTrue(state.groups.first().controls.contains("discovery-servers"))
+    }
+
+    @Test
+    fun accessibilityContract_appearanceControlsRemainReadableAndFocusable() = runTest {
+        val viewModel = SettingsViewModel(CompactTestSettingsRepository())
+        viewModel.onLayoutContextChanged(widthDp = 411, isLandscape = false)
+        viewModel.onSettingsCategorySelected(SettingsViewModel.CATEGORY_APPEARANCE)
+
+        val controls = viewModel.uiState.value.settingsDetailState.groups.first().controls
+        assertTrue(controls.contains("theme-mode"))
+        assertTrue(controls.contains("accent-palette"))
+    }
+
+    @Test
+    fun readabilityAndFocusContract_compactSettingsButtonsRemainActionable() {
+        val settingsLayout = File("src/main/res/layout/fragment_settings.xml").readText()
+
+        assertTrue(settingsLayout.contains("android:id=\"@+id/saveSettingsButton\""))
+        assertTrue(settingsLayout.contains("android:id=\"@+id/openDiscoveryServersButton\""))
+        assertTrue(settingsLayout.contains("android:layout_marginTop=\"16dp\""))
+    }
+
+    @Test
+    fun fluentButtonShapeContract_settingsButtonsUseCanonicalStyles() {
+        val settingsLayout = File("src/main/res/layout/fragment_settings.xml").readText()
+        val settingsNavPanel = File("src/main/res/layout/view_settings_main_navigation_panel.xml").readText()
+
+        assertTrue(settingsLayout.contains("android:id=\"@+id/saveSettingsButton\""))
+        assertTrue(settingsLayout.contains("android:id=\"@+id/settingsApplyButton\""))
+        assertTrue(settingsLayout.contains("style=\"@style/Widget.NdiBrowser.Button\""))
+        assertTrue(settingsLayout.contains("android:id=\"@+id/openDiscoveryServersButton\""))
+        assertTrue(settingsLayout.contains("style=\"@style/Widget.NdiBrowser.Button.Outlined\""))
+        assertTrue(settingsNavPanel.contains("style=\"@style/Widget.NdiBrowser.Button.Outlined\""))
+    }
+}
+
+private class CompactTestSettingsRepository : NdiSettingsRepository {
+    private val flow = MutableStateFlow(
+        NdiSettingsSnapshot(
+            discoveryServerInput = null,
+            developerModeEnabled = false,
+            themeMode = com.ndi.core.model.NdiThemeMode.SYSTEM,
+            accentColorId = "accent_teal",
+            updatedAtEpochMillis = 0L,
+        ),
+    )
+
+    override suspend fun getSettings(): NdiSettingsSnapshot = flow.value
+
+    override suspend fun saveSettings(snapshot: NdiSettingsSnapshot) {
+        flow.value = snapshot
+    }
+
+    override fun observeSettings(): Flow<NdiSettingsSnapshot> = flow
+}

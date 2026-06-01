@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="ShapeAppearance.NdiBrowser.Button" parent="ShapeAppearance.Material3.Corner.Full">
+        <item name="cornerSize">8dp</item>
+    </style>
+
+    <style name="Widget.NdiBrowser.Button" parent="Widget.Material3.Button">
+        <item name="shapeAppearance">@style/ShapeAppearance.NdiBrowser.Button</item>
+    </style>
+
+    <style name="Widget.NdiBrowser.Button.Outlined" parent="Widget.Material3.Button.OutlinedButton">
+        <item name="shapeAppearance">@style/ShapeAppearance.NdiBrowser.Button</item>
+    </style>
+
+    <style name="Widget.NdiBrowser.Button.Tonal" parent="Widget.Material3.Button.TonalButton">
+        <item name="shapeAppearance">@style/ShapeAppearance.NdiBrowser.Button</item>
+    </style>
+
+    <style name="Widget.NdiBrowser.Button.Icon" parent="Widget.Material3.Button.IconButton">
+        <item name="shapeAppearance">@style/ShapeAppearance.NdiBrowser.Button</item>
+    </style>
+</resources>

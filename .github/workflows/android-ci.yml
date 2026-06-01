@@ -1,15 +1,87 @@
-name: Android CI (disabled)
-# This workflow has been superseded by maui-ci.yml following the migration to .NET MAUI.
-# It is kept here as a historical reference only and will never trigger.
+name: Android CI
+
 on:
-  workflow_dispatch:
-    inputs:
-      reason:
-        description: 'This workflow is disabled. Use maui-ci.yml instead.'
-        required: false
+  push:
+    branches:
+      - main
+  pull_request:
 
 jobs:
-  noop:
-    runs-on: ubuntu-latest
+  preflight:
+    runs-on: windows-latest
+
     steps:
-      - run: echo "Android CI is disabled. The project has migrated to .NET MAUI. See maui-ci.yml."
+      - uses: actions/checkout@v4
+
+      - name: Set up repo-supported JDK baseline
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Expose Android SDK root
+        shell: pwsh
+        run: |
+          "ANDROID_SDK_ROOT=$env:ANDROID_HOME" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Verify Android prerequisites
+        shell: pwsh
+        run: pwsh ./scripts/verify-android-prereqs.ps1 -CiMode -AllowMissingNdiSdk
+        # This step automatically installs missing Android SDK packages if needed
+
+  e2e-primary:
+    runs-on: windows-latest
+    needs: preflight
+    if: ${{ github.event_name == 'pull_request' || github.ref == 'refs/heads/main' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: testing/e2e/package-lock.json
+
+      - name: Install e2e dependencies
+        shell: pwsh
+        run: npm --prefix testing/e2e ci
+
+      - name: Install Playwright browsers
+        shell: pwsh
+        run: npm --prefix testing/e2e exec playwright install --with-deps
+
+      - name: Run primary profile e2e gate
+        shell: pwsh
+        run: |
+          pwsh ./testing/e2e/scripts/validate-command-contract.ps1 -Execute
+          pwsh ./testing/e2e/scripts/run-primary-pr-e2e.ps1 -Profile pr-primary
+
+      - name: Upload e2e artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-primary-artifacts
+          path: |
+            testing/e2e/artifacts/primary-status.json
+            testing/e2e/artifacts/triage-summary.json
+            test-results/024-us4-ci-validation.md
+
+      - name: Upload existing regression artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-primary-support-reports
+          path: |
+            testing/e2e/artifacts/**
+            test-results/024-*.md
+
+      - name: Upload shared e2e logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-primary-shared-logs
+          path: |
+            testing/e2e/test-results/**
+            testing/e2e/playwright-report/**
