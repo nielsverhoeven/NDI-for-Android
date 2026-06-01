@@ -11,7 +11,7 @@ jobs:
   emulator-tests:
     name: Android Emulator UI Tests
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
 
     env:
       APPIUM_SERVER_URL: http://127.0.0.1:4723/
@@ -36,10 +36,13 @@ jobs:
       - name: Restore dependencies
         run: dotnet restore NdiForAndroid.sln
 
-      - name: Build debug APK
+      - name: Build Release APK
         run: |
-          dotnet publish src/MauiApp/NdiForAndroid.csproj -f net10.0-android -c Debug -o publish-output
-          APK_PATH=$(find publish-output -name "*.apk" | head -1)
+          dotnet publish src/MauiApp/NdiForAndroid.csproj -f net10.0-android -c Release -o publish-output
+          APK_PATH=$(find publish-output -name "*-Signed.apk" | head -1)
+          if [ -z "$APK_PATH" ]; then
+            APK_PATH=$(find publish-output -name "*.apk" | head -1)
+          fi
           echo "APK_PATH=$APK_PATH" >> $GITHUB_ENV
           echo "Found APK: $APK_PATH"
 
@@ -70,7 +73,7 @@ jobs:
           script: |
             adb install "$APK_PATH"
             appium --port 4723 --log-level error &
-            sleep 5
+            sleep 15
             ANDROID_APK_PATH="$APK_PATH" dotnet test tests/MauiApp.UITests/MauiApp.UITests.csproj -c Release --logger "trx;LogFileName=emulator-test-results.trx" --results-directory test-results
 
       - name: Upload emulator test results
