@@ -8,10 +8,59 @@ on:
   workflow_dispatch:
 
 jobs:
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Job 1: Build the APK on a plain runner (no emulator overhead).
+  # Uploads the APK as an artifact so the emulator job can skip the build.
+  # ─────────────────────────────────────────────────────────────────────────────
+  build-apk:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
+          restore-keys: ${{ runner.os }}-nuget-
+
+      - name: Install MAUI Android workload
+        run: dotnet workload install maui-android
+
+      - name: Restore dependencies
+        run: dotnet restore NdiForAndroid.sln
+
+      - name: Build Debug APK
+        run: |
+          dotnet publish src/MauiApp/NdiForAndroid.csproj -f net10.0-android -c Debug -o publish-output
+          APK_PATH=$(find publish-output -name "*.apk" | head -1)
+          echo "APK_PATH=$APK_PATH" >> $GITHUB_ENV
+          echo "Found APK: $APK_PATH"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-apk
+          path: ${{ env.APK_PATH }}
+          retention-days: 1
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Job 2: Download the pre-built APK and run it on an Android emulator.
+  # No MAUI workload or full solution build needed here.
+  # ─────────────────────────────────────────────────────────────────────────────
   emulator-tests:
     name: Android Emulator UI Tests
+    needs: build-apk
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 25
 
     env:
       APPIUM_SERVER_URL: http://127.0.0.1:4723/
@@ -25,26 +74,32 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Setup .NET
+      - name: Setup .NET (for dotnet test only)
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
 
-      - name: Install MAUI Android workload
-        run: dotnet workload install maui-android
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
+          restore-keys: ${{ runner.os }}-nuget-
 
-      - name: Restore dependencies
-        run: dotnet restore NdiForAndroid.sln
+      - name: Restore UITests project
+        run: dotnet restore tests/MauiApp.UITests/MauiApp.UITests.csproj
 
-      - name: Build Release APK
+      - name: Download APK artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: android-apk
+          path: apk
+
+      - name: Locate downloaded APK
         run: |
-          dotnet publish src/MauiApp/NdiForAndroid.csproj -f net10.0-android -c Release -o publish-output
-          APK_PATH=$(find publish-output -name "*-Signed.apk" | head -1)
-          if [ -z "$APK_PATH" ]; then
-            APK_PATH=$(find publish-output -name "*.apk" | head -1)
-          fi
+          APK_PATH=$(find apk -name "*.apk" | head -1)
           echo "APK_PATH=$APK_PATH" >> $GITHUB_ENV
-          echo "Found APK: $APK_PATH"
+          echo "Using APK: $APK_PATH"
 
       - name: Setup Node.js for Appium
         uses: actions/setup-node@v4
@@ -87,7 +142,9 @@ jobs:
               fi
               sleep 1
             done
-            ANDROID_APK_PATH="$APK_PATH" dotnet test tests/MauiApp.UITests/MauiApp.UITests.csproj -c Release --logger "trx;LogFileName=emulator-test-results.trx" --results-directory test-results
+            ANDROID_APK_PATH="$APK_PATH" dotnet test tests/MauiApp.UITests/MauiApp.UITests.csproj -c Release \
+              --logger "trx;LogFileName=emulator-test-results.trx" \
+              --results-directory test-results
             TEST_EXIT=$?
             kill $APPIUM_PID 2>/dev/null || true
             exit $TEST_EXIT
