@@ -170,3 +170,54 @@ See `docs/features/maui-migration/tasks.md` for the T001–T012 issue mapping.
 | T010 | #125 | ⏭ MAUI UI tests (deferred) |
 | T011 | #126 | ✅ CI workflow |
 | T012 | #127 | ✅ Documentation (this file) |
+
+---
+
+## Running Emulator UI Tests Locally
+
+### Prerequisites
+
+1. **Android SDK** with API 35 emulator image:
+   ```bash
+   sdkmanager "system-images;android-35;google_apis;x86_64"
+   avdmanager create avd -n maui-test -k "system-images;android-35;google_apis;x86_64"
+   ```
+
+2. **Node.js** (v20+) with Appium and UIAutomator2 driver:
+   ```bash
+   npm install -g appium
+   appium driver install uiautomator2
+   ```
+
+3. **Build the debug APK**:
+   ```bash
+   dotnet publish src/MauiApp/NdiForAndroid.csproj -f net10.0-android -c Debug -o publish-output
+   ```
+
+### Running the tests
+
+1. Start the emulator: `emulator -avd maui-test -no-window &`
+2. Wait for boot: `adb wait-for-device`
+3. Start Appium: `appium &`
+4. Run tests:
+   ```bash
+   APPIUM_SERVER_URL=http://127.0.0.1:4723/ \
+   ANDROID_APK_PATH=$(find publish-output -name "*.apk" | head -1) \
+   dotnet test tests/MauiApp.UITests/MauiApp.UITests.csproj -c Release
+   ```
+
+> **Note**: If `ANDROID_APK_PATH` is not set or the Appium server is not reachable,
+> all tests in `MauiApp.UITests` are skipped automatically — this is the expected
+> behaviour in CI environments without an emulator.
+
+### CI behaviour
+
+The `emulator-tests.yml` workflow is gated on the `ANDROID_EMULATOR_AVAILABLE`
+repository secret. When this secret is set, the workflow:
+
+1. Boots an Android 35 (x86_64) emulator using `reactivecircus/android-emulator-runner`
+2. Builds and installs the debug APK via `adb install`
+3. Starts an Appium server and runs `dotnet test tests/MauiApp.UITests/`
+4. Uploads test results as a CI artifact
+
+When the secret is absent (default for forks and local PRs), the job is skipped entirely.
