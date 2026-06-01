@@ -82,6 +82,10 @@ Extract:
 - Current body / description
 - Labels and assignees
 - Linked PRs or references
+- Parent/child relationship context (is this a parent feature issue, a child task issue, or standalone)
+
+If relationship metadata is not available in `gh issue view` output for your GH
+CLI version, query it with `gh api graphql`.
 
 ---
 
@@ -115,6 +119,11 @@ genuinely not applicable):
 ## Overview
 One-paragraph plain-English summary of what this issue requests and why.
 
+## Issue Hierarchy
+- Parent issue: #<number> or `none`
+- Child issues: [#<number>, ...] or `none`
+- Relationship intent: feature parent / task child / standalone
+
 ## Current Architecture
 Table or bullet list: layer → technology, covering the parts of the codebase
 that are relevant to this issue. Include module names, key files, and the
@@ -145,6 +154,9 @@ Links to relevant documentation, SDKs, prior specs, or related issues/PRs.
 Keep the tone factual and precise. Avoid vague language ("improve", "better").
 Every claim should trace back to something observed in the codebase or the
 original issue description.
+
+Do not change parent/child links during enrichment unless the user explicitly
+asks for hierarchy repair.
 
 ---
 
@@ -196,3 +208,6 @@ and report the issue URL to the user.
 - The enriched issue must be complete enough that a separate agent — given only
   the issue body and the repository — can begin planning without further
   clarification.
+- Preserve existing issue hierarchy. If the hierarchy is invalid or missing,
+  document it in "Key Challenges & Decisions Required" and recommend repair via
+  the issue-management workflow instead of silently changing links.

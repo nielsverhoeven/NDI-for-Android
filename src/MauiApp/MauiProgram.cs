@@ -1,0 +1,62 @@
+using Microsoft.Extensions.Logging;
+using NdiForAndroid.Features.Settings.Repositories;
+using NdiForAndroid.Features.Settings.ViewModels;
+using NdiForAndroid.Features.Sources.Repositories;
+using NdiForAndroid.Features.Sources.ViewModels;
+using NdiForAndroid.Features.Viewer.ViewModels;
+using NdiForAndroid.Features.Output.ViewModels;
+using NdiForAndroid.NdiBridge;
+using NdiForAndroid.Data;
+using NdiForAndroid.Services;
+
+namespace NdiForAndroid;
+
+public static class MauiProgram
+{
+    public static MauiApp CreateMauiApp()
+    {
+        var builder = MauiApp.CreateBuilder();
+
+        builder
+            .UseMauiApp<App>()
+            .ConfigureFonts(fonts =>
+            {
+                fonts.AddFont("OpenSans-Regular.ttf", "OpenSansRegular");
+                fonts.AddFont("OpenSans-Semibold.ttf", "OpenSansSemibold");
+            });
+
+#if DEBUG
+        builder.Logging.AddDebug();
+#endif
+
+        // Data
+        builder.Services.AddSingleton<NdiDatabase>();
+
+        // NDI Bridge
+        builder.Services.AddSingleton<INdiDiscoveryBridge, NdiDiscoveryBridge>();
+        builder.Services.AddSingleton<INdiViewerBridge, NdiViewerBridge>();
+        builder.Services.AddSingleton<INdiOutputBridge, NdiOutputBridge>();
+
+        // Repositories
+        builder.Services.AddSingleton<ISourceRepository, SourceRepository>();
+        builder.Services.AddSingleton<ISettingsRepository, SettingsRepository>();
+
+        // Services
+        builder.Services.AddSingleton<ITelemetryService, TelemetryService>();
+        builder.Services.AddSingleton<INavigationService, ShellNavigationService>();
+
+        // ViewModels
+        builder.Services.AddTransient<SourceListViewModel>();
+        builder.Services.AddTransient<ViewerViewModel>();
+        builder.Services.AddTransient<OutputViewModel>();
+        builder.Services.AddTransient<SettingsViewModel>();
+
+        // Views
+        builder.Services.AddTransient<Features.Sources.Views.SourceListPage>();
+        builder.Services.AddTransient<Features.Viewer.Views.ViewerPage>();
+        builder.Services.AddTransient<Features.Output.Views.OutputPage>();
+        builder.Services.AddTransient<Features.Settings.Views.SettingsPage>();
+
+        return builder.Build();
+    }
+}
