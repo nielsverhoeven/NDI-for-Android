@@ -23,14 +23,13 @@ public sealed class AppLaunchTests
         var driver = _fixture.Driver!;
         var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(10));
 
-        // The Sources page is the shell home — look for a TextView with text "Sources"
-        // or the accessibility id on the tab/title.
+        // The Sources page is the shell home — look for the Sources tab accessibility id
         var sourcesElement = wait.Until(d =>
         {
             try
             {
                 return d.FindElement(By.XPath(
-                    "//*[@text='Sources' or @content-desc='Sources']"));
+                    "//*[@content-desc='Sources' or @text='NDI Sources']"));
             }
             catch (NoSuchElementException)
             {
@@ -55,7 +54,7 @@ public sealed class AppLaunchTests
             try
             {
                 return d.FindElement(By.XPath(
-                    "//*[@text='Settings' or @content-desc='Settings']"));
+                    "//*[@content-desc='Settings']"));
             }
             catch (NoSuchElementException)
             {
@@ -66,13 +65,14 @@ public sealed class AppLaunchTests
         Assert.NotNull(settingsTab);
         settingsTab!.Click();
 
-        // Wait for Settings page to appear (look for a heading or any Settings label)
-        var settingsPage = wait.Until(d =>
+        // Wait for Settings page content — look for a label unique to that page
+        var settingsPageWait = new WebDriverWait(driver, TimeSpan.FromSeconds(20));
+        var settingsPage = settingsPageWait.Until(d =>
         {
             try
             {
                 return d.FindElement(By.XPath(
-                    "//*[@text='Settings' or @content-desc='Settings Page']"));
+                    "//*[@text='Discovery Server' or @text='Save' or @text='Settings saved.']"));
             }
             catch (NoSuchElementException)
             {
@@ -82,15 +82,29 @@ public sealed class AppLaunchTests
 
         Assert.NotNull(settingsPage);
 
-        // Navigate back to Sources
-        driver.Navigate().Back();
+        // Navigate back to Sources by tapping the Sources tab (Back press closes the Shell app)
+        var sourcesTab = wait.Until(d =>
+        {
+            try
+            {
+                return d.FindElement(By.XPath(
+                    "//*[@content-desc='Sources']"));
+            }
+            catch (NoSuchElementException)
+            {
+                return null;
+            }
+        });
+
+        Assert.NotNull(sourcesTab);
+        sourcesTab!.Click();
 
         var sourcesElement = wait.Until(d =>
         {
             try
             {
                 return d.FindElement(By.XPath(
-                    "//*[@text='Sources' or @content-desc='Sources']"));
+                    "//*[@content-desc='Sources' or @text='NDI Sources']"));
             }
             catch (NoSuchElementException)
             {

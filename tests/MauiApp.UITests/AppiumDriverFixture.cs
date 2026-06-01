@@ -63,10 +63,11 @@ public sealed class AppiumDriverFixture : IAsyncLifetime
 
         var options = new AppiumOptions();
         options.PlatformName = "Android";
-        options.AddAdditionalAppiumOption("appium:automationName", "UIAutomator2");
-        options.AddAdditionalAppiumOption("appium:app", apkPath);
+        options.AutomationName = "UIAutomator2";
+        options.App = apkPath;
         options.AddAdditionalAppiumOption("appium:appPackage", "com.ndi.android");
-        options.AddAdditionalAppiumOption("appium:appActivity", "com.ndi.android.MainActivity");
+        // appActivity intentionally omitted — Appium auto-detects the launcher activity from the APK manifest.
+        // The MAUI-generated activity class name (crc64... hash) changes between builds.
         options.AddAdditionalAppiumOption("appium:noReset", false);
         options.AddAdditionalAppiumOption("appium:newCommandTimeout", 60);
 

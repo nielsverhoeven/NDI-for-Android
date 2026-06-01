@@ -30,11 +30,13 @@ public class SettingsEntity
 public sealed class NdiDatabase
 {
     private readonly SQLiteAsyncConnection _connection;
+    private readonly Task _initTask;
 
     public NdiDatabase()
     {
         var dbPath = Path.Combine(FileSystem.AppDataDirectory, "ndi.db3");
         _connection = new SQLiteAsyncConnection(dbPath);
+        _initTask = InitAsync();
     }
 
     public async Task InitAsync()
@@ -43,8 +45,11 @@ public sealed class NdiDatabase
         await _connection.CreateTableAsync<SettingsEntity>();
     }
 
+    private Task EnsureInitializedAsync() => _initTask;
+
     public async Task UpsertSourceAsync(NdiSource source)
     {
+        await EnsureInitializedAsync();
         var entity = new SourceEntity
         {
             SourceId = source.SourceId,
@@ -59,17 +64,22 @@ public sealed class NdiDatabase
 
     public async Task<IReadOnlyList<NdiSource>> GetSourcesAsync()
     {
+        await EnsureInitializedAsync();
         var entities = await _connection.Table<SourceEntity>().ToListAsync();
         return entities.Select(e => new NdiSource(
             e.SourceId, e.DisplayName, e.EndpointAddress, e.IsAvailable,
             e.LastSeenAtEpochMillis, e.PreviouslyConnected)).ToList();
     }
 
-    public Task DeleteSourceAsync(string sourceId) =>
-        _connection.DeleteAsync<SourceEntity>(sourceId);
+    public async Task DeleteSourceAsync(string sourceId)
+    {
+        await EnsureInitializedAsync();
+        await _connection.DeleteAsync<SourceEntity>(sourceId);
+    }
 
     public async Task<NdiSettingsSnapshot> GetSettingsAsync()
     {
+        await EnsureInitializedAsync();
         var entity = await _connection.FindAsync<SettingsEntity>(1);
         if (entity is null)
             return new NdiSettingsSnapshot(null, null, false, 0);
@@ -77,8 +87,9 @@ public sealed class NdiDatabase
             entity.DiscoveryHost, entity.DiscoveryPort, entity.DeveloperModeEnabled, entity.UpdatedAtEpochMillis);
     }
 
-    public Task SaveSettingsAsync(NdiSettingsSnapshot settings)
+    public async Task SaveSettingsAsync(NdiSettingsSnapshot settings)
     {
+        await EnsureInitializedAsync();
         var entity = new SettingsEntity
         {
             Id = 1,
@@ -87,6 +98,6 @@ public sealed class NdiDatabase
             DeveloperModeEnabled = settings.DeveloperModeEnabled,
             UpdatedAtEpochMillis = settings.UpdatedAtEpochMillis,
         };
-        return _connection.InsertOrReplaceAsync(entity);
+        await _connection.InsertOrReplaceAsync(entity);
     }
 }
