@@ -10,7 +10,7 @@ This document is the authoritative source for technology choices, architecture p
 
 | Concern | Choice | Notes |
 |---|---|---|
-| Platform | .NET MAUI | Targeting `net9.0-android` |
+| Platform | .NET MAUI | Targeting `net10.0-android` |
 | Language | C# 12 | Nullable reference types enabled |
 | UI | MAUI Shell + XAML | URI-based navigation |
 | MVVM | CommunityToolkit.Mvvm | `ObservableObject`, `[RelayCommand]`, `[ObservableProperty]` |
