@@ -1,6 +1,12 @@
 name: Emulator Tests
 
 on:
+  push:
+    branches:
+      - main
+      - 'feature/**'
+      - 'bugfix/**'
+  pull_request:
   workflow_dispatch:
 
 jobs:
