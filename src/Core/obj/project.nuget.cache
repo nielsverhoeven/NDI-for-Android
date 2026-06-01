@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "dgSpecHash": "cmwgKKEKH84=",
+  "success": true,
+  "projectFilePath": "C:\\repos-github\\NDI-for-Android\\src\\Core\\NdiForAndroid.Core.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\Niels\\.nuget\\packages\\communitytoolkit.mvvm\\8.4.2\\communitytoolkit.mvvm.8.4.2.nupkg.sha512",
+    "C:\\Users\\Niels\\.nuget\\packages\\microsoft.extensions.dependencyinjection.abstractions\\10.0.8\\microsoft.extensions.dependencyinjection.abstractions.10.0.8.nupkg.sha512"
+  ],
+  "logs": []
+}
