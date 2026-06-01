@@ -74,9 +74,23 @@ jobs:
             adb install "$APK_PATH"
             appium --port 4723 --log-level error &
             APPIUM_PID=$!
-            sleep 15
+            echo "Waiting for Appium to be ready..."
+            for i in $(seq 1 60); do
+              if curl -sf http://127.0.0.1:4723/status > /dev/null 2>&1; then
+                echo "Appium ready after ${i}s"
+                break
+              fi
+              if [ $i -eq 60 ]; then
+                echo "Appium did not start within 60 seconds"
+                kill $APPIUM_PID 2>/dev/null || true
+                exit 1
+              fi
+              sleep 1
+            done
             ANDROID_APK_PATH="$APK_PATH" dotnet test tests/MauiApp.UITests/MauiApp.UITests.csproj -c Release --logger "trx;LogFileName=emulator-test-results.trx" --results-directory test-results
+            TEST_EXIT=$?
             kill $APPIUM_PID 2>/dev/null || true
+            exit $TEST_EXIT
 
       - name: Upload emulator test results
         if: always()
