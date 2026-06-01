@@ -41,7 +41,7 @@
 - [ ] For visual UI additions/changes: emulator Playwright e2e tests are explicitly planned
 - [ ] For visual UI additions/changes: existing Playwright e2e regression run is explicitly planned
 - [ ] For shared persistence/settings changes: regression tests for state-preservation are explicitly planned
-- [ ] Material 3 compliance verification planned for UI changes
+- [ ] Fluent + Electron design-language compliance verification planned for UI changes
 - [ ] Battery/background execution impact evaluated
 - [ ] Offline-first and Room persistence constraints respected (if applicable)
 - [ ] Least-permission/security implications documented

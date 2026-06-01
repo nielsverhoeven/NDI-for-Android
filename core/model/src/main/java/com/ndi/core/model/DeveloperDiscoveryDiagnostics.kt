@@ -15,4 +15,7 @@ data class DeveloperDiscoveryDiagnostics(
     val serverStatusRollup: List<DiscoveryServerCheckStatus> = emptyList(),
     val recentDiscoveryLogs: List<String> = emptyList(),
     val compatibilityGuidance: List<CompatibilityGuidance> = emptyList(),
+    // T007: Per-run diagnostics for discovery routing
+    val lastDiscoveryRunResult: DiscoveryRunResult? = null,
+    val lastPerServerDiagnostics: List<DiscoveryServerDiagnosticRecord> = emptyList(),
 )

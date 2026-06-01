@@ -400,6 +400,65 @@ interface CachedSourceDiscoveryServerCrossRefDao {
     )
 }
 
+// ---- T009: Discovery Run Result and Per-Server Diagnostics ----
+
+@Entity(tableName = "discovery_run_results")
+data class DiscoveryRunResultEntity(
+    @PrimaryKey
+    val runId: String,
+    val mode: String,
+    val durationMillis: Long,
+    val status: String,
+    val sourceCount: Int,
+    val diagnosticCode: String?,
+    val diagnosticMessage: String?,
+    val recordedAtEpochMillis: Long,
+)
+
+@Entity(
+    tableName = "discovery_server_diagnostics",
+    indices = [
+        Index(value = ["runId"]),
+        Index(value = ["serverId"]),
+    ],
+)
+data class DiscoveryServerDiagnosticRecordEntity(
+    @PrimaryKey(autoGenerate = true)
+    val id: Long = 0,
+    val runId: String,
+    val serverId: String,
+    val endpoint: String,
+    val attemptStartedAtEpochMillis: Long,
+    val durationMillis: Long,
+    val status: String,
+    val errorDetail: String?,
+    val recordedAtEpochMillis: Long,
+)
+
+@Dao
+interface DiscoveryRunResultDao {
+    @Query("SELECT * FROM discovery_run_results ORDER BY recordedAtEpochMillis DESC LIMIT 1")
+    suspend fun getLatest(): DiscoveryRunResultEntity?
+
+    @Query("SELECT * FROM discovery_run_results ORDER BY recordedAtEpochMillis DESC LIMIT 1")
+    fun observeLatest(): Flow<DiscoveryRunResultEntity?>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entity: DiscoveryRunResultEntity)
+}
+
+@Dao
+interface DiscoveryServerDiagnosticRecordDao {
+    @Query("SELECT * FROM discovery_server_diagnostics WHERE runId = :runId ORDER BY attemptStartedAtEpochMillis ASC")
+    suspend fun getByRunId(runId: String): List<DiscoveryServerDiagnosticRecordEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entity: DiscoveryServerDiagnosticRecordEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(entities: List<DiscoveryServerDiagnosticRecordEntity>)
+}
+
 @Database(
     entities = [
         UserSelectionEntity::class,
@@ -413,8 +472,10 @@ interface CachedSourceDiscoveryServerCrossRefDao {
         DiscoveryServerCheckStatusEntity::class,
         CachedSourceEntity::class,
         CachedSourceDiscoveryServerCrossRefEntity::class,
+        DiscoveryRunResultEntity::class,
+        DiscoveryServerDiagnosticRecordEntity::class,
     ],
-    version = 9,
+    version = 10,
     exportSchema = false,
 )
 abstract class NdiDatabase : RoomDatabase() {
@@ -437,6 +498,8 @@ abstract class NdiDatabase : RoomDatabase() {
     abstract fun discoveryServerCheckStatusDao(): DiscoveryServerCheckStatusDao
     abstract fun cachedSourceDao(): CachedSourceDao
     abstract fun cachedSourceDiscoveryServerCrossRefDao(): CachedSourceDiscoveryServerCrossRefDao
+    abstract fun discoveryRunResultDao(): DiscoveryRunResultDao
+    abstract fun discoveryServerDiagnosticRecordDao(): DiscoveryServerDiagnosticRecordDao
 
 
     companion object {
@@ -660,6 +723,46 @@ abstract class NdiDatabase : RoomDatabase() {
             }
         }
 
+        // ---- T009: Migration for discovery run results and diagnostics ----
+        val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS discovery_run_results (
+                        runId TEXT NOT NULL,
+                        mode TEXT NOT NULL,
+                        durationMillis INTEGER NOT NULL,
+                        status TEXT NOT NULL,
+                        sourceCount INTEGER NOT NULL,
+                        diagnosticCode TEXT,
+                        diagnosticMessage TEXT,
+                        recordedAtEpochMillis INTEGER NOT NULL,
+                        PRIMARY KEY(runId)
+                    )
+                    """.trimIndent(),
+                )
+
+                database.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS discovery_server_diagnostics (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        runId TEXT NOT NULL,
+                        serverId TEXT NOT NULL,
+                        endpoint TEXT NOT NULL,
+                        attemptStartedAtEpochMillis INTEGER NOT NULL,
+                        durationMillis INTEGER NOT NULL,
+                        status TEXT NOT NULL,
+                        errorDetail TEXT,
+                        recordedAtEpochMillis INTEGER NOT NULL
+                    )
+                    """.trimIndent(),
+                )
+
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_discovery_server_diagnostics_runId ON discovery_server_diagnostics(runId)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_discovery_server_diagnostics_serverId ON discovery_server_diagnostics(serverId)")
+            }
+        }
+
         @Volatile
         private var instance: NdiDatabase? = null
 
@@ -679,6 +782,7 @@ abstract class NdiDatabase : RoomDatabase() {
                         MIGRATION_6_7,
                         MIGRATION_7_8,
                         MIGRATION_8_9,
+                        MIGRATION_9_10,
                     )
                     .build()
                     .also { instance = it }

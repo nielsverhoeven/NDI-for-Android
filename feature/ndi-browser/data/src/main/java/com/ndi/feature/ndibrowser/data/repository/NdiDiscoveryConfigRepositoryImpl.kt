@@ -57,6 +57,16 @@ class NdiDiscoveryConfigRepositoryImpl(
         )
     }
 
+    // ---- T013: Multicast Fallback Discovery - Enabled Server Count (US1 Phase 3) ----
+
+    override suspend fun getEnabledServerCount(): Int {
+        return toEnabledEndpoints(discoveryServerRepository.observeServers().first()).size
+    }
+
+    override suspend fun getEnabledServersSnapshot(): List<NdiDiscoveryEndpoint> {
+        return toEnabledEndpoints(discoveryServerRepository.observeServers().first())
+    }
+
     private fun toEnabledEndpoints(servers: List<com.ndi.core.model.DiscoveryServerEntry>): List<NdiDiscoveryEndpoint> {
         return servers
             .asSequence()

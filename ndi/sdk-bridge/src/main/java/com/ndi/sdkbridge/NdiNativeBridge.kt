@@ -259,11 +259,13 @@ object NativeNdiBridge : NdiDiscoveryBridge, NdiViewerBridge, NdiOutputBridge {
         return withMulticastLock {
             val sourceIds = runCatching { nativeDiscoverSourceIds() }.getOrDefault(emptyArray())
             val displayNames = runCatching { nativeDiscoverDisplayNames() }.getOrDefault(emptyArray())
+            val urlAddresses = runCatching { nativeDiscoverUrlAddresses() }.getOrDefault(emptyArray())
             val now = System.currentTimeMillis()
             sourceIds.mapIndexed { index, sourceId ->
                 NdiSource(
                     sourceId = sourceId,
                     displayName = displayNames.getOrNull(index) ?: sourceId,
+                    endpointAddress = urlAddresses.getOrNull(index)?.takeIf { it.isNotBlank() },
                     lastSeenAtEpochMillis = now,
                 )
             }
@@ -722,6 +724,8 @@ object NativeNdiBridge : NdiDiscoveryBridge, NdiViewerBridge, NdiOutputBridge {
     private external fun nativeDiscoverSourceIds(): Array<String>
 
     private external fun nativeDiscoverDisplayNames(): Array<String>
+
+    private external fun nativeDiscoverUrlAddresses(): Array<String>
 
     private external fun nativeSetDiscoveryExtraIps(extraIpsCsv: String?)
 

@@ -247,6 +247,103 @@ class NdiSettingsRepositoryImplTest {
         assertEquals("DARK", persistedSettings.themeMode)
         assertEquals("accent_coral", persistedSettings.accentColorId)
     }
+
+    // ---- T011: Migration/Regression Tests ----
+
+    @Test
+    fun settingsPersistence_preservesDiscoveryServersAcrossAppUpdate() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val settingsDao = FakeSettingsPreferenceDao(
+            SettingsPreferenceEntity(
+                id = 1,
+                discoveryServerInput = null,
+                developerModeEnabled = true,
+                themeMode = "SYSTEM",
+                accentColorId = "accent_teal",
+                updatedAtEpochMillis = 1000L,
+            ),
+        )
+        val discoveryDao = FakeDiscoveryServerDao(
+            initial = listOf(
+                DiscoveryServerEntity(
+                    id = "server1",
+                    hostOrIp = "ndi-server-1.local",
+                    port = 5959,
+                    enabled = true,
+                    orderIndex = 0,
+                    createdAtEpochMillis = 100L,
+                    updatedAtEpochMillis = 100L,
+                ),
+                DiscoveryServerEntity(
+                    id = "server2",
+                    hostOrIp = "192.168.1.100",
+                    port = 5960,
+                    enabled = false,
+                    orderIndex = 1,
+                    createdAtEpochMillis = 200L,
+                    updatedAtEpochMillis = 200L,
+                ),
+            ),
+        )
+
+        NdiSettingsRepositoryImpl(
+            settingsDao = settingsDao,
+            discoveryServerDao = discoveryDao,
+            scope = kotlinx.coroutines.CoroutineScope(dispatcher),
+        )
+        advanceUntilIdle()
+
+        // Verify all discovery servers are still present after app update scenario
+        val persistedServers = discoveryDao.getAll()
+        assertEquals(2, persistedServers.size)
+        assertEquals("ndi-server-1.local", persistedServers[0].hostOrIp)
+        assertEquals(5959, persistedServers[0].port)
+        assertTrue(persistedServers[0].enabled)
+        assertEquals("192.168.1.100", persistedServers[1].hostOrIp)
+        assertEquals(5960, persistedServers[1].port)
+        assertFalse(persistedServers[1].enabled)
+    }
+
+    @Test
+    fun discoveryServerPersistence_preservesOrderingAcrossMigrations() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val settingsDao = FakeSettingsPreferenceDao()
+        val discoveryDao = FakeDiscoveryServerDao(
+            initial = listOf(
+                DiscoveryServerEntity(
+                    id = "first",
+                    hostOrIp = "server-first.local",
+                    port = 5959,
+                    enabled = true,
+                    orderIndex = 0,
+                    createdAtEpochMillis = 100L,
+                    updatedAtEpochMillis = 100L,
+                ),
+                DiscoveryServerEntity(
+                    id = "second",
+                    hostOrIp = "server-second.local",
+                    port = 5959,
+                    enabled = true,
+                    orderIndex = 1,
+                    createdAtEpochMillis = 200L,
+                    updatedAtEpochMillis = 200L,
+                ),
+            ),
+        )
+
+        NdiSettingsRepositoryImpl(
+            settingsDao = settingsDao,
+            discoveryServerDao = discoveryDao,
+            scope = kotlinx.coroutines.CoroutineScope(dispatcher),
+        )
+        advanceUntilIdle()
+
+        val persistedServers = discoveryDao.getAll()
+        assertEquals("first", persistedServers[0].id)
+        assertEquals(0, persistedServers[0].orderIndex)
+        assertEquals("second", persistedServers[1].id)
+        assertEquals(1, persistedServers[1].orderIndex)
+    }
 }
 
 private class FakeSettingsPreferenceDao(

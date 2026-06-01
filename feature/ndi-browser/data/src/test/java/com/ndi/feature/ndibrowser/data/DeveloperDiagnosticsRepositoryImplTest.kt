@@ -2,6 +2,7 @@ package com.ndi.feature.ndibrowser.data
 
 import com.ndi.core.model.DiscoveryCompatibilityResult
 import com.ndi.core.model.DiscoveryCompatibilityStatus
+import com.ndi.core.model.DiscoveryFailureCategory
 import com.ndi.feature.ndibrowser.data.repository.DeveloperDiagnosticsLogBuffer
 import com.ndi.feature.ndibrowser.data.repository.DiscoveryCompatibilityMatrixRepositoryImpl
 import com.ndi.feature.ndibrowser.data.repository.DeveloperDiagnosticsRepositoryImpl
@@ -70,6 +71,41 @@ class DeveloperDiagnosticsRepositoryImplTest {
                 line.contains("target=older") &&
                     line.contains("incompatible") &&
                     line.contains("next=")
+            },
+        )
+    }
+
+    @Test
+    fun `observeDiscoveryDiagnostics exposes per-server timing and environment-blocker classification`() = runTest {
+        val matrixRepository = DiscoveryCompatibilityMatrixRepositoryImpl()
+        matrixRepository.upsertResults(
+            listOf(
+                compatibilityResult("discovery-a.local:5959", DiscoveryCompatibilityStatus.BLOCKED)
+                    .copy(notes = "durationMillis=5100; status=TIMEOUT"),
+            ),
+            recordedAtEpochMillis = 456L,
+        )
+        val repo = DeveloperDiagnosticsRepositoryImpl(
+            viewerRepository = null,
+            outputRepository = null,
+            logBuffer = DeveloperDiagnosticsLogBuffer(),
+            compatibilityMatrixRepository = matrixRepository,
+        )
+
+        val diagnostics = repo.observeDiscoveryDiagnostics().first {
+            it.recentDiscoveryLogs.any { line -> line.contains("discovery-a.local:5959") }
+        }
+
+        assertTrue(diagnostics.lastPerServerDiagnostics.isNotEmpty())
+        assertTrue(
+            diagnostics.lastPerServerDiagnostics.any {
+                it.endpoint == "discovery-a.local:5959" && it.durationMillis >= 5_000L
+            },
+        )
+        assertTrue(
+            diagnostics.serverStatusRollup.any {
+                it.serverId == "discovery-a.local:5959" &&
+                    it.failureCategory == DiscoveryFailureCategory.TIMEOUT
             },
         )
     }

@@ -22,3 +22,22 @@ data class DiscoveryCompatibilitySnapshot(
     val recordedAtEpochMillis: Long,
     val results: List<DiscoveryCompatibilityResult>,
 )
+
+// ---- T007: Discovery Server Diagnostics ----
+
+enum class DiscoveryServerAttemptStatus {
+    SUCCESS,
+    TIMEOUT,
+    UNREACHABLE,
+    ERROR,
+}
+
+data class DiscoveryServerDiagnosticRecord(
+    val runId: String,
+    val serverId: String,
+    val endpoint: String,
+    val attemptStartedAtEpochMillis: Long,
+    val durationMillis: Long,
+    val status: DiscoveryServerAttemptStatus,
+    val errorDetail: String? = null,
+)
