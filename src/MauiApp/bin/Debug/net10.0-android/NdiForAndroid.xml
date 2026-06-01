@@ -1,0 +1,38 @@
+<?xml version="1.0"?>
+<doc>
+    <assembly>
+        <name>NdiForAndroid</name>
+    </assembly>
+    <members>
+        <member name="T:NdiForAndroid.NdiBridge.NdiDiscoveryBridge">
+            <summary>
+            P/Invoke discovery bridge against libndi.so.
+            Full implementation wired in T004.
+            </summary>
+        </member>
+        <member name="T:NdiForAndroid.NdiBridge.NdiViewerBridge">
+            <summary>
+            P/Invoke viewer bridge against libndi.so.
+            Full implementation wired in T004.
+            </summary>
+        </member>
+        <member name="T:NdiForAndroid.NdiBridge.NdiOutputBridge">
+            <summary>
+            P/Invoke output bridge against libndi.so.
+            Full implementation wired in T004.
+            </summary>
+        </member>
+        <member name="T:NdiForAndroid.Services.ShellNavigationService">
+            <summary>
+            MAUI Shell implementation of <see cref="T:NdiForAndroid.Services.INavigationService"/>.
+            Registered in DI so ViewModels stay free of MAUI Shell references.
+            </summary>
+        </member>
+        <member name="T:NdiForAndroid.Resource">
+            <summary>
+            Android Resource Designer class.
+            Exposes the Android Resource designer assembly into the project Namespace.
+            </summary>
+        </member>
+    </members>
+</doc>

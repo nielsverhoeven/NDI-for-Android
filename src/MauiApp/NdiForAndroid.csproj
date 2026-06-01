@@ -1,0 +1,46 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-android</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>NdiForAndroid</RootNamespace>
+    <AssemblyName>NdiForAndroid</AssemblyName>
+    <ApplicationId>com.ndi.android</ApplicationId>
+    <ApplicationVersion>1</ApplicationVersion>
+    <ApplicationDisplayVersion>1.0.0</ApplicationDisplayVersion>
+    <AndroidMinSdkVersion>26</AndroidMinSdkVersion>
+    <AndroidTargetSdkVersion>35</AndroidTargetSdkVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">26.0</SupportedOSPlatformVersion>
+    <UseMaui>true</UseMaui>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- MAUI fonts and images -->
+    <MauiFont Include="Resources\Fonts\*" />
+    <MauiImage Include="Resources\Images\*" />
+  </ItemGroup>
+
+  <!-- NDI native libraries for Android -->
+  <ItemGroup>
+    <AndroidNativeLibrary Include="Platforms\Android\libs\arm64-v8a\libndi.so">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </AndroidNativeLibrary>
+    <AndroidNativeLibrary Include="Platforms\Android\libs\armeabi-v7a\libndi.so">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </AndroidNativeLibrary>
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Maui.Controls" Version="10.*" />
+    <PackageReference Include="sqlite-net-pcl" Version="1.*" />
+    <PackageReference Include="SQLitePCLRaw.bundle_green" Version="2.*" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Debug" Version="9.*" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Core\NdiForAndroid.Core.csproj" />
+  </ItemGroup>
+
+</Project>

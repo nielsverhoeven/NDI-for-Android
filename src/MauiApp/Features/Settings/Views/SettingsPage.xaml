@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:vm="clr-namespace:NdiForAndroid.Features.Settings.ViewModels"
+             x:Class="NdiForAndroid.Features.Settings.Views.SettingsPage"
+             x:DataType="vm:SettingsViewModel"
+             Title="Settings">
+    <ScrollView>
+        <VerticalStackLayout Padding="16" Spacing="16">
+
+            <Label Text="Discovery Server" FontAttributes="Bold" FontSize="18" />
+
+            <Entry Placeholder="Host (e.g. 192.168.1.100)"
+                   Text="{Binding DiscoveryHost}"
+                   Keyboard="Url" />
+
+            <Entry Placeholder="Port (e.g. 5960)"
+                   Text="{Binding DiscoveryPort}"
+                   Keyboard="Numeric" />
+
+            <Label Text="{Binding ValidationError}"
+                   TextColor="Red"
+                   IsVisible="{Binding ValidationError, Converter={StaticResource IsNotNullConverter}}" />
+
+            <Label Text="Developer Mode" FontAttributes="Bold" FontSize="16" />
+            <Switch IsToggled="{Binding DeveloperModeEnabled}" />
+
+            <Button Text="Save" Command="{Binding SaveCommand}" HorizontalOptions="Start" />
+
+            <Label Text="Settings saved."
+                   TextColor="Green"
+                   IsVisible="{Binding IsSaved}" />
+
+        </VerticalStackLayout>
+    </ScrollView>
+</ContentPage>

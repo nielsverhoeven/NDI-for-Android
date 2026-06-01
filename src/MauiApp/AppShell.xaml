@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Shell xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+       xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+       xmlns:sources="clr-namespace:NdiForAndroid.Features.Sources.Views"
+       xmlns:settings="clr-namespace:NdiForAndroid.Features.Settings.Views"
+       x:Class="NdiForAndroid.AppShell"
+       Shell.FlyoutBehavior="Disabled"
+       Title="NDI for Android">
+
+    <TabBar>
+        <ShellContent Title="Sources"
+                      ContentTemplate="{DataTemplate sources:SourceListPage}"
+                      Route="sources"
+                      Icon="tab_sources.png" />
+        <ShellContent Title="Settings"
+                      ContentTemplate="{DataTemplate settings:SettingsPage}"
+                      Route="settings"
+                      Icon="tab_settings.png" />
+    </TabBar>
+
+</Shell>
