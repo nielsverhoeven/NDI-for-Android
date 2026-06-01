@@ -41,6 +41,13 @@ class HomeDashboardFragment : Fragment(R.layout.fragment_home_dashboard) {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
+        FluentElectronHomeTokens.applyHomeCards(
+            context = requireContext(),
+            streamCard = binding.streamStatusCard,
+            viewCard = binding.viewStatusCard,
+            subtitle = binding.homeSubtitle,
+        )
+
         binding.openStreamButton.setOnClickListener { viewModel.onOpenStreamActionPressed() }
         binding.openViewButton.setOnClickListener { viewModel.onOpenViewActionPressed() }
 

@@ -1,8 +1,8 @@
-<!-- Last updated: 2026-03-20 -->
+<!-- Last updated: 2026-04-27 -->
 
 # Developer Documentation Index
 
-This index is the entry point for day-to-day development on NDI-for-Android, including the completed Settings Menu feature (spec 006).
+This index is the entry point for day-to-day development on NDI-for-Android, including the completed Settings Menu feature (spec 006) and the Fluent + Electron redesign baseline (spec 032).
 
 ## Table of Contents
 
@@ -149,6 +149,8 @@ powershell -ExecutionPolicy Bypass -File .\testing\e2e\scripts\run-dual-emulator
 - Architecture and flow diagrams: `docs/architecture.md`
 - Testing guide: `docs/testing.md`
 - 006 release and operator notes: `docs/006-settings-menu-release-notes.md`
+- 032 redesign evidence index: `test-results/032-fluent-electron-validation-index.md`
+- 032 regression summary: `test-results/032-fluent-electron-regression-summary.md`
 - E2E harness guide: `testing/e2e/README.md`
 - 006 spec: `specs/006-settings-menu/spec.md`
 - 006 manual test quickstart: `specs/006-settings-menu/quickstart.md`

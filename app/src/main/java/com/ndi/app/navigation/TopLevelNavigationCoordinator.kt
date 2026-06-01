@@ -62,6 +62,32 @@ class TopLevelNavigationCoordinator {
         }
 
     /**
+     * Baseline shell style contract used by feature 032 tests and UI wiring.
+     */
+    fun resolveShellStyleState(
+        selectedDestination: TopLevelDestination,
+        profile: NavigationLayoutProfile,
+    ): TopLevelShellStyleState {
+        val hierarchyLevel = if (selectedDestination == TopLevelDestination.HOME) {
+            ShellHierarchyLevel.PRIMARY
+        } else {
+            ShellHierarchyLevel.SECONDARY
+        }
+
+        val container = if (profile == NavigationLayoutProfile.TABLET_NAV_RAIL) {
+            ShellContainer.NAV_RAIL
+        } else {
+            ShellContainer.BOTTOM_NAV
+        }
+
+        return TopLevelShellStyleState(
+            hierarchyLevel = hierarchyLevel,
+            shellContainer = container,
+            showSelectionIndicator = true,
+        )
+    }
+
+    /**
      * Returns the NavOptions arguments to prevent duplicate destination stacking.
      * Callers should apply launchSingleTop + state-restore in the NavController.
      */
@@ -91,6 +117,22 @@ class TopLevelNavigationCoordinator {
         else -> null
     }
 }
+
+enum class ShellHierarchyLevel {
+    PRIMARY,
+    SECONDARY,
+}
+
+enum class ShellContainer {
+    BOTTOM_NAV,
+    NAV_RAIL,
+}
+
+data class TopLevelShellStyleState(
+    val hierarchyLevel: ShellHierarchyLevel,
+    val shellContainer: ShellContainer,
+    val showSelectionIndicator: Boolean,
+)
 
 data class TopLevelNavOptions(
     val launchSingleTop: Boolean,

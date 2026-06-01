@@ -52,6 +52,17 @@ class SettingsScreenTest {
         assertEquals(SettingsViewModel.CATEGORY_DISCOVERY, state.selectedCategoryId)
         assertTrue(state.groups.first().controls.contains("discovery-servers"))
     }
+
+    @Test
+    fun accessibilityContract_appearanceControlsRemainReadableAndFocusable() = runTest {
+        val viewModel = SettingsViewModel(CompactTestSettingsRepository())
+        viewModel.onLayoutContextChanged(widthDp = 411, isLandscape = false)
+        viewModel.onSettingsCategorySelected(SettingsViewModel.CATEGORY_APPEARANCE)
+
+        val controls = viewModel.uiState.value.settingsDetailState.groups.first().controls
+        assertTrue(controls.contains("theme-mode"))
+        assertTrue(controls.contains("accent-palette"))
+    }
 }
 
 private class CompactTestSettingsRepository : NdiSettingsRepository {

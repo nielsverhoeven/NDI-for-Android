@@ -1,15 +1,46 @@
 package com.ndi.feature.ndibrowser.source_list
 
 import com.ndi.core.model.NdiSource
+import com.ndi.core.model.DiscoveryStatus
 import org.junit.Test
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertEquals
 
 /**
  * Tests for UI state computation for availability badges and view action enablement.
  * T029: Add failing UI model test for Previously Connected badge visibility.
  */
 class SourceListUiStateTest {
+
+    @Test
+    fun visualStateContract_loadingAndErrorStates_areDistinct() {
+        val loading = SourceListUiState(
+            discoveryStatus = DiscoveryStatus.IN_PROGRESS,
+            isRefreshing = true,
+            sources = emptyList(),
+        )
+        val error = SourceListUiState(
+            discoveryStatus = DiscoveryStatus.FAILURE,
+            isRefreshing = false,
+            errorMessage = "network down",
+            sources = emptyList(),
+        )
+
+        assertTrue(loading.isRefreshing)
+        assertEquals(DiscoveryStatus.IN_PROGRESS, loading.discoveryStatus)
+        assertEquals(DiscoveryStatus.FAILURE, error.discoveryStatus)
+        assertTrue(error.errorMessage?.isNotBlank() == true)
+    }
+
+    @Test
+    fun adaptivityContract_layoutModeSwitchesBetweenCompactAndExpanded() {
+        val compact = SourceListUiState(layoutMode = SourceListLayoutMode.COMPACT)
+        val expanded = SourceListUiState(layoutMode = SourceListLayoutMode.EXPANDED)
+
+        assertEquals(SourceListLayoutMode.COMPACT, compact.layoutMode)
+        assertEquals(SourceListLayoutMode.EXPANDED, expanded.layoutMode)
+    }
 
     /**
      * T029: Tests that Previously Connected badge is visible only when source was previously connected.

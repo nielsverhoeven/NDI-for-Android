@@ -2,6 +2,7 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:background="@color/fluent_electron_surface_card"
     android:orientation="vertical">
 
     <com.google.android.material.appbar.MaterialToolbar
@@ -44,6 +45,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
                 android:text="@string/ndi_output_share_hint"
+                android:textColor="@color/fluent_electron_text_secondary"
                 android:textAppearance="@style/TextAppearance.Material3.BodyMedium" />
 
             <TextView

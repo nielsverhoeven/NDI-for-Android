@@ -3,6 +3,7 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:background="@color/fluent_electron_surface_card"
     android:orientation="vertical">
 
     <com.google.android.material.appbar.MaterialToolbar
@@ -35,6 +36,15 @@
                 android:accessibilityHeading="true"
                 android:text="@string/settings_title"
                 android:textAppearance="@style/TextAppearance.Material3.HeadlineSmall" />
+
+            <TextView
+                android:id="@+id/settingsHeaderSubtitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="@string/settings_validation_header"
+                android:textColor="@color/fluent_electron_text_secondary"
+                android:textAppearance="@style/TextAppearance.Material3.BodyMedium" />
 
         </LinearLayout>
 
@@ -121,6 +131,7 @@
                     android:id="@+id/compactAccentLabel"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
                     android:text="@string/settings_accent_color_label"
                     android:textAppearance="@style/TextAppearance.Material3.BodyMedium" />
 

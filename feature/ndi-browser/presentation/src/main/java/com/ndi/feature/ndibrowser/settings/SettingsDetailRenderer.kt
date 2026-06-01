@@ -42,17 +42,21 @@ class SettingsDetailRenderer(
         val context = detailContent.context
         val group = state.groups.first()
         detailTitle.text = group.title
+        detailTitle.isFocusable = true
+        detailTitle.accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
 
         when (state.selectedCategoryId) {
             SettingsViewModel.CATEGORY_GENERAL -> {
                 val hint = TextView(context).apply {
                     text = context.getString(R.string.settings_detail_general_hint)
                     setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_BodyMedium)
+                    importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
                 }
                 detailContent.addView(hint)
             }
             SettingsViewModel.CATEGORY_APPEARANCE -> {
                 val radioGroup = RadioGroup(context)
+                radioGroup.isFocusable = true
                 val modeIds = mapOf(
                     NdiThemeMode.LIGHT to View.generateViewId(),
                     NdiThemeMode.DARK to View.generateViewId(),
@@ -83,6 +87,7 @@ class SettingsDetailRenderer(
                 detailContent.addView(accentLabel)
 
                 val accentGroup = RadioGroup(context)
+                accentGroup.isFocusable = true
                 val accentIds = mapOf(
                     SettingsViewModel.ACCENT_BLUE to View.generateViewId(),
                     SettingsViewModel.ACCENT_TEAL to View.generateViewId(),
