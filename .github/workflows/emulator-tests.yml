@@ -1,12 +1,6 @@
 name: Emulator Tests
 
 on:
-  push:
-    branches:
-      - main
-      - 'feature/**'
-      - 'bugfix/**'
-  pull_request:
   workflow_dispatch:
 
 jobs:
@@ -14,7 +8,6 @@ jobs:
     name: Android Emulator UI Tests
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    if: "${{ secrets.ANDROID_EMULATOR_AVAILABLE != '' }}"
 
     env:
       APPIUM_SERVER_URL: http://127.0.0.1:4723/
