@@ -54,13 +54,13 @@ jobs:
 
   # ─────────────────────────────────────────────────────────────────────────────
   # Job 2: Download the pre-built APK and run it on an Android emulator.
-  # No MAUI workload or full solution build needed here.
+  # AVD + system image are cached so emulator boot is fast on subsequent runs.
   # ─────────────────────────────────────────────────────────────────────────────
   emulator-tests:
     name: Android Emulator UI Tests
     needs: build-apk
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 40
 
     env:
       APPIUM_SERVER_URL: http://127.0.0.1:4723/
@@ -117,12 +117,35 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
+      - name: Cache Android AVD and system image
+        uses: actions/cache@v4
+        id: avd-cache
+        with:
+          path: |
+            ~/.android/avd/*
+            ~/.android/adb*
+          key: avd-api35-x86_64-v1
+
+      - name: Create AVD (only on cache miss)
+        if: steps.avd-cache.outputs.cache-hit != 'true'
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: Nexus 6
+          force-avd-creation: false
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: false
+          script: echo "AVD created and cached."
+
       - name: Run emulator tests
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
           arch: x86_64
           profile: Nexus 6
+          force-avd-creation: false
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
           emulator-boot-timeout: 300
           script: |
