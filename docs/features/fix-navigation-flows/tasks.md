@@ -1,63 +1,109 @@
-# Tasks: Fix Broken Navigation Flows in MAUI App
+# Tasks: Restore Legacy Adaptive Navigation Parity
 
 ## Summary
 - Parent issue: #141
-- Total tasks: 5
-- Layers covered: Investigation, Shell/Routing, ViewModel, Service, Test, Platform/QA
+- Total tasks: 10
+- Layers covered: Data, Repository/Service, ViewModel, View/XAML, Platform/Android, NDI Bridge, Unit Test, UI/Integration Test, Docs, Issue Ops
 - Branch: bugfix/141-fix-broken-navigation-flows
 
 ## Dependency Graph
 
-```
-T001 ──► T002 ──► T003 ──► T004
-                        └──► T005
+```mermaid
+graph TD
+    T001[T001 Data model for 4-item nav metadata] --> T002[T002 Navigation policy service]
+    T002 --> T003[T003 Navigation shell state ViewModel]
+    T003 --> T004[T004 Adaptive Shell UI composition]
+    T004 --> T005[T005 Android orientation bridge hookup]
+    T004 --> T006[T006 NDI bridge safe handoff on primary nav switches]
+    T005 --> T007[T007 Unit tests for policy and ViewModel]
+    T006 --> T007
+    T005 --> T008[T008 UI/integration tests for portrait and landscape nav]
+    T006 --> T008
+    T007 --> T009[T009 Documentation and icon traceability update]
+    T008 --> T009
+    T009 --> T010[T010 Parent issue status sync and closure checklist]
 ```
 
-- T001 and T002 are sequential (audit builds on investigation findings)
-- T003 is blocked by T002 (requires root-cause list)
-- T004 and T005 can run in parallel once T003 is complete
+Text form:
+
+```
+T001 -> T002
+T002 -> T003
+T003 -> T004
+T004 -> T005, T006
+T005, T006 -> T007, T008
+T007, T008 -> T009
+T009 -> T010
+```
 
 ## Task List
 
-### T001: Investigate legacy Kotlin navigation vs MAUI Shell implementation
-- **Layer**: Investigation
-- **Description**: Compare the legacy Kotlin `NavController` deep-link routes (`ndi://sources`, `ndi://settings/discovery-servers`, `ndi://theme-editor`) found in `feature/ndi-browser/presentation/` against the current MAUI Shell route topology (`//sources`, `//settings`, registered routes `viewer`, `output` in `AppShell.xaml.cs`). Identify which routes existed in Kotlin but are missing, mis-named, or structurally different in MAUI Shell. Produce a written comparison note in `docs/features/fix-navigation-flows/investigation.md`.
+### T001: Add primary navigation metadata model for legacy parity
+- **Layer**: Data
+- **Description**: Introduce a navigation metadata model in Core (for example a `PrimaryNavItem` type) that defines the four authoritative entries (`Home`, `Stream`, `View`, `Settings`) plus icon-key references used by MAUI UI composition and tests.
 - **Depends on**: none
-- **Acceptance**: A written comparison note exists documenting which routes worked in Kotlin, their MAUI equivalents, and all identified gaps.
-- **GitHub issue**: #163
+- **Acceptance**: A compile-time navigation model exists that enumerates exactly four primary items and their icon keys.
+- **GitHub issue**: #169
 
----
-
-### T002: Audit AppShell route registration and query-parameter plumbing
-- **Layer**: Shell / Service
-- **Description**: Inspect `src/MauiApp/AppShell.xaml`, `src/MauiApp/AppShell.xaml.cs`, `src/MauiApp/Services/ShellNavigationService.cs`, and `src/Core/Features/Sources/ViewModels/SourceListViewModel.cs`. Verify: (a) every route string used in ViewModels (`"viewer"`, `"output"` with `sourceId` query param) is registered via `Routing.RegisterRoute`; (b) `[QueryProperty]` attributes are present on `ViewerViewModel` and `OutputViewModel` to receive `sourceId`; (c) `ShellNavigationService.NavigateToAsync` surfaces exceptions rather than swallowing them silently. Document every gap as a numbered root cause.
+### T002: Implement orientation-aware navigation policy service
+- **Layer**: Repository / Service
+- **Description**: Add a service that resolves navigation placement mode (`Bottom` for portrait, `LeftRail` for landscape) and publishes deterministic shell policy from device display/orientation state.
 - **Depends on**: T001
-- **Acceptance**: A documented root-cause list exists identifying every broken route and missing query-property binding, confirmed against the investigation note from T001.
-- **GitHub issue**: #164
+- **Acceptance**: Service returns bottom placement in portrait and left placement in landscape with unit-testable API.
+- **GitHub issue**: #170
 
----
-
-### T003: Fix route registration, query-property bindings, and navigation error handling
-- **Layer**: Shell / ViewModel / Service
-- **Description**: Apply all fixes identified in T002: update `AppShell.xaml.cs` to register any missing or corrected routes; add `[QueryProperty]` attributes to destination ViewModels (`ViewerViewModel`, `OutputViewModel`) for the `sourceId` parameter; update `ShellNavigationService.NavigateToAsync` to log or re-throw on navigation failure; adjust `SourceListViewModel` navigation call strings if route names changed. `dotnet build` must pass cleanly after changes.
+### T003: Build adaptive shell state ViewModel for 4-item navigation
+- **Layer**: ViewModel
+- **Description**: Create or refactor shell/navigation ViewModel state to consume T001/T002 and expose selected item, visible item list, and item-to-route mapping for Home/Stream/View/Settings.
 - **Depends on**: T002
-- **Acceptance**: `dotnet build` exits 0; all four primary navigation paths (Sources tab → Viewer, Sources tab → Output, Settings tab, back from any) are structurally wired with no silent failure path in `ShellNavigationService`.
-- **GitHub issue**: #165
+- **Acceptance**: ViewModel exposes four primary items and route targets for each item with no hard-coded UI branching in XAML code-behind.
+- **GitHub issue**: #171
 
----
-
-### T004: Validate navigation flows on Android emulator
-- **Layer**: Platform / QA
-- **Description**: Deploy the Debug APK built from T003 to an Android emulator and manually walk all primary navigation paths: (1) Sources tab → select source → Viewer, (2) Sources tab → select source → Output, (3) Settings tab, (4) back-navigation from Viewer and Output back to Sources. Capture pass/fail evidence (logcat snippets and/or screenshots) in `test-results/141-navigation-validation-evidence.md`.
+### T004: Refactor AppShell UI to adaptive left/bottom navigation layout
+- **Layer**: View / XAML
+- **Description**: Replace the current two-item shell composition with adaptive MAUI UI that renders navigation at bottom in portrait and left in landscape, including all four primary entries and route wiring to corresponding pages.
 - **Depends on**: T003
-- **Acceptance**: All four primary navigation paths complete without crash or dead-end; evidence file is committed to the branch.
-- **GitHub issue**: #166
+- **Acceptance**: AppShell renders Home/Stream/View/Settings in both orientations with placement switching as specified.
+- **GitHub issue**: #172
 
----
+### T005: Add Android configuration-change bridge for orientation updates
+- **Layer**: Platform
+- **Description**: Wire Android-specific orientation/configuration notifications (under `Platforms/Android`) into the navigation policy service so layout mode updates immediately after rotation without app restart.
+- **Depends on**: T004
+- **Acceptance**: Rotating the device updates navigation placement live between bottom and left.
+- **GitHub issue**: #173
 
-### T005: Add unit-test and UI-smoke coverage for navigation commands
+### T006: Enforce NDI-safe primary navigation handoff behavior
+- **Layer**: NDI Bridge
+- **Description**: Ensure primary navigation transitions (`Stream` <-> `View` and exits to Home/Settings) coordinate correctly with existing NDI viewer/output bridge lifecycle calls to prevent dangling receiver/output sessions during page switches.
+- **Depends on**: T004
+- **Acceptance**: No active NDI bridge operation is orphaned when switching between primary navigation destinations.
+- **GitHub issue**: #174
+
+### T007: Add unit tests for navigation model, policy, and shell state ViewModel
 - **Layer**: Test
-- **Description**: In `tests/MauiApp.Tests/Features/Sources/SourceListViewModelTests.cs`, add tests verifying that `OpenViewer` and `OpenOutput` commands call `INavigationService.NavigateToAsync` with the correct route strings (including the `sourceId` query parameter). In `tests/MauiApp.UITests/`, add or update one Appium test confirming the Sources → Viewer navigation path reaches `ViewerPage` without error. All existing tests must continue to pass.
-- **Depends on**: T003
-- **Acceptance**: `dotnet test` exits 0 with ≥ 2 new navigation assertions verified; no regression in previously passing tests.
-- **GitHub issue**: #167
+- **Description**: Add unit coverage in `tests/MauiApp.Tests` for (a) exact four-item navigation model, (b) portrait/landscape placement resolution, and (c) destination mapping from menu item selection.
+- **Depends on**: T005, T006
+- **Acceptance**: Unit tests verify four-item parity and orientation policy behavior with passing `dotnet test`.
+- **GitHub issue**: #175
+
+### T008: Add UI/integration tests for adaptive menu placement and navigation actions
+- **Layer**: Test
+- **Description**: Extend `tests/MauiApp.UITests` to verify portrait bottom placement, landscape left placement, icon presence checks, and click-through navigation to Home/Stream/View/Settings pages on emulator/device.
+- **Depends on**: T005, T006
+- **Acceptance**: UI tests assert both orientation layouts and successful navigation for all four items.
+- **GitHub issue**: #176
+
+### T009: Document legacy icon mapping and navigation parity evidence
+- **Layer**: Docs
+- **Description**: Update navigation docs and test evidence with an explicit icon-traceability table (`legacy icon reference` -> `MAUI asset`) plus screenshots/logs for portrait and landscape behavior.
+- **Depends on**: T007, T008
+- **Acceptance**: Documentation includes icon mapping evidence and orientation validation artifacts committed to repo.
+- **GitHub issue**: #177
+
+### T010: Sync parent issue completion checklist and sub-issue status
+- **Layer**: Issue Update
+- **Description**: Post final status summary to #141, ensure all T001-T009 task issues are linked as children to parent #141, and close parent only after PR + CI + validation evidence are present.
+- **Depends on**: T009
+- **Acceptance**: Parent issue #141 reflects completed child tasks with traceable links and final implementation evidence.
+- **GitHub issue**: #178
