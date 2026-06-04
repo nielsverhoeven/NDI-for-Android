@@ -2,20 +2,45 @@
 <Shell xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
        xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
        xmlns:sources="clr-namespace:NdiForAndroid.Features.Sources.Views"
+       xmlns:viewer="clr-namespace:NdiForAndroid.Features.Viewer.Views"
+       xmlns:output="clr-namespace:NdiForAndroid.Features.Output.Views"
        xmlns:settings="clr-namespace:NdiForAndroid.Features.Settings.Views"
+       xmlns:vm="clr-namespace:NdiForAndroid.Features.Navigation.ViewModels;assembly=NdiForAndroid.Core"
        x:Class="NdiForAndroid.AppShell"
+       x:DataType="vm:AdaptiveShellStateViewModel"
        Shell.FlyoutBehavior="Disabled"
        Title="NDI for Android">
 
-    <TabBar>
-        <ShellContent Title="Sources"
+    <TabBar IsVisible="{Binding IsBottomNavigationVisible}">
+        <ShellContent Title="Home"
                       ContentTemplate="{DataTemplate sources:SourceListPage}"
-                      Route="sources"
+                      Route="home"
+                      Icon="tab_sources.png" />
+        <ShellContent Title="Stream"
+                      ContentTemplate="{DataTemplate output:OutputPage}"
+                      Route="stream"
+                      Icon="tab_sources.png" />
+        <ShellContent Title="View"
+                      ContentTemplate="{DataTemplate viewer:ViewerPage}"
+                      Route="view"
                       Icon="tab_sources.png" />
         <ShellContent Title="Settings"
                       ContentTemplate="{DataTemplate settings:SettingsPage}"
                       Route="settings"
                       Icon="tab_settings.png" />
     </TabBar>
+
+    <FlyoutItem IsVisible="{Binding IsLeftRailNavigationVisible}" Title="Home" Route="home-rail" Icon="tab_sources.png">
+        <ShellContent ContentTemplate="{DataTemplate sources:SourceListPage}" />
+    </FlyoutItem>
+    <FlyoutItem IsVisible="{Binding IsLeftRailNavigationVisible}" Title="Stream" Route="stream-rail" Icon="tab_sources.png">
+        <ShellContent ContentTemplate="{DataTemplate output:OutputPage}" />
+    </FlyoutItem>
+    <FlyoutItem IsVisible="{Binding IsLeftRailNavigationVisible}" Title="View" Route="view-rail" Icon="tab_sources.png">
+        <ShellContent ContentTemplate="{DataTemplate viewer:ViewerPage}" />
+    </FlyoutItem>
+    <FlyoutItem IsVisible="{Binding IsLeftRailNavigationVisible}" Title="Settings" Route="settings-rail" Icon="tab_settings.png">
+        <ShellContent ContentTemplate="{DataTemplate settings:SettingsPage}" />
+    </FlyoutItem>
 
 </Shell>

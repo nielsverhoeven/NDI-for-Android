@@ -20,12 +20,18 @@ public partial class OutputViewModel : ObservableObject
     public OutputViewModel(INdiOutputBridge bridge)
     {
         _bridge = bridge;
+        StatusMessage = "Select a source on Home before starting output.";
     }
 
     [RelayCommand]
     private async Task StartOutputAsync(CancellationToken cancellationToken)
     {
-        if (string.IsNullOrEmpty(SourceId)) return;
+        if (string.IsNullOrEmpty(SourceId))
+        {
+            StatusMessage = "Select a source on Home before starting output.";
+            return;
+        }
+
         await _bridge.StartOutputAsync(SourceId, "NDI-Android", cancellationToken);
         IsOutputActive = true;
         StatusMessage = "Output active";
