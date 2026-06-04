@@ -34,6 +34,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <AndroidResource Include="Platforms\Android\Resources\drawable\ndi_logo.png" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Microsoft.Maui.Controls" Version="10.*" />
     <PackageReference Include="sqlite-net-pcl" Version="1.*" />
     <PackageReference Include="SQLitePCLRaw.bundle_green" Version="2.*" />

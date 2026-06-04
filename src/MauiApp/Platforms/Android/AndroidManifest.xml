@@ -11,8 +11,8 @@
 
     <application android:allowBackup="true"
                  android:label="NDI for Android"
-                 android:icon="@mipmap/appicon"
-                 android:roundIcon="@mipmap/appicon_round"
+                 android:icon="@drawable/ndi_logo"
+                 android:roundIcon="@drawable/ndi_logo"
                  android:supportsRtl="true">
     </application>
 </manifest>
