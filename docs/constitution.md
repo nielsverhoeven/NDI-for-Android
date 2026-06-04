@@ -145,7 +145,9 @@ Register routes in `AppShell.xaml.cs` using `Routing.RegisterRoute`.
 
 ## 6. CI Rules
 
-- Workflow: `.github/workflows/android-ci.yml` (to be created/updated in T009).
-- Timeout: `timeout-minutes: 30` on all jobs.
-- Emulator-dependent tests run only when `ANDROID_EMULATOR_AVAILABLE` secret is set.
+- Workflows: `.github/workflows/emulator-tests.yml` (APK build + Appium emulator tests), `.github/workflows/release.yml` (release APK publish).
+- Timeout: `timeout-minutes: 30` on build jobs, `timeout-minutes: 40` on emulator jobs.
+- Emulator tests always install a **Release** APK (not Debug) to avoid Mono Fast Deployment aborts.
+- Before every `adb install` in CI scripts, run `adb uninstall com.ndi.android || true` to prevent `INSTALL_FAILED_UPDATE_INCOMPATIBLE` on cached emulators.
 - `dotnet build` and non-NDI unit tests must pass on every PR.
+- See `/android-ci-failure-patterns` skill for detailed diagnosis of Android emulator CI failures.
