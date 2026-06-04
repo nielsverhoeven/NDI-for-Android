@@ -92,10 +92,19 @@ Skills live in `.github/skills/<skill-name>/SKILL.md` and are invoked with `/ski
 - Task-level GitHub issues are created by `feature.breakdown` with label `task`.
 - Feature-level GitHub issues carry label `feature`; bug issues carry label `bug`.
 - Parent/child hierarchy is mandatory: the feature issue is the parent, and all task issues are child issues linked to that parent.
+- Parent/child linking must use real GitHub sub-issue relations (`addSubIssue`), not checklist references alone.
 - Do not create a duplicate parent issue during breakdown when a feature parent issue already exists.
 - Any detected hierarchy mismatch must be repaired by `github.issues-manager` before implementation continues.
 - Only `github.issues-manager` writes back to GitHub issues on behalf of other agents.
 - Do not close an issue until a pull request exists for the implemented changes and the issue references that PR.
+
+### Sub-Issue Safety Guardrails (mandatory)
+
+- Task creation must be idempotent: before creating any new task issue, search for existing open tasks by T-ID/title pattern and reuse them when present.
+- After creating each task issue, immediately set/repair parent with GitHub GraphQL `addSubIssue(input:{issueId:<parent>, subIssueUrl:<childUrl>, replaceParent:true})`.
+- After all links are applied, verify via `issue{subIssues}` query that the parent contains the full expected child set.
+- If duplicate task issues are accidentally created, close duplicates immediately with a comment that points to the canonical task issue.
+- Do not announce hierarchy sync complete until the `subIssues` verification query passes.
 
 ## Branch Naming Convention
 
