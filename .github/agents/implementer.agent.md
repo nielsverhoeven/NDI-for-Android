@@ -94,6 +94,14 @@ After implementing each task:
 3. Confirm the acceptance condition from `tasks.md` is met
 4. Mark the task as complete in `tasks.md`
 
+#### If verification requires on-device or emulator install:
+- Always publish a **Release** APK: `dotnet publish -f net10.0-android -c Release -o publish-output`
+- Uninstall first to avoid signature mismatches: `adb uninstall com.ndi.android 2>/dev/null || true`
+- Install: `adb install publish-output/com.ndi.android-Signed.apk`
+- If the app crashes immediately on launch, read the **crash logcat buffer** (not general logcat):
+  `adb logcat -b crash -d -v time`
+  A "No assemblies found in `.__override__`" message means a Debug APK was installed. See `/android-ci-failure-patterns`.
+
 ### 5. Update the GitHub Issue
 After the task passes verification, **always update the corresponding GitHub issue**:
 ```

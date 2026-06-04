@@ -62,6 +62,7 @@ Skills live in `.github/skills/<skill-name>/SKILL.md` and are invoked with `/ski
 | `github-issue-subtasks-standardizer` | Standardize creation of task sub-issues and enforce true parent-child GitHub sub-issue links before implementation |
 | `github-actions-manager` | List workflows, inspect YAML health, check for timeouts and deprecated actions |
 | `github-action-runs-manager` | Fetch run status by PR/branch/commit, retrieve failure logs, classify root causes |
+| `android-ci-failure-patterns` | Diagnose and fix Android emulator CI failures: Fast Deployment abort, APK signature mismatch, stale Release build state |
 
 ## Constitution
 
@@ -72,7 +73,7 @@ Skills live in `.github/skills/<skill-name>/SKILL.md` and are invoked with `/ski
 - Constitution amendments require `architect` review and version increment.
 
 ## Technology Stack (summary — see constitution for details)
-- **Platform**: .NET MAUI targeting `net9.0-android`
+- **Platform**: .NET MAUI targeting `net10.0-android`
 - **Language**: C#
 - **UI**: MAUI Shell + XAML
 - **MVVM**: CommunityToolkit.Mvvm

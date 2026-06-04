@@ -59,6 +59,9 @@ Always invoke the relevant skill at the start of each operation:
   summary (what workflows exist, how they are configured, what is wrong with them)
 - **`/github-action-runs-manager`** — for run listing, failure log retrieval,
   root cause classification, and CI health reports for a PR or commit
+- **`/android-ci-failure-patterns`** — for Android-specific emulator CI failure
+  classes (Fast Deployment abort, APK signature mismatch, stale Release build state).
+  Consult this skill **before** escalating any Android emulator job failure.
 
 ---
 
@@ -97,6 +100,9 @@ For every failing run, classify the root cause using the taxonomy from
 | **Workflow misconfiguration** | Inspect the workflow YAML via `/github-actions-manager`. Delegate fix to `orchestrator`. |
 | **Deprecated action** | Report to `orchestrator` with specific action name, current version, recommended upgrade, and deprecation date. |
 | **Artifact / path missing** | Inspect workflow YAML for wrong path. Delegate fix to `orchestrator`. |
+| **Android: Fast Deployment abort** | Invoke `/android-ci-failure-patterns`. Switch CI publish step to `-c Release`. Edit `.github/workflows/emulator-tests.yml` directly — no orchestrator delegation needed. |
+| **Android: Signature mismatch** | Invoke `/android-ci-failure-patterns`. Add `adb uninstall com.ndi.android \|\| true` before `adb install` in `testing/e2e/scripts/run-emulator-tests.sh`. Edit script directly. |
+| **Android: Stale Release build** | Invoke `/android-ci-failure-patterns`. Add `dotnet clean` before the publish step, or advise developer to clean locally. |
 
 ### Step 4 — Gate Decision
 
@@ -126,6 +132,7 @@ When called to inspect workflows (not a specific run):
 
 | Workflow | File | Purpose |
 |---|---|---|
+| Emulator Tests | `emulator-tests.yml` | Builds Release APK + runs Appium UI tests on Android emulator |
 | Android CI | `android-ci.yml` | PR + push gate: prereq check + e2e primary profile |
 | Copilot Setup Steps | `copilot-setup-steps.yml` | Configures Copilot environment |
 | e2e-dual-emulator | `e2e-dual-emulator.yml` | Dual-emulator NDI e2e harness |
@@ -142,7 +149,7 @@ is still in place on any changes to `run-primary-pr-e2e.ps1`.
 
 ## Constraints
 
-- Never modify workflow YAML directly — delegate to `orchestrator`.
+- You MAY edit `.github/workflows/emulator-tests.yml` and `testing/e2e/scripts/run-emulator-tests.sh` directly to fix Android-specific CI failures (Fast Deployment config, signature mismatch). For all other workflow files, delegate to `orchestrator`.
 - Never modify source code — delegate to `implementer`.
 - Never modify tests — delegate to `tester`.
 - Always classify failures before delegating — do not hand off "it failed" without a root cause.

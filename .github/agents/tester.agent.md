@@ -39,11 +39,30 @@ You validate, test, plan, generate, and heal tests for this .NET MAUI NDI applic
 Before running any tests:
 
 ```powershell
-dotnet --version          # must be .NET 9+
+dotnet --version          # must be .NET 10+
 dotnet build              # must succeed with 0 errors
 ```
 
 If the build fails, do NOT proceed. Report the build failure to `orchestrator` and delegate to `implementer` for a fix.
+
+### Android Device / Emulator Pre-check (before Stage 4 or Stage 5)
+
+Before running any test that installs an APK on an emulator or physical device:
+
+1. Verify device is ready: `adb shell getprop sys.boot_completed` must return `1`
+2. **Always** uninstall the existing package first to avoid signature mismatches:
+   ```bash
+   adb uninstall com.ndi.android 2>/dev/null || true
+   ```
+3. Install the **Release** APK (never a Debug APK for standalone installs):
+   ```bash
+   adb install publish-output/com.ndi.android-Signed.apk
+   ```
+4. Confirm no Fast Deployment abort after launch:
+   ```bash
+   adb logcat -b crash -d -v time | grep -E 'monodroid|SIGABRT|No assemblies'
+   ```
+   If output is non-empty, the wrong APK variant was installed. See `/android-ci-failure-patterns`.
 
 ---
 
@@ -90,7 +109,7 @@ Correlate failures with feature specs in `docs/features/<name>/spec.md`.
 
 ### Stage 6 — Release Gate
 ```powershell
-dotnet publish --configuration Release --framework net9.0-android
+dotnet publish --configuration Release --framework net10.0-android
 ```
 
 The release build must succeed with IL Linker trimming enabled.

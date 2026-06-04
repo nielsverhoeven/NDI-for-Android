@@ -118,6 +118,11 @@ Classify every failure into one of these categories:
 | **Workflow misconfiguration** | Wrong branch filter, missing secret, bad YAML | Fix the workflow YAML |
 | **Deprecated action** | Node.js 20 warning, forced upgrade | Bump action versions |
 | **Artifact / path missing** | "No files were found with the provided path" | Fix artifact path or mark `if-no-files-found: warn` |
+| **Android: Fast Deployment abort** | `No assemblies found in .__override__/arm64-v8a`; SIGABRT from `libmonodroid.so` | Build/publish Release APK not Debug APK; see `/android-ci-failure-patterns` |
+| **Android: Signature mismatch** | `INSTALL_FAILED_UPDATE_INCOMPATIBLE: signatures do not match` | Run `adb uninstall com.ndi.android` before `adb install`; see `/android-ci-failure-patterns` |
+| **Android: Stale Release build** | `XAGNM7009: missing native code generation state for Arm64` | `dotnet clean` then rebuild; see `/android-ci-failure-patterns` |
+
+> **Note**: For Android emulator failures always read `adb logcat -b crash -d -v time` immediately after the failed launch — the crash buffer is the most reliable source of the abort message. General logcat can be too noisy to extract the root cause quickly.
 
 ---
 
