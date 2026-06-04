@@ -17,6 +17,11 @@
     <UseMaui>true</UseMaui>
   </PropertyGroup>
 
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net10.0-android' and '$(Configuration)' == 'Debug'">
+    <EmbedAssembliesIntoApk>true</EmbedAssembliesIntoApk>
+    <AndroidUseSharedRuntime>false</AndroidUseSharedRuntime>
+  </PropertyGroup>
+
   <ItemGroup>
     <!-- MAUI fonts and images -->
     <MauiFont Include="Resources\Fonts\*" />
