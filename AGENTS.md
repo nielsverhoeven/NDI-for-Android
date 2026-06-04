@@ -59,6 +59,7 @@ Skills live in `.github/skills/<skill-name>/SKILL.md` and are invoked with `/ski
 | Skill | Purpose |
 |---|---|
 | `github-issue-enrichment` | Enrich a GitHub issue with full technical brief; marks issue to prevent re-processing |
+| `github-issue-subtasks-standardizer` | Standardize creation of task sub-issues and enforce true parent-child GitHub sub-issue links before implementation |
 | `github-actions-manager` | List workflows, inspect YAML health, check for timeouts and deprecated actions |
 | `github-action-runs-manager` | Fetch run status by PR/branch/commit, retrieve failure logs, classify root causes |
 

@@ -10,6 +10,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
 
     <application android:allowBackup="true"
+                 android:label="NDI for Android"
                  android:icon="@mipmap/appicon"
                  android:roundIcon="@mipmap/appicon_round"
                  android:supportsRtl="true">

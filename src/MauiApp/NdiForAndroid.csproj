@@ -5,6 +5,7 @@
     <OutputType>Exe</OutputType>
     <RootNamespace>NdiForAndroid</RootNamespace>
     <AssemblyName>NdiForAndroid</AssemblyName>
+    <ApplicationTitle>NDI for Android</ApplicationTitle>
     <ApplicationId>com.ndi.android</ApplicationId>
     <ApplicationVersion>1</ApplicationVersion>
     <ApplicationDisplayVersion>1.0.0</ApplicationDisplayVersion>
