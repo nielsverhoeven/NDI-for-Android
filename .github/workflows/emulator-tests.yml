@@ -41,9 +41,9 @@ jobs:
       - name: Restore dependencies
         run: dotnet restore NdiForAndroid.sln
 
-      - name: Build Debug APK
+      - name: Build Release APK
         run: |
-          dotnet publish src/MauiApp/NdiForAndroid.csproj -f net10.0-android -c Debug -o publish-output
+          dotnet publish src/MauiApp/NdiForAndroid.csproj -f net10.0-android -c Release -o publish-output
           APK_PATH=$(find publish-output -name "*.apk" | head -1)
           echo "APK_PATH=$APK_PATH" >> $GITHUB_ENV
           echo "Found APK: $APK_PATH"
