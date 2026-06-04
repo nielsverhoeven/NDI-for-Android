@@ -114,6 +114,51 @@ public sealed class AppLaunchTests
 
         Assert.NotNull(sourcesElement);
     }
+
+    [SkippableFact]
+    public void Navigation_SourcesToViewer_WhenWatchButtonPresent()
+    {
+        Skip.If(_fixture.SkipReason is not null, _fixture.SkipReason ?? string.Empty);
+
+        var driver = _fixture.Driver!;
+        var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(20));
+
+        // Ensure we are on Sources tab before trying to locate a row action.
+        var sourcesTab = wait.Until(d =>
+        {
+            try
+            {
+                return d.FindElement(By.XPath("//*[@content-desc='Sources']"));
+            }
+            catch (NoSuchElementException)
+            {
+                return null;
+            }
+        });
+
+        Assert.NotNull(sourcesTab);
+        sourcesTab!.Click();
+
+        // Only run this check when a source row exists.
+        var watchButtons = driver.FindElements(By.XPath("//*[@text='Watch']"));
+        Skip.If(watchButtons.Count == 0, "No discovered NDI source rows available; skipping Sources->Viewer smoke path.");
+
+        watchButtons[0].Click();
+
+        var viewerHeader = wait.Until(d =>
+        {
+            try
+            {
+                return d.FindElement(By.XPath("//*[@content-desc='Viewer' or @text='Viewer']"));
+            }
+            catch (NoSuchElementException)
+            {
+                return null;
+            }
+        });
+
+        Assert.NotNull(viewerHeader);
+    }
 }
 
 [CollectionDefinition("AppiumSession")]
