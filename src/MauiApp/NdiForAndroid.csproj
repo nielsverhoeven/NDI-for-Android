@@ -5,6 +5,7 @@
     <OutputType>Exe</OutputType>
     <RootNamespace>NdiForAndroid</RootNamespace>
     <AssemblyName>NdiForAndroid</AssemblyName>
+    <ApplicationTitle>NDI for Android</ApplicationTitle>
     <ApplicationId>com.ndi.android</ApplicationId>
     <ApplicationVersion>1</ApplicationVersion>
     <ApplicationDisplayVersion>1.0.0</ApplicationDisplayVersion>
@@ -30,6 +31,10 @@
     <AndroidNativeLibrary Include="Platforms\Android\libs\armeabi-v7a\libndi.so">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </AndroidNativeLibrary>
+  </ItemGroup>
+
+  <ItemGroup>
+    <AndroidResource Include="Platforms\Android\Resources\drawable\ndi_logo.png" />
   </ItemGroup>
 
   <ItemGroup>

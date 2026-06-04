@@ -3,7 +3,10 @@ using Android.Runtime;
 
 namespace NdiForAndroid;
 
-[Application]
+[Application(
+    Label = "NDI for Android",
+    Icon = "@drawable/ndi_logo",
+    RoundIcon = "@drawable/ndi_logo")]
 public class MainApplication : MauiApplication
 {
     public MainApplication(IntPtr handle, JniHandleOwnership ownership)
