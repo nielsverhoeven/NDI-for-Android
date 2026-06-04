@@ -85,6 +85,7 @@ Skills live in `.github/skills/<skill-name>/SKILL.md` and are invoked with `/ski
 - All features start from a GitHub issue enriched by `github.issues-manager`.
 - Issues can originate from the user (existing issue number) or be created fresh by `orchestrator` → `github.issues-manager` (Operation 7) from a natural-language description.
 - Enriched issues contain the marker `<!-- enriched-by-copilot -->` as their last line.
+- Before implementation starts on any issue, break work into explicit task-level child issues (or a clearly enumerated task checklist if child issues are not practical) and link them to the parent issue.
 - **Approval is required** before implementation starts on a newly created issue — `orchestrator` presents the enriched issue and waits for explicit user confirmation.
 - Task-level GitHub issues are created by `feature.breakdown` with label `task`.
 - Feature-level GitHub issues carry label `feature`; bug issues carry label `bug`.
@@ -92,6 +93,7 @@ Skills live in `.github/skills/<skill-name>/SKILL.md` and are invoked with `/ski
 - Do not create a duplicate parent issue during breakdown when a feature parent issue already exists.
 - Any detected hierarchy mismatch must be repaired by `github.issues-manager` before implementation continues.
 - Only `github.issues-manager` writes back to GitHub issues on behalf of other agents.
+- Do not close an issue until a pull request exists for the implemented changes and the issue references that PR.
 
 ## Branch Naming Convention
 
@@ -110,7 +112,9 @@ Branches are created via `gh issue develop` so they appear linked in the GitHub 
 - Always read `docs/constitution.md` before starting any feature work.
 - GitHub is the single source of truth — all features must have a GitHub issue.
 - Every issue must have a linked branch before implementation starts (Stage -1).
+- Always run task breakdown before coding: create child task issues (preferred) or an explicit task checklist in the issue, and track progress against it.
 - Validate `gh auth status` before any GitHub write operation.
 - Run `dotnet build` after every implementation task — do not accumulate build failures.
 - Never skip a test stage — fix or explicitly document blockers.
+- Open a PR for completed issue work before closing the issue, and include the PR link in the closure note.
 - Constitution violations must be escalated to `orchestrator`; never proceed silently.
