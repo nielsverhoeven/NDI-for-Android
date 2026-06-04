@@ -23,6 +23,7 @@ cleanup() {
 trap cleanup EXIT
 
 echo "Installing APK: $APK_PATH"
+adb uninstall com.ndi.android >/dev/null 2>&1 || true
 adb install -r "$APK_PATH"
 
 echo "Starting Appium"
