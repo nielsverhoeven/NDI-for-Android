@@ -1,126 +1,150 @@
-<!-- Last updated: 2026-06-05 -->
+<!-- Last updated: 2026-04-27 -->
 
-# Architecture
+# Architecture Guide
 
-This guide defines the active MAUI architecture baseline for NDI-for-Android and supersedes legacy Kotlin module descriptions for current feature planning and validation.
+This guide describes the implemented architecture for NDI-for-Android, including the spec 006 settings/developer overlay flow and the spec 032 Fluent + Electron redesign baseline.
 
-## Module Map
+## Table of Contents
 
-| Module or Project | Layer | Responsibility |
-|---|---|---|
-| `src/MauiApp` | App composition and presentation | MAUI app startup, Shell routing, XAML views, DI root in `MauiProgram.cs` |
-| `src/Core` | Domain and shared contracts | Feature models, repository interfaces, NDI bridge contracts, cross-feature services |
-| `src/MauiApp/Features/Sources` | Feature presentation + app orchestration | Source discovery UI, source selection state, route initiation |
-| `src/MauiApp/Features/Viewer` | Feature presentation + app orchestration | Viewer session lifecycle and playback UI |
-| `src/MauiApp/Features/Output` | Feature presentation + app orchestration | Output and screen-share initiation, output session state |
-| `src/MauiApp/Features/Settings` | Feature presentation + app orchestration | Settings persistence UI, diagnostics toggles, server config |
-| `src/MauiApp/NdiBridge` + `src/Core/NdiBridge` | Native boundary | P/Invoke wrappers and plain C# bridge models only |
-| `src/MauiApp/Data` | Persistence infrastructure | SQLite-backed repositories and data access services |
-| `src/MauiApp/Platforms/Android` | Platform implementation | Android-only lifecycle hooks, permissions, MediaProjection and foreground services |
-| `tests/MauiApp.Tests` | Unit and component tests | ViewModel and repository tests with mocked bridge |
-| `tests/MauiApp.UITests` | UI smoke and route validation | App launch and navigation flow coverage on emulator/device |
+1. [Module Responsibilities](#1-module-responsibilities)
+2. [Module Dependency Graph](#2-module-dependency-graph)
+3. [Data Flow: Settings Persistence to UI](#3-data-flow-settings-persistence-to-ui)
+4. [DI Wiring: AppGraph to Feature Dependencies](#4-di-wiring-appgraph-to-feature-dependencies)
+5. [Navigation Contracts](#5-navigation-contracts)
+6. [Telemetry Event Flow](#6-telemetry-event-flow)
+7. [Lifecycle Safety Rules](#7-lifecycle-safety-rules)
 
-## Dependency Rules
+## 1. Module Responsibilities
 
-1. Views depend only on ViewModels and XAML binding contracts.
-2. ViewModels depend on repository or service interfaces, never concrete data or bridge implementations.
-3. Repository implementations can depend on SQLite, Android platform services, and NDI bridge interfaces.
-4. `NdiBridge` is the only layer allowed to perform native interop calls.
-5. Native NDI SDK types never leave the bridge boundary; only plain C# records/classes cross layers.
-6. Android-specific APIs are isolated in `Platforms/Android` services and injected through interfaces.
+| Module | Responsibility | Public Surface | Allowed Dependencies |
+|---|---|---|---|
+| `:app` | Composition root and navigation host | `AppGraph`, `NdiNavigation`, `main_nav_graph.xml` | `:core:*`, `:feature:*`, `:ndi:sdk-bridge` |
+| `:core:model` | Shared model and telemetry types | `NdiSettingsModels.kt`, `TelemetryEvent.kt` | None |
+| `:core:database` | Room DB, entities, DAOs, migrations | `NdiDatabase`, `SettingsPreferenceDao` | `:core:model` |
+| `:core:testing` | Test utilities | test-only helpers | `:core:model` |
+| `:feature:ndi-browser:domain` | Repository contracts | `NdiRepositories.kt` interfaces | `:core:model` |
+| `:feature:ndi-browser:data` | Repository implementations | `*RepositoryImpl` classes | `:feature:ndi-browser:domain`, `:core:*`, `:ndi:sdk-bridge` |
+| `:feature:ndi-browser:presentation` | Fragments, screens, ViewModels, dependency locators | `SettingsFragment`, `SettingsViewModel`, `SourceListFragment`, overlay components | `:feature:ndi-browser:domain`, `:core:model` |
+| `:ndi:sdk-bridge` | Native bridge boundary (JNI/C++) | `NativeNdiBridge`, discovery/viewer/output interfaces | `:core:model` |
 
-## Architecture Diagram
+## 2. Module Dependency Graph
 
 ```mermaid
 graph TB
-	subgraph APP["MauiApp"]
-		PROG[MauiProgram.cs DI root]
-		SHELL[AppShell routes]
-		VIEW[Feature Views XAML]
-	end
+App[:app] --> CoreModel[:core:model]
+App --> CoreDb[:core:database]
+App --> FeatureDomain[:feature:ndi-browser:domain]
+App --> FeatureData[:feature:ndi-browser:data]
+App --> FeaturePresentation[:feature:ndi-browser:presentation]
+App --> NdiBridge[:ndi:sdk-bridge]
 
-	subgraph VM["ViewModels"]
-		SVM[Sources ViewModels]
-		VVM[Viewer ViewModels]
-		OVM[Output ViewModels]
-		SETVM[Settings ViewModels]
-	end
-
-	subgraph DOMAIN["Core Contracts"]
-		REPOIF[Repository interfaces]
-		BRIDGEIF[INdi* bridge interfaces]
-		MODELS[Shared feature models]
-	end
-
-	subgraph INFRA["Infrastructure"]
-		REPOIMPL[Repository implementations]
-		SQL[SQLite data services]
-		BRIDGEIMPL[P/Invoke bridge implementations]
-		ANDROID[Platforms/Android services]
-	end
-
-	subgraph TESTS["tests"]
-		UNIT[ViewModel and repository tests]
-		UI[UI smoke and navigation tests]
-	end
-
-	SHELL --> VIEW
-	VIEW --> SVM
-	VIEW --> VVM
-	VIEW --> OVM
-	VIEW --> SETVM
-
-	SVM --> REPOIF
-	VVM --> REPOIF
-	OVM --> REPOIF
-	SETVM --> REPOIF
-
-	REPOIF --> REPOIMPL
-	REPOIMPL --> SQL
-	REPOIMPL --> BRIDGEIF
-	BRIDGEIF --> BRIDGEIMPL
-	REPOIMPL --> ANDROID
-	REPOIF --> MODELS
-
-	UNIT --> REPOIF
-	UNIT --> BRIDGEIF
-	UI --> SHELL
+CoreDb --> CoreModel
+FeatureDomain --> CoreModel
+FeatureData --> CoreModel
+FeatureData --> CoreDb
+FeatureData --> FeatureDomain
+FeatureData --> NdiBridge
+FeaturePresentation --> CoreModel
+FeaturePresentation --> FeatureDomain
 ```
 
-## Navigation
+## 3. Data Flow: Settings Persistence to UI
 
-Shell URI contracts:
+Implemented settings persistence path:
 
-- `//sources`
-- `//sources/viewer?sourceId={id}`
-- `//sources/output?sourceId={id}`
-- `//settings`
+1. `SettingsFragment` dispatches user intents to `SettingsViewModel`.
+2. `SettingsViewModel` validates discovery input via `NdiDiscoveryEndpoint.parse`.
+3. `NdiSettingsRepositoryImpl` saves `NdiSettingsSnapshot` into Room (`settings_preference`).
+4. `AppGraph` combines `settingsRepository.observeSettings()` with diagnostics state.
+5. Overlay display state is mapped and consumed by Source/Viewer/Output screens.
 
-Rules:
+```mermaid
+flowchart TD
+User[User taps Save in Settings] --> Fragment[SettingsFragment]
+Fragment --> VM[SettingsViewModel.onSaveSettings]
+VM --> Parse[NdiDiscoveryEndpoint.parse]
+Parse -->|Invalid| Error[validationError]
+Parse -->|Valid| Save[NdiSettingsRepository.saveSettings]
+Save --> Db[settings_preference in Room]
+Db --> Observe[settingsRepository.observeSettings]
+Observe --> AppGraph[combine with diagnostics]
+AppGraph --> Overlay[DeveloperOverlayRenderer on screens]
+```
 
-1. Register routes in `AppShell.xaml.cs` using `Routing.RegisterRoute`.
-2. ViewModels initiate navigation through an injected navigation service abstraction.
-3. Route parameters are validated before bridge session creation.
+Current implementation note:
 
-## NDI Bridge
+- Discovery endpoint persistence and parsing are implemented.
+- Runtime bridge reconfiguration from saved discovery endpoint is not currently wired into `NdiDiscoveryRepositoryImpl`.
 
-Standard bridge pattern:
+## 4. DI Wiring: AppGraph to Feature Dependencies
 
-1. Define discovery/viewer/output bridge interfaces under shared contracts.
-2. Implement bridge classes with `[DllImport("ndi")]` under the MAUI bridge layer.
-3. Marshal native callback updates to UI thread with `MainThread.BeginInvokeOnMainThread`.
-4. Stop or transfer active native sessions during route transitions or app suspend events.
+`AppGraph` creates repositories and wires service-locator dependency objects:
 
-Native packaging constraints:
+- `SourceListDependencies`
+- `ViewerDependencies`
+- `OutputDependencies`
+- `SettingsDependencies`
 
-- Keep `libndi.so` binaries in Android-native library paths and include them as `AndroidNativeLibrary` items.
-- Support `arm64-v8a` and `armeabi-v7a` assets per constitution.
+Implemented pattern excerpt:
 
-## Data Layer
+```kotlin
+SettingsDependencies.settingsRepositoryProvider = { settingsRepository }
+SettingsDependencies.developerDiagnosticsRepositoryProvider = { developerDiagnosticsRepository }
+SettingsDependencies.overlayStateProvider = { overlayDisplayStateFlow }
 
-Persistence architecture:
+SourceListDependencies.overlayStateProvider = { overlayDisplayStateFlow }
+ViewerDependencies.overlayStateProvider = { overlayDisplayStateFlow }
+OutputDependencies.overlayStateProvider = { overlayDisplayStateFlow }
+```
 
-1. SQLite access remains repository-mediated only.
-2. Settings and discovery server configuration are restored on app startup before first discovery run.
-3. Async APIs are mandatory for data access and persistence writes.
-4. ViewModels never access SQLite directly.
+## 5. Navigation Contracts
+
+Deep links defined in `app/src/main/res/navigation/main_nav_graph.xml`:
+
+- `ndi://viewer/{sourceId}` with string `sourceId`
+- `ndi://output/{sourceId}` with string `sourceId`
+- `ndi://settings`
+
+Helpers in `app/src/main/java/com/ndi/app/navigation/NdiNavigation.kt`:
+
+- `viewerRequest(sourceId)`
+- `outputRequest(sourceId)`
+- `settingsRequest()`
+
+## 6. Telemetry Event Flow
+
+Settings and overlay telemetry path:
+
+1. Settings actions emit via `SettingsDependencies.telemetryEmitter`.
+2. Event factories are centralized in `SettingsTelemetry`.
+3. `AppGraph` emits overlay transition and redaction events while mapping overlay state.
+
+Main events in the implemented flow:
+
+- `settings_opened`, `settings_closed`
+- `discovery_server_saved`
+- `developer_mode_toggled`
+- `developer_overlay_state_changed`
+- `overlay_log_redaction_applied`
+
+## 7. Lifecycle Safety Rules
+
+Implemented lifecycle patterns to keep UI safe:
+
+- `repeatOnLifecycle(Lifecycle.State.STARTED)` for flow collection in screen fragments.
+- View bindings are nulled in `onDestroyView`.
+- Source List foreground refresh starts in `onStart` and stops in `onStop`.
+- Overlay rendering is pure render-time logic and driven by state.
+
+## 8. Fluent + Electron Baseline (Spec 032)
+
+Feature 032 introduces a presentation-only design-language baseline without changing repository contracts:
+
+- App-level semantic tokens were added in `app/src/main/res/values/colors.xml` and `app/src/main/res/values/themes.xml`.
+- Presentation module mirrors required color tokens in `feature/ndi-browser/presentation/src/main/res/values/colors.xml` to keep module boundaries intact.
+- Top-level shell style semantics are explicit in `TopLevelShellStyleState` via `TopLevelNavigationCoordinator.resolveShellStyleState`.
+- Home dashboard uses shared token mapping through `FluentElectronHomeTokens`.
+
+Boundary guarantee:
+
+- No direct Room/database access was introduced in presentation during spec 032 implementation.

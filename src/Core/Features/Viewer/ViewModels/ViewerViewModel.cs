@@ -20,7 +20,6 @@ public partial class ViewerViewModel : ObservableObject
     public ViewerViewModel(INdiViewerBridge bridge)
     {
         _bridge = bridge;
-        StatusMessage = "Select a source on Home to start viewing.";
     }
 
     partial void OnSourceIdChanged(string? value)
@@ -32,15 +31,10 @@ public partial class ViewerViewModel : ObservableObject
     [RelayCommand]
     private void Start()
     {
-        if (string.IsNullOrEmpty(SourceId))
-        {
-            StatusMessage = "Select a source on Home to start viewing.";
-            return;
-        }
-
+        if (string.IsNullOrEmpty(SourceId)) return;
         _bridge.StartReceiver(SourceId);
         IsPlaying = true;
-        StatusMessage = "Connecting...";
+        StatusMessage = "Connecting…";
     }
 
     [RelayCommand]
