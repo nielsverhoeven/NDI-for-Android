@@ -63,6 +63,7 @@ Skills live in `.github/skills/<skill-name>/SKILL.md` and are invoked with `/ski
 | `github-actions-manager` | List workflows, inspect YAML health, check for timeouts and deprecated actions |
 | `github-action-runs-manager` | Fetch run status by PR/branch/commit, retrieve failure logs, classify root causes |
 | `android-ci-failure-patterns` | Diagnose and fix Android emulator CI failures: Fast Deployment abort, APK signature mismatch, stale Release build state |
+| `android-build-install-run` | Build the latest Android app, install it on a connected device, launch it, and capture startup/device-validation evidence |
 
 ## Constitution
 
@@ -126,6 +127,7 @@ Branches are created via `gh issue develop` so they appear linked in the GitHub 
 - Always run task breakdown before coding: create child task issues (preferred) or an explicit task checklist in the issue, and track progress against it.
 - Validate `gh auth status` before any GitHub write operation.
 - Run `dotnet build` after every implementation task — do not accumulate build failures.
+- Use `/android-build-install-run` whenever acceptance depends on observable device behavior or before declaring Android UI work verified.
 - Never skip a test stage — fix or explicitly document blockers.
 - Open a PR for completed issue work before closing the issue, and include the PR link in the closure note.
 - Constitution violations must be escalated to `orchestrator`; never proceed silently.
