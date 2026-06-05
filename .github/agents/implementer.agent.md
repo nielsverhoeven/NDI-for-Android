@@ -49,6 +49,18 @@ Read these files first — they constrain every implementation decision:
 3. `docs/features/<feature-name>/tasks.md` — the dependency-ordered task list
 4. `docs/architecture.md` — current module structure and patterns
 
+### Branch Safety Gate (mandatory)
+
+Before modifying any file, creating commits, or running issue write-back commands:
+1. Confirm you are **not** on `main`.
+2. Confirm the current issue branch already exists and is checked out.
+3. If no feature/bugfix branch exists yet, **stop implementation** and request/create the branch first.
+
+Hard rules:
+- Never implement directly on `main`.
+- Never commit directly on `main`.
+- If work started on `main` by mistake, immediately stop and move work to a feature branch before continuing.
+
 ---
 
 ## Implementation Loop
@@ -168,6 +180,7 @@ If this structure does not yet exist, create it and update `docs/architecture.md
 ## Constraints
 
 - Never implement anything not in the approved `plan.md`.
+- Never perform implementation work on `main`; a feature or bugfix branch is required before the first edit.
 - Always consult `maui.expert` before using any MAUI API you are unsure about.
 - Always consult `ndi.expert` before any NDI SDK change.
 - Never bypass the repository layer to access data directly from a ViewModel.
