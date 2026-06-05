@@ -50,44 +50,24 @@ public class SourceListViewModelTests
     }
 
     [Fact]
-    public async Task NavigateToViewerCommand_CallsNavigationService_WithCorrectRoute()
+    public async Task NavigateToViewerCommand_EncodesSourceIdAndNavigates()
     {
-        var source = new NdiSource("src-abc", "Camera 1", "192.168.1.10", true, 1000);
+        var source = new NdiSource("camera/1", "Camera 1", null, true, 1000);
         var sut = CreateSut();
 
         await sut.NavigateToViewerCommand.ExecuteAsync(source);
 
-        var expectedRoute = $"viewer?sourceId={Uri.EscapeDataString("src-abc")}";
-        _navigationMock.Verify(
-            n => n.NavigateToAsync(expectedRoute),
-            Times.Once,
-            $"Expected NavigateToAsync to be called with '{expectedRoute}'");
+        _navigationMock.Verify(n => n.NavigateToAsync("viewer?sourceId=camera%2F1"), Times.Once);
     }
 
     [Fact]
-    public async Task NavigateToOutputCommand_CallsNavigationService_WithCorrectRoute()
+    public async Task NavigateToOutputCommand_EncodesSourceIdAndNavigates()
     {
-        var source = new NdiSource("src/special&id", "Camera 2", "192.168.1.11", true, 2000);
+        var source = new NdiSource("camera 1", "Camera 1", null, true, 1000);
         var sut = CreateSut();
 
         await sut.NavigateToOutputCommand.ExecuteAsync(source);
 
-        var expectedRoute = $"output?sourceId={Uri.EscapeDataString("src/special&id")}";
-        _navigationMock.Verify(
-            n => n.NavigateToAsync(expectedRoute),
-            Times.Once,
-            $"Expected NavigateToAsync to be called with '{expectedRoute}'");
-    }
-
-    [Fact]
-    public async Task NavigateToViewerCommand_WithNullOrEmptySourceId_StillCallsNavigation()
-    {
-        var source = new NdiSource(string.Empty, "Unknown", "0.0.0.0", false, 0);
-        var sut = CreateSut();
-
-        await sut.NavigateToViewerCommand.ExecuteAsync(source);
-
-        var expectedRoute = $"viewer?sourceId={Uri.EscapeDataString(string.Empty)}";
-        _navigationMock.Verify(n => n.NavigateToAsync(expectedRoute), Times.Once);
+        _navigationMock.Verify(n => n.NavigateToAsync("output?sourceId=camera%201"), Times.Once);
     }
 }

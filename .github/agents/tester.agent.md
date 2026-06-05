@@ -49,9 +49,20 @@ If the build fails, do NOT proceed. Report the build failure to `orchestrator` a
 
 Before running any test that installs an APK on an emulator or physical device:
 
-1. Use `/android-build-install-run` as the canonical build/install/launch path.
-2. Verify the device boot check, uninstall/reinstall, launch, PID, and crash-buffer evidence produced by that skill.
-3. If the crash buffer reports Mono fast deployment or install incompatibility signatures, follow `/android-ci-failure-patterns` before continuing.
+1. Verify device is ready: `adb shell getprop sys.boot_completed` must return `1`
+2. **Always** uninstall the existing package first to avoid signature mismatches:
+   ```bash
+   adb uninstall com.ndi.android 2>/dev/null || true
+   ```
+3. Install the **Release** APK (never a Debug APK for standalone installs):
+   ```bash
+   adb install publish-output/com.ndi.android-Signed.apk
+   ```
+4. Confirm no Fast Deployment abort after launch:
+   ```bash
+   adb logcat -b crash -d -v time | grep -E 'monodroid|SIGABRT|No assemblies'
+   ```
+   If output is non-empty, the wrong APK variant was installed. See `/android-ci-failure-patterns`.
 
 ---
 
@@ -85,8 +96,6 @@ dotnet test --filter "Category=Integration"
 dotnet test tests/<App>.UITests/ --filter "Category=UI"
 ```
 
-Before or alongside this stage, use `/android-build-install-run` when the UI verification depends on observing the current build on a connected device.
-
 ### Stage 5 — NDI E2E Validation (dual-emulator harness)
 Run the NDI end-to-end harness if it exists:
 ```powershell
@@ -97,7 +106,6 @@ Pop-Location
 ```
 
 Correlate failures with feature specs in `docs/features/<name>/spec.md`.
-Use `/android-build-install-run` first if you need a clean local install and launch sanity check before running the heavier device workflow.
 
 ### Stage 6 — Release Gate
 ```powershell
@@ -215,7 +223,6 @@ After every test run, update `test-results/test-results.md`:
 | UI tests | ✅/❌ |
 | NDI e2e | ✅/❌ |
 | Release build | ✅/❌ |
-| Device install / launch smoke check | ✅/❌ |
 ```
 
 ---
@@ -226,5 +233,4 @@ After every test run, update `test-results/test-results.md`:
 - Never fix production code — delegate to `implementer`.
 - Only fix test code when the test itself is provably wrong.
 - Always re-run the full stage after any fix to check for regressions.
-- Use `/android-build-install-run` whenever Android runtime behavior needs to be confirmed on a connected device.
 - Document every failure and fix in `test-results/test-results.md`.
