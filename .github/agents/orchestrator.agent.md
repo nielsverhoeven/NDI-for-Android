@@ -200,7 +200,7 @@ Shall I proceed with implementation? (yes / no / I want to change something firs
 ### Stage 5 — Implementation
 - **Entry**: Task breakdown complete.
 - **Action**: Delegate to `implementer` with the task list.
-- **Exit gate**: All tasks marked complete; code compiles and passes basic build check.
+- **Exit gate**: All tasks marked complete; code compiles and passes basic build check. If any acceptance criterion depends on observable Android device behavior, require `/android-build-install-run` evidence before advancing.
 
 ### Stage 5.5 — CI Validation
 - **Entry**: Implementation complete; code pushed to the feature branch / PR created.
@@ -210,7 +210,7 @@ Shall I proceed with implementation? (yes / no / I want to change something firs
 ### Stage 6 — Testing
 - **Entry**: Implementation complete.
 - **Action**: Delegate to `tester`.
-- **Exit gate**: All test stages pass; `test-results/` report updated.
+- **Exit gate**: All test stages pass; `test-results/` report updated. For device-facing Android changes, the test report must include `/android-build-install-run` install-and-launch evidence or an explicit blocker.
 
 ### Stage 7 — Documentation
 - **Entry**: Tests pass.
@@ -248,6 +248,7 @@ Never proceed with a known constitution violation silently.
 - All implementation work happens on the issue branch. Never commit implementation to `main` directly.
 - In bulk mode, complete one issue fully before starting the next. Always confirm with the user between issues.
 - Never allow hierarchy inversion: feature issues are parents; task issues are children.
+- Require `/android-build-install-run` evidence whenever the feature changes Android-visible behavior and the acceptance criteria depend on what happens on a connected device.
 - If issue hierarchy is missing or inconsistent at any stage, pause and delegate to `github.issues-manager` to repair links before continuing.
 
 ---
