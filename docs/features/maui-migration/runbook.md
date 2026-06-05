@@ -92,9 +92,13 @@ Repository Impl (in MauiApp) → NDI Bridge | SQLite
 
 ### NDI Bridge (P/Invoke)
 
-`libndi.so` is included in `src/MauiApp/Platforms/Android/libs/` for both `arm64-v8a` and `armeabi-v7a`. The bridge classes in `src/MauiApp/NdiBridge/` use `[DllImport("ndi")]` to call into the native library.
+`libndi.so` is included in `src/MauiApp/Platforms/Android/libs/` for both `arm64-v8a` and `armeabi-v7a`. The bridge classes in `src/MauiApp/NdiBridge/` now provide concrete P/Invoke-backed initialization and managed fallback behaviors while preserving a plain C# boundary model.
 
-Current state: **stub implementations** — all bridge methods return safe defaults. Full P/Invoke wiring is task T004 (tracked as #119).
+Current state:
+- Native initialization attempts use `NDIlib_initialize` / `NDIlib_version` through `[DllImport("ndi")]`.
+- Discovery/output reachability checks are performed through managed TCP probes.
+- Viewer/output lifecycle is wired end-to-end through bridge interfaces consumed by ViewModels.
+- No native SDK types escape `NdiBridge` into ViewModels or Views.
 
 ### Navigation
 
@@ -108,11 +112,14 @@ Shell URI routing:
 
 ## NDI Discovery
 
-The `NdiDiscoveryBridge` stub currently returns an empty list. To test discovery end-to-end:
+`NdiDiscoveryBridge` now supports configured endpoint checks and discovery check classification (`NONE`, `ENDPOINT_UNREACHABLE`, `TIMEOUT`, `UNKNOWN`) using bridge-safe boundary models.
+
+For end-to-end validation with live NDI discovery:
 
 1. Deploy the app to a physical device on the same LAN as an NDI source.
 2. Ensure `CHANGE_WIFI_MULTICAST_STATE` permission is granted.
-3. Full P/Invoke wiring (T004) is required for real discovery.
+3. Configure discovery host/port in Settings and trigger refresh from Sources.
+4. Validate discovery check diagnostics from bridge-reported status.
 
 ---
 
@@ -154,22 +161,20 @@ Runs on every push to `main`, `feature/**`, and `bugfix/**` branches, and on all
 
 ## Task Progress
 
-See `docs/features/maui-migration/tasks.md` for the T001–T012 issue mapping.
+See `docs/features/maui-migration/tasks.md` for the T001–T010 issue mapping under issue #113.
 
 | Task | Issue | Status |
 |---|---|---|
-| T001 | #116 | ✅ MAUI solution skeleton |
-| T002 | #117 | ✅ Core models / DI |
-| T003 | #118 | ✅ NDI bridge skeleton |
-| T004 | #119 | ✅ Data models & SQLite |
-| T005 | #120 | ✅ Repositories |
-| T006 | #121 | ✅ ViewModels |
-| T007 | #122 | ✅ Views / XAML / navigation |
-| T008 | #123 | ✅ Android permissions & manifest |
-| T009 | #124 | ✅ Unit tests |
-| T010 | #125 | ⏭ MAUI UI tests (deferred) |
-| T011 | #126 | ✅ CI workflow |
-| T012 | #127 | ✅ Documentation (this file) |
+| T001 | #190 | ✅ Core models and contracts aligned |
+| T002 | #191 | ✅ Repository and service migration wiring |
+| T003 | #192 | ✅ ViewModel command/state parity |
+| T004 | #193 | ✅ Shell routes and feature pages |
+| T005 | #194 | ✅ Android lifecycle and foreground service abstraction |
+| T006 | #195 | ✅ P/Invoke bridge boundary implementation |
+| T007 | #196 | ✅ ViewModel unit coverage expanded |
+| T008 | #197 | ✅ UI/integration test suite aligned (environment-skippable) |
+| T009 | #198 | ✅ Migration docs and evidence updated |
+| T010 | #199 | ✅ Parent issue sync and closure checklist updates |
 
 ---
 

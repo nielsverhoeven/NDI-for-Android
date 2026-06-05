@@ -49,6 +49,18 @@ Read these files first — they constrain every implementation decision:
 3. `docs/features/<feature-name>/tasks.md` — the dependency-ordered task list
 4. `docs/architecture.md` — current module structure and patterns
 
+### Branch Safety Gate (mandatory)
+
+Before modifying any file, creating commits, or running issue write-back commands:
+1. Confirm you are **not** on `main`.
+2. Confirm the current issue branch already exists and is checked out.
+3. If no feature/bugfix branch exists yet, **stop implementation** and request/create the branch first.
+
+Hard rules:
+- Never implement directly on `main`.
+- Never commit directly on `main`.
+- If work started on `main` by mistake, immediately stop and move work to a feature branch before continuing.
+
 ---
 
 ## Implementation Loop
@@ -91,16 +103,13 @@ Write the code following these invariants (derived from `docs/constitution.md`):
 After implementing each task:
 1. Run `dotnet build` to confirm compilation
 2. Run the unit tests for the affected module: `dotnet test --filter <module>`
-3. Confirm the acceptance condition from `tasks.md` is met
+3. If the acceptance condition is device-visible or depends on Android runtime behavior, invoke `/android-build-install-run` and validate the current branch on the connected device before declaring the task done
+4. Confirm the acceptance condition from `tasks.md` is met with explicit evidence from build, tests, and device validation when required
 4. Mark the task as complete in `tasks.md`
 
 #### If verification requires on-device or emulator install:
-- Always publish a **Release** APK: `dotnet publish -f net10.0-android -c Release -o publish-output`
-- Uninstall first to avoid signature mismatches: `adb uninstall com.ndi.android 2>/dev/null || true`
-- Install: `adb install publish-output/com.ndi.android-Signed.apk`
-- If the app crashes immediately on launch, read the **crash logcat buffer** (not general logcat):
-  `adb logcat -b crash -d -v time`
-  A "No assemblies found in `.__override__`" message means a Debug APK was installed. See `/android-ci-failure-patterns`.
+- Do not improvise the deploy flow. Use `/android-build-install-run` as the canonical build/install/launch procedure.
+- If the crash buffer shows Mono fast deployment signatures or install incompatibilities, follow `/android-ci-failure-patterns`.
 
 ### 5. Update the GitHub Issue
 After the task passes verification, **always update the corresponding GitHub issue**:
@@ -116,6 +125,7 @@ gh issue comment <issue-number> --body "## ✅ Implementation complete
 ### Verification
 - `dotnet build` ✅
 - `dotnet test` ✅ (<N> tests passed)
+- `android-build-install-run` ✅ (<device-visible acceptance evidence when required>)
 
 ### Commits
 - <short-sha> — <commit message>"
@@ -170,9 +180,11 @@ If this structure does not yet exist, create it and update `docs/architecture.md
 ## Constraints
 
 - Never implement anything not in the approved `plan.md`.
+- Never perform implementation work on `main`; a feature or bugfix branch is required before the first edit.
 - Always consult `maui.expert` before using any MAUI API you are unsure about.
 - Always consult `ndi.expert` before any NDI SDK change.
 - Never bypass the repository layer to access data directly from a ViewModel.
 - Never let NDI types cross the bridge layer boundary.
 - Run `dotnet build` after every task — do not accumulate build failures.
+- For any Android UI, navigation, lifecycle, permission, or native-bridge change, use `/android-build-install-run` before claiming the acceptance criteria are satisfied.
 - If a task cannot be completed without violating the constitution, stop and escalate to `orchestrator`.

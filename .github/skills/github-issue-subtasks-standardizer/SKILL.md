@@ -39,6 +39,12 @@ Extract the scope and acceptance criteria to derive subtasks.
 
 ## Step 3 - Create standardized subtasks
 
+Before creating any task, enforce idempotency:
+
+1. Query existing open `task` issues for the same parent and T-ID/title pattern.
+2. Reuse matching issues instead of creating duplicates.
+3. Only create missing tasks.
+
 Create 3-7 task issues with labels:
 - `task`
 - same type label as parent when useful (e.g., `bug`)
@@ -69,9 +75,9 @@ gh issue view <child> --repo <owner/repo> --json id
 2. Add sub-issue relation:
 ```
 gh api graphql \
-  -f query='mutation($parent:ID!,$child:ID!){addSubIssue(input:{issueId:$parent,subIssueId:$child}){issue{id}}}' \
+  -f query='mutation($parent:ID!,$childUrl:String!){addSubIssue(input:{issueId:$parent,subIssueUrl:$childUrl,replaceParent:true}){issue{id} subIssue{id}}}' \
   -f parent=<PARENT_NODE_ID> \
-  -f child=<CHILD_NODE_ID>
+  -f childUrl=<CHILD_ISSUE_URL>
 ```
 
 Repeat for every child.
@@ -87,6 +93,8 @@ gh api graphql \
 
 If any child is missing, re-run Step 4.
 
+If duplicate children exist for the same T-ID, close duplicates and keep one canonical child issue before finishing.
+
 ## Step 6 - Update parent issue body
 
 Ensure parent issue has a `## Task Breakdown` section listing child issues:
@@ -101,6 +109,7 @@ Keep `<!-- enriched-by-copilot -->` as the final line when present.
 - Do not start code implementation until Step 5 passes.
 - Close child tasks as completed when done and leave completion comments with evidence.
 - Keep the parent issue open until implementation PR exists.
+- Never report "hierarchy synced" unless the parent `subIssues` query shows the exact expected child set.
 
 ## Quality rules
 
