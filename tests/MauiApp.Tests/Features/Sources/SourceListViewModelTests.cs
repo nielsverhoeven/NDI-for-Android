@@ -48,4 +48,26 @@ public class SourceListViewModelTests
         Assert.Equal("Connection refused", sut.ErrorMessage);
         Assert.False(sut.IsRefreshing);
     }
+
+    [Fact]
+    public async Task NavigateToViewerCommand_EncodesSourceIdAndNavigates()
+    {
+        var source = new NdiSource("camera/1", "Camera 1", null, true, 1000);
+        var sut = CreateSut();
+
+        await sut.NavigateToViewerCommand.ExecuteAsync(source);
+
+        _navigationMock.Verify(n => n.NavigateToAsync("viewer?sourceId=camera%2F1"), Times.Once);
+    }
+
+    [Fact]
+    public async Task NavigateToOutputCommand_EncodesSourceIdAndNavigates()
+    {
+        var source = new NdiSource("camera 1", "Camera 1", null, true, 1000);
+        var sut = CreateSut();
+
+        await sut.NavigateToOutputCommand.ExecuteAsync(source);
+
+        _navigationMock.Verify(n => n.NavigateToAsync("output?sourceId=camera%201"), Times.Once);
+    }
 }

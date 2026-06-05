@@ -9,6 +9,10 @@ using NdiForAndroid.NdiBridge;
 using NdiForAndroid.Data;
 using NdiForAndroid.Services;
 
+#if ANDROID
+using NdiForAndroid.Platforms.Android.Services;
+#endif
+
 namespace NdiForAndroid;
 
 public static class MauiProgram
@@ -44,6 +48,13 @@ public static class MauiProgram
         // Services
         builder.Services.AddSingleton<ITelemetryService, TelemetryService>();
         builder.Services.AddSingleton<INavigationService, ShellNavigationService>();
+        builder.Services.AddSingleton<IAppLifecycleService, AppLifecycleService>();
+
+#if ANDROID
+        builder.Services.AddSingleton<IScreenSharePlatformService, AndroidScreenSharePlatformService>();
+#else
+        builder.Services.AddSingleton<IScreenSharePlatformService, NoopScreenSharePlatformService>();
+#endif
 
         // ViewModels
         builder.Services.AddTransient<SourceListViewModel>();
