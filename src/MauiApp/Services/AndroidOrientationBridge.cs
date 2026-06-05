@@ -22,7 +22,8 @@ public sealed class AndroidOrientationBridge : IAndroidOrientationBridge
 
     public void SyncFromDisplayInfo()
     {
-        var orientation = DeviceDisplay.Current.MainDisplayInfo.Orientation == DisplayOrientation.Landscape
+        var displayInfo = DeviceDisplay.Current.MainDisplayInfo;
+        var orientation = displayInfo.Width >= displayInfo.Height
             ? DeviceOrientation.Landscape
             : DeviceOrientation.Portrait;
 

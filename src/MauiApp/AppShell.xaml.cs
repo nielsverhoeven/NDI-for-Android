@@ -9,6 +9,24 @@ namespace NdiForAndroid;
 
 public partial class AppShell : Shell
 {
+    private readonly IReadOnlyDictionary<PrimaryNavDestination, string> _landscapeRoutes =
+        new Dictionary<PrimaryNavDestination, string>
+        {
+            [PrimaryNavDestination.Home] = "//home-rail",
+            [PrimaryNavDestination.Stream] = "//stream-rail",
+            [PrimaryNavDestination.View] = "//view-rail",
+            [PrimaryNavDestination.Settings] = "//settings-rail",
+        };
+
+    private readonly IReadOnlyDictionary<PrimaryNavDestination, string> _portraitRoutes =
+        new Dictionary<PrimaryNavDestination, string>
+        {
+            [PrimaryNavDestination.Home] = "//home-tab",
+            [PrimaryNavDestination.Stream] = "//stream-tab",
+            [PrimaryNavDestination.View] = "//view-tab",
+            [PrimaryNavDestination.Settings] = "//settings-tab",
+        };
+
     private readonly AdaptiveShellStateViewModel _stateViewModel;
     private readonly IAndroidOrientationBridge _orientationBridge;
     private readonly INavigationHandoffService _handoffService;
@@ -126,21 +144,23 @@ public partial class AppShell : Shell
         {
             // Landscape: show locked flyout (nav rail), hide bottom tab bar
             FlyoutBehavior = FlyoutBehavior.Locked;
-            Shell.SetTabBarIsVisible(this, false);
+            PrimaryTabBar.IsVisible = false;
         }
         else
         {
             // Portrait: hide flyout, show bottom tab bar
             FlyoutBehavior = FlyoutBehavior.Disabled;
-            Shell.SetTabBarIsVisible(this, true);
+            PrimaryTabBar.IsVisible = true;
         }
+
+        Dispatcher.Dispatch(async () => await EnsurePrimaryDestinationVisibleAsync());
     }
 
     // ── Navigation ───────────────────────────────────────────────────────────
 
     private async void OnRailItemSelected(object? sender, PrimaryNavDestination destination)
     {
-        if (_stateViewModel.RouteByDestination.TryGetValue(destination, out var route))
+        if (TryGetRouteForCurrentPlacement(destination, out var route))
             await GoToAsync(route);
     }
 
@@ -167,5 +187,23 @@ public partial class AppShell : Shell
         if (s.Contains("view") || s.Contains("viewer")) return PrimaryNavDestination.View;
         if (s.Contains("settings")) return PrimaryNavDestination.Settings;
         return null;
+    }
+
+    private bool TryGetRouteForCurrentPlacement(PrimaryNavDestination destination, out string route)
+    {
+        var routes = _stateViewModel.IsLeftRailNavigationVisible ? _landscapeRoutes : _portraitRoutes;
+        return routes.TryGetValue(destination, out route!);
+    }
+
+    private async Task EnsurePrimaryDestinationVisibleAsync()
+    {
+        if (!TryGetRouteForCurrentPlacement(_stateViewModel.SelectedDestination, out var route))
+            return;
+
+        var currentLocation = CurrentState?.Location?.OriginalString;
+        if (string.Equals(currentLocation, route, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        await GoToAsync(route);
     }
 }

@@ -28,22 +28,58 @@
         </DataTemplate>
     </Shell.FlyoutHeaderTemplate>
 
+    <FlyoutItem x:Name="HomeRailItem"
+                Route="home-rail-item"
+                Shell.FlyoutItemIsVisible="False">
+        <ShellContent Title="Home"
+                      ContentTemplate="{DataTemplate sources:SourceListPage}"
+                      Route="home-rail"
+                      Icon="nav_home.svg" />
+    </FlyoutItem>
+
+    <FlyoutItem x:Name="StreamRailItem"
+                Route="stream-rail-item"
+                Shell.FlyoutItemIsVisible="False">
+        <ShellContent Title="Stream"
+                      ContentTemplate="{DataTemplate output:OutputPage}"
+                      Route="stream-rail"
+                      Icon="nav_stream.svg" />
+    </FlyoutItem>
+
+    <FlyoutItem x:Name="ViewRailItem"
+                Route="view-rail-item"
+                Shell.FlyoutItemIsVisible="False">
+        <ShellContent Title="View"
+                      ContentTemplate="{DataTemplate viewer:ViewerPage}"
+                      Route="view-rail"
+                      Icon="nav_view.svg" />
+    </FlyoutItem>
+
+    <FlyoutItem x:Name="SettingsRailItem"
+                Route="settings-rail-item"
+                Shell.FlyoutItemIsVisible="False">
+        <ShellContent Title="Settings"
+                      ContentTemplate="{DataTemplate settings:SettingsPage}"
+                      Route="settings-rail"
+                      Icon="nav_settings.svg" />
+    </FlyoutItem>
+
     <TabBar x:Name="PrimaryTabBar">
         <ShellContent Title="Home"
                       ContentTemplate="{DataTemplate sources:SourceListPage}"
-                      Route="home"
+                      Route="home-tab"
                       Icon="nav_home.svg" />
         <ShellContent Title="Stream"
                       ContentTemplate="{DataTemplate output:OutputPage}"
-                      Route="stream"
+                      Route="stream-tab"
                       Icon="nav_stream.svg" />
         <ShellContent Title="View"
                       ContentTemplate="{DataTemplate viewer:ViewerPage}"
-                      Route="view"
+                      Route="view-tab"
                       Icon="nav_view.svg" />
         <ShellContent Title="Settings"
                       ContentTemplate="{DataTemplate settings:SettingsPage}"
-                      Route="settings"
+                      Route="settings-tab"
                       Icon="nav_settings.svg" />
     </TabBar>
 
