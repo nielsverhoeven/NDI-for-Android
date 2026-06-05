@@ -63,6 +63,7 @@ Skills live in `.github/skills/<skill-name>/SKILL.md` and are invoked with `/ski
 | `github-actions-manager` | List workflows, inspect YAML health, check for timeouts and deprecated actions |
 | `github-action-runs-manager` | Fetch run status by PR/branch/commit, retrieve failure logs, classify root causes |
 | `android-ci-failure-patterns` | Diagnose and fix Android emulator CI failures: Fast Deployment abort, APK signature mismatch, stale Release build state |
+| `android-build-install-run` | Build the latest Android app, install it on a connected device, launch it, and capture startup/device-validation evidence |
 
 ## Constitution
 
@@ -92,10 +93,19 @@ Skills live in `.github/skills/<skill-name>/SKILL.md` and are invoked with `/ski
 - Task-level GitHub issues are created by `feature.breakdown` with label `task`.
 - Feature-level GitHub issues carry label `feature`; bug issues carry label `bug`.
 - Parent/child hierarchy is mandatory: the feature issue is the parent, and all task issues are child issues linked to that parent.
+- Parent/child linking must use real GitHub sub-issue relations (`addSubIssue`), not checklist references alone.
 - Do not create a duplicate parent issue during breakdown when a feature parent issue already exists.
 - Any detected hierarchy mismatch must be repaired by `github.issues-manager` before implementation continues.
 - Only `github.issues-manager` writes back to GitHub issues on behalf of other agents.
 - Do not close an issue until a pull request exists for the implemented changes and the issue references that PR.
+
+### Sub-Issue Safety Guardrails (mandatory)
+
+- Task creation must be idempotent: before creating any new task issue, search for existing open tasks by T-ID/title pattern and reuse them when present.
+- After creating each task issue, immediately set/repair parent with GitHub GraphQL `addSubIssue(input:{issueId:<parent>, subIssueUrl:<childUrl>, replaceParent:true})`.
+- After all links are applied, verify via `issue{subIssues}` query that the parent contains the full expected child set.
+- If duplicate task issues are accidentally created, close duplicates immediately with a comment that points to the canonical task issue.
+- Do not announce hierarchy sync complete until the `subIssues` verification query passes.
 
 ## Branch Naming Convention
 
@@ -117,6 +127,7 @@ Branches are created via `gh issue develop` so they appear linked in the GitHub 
 - Always run task breakdown before coding: create child task issues (preferred) or an explicit task checklist in the issue, and track progress against it.
 - Validate `gh auth status` before any GitHub write operation.
 - Run `dotnet build` after every implementation task — do not accumulate build failures.
+- Use `/android-build-install-run` whenever acceptance depends on observable device behavior or before declaring Android UI work verified.
 - Never skip a test stage — fix or explicitly document blockers.
 - Open a PR for completed issue work before closing the issue, and include the PR link in the closure note.
 - Constitution violations must be escalated to `orchestrator`; never proceed silently.
