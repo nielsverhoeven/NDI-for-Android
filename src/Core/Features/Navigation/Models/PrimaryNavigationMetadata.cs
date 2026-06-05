@@ -30,9 +30,9 @@ public static class PrimaryNavigationMetadata
 {
     public static readonly IReadOnlyList<PrimaryNavItem> Items =
     [
-        new(PrimaryNavDestination.Home, "Home", "//home", "tab_sources.png"),
-        new(PrimaryNavDestination.Stream, "Stream", "//stream", "tab_sources.png"),
-        new(PrimaryNavDestination.View, "View", "//view", "tab_sources.png"),
-        new(PrimaryNavDestination.Settings, "Settings", "//settings", "tab_settings.png"),
+        new(PrimaryNavDestination.Home, "Home", "//home", "nav_home.svg"),
+        new(PrimaryNavDestination.Stream, "Stream", "//stream", "nav_stream.svg"),
+        new(PrimaryNavDestination.View, "View", "//view", "nav_view.svg"),
+        new(PrimaryNavDestination.Settings, "Settings", "//settings", "nav_settings.svg"),
     ];
 }

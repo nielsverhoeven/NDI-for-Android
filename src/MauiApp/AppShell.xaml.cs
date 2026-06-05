@@ -15,6 +15,14 @@ public partial class AppShell : Shell
 
     private PrimaryNavDestination _currentPrimaryDestination = PrimaryNavDestination.Home;
 
+    // Map destination -> rail button for highlight updates
+    private readonly Dictionary<PrimaryNavDestination, (Frame Container, Label Label)> _railButtons = [];
+
+    private static readonly Color RailBg = Color.FromArgb("#1C1C1E");
+    private static readonly Color ActiveBg = Color.FromArgb("#3A3A3C");
+    private static readonly Color InactiveText = Color.FromArgb("#8E8E93");
+    private static readonly Color ActiveText = Color.FromArgb("#FFFFFF");
+
     public AppShell(
         AdaptiveShellStateViewModel stateViewModel,
         IAndroidOrientationBridge orientationBridge,
@@ -26,61 +34,138 @@ public partial class AppShell : Shell
         _orientationBridge = orientationBridge;
         _handoffService = handoffService;
 
-        BindingContext = _stateViewModel;
-
         Routing.RegisterRoute("viewer", typeof(ViewerPage));
         Routing.RegisterRoute("output", typeof(OutputPage));
 
-        _stateViewModel.PropertyChanged += OnStateViewModelPropertyChanged;
+        BuildRailItems();
+
+        _stateViewModel.PropertyChanged += OnStatePropertyChanged;
+        _stateViewModel.RailItemSelected += OnRailItemSelected;
         Navigated += OnShellNavigated;
 
         _orientationBridge.SyncFromDisplayInfo();
-        ApplyFlyoutBehavior();
+        ApplyPlacement();
     }
 
-    private void OnStateViewModelPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    // ── Rail construction ────────────────────────────────────────────────────
+
+    private void BuildRailItems()
     {
-        if (e.PropertyName == nameof(AdaptiveShellStateViewModel.PlacementMode))
-            ApplyFlyoutBehavior();
+        foreach (var item in PrimaryNavigationMetadata.Items)
+        {
+            var icon = new Image
+            {
+                Source = item.IconKey,
+                HeightRequest = 28,
+                WidthRequest = 28,
+                HorizontalOptions = LayoutOptions.Center,
+            };
+
+            var label = new Label
+            {
+                Text = item.Label,
+                FontSize = 10,
+                HorizontalOptions = LayoutOptions.Center,
+                TextColor = InactiveText,
+            };
+
+            var stack = new VerticalStackLayout
+            {
+                Spacing = 4,
+                Padding = new Thickness(0, 10),
+                HorizontalOptions = LayoutOptions.Fill,
+                Children = { icon, label },
+            };
+
+            // Use a Frame for the active highlight (supports CornerRadius without Shapes dependency)
+            var frame = new Frame
+            {
+                BackgroundColor = Colors.Transparent,
+                CornerRadius = 12,
+                BorderColor = Colors.Transparent,
+                Padding = 0,
+                Margin = new Thickness(8, 2),
+                Content = stack,
+                HeightRequest = 64,
+                HasShadow = false,
+            };
+
+            var destination = item.Destination;
+            var tap = new TapGestureRecognizer();
+            tap.Tapped += (_, _) => _stateViewModel.SelectDestination(destination);
+            frame.GestureRecognizers.Add(tap);
+
+            _railButtons[destination] = (frame, label);
+            RailItems.Children.Add(frame);
+        }
+
+        UpdateRailHighlight(PrimaryNavDestination.Home);
     }
 
-    private void ApplyFlyoutBehavior()
+    private void UpdateRailHighlight(PrimaryNavDestination active)
     {
-        FlyoutBehavior = _stateViewModel.IsLeftRailNavigationVisible
-            ? FlyoutBehavior.Locked
-            : FlyoutBehavior.Disabled;
+        foreach (var kvp in _railButtons)
+        {
+            bool isActive = kvp.Key == active;
+            kvp.Value.Container.BackgroundColor = isActive ? ActiveBg : Colors.Transparent;
+            kvp.Value.Label.TextColor = isActive ? ActiveText : InactiveText;
+        }
+    }
+
+    // ── Orientation / placement ───────────────────────────────────────────────
+
+    private void OnStatePropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(AdaptiveShellStateViewModel.PlacementMode))
+            ApplyPlacement();
+    }
+
+    private void ApplyPlacement()
+    {
+        if (_stateViewModel.IsLeftRailNavigationVisible)
+        {
+            // Landscape: show locked flyout (nav rail), hide bottom tab bar
+            FlyoutBehavior = FlyoutBehavior.Locked;
+            Shell.SetTabBarIsVisible(this, false);
+        }
+        else
+        {
+            // Portrait: hide flyout, show bottom tab bar
+            FlyoutBehavior = FlyoutBehavior.Disabled;
+            Shell.SetTabBarIsVisible(this, true);
+        }
+    }
+
+    // ── Navigation ───────────────────────────────────────────────────────────
+
+    private async void OnRailItemSelected(object? sender, PrimaryNavDestination destination)
+    {
+        if (_stateViewModel.RouteByDestination.TryGetValue(destination, out var route))
+            await GoToAsync(route);
     }
 
     private async void OnShellNavigated(object? sender, ShellNavigatedEventArgs e)
     {
-        var from = TryParseDestination(e.Previous.Location.OriginalString) ?? _currentPrimaryDestination;
-        var to = TryParseDestination(e.Current.Location.OriginalString) ?? _currentPrimaryDestination;
+        var to = ParseDestination(e.Current.Location.OriginalString) ?? _currentPrimaryDestination;
 
-        if (from != to)
-            await _handoffService.HandlePrimaryDestinationChangeAsync(from, to);
+        if (to != _currentPrimaryDestination)
+        {
+            await _handoffService.HandlePrimaryDestinationChangeAsync(_currentPrimaryDestination, to);
+            _currentPrimaryDestination = to;
+        }
 
-        _currentPrimaryDestination = to;
+        _stateViewModel.SelectedDestination = to;
+        UpdateRailHighlight(to);
     }
 
-    private static PrimaryNavDestination? TryParseDestination(string? location)
+    private static PrimaryNavDestination? ParseDestination(string? location)
     {
-        if (string.IsNullOrWhiteSpace(location))
-            return null;
-
-        var normalized = location.ToLowerInvariant();
-
-        if (normalized.Contains("home") || normalized.Contains("sources"))
-            return PrimaryNavDestination.Home;
-
-        if (normalized.Contains("stream") || normalized.Contains("output"))
-            return PrimaryNavDestination.Stream;
-
-        if (normalized.Contains("view") || normalized.Contains("viewer"))
-            return PrimaryNavDestination.View;
-
-        if (normalized.Contains("settings"))
-            return PrimaryNavDestination.Settings;
-
+        if (string.IsNullOrWhiteSpace(location)) return null;
+        var s = location.ToLowerInvariant();
+        if (s.Contains("home") || s.Contains("sources")) return PrimaryNavDestination.Home;
+        if (s.Contains("stream") || s.Contains("output")) return PrimaryNavDestination.Stream;
+        if (s.Contains("view") || s.Contains("viewer")) return PrimaryNavDestination.View;
+        if (s.Contains("settings")) return PrimaryNavDestination.Settings;
         return null;
     }
 }

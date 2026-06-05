@@ -11,6 +11,9 @@ public partial class AdaptiveShellStateViewModel : ObservableObject
     [ObservableProperty]
     private NavigationPlacementMode _placementMode;
 
+    [ObservableProperty]
+    private PrimaryNavDestination _selectedDestination = PrimaryNavDestination.Home;
+
     public IReadOnlyList<PrimaryNavItem> PrimaryItems => PrimaryNavigationMetadata.Items;
 
     public IReadOnlyDictionary<PrimaryNavDestination, string> RouteByDestination { get; } =
@@ -20,11 +23,20 @@ public partial class AdaptiveShellStateViewModel : ObservableObject
 
     public bool IsLeftRailNavigationVisible => PlacementMode == NavigationPlacementMode.LeftRail;
 
+    /// <summary>Raised when a rail item is tapped. AppShell subscribes to drive navigation.</summary>
+    public event EventHandler<PrimaryNavDestination>? RailItemSelected;
+
     public AdaptiveShellStateViewModel(INavigationPolicyService policyService)
     {
         _policyService = policyService;
         PlacementMode = _policyService.CurrentPlacement;
         _policyService.PlacementChanged += OnPlacementChanged;
+    }
+
+    public void SelectDestination(PrimaryNavDestination destination)
+    {
+        SelectedDestination = destination;
+        RailItemSelected?.Invoke(this, destination);
     }
 
     private void OnPlacementChanged(object? sender, NavigationPlacementMode placement)

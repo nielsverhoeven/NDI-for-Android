@@ -5,42 +5,46 @@
        xmlns:viewer="clr-namespace:NdiForAndroid.Features.Viewer.Views"
        xmlns:output="clr-namespace:NdiForAndroid.Features.Output.Views"
        xmlns:settings="clr-namespace:NdiForAndroid.Features.Settings.Views"
-       xmlns:vm="clr-namespace:NdiForAndroid.Features.Navigation.ViewModels;assembly=NdiForAndroid.Core"
        x:Class="NdiForAndroid.AppShell"
-       x:DataType="vm:AdaptiveShellStateViewModel"
        Shell.FlyoutBehavior="Disabled"
+       Shell.FlyoutWidth="72"
+       Shell.FlyoutBackgroundColor="#1C1C1E"
        Title="NDI for Android">
 
-    <TabBar IsVisible="{Binding IsBottomNavigationVisible}">
+    <!-- Custom left navigation rail rendered when FlyoutBehavior = Locked (landscape) -->
+    <Shell.FlyoutContent>
+        <Grid BackgroundColor="#1C1C1E" WidthRequest="64">
+            <VerticalStackLayout x:Name="RailItems"
+                                 VerticalOptions="Start"
+                                 Padding="0,24,0,0"
+                                 Spacing="0" />
+        </Grid>
+    </Shell.FlyoutContent>
+
+    <Shell.FlyoutHeaderTemplate>
+        <DataTemplate>
+            <!-- Suppress default flyout header -->
+            <BoxView HeightRequest="0" />
+        </DataTemplate>
+    </Shell.FlyoutHeaderTemplate>
+
+    <TabBar x:Name="PrimaryTabBar">
         <ShellContent Title="Home"
                       ContentTemplate="{DataTemplate sources:SourceListPage}"
                       Route="home"
-                      Icon="tab_sources.png" />
+                      Icon="nav_home.svg" />
         <ShellContent Title="Stream"
                       ContentTemplate="{DataTemplate output:OutputPage}"
                       Route="stream"
-                      Icon="tab_sources.png" />
+                      Icon="nav_stream.svg" />
         <ShellContent Title="View"
                       ContentTemplate="{DataTemplate viewer:ViewerPage}"
                       Route="view"
-                      Icon="tab_sources.png" />
+                      Icon="nav_view.svg" />
         <ShellContent Title="Settings"
                       ContentTemplate="{DataTemplate settings:SettingsPage}"
                       Route="settings"
-                      Icon="tab_settings.png" />
+                      Icon="nav_settings.svg" />
     </TabBar>
-
-    <FlyoutItem IsVisible="{Binding IsLeftRailNavigationVisible}" Title="Home" Route="home-rail" Icon="tab_sources.png">
-        <ShellContent ContentTemplate="{DataTemplate sources:SourceListPage}" />
-    </FlyoutItem>
-    <FlyoutItem IsVisible="{Binding IsLeftRailNavigationVisible}" Title="Stream" Route="stream-rail" Icon="tab_sources.png">
-        <ShellContent ContentTemplate="{DataTemplate output:OutputPage}" />
-    </FlyoutItem>
-    <FlyoutItem IsVisible="{Binding IsLeftRailNavigationVisible}" Title="View" Route="view-rail" Icon="tab_sources.png">
-        <ShellContent ContentTemplate="{DataTemplate viewer:ViewerPage}" />
-    </FlyoutItem>
-    <FlyoutItem IsVisible="{Binding IsLeftRailNavigationVisible}" Title="Settings" Route="settings-rail" Icon="tab_settings.png">
-        <ShellContent ContentTemplate="{DataTemplate settings:SettingsPage}" />
-    </FlyoutItem>
 
 </Shell>
