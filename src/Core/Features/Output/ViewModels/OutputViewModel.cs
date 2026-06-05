@@ -23,6 +23,7 @@ public partial class OutputViewModel : ObservableObject
     {
         _bridge = bridge;
         _screenSharePlatformService = screenSharePlatformService;
+        StatusMessage = "Select a source on Home before starting output.";
     }
 
     [RelayCommand]
@@ -30,7 +31,7 @@ public partial class OutputViewModel : ObservableObject
     {
         if (string.IsNullOrWhiteSpace(SourceId))
         {
-            StatusMessage = "Select a source before starting output.";
+            StatusMessage = "Select a source on Home before starting output.";
             return;
         }
 
@@ -62,7 +63,6 @@ public partial class OutputViewModel : ObservableObject
     {
         await _bridge.StopOutputAsync(cancellationToken);
         await _screenSharePlatformService.StopForegroundSessionAsync(cancellationToken);
-
         IsOutputActive = false;
         StatusMessage = null;
     }
