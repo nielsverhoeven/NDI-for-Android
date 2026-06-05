@@ -24,13 +24,13 @@ public sealed class AppLaunchTests
         var driver = _fixture.Driver!;
         var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(10));
 
-        // The Sources page is the shell home — look for the Sources tab accessibility id
-        var sourcesElement = wait.Until(d =>
+        // Home is the shell entry point after the adaptive navigation parity update.
+        var homeElement = wait.Until(d =>
         {
             try
             {
                 return d.FindElement(By.XPath(
-                    "//*[@content-desc='Sources' or @text='NDI Sources']"));
+                    "//*[@content-desc='Home' or @text='Home' or @text='NDI Sources']"));
             }
             catch (NoSuchElementException)
             {
@@ -38,7 +38,7 @@ public sealed class AppLaunchTests
             }
         });
 
-        Assert.NotNull(sourcesElement);
+        Assert.NotNull(homeElement);
     }
 
     [SkippableFact]
@@ -55,7 +55,7 @@ public sealed class AppLaunchTests
             try
             {
                 return d.FindElement(By.XPath(
-                    "//*[@content-desc='Settings']"));
+                    "//*[@content-desc='Settings' or @text='Settings']"));
             }
             catch (NoSuchElementException)
             {
@@ -83,13 +83,13 @@ public sealed class AppLaunchTests
 
         Assert.NotNull(settingsPage);
 
-        // Navigate back to Sources by tapping the Sources tab (Back press closes the Shell app)
-        var sourcesTab = wait.Until(d =>
+        // Navigate back to Home by tapping the Home tab/entry (Back press closes the Shell app)
+        var homeTab = wait.Until(d =>
         {
             try
             {
                 return d.FindElement(By.XPath(
-                    "//*[@content-desc='Sources']"));
+                    "//*[@content-desc='Home' or @text='Home']"));
             }
             catch (NoSuchElementException)
             {
@@ -97,15 +97,15 @@ public sealed class AppLaunchTests
             }
         });
 
-        Assert.NotNull(sourcesTab);
-        sourcesTab!.Click();
+        Assert.NotNull(homeTab);
+        homeTab!.Click();
 
-        var sourcesElement = wait.Until(d =>
+        var homeElement = wait.Until(d =>
         {
             try
             {
                 return d.FindElement(By.XPath(
-                    "//*[@content-desc='Sources' or @text='NDI Sources']"));
+                    "//*[@content-desc='Home' or @text='Home' or @text='NDI Sources']"));
             }
             catch (NoSuchElementException)
             {
@@ -113,7 +113,7 @@ public sealed class AppLaunchTests
             }
         });
 
-        Assert.NotNull(sourcesElement);
+        Assert.NotNull(homeElement);
     }
 
     [SkippableFact]
@@ -124,12 +124,12 @@ public sealed class AppLaunchTests
         var driver = _fixture.Driver!;
         var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(20));
 
-        // Ensure we are on Sources tab before trying to locate a row action.
-        var sourcesTab = wait.Until(d =>
+        // Ensure we are on Home tab before trying to locate a source-row action.
+        var homeTab = wait.Until(d =>
         {
             try
             {
-                return d.FindElement(By.XPath("//*[@content-desc='Sources']"));
+                return d.FindElement(By.XPath("//*[@content-desc='Home' or @text='Home']"));
             }
             catch (NoSuchElementException)
             {
@@ -137,12 +137,12 @@ public sealed class AppLaunchTests
             }
         });
 
-        Assert.NotNull(sourcesTab);
-        sourcesTab!.Click();
+        Assert.NotNull(homeTab);
+        homeTab!.Click();
 
         // Only run this check when a source row exists.
         var watchButtons = driver.FindElements(By.XPath("//*[@text='Watch']"));
-        Skip.If(watchButtons.Count == 0, "No discovered NDI source rows available; skipping Sources->Viewer smoke path.");
+        Skip.If(watchButtons.Count == 0, "No discovered NDI source rows available; skipping Home->Viewer smoke path.");
 
         watchButtons[0].Click();
 
