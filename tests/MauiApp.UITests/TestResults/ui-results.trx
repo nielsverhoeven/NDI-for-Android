@@ -1,0 +1,166 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="1740fcda-23d6-42fd-b1fc-325d0879a4c2" name="Niels@NL-01A8422423FB 2026-06-05 14:53:00" runUser="MACAW\Niels" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-06-05T14:53:00.3532120+02:00" queuing="2026-06-05T14:53:00.3532130+02:00" start="2026-06-05T14:52:54.7110062+02:00" finish="2026-06-05T14:53:00.3823328+02:00" />
+  <TestSettings name="default" id="4a5f819e-3955-4b80-9d21-6490daf00ceb">
+    <Deployment runDeploymentRoot="Niels_NL-01A8422423FB_2026-06-05_14_53_00" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="8c4cb75a-b546-4257-8922-1de82ba67160" testId="11a307ca-3a31-d369-a7ed-76d2011e2b65" testName="MauiApp.UITests.AppLaunchTests.Navigation_ToSettings_AndBack" computerName="NL-01A8422423FB" duration="00:00:00.0010000" startTime="2026-06-05T14:52:59.8307598+02:00" endTime="2026-06-05T14:52:59.8307602+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="NotExecuted" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="8c4cb75a-b546-4257-8922-1de82ba67160">
+      <Output>
+        <ErrorInfo>
+          <Message>ANDROID_APK_PATH environment variable is not set — no emulator available.</Message>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="86b6e66f-5944-4abe-b40c-8fcd1e81b728" testId="0cdfef7a-7fa0-b158-440a-0886b43f31e1" testName="MauiApp.UITests.AppLaunchTests.AdaptiveNavigation_AllFourPrimaryDestinations_AreReachable" computerName="NL-01A8422423FB" duration="00:00:00.0010000" startTime="2026-06-05T14:52:58.9993001+02:00" endTime="2026-06-05T14:52:58.9994027+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="NotExecuted" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="86b6e66f-5944-4abe-b40c-8fcd1e81b728">
+      <Output>
+        <ErrorInfo>
+          <Message>ANDROID_APK_PATH environment variable is not set — no emulator available.</Message>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="10cade43-7da3-404a-b2df-4fda8a735946" testId="9e4cb98b-205b-ec4e-4115-5eb5252f9932" testName="MauiApp.UITests.AppLaunchTests.Navigation_SourcesToViewer_WhenWatchButtonPresent" computerName="NL-01A8422423FB" duration="00:00:00.0010000" startTime="2026-06-05T14:52:59.8268069+02:00" endTime="2026-06-05T14:52:59.8268075+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="NotExecuted" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="10cade43-7da3-404a-b2df-4fda8a735946">
+      <Output>
+        <ErrorInfo>
+          <Message>ANDROID_APK_PATH environment variable is not set — no emulator available.</Message>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="cc602d7a-82ec-46c8-8da8-8428ba41563d" testId="76b01061-1f71-ea6e-2ac0-8e20fcd5a547" testName="MauiApp.UITests.AppLaunchTests.AppLaunches_ShowsSourceListPage" computerName="NL-01A8422423FB" duration="00:00:00.0010000" startTime="2026-06-05T14:52:59.8235254+02:00" endTime="2026-06-05T14:52:59.8235261+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="NotExecuted" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="cc602d7a-82ec-46c8-8da8-8428ba41563d">
+      <Output>
+        <ErrorInfo>
+          <Message>ANDROID_APK_PATH environment variable is not set — no emulator available.</Message>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="76c50dc4-565f-46d6-a75b-a55983ab2fdc" testId="50245e68-a1c5-bed1-ed73-942d53315e72" testName="MauiApp.UITests.StartupSmokeTests.AppStartup_RendersUiWithin15Seconds" computerName="NL-01A8422423FB" duration="00:00:00.0010000" startTime="2026-06-05T14:52:59.8449211+02:00" endTime="2026-06-05T14:52:59.8449217+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="NotExecuted" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="76c50dc4-565f-46d6-a75b-a55983ab2fdc">
+      <Output>
+        <ErrorInfo>
+          <Message>ANDROID_APK_PATH environment variable is not set — no emulator available.</Message>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="6267794e-1df4-4fa7-baf8-c27956b9800f" testId="3f318dbb-eaa3-8e17-1209-f67eeee66ddf" testName="MauiApp.UITests.AppLaunchTests.AdaptiveNavigation_Landscape_ShowsLeftRailPlacement" computerName="NL-01A8422423FB" duration="00:00:00.0010000" startTime="2026-06-05T14:52:59.8342415+02:00" endTime="2026-06-05T14:52:59.8342422+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="NotExecuted" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="6267794e-1df4-4fa7-baf8-c27956b9800f">
+      <Output>
+        <ErrorInfo>
+          <Message>ANDROID_APK_PATH environment variable is not set — no emulator available.</Message>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="cf36b92d-628a-43da-9ebd-6208510a6e53" testId="9c57f024-cda6-9398-2e98-6ae79302fae9" testName="MauiApp.UITests.AppLaunchTests.AdaptiveNavigation_Portrait_ShowsBottomPlacement" computerName="NL-01A8422423FB" duration="00:00:00.0010000" startTime="2026-06-05T14:52:59.8286682+02:00" endTime="2026-06-05T14:52:59.8286688+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="NotExecuted" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="cf36b92d-628a-43da-9ebd-6208510a6e53">
+      <Output>
+        <ErrorInfo>
+          <Message>ANDROID_APK_PATH environment variable is not set — no emulator available.</Message>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="71372bea-1fd5-4987-ab7b-fe88d361074b" testId="9e4c9a88-f28d-1bf9-c5a5-9f0eb5fc6468" testName="MauiApp.UITests.StartupSmokeTests.AppStartup_DoesNotAbort_DriverSessionEstablished" computerName="NL-01A8422423FB" duration="00:00:00.0010000" startTime="2026-06-05T14:52:59.8408437+02:00" endTime="2026-06-05T14:52:59.8408445+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="NotExecuted" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="71372bea-1fd5-4987-ab7b-fe88d361074b">
+      <Output>
+        <ErrorInfo>
+          <Message>ANDROID_APK_PATH environment variable is not set — no emulator available.</Message>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="MauiApp.UITests.AppLaunchTests.Navigation_ToSettings_AndBack" storage="c:\repos-github\ndi-for-android\tests\mauiapp.uitests\bin\debug\net10.0\mauiapp.uitests.dll" id="11a307ca-3a31-d369-a7ed-76d2011e2b65">
+      <Execution id="8c4cb75a-b546-4257-8922-1de82ba67160" />
+      <TestMethod codeBase="C:\repos-github\NDI-for-Android\tests\MauiApp.UITests\bin\Debug\net10.0\MauiApp.UITests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="MauiApp.UITests.AppLaunchTests" name="Navigation_ToSettings_AndBack" />
+    </UnitTest>
+    <UnitTest name="MauiApp.UITests.StartupSmokeTests.AppStartup_RendersUiWithin15Seconds" storage="c:\repos-github\ndi-for-android\tests\mauiapp.uitests\bin\debug\net10.0\mauiapp.uitests.dll" id="50245e68-a1c5-bed1-ed73-942d53315e72">
+      <Execution id="76c50dc4-565f-46d6-a75b-a55983ab2fdc" />
+      <TestMethod codeBase="C:\repos-github\NDI-for-Android\tests\MauiApp.UITests\bin\Debug\net10.0\MauiApp.UITests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="MauiApp.UITests.StartupSmokeTests" name="AppStartup_RendersUiWithin15Seconds" />
+    </UnitTest>
+    <UnitTest name="MauiApp.UITests.AppLaunchTests.AdaptiveNavigation_Landscape_ShowsLeftRailPlacement" storage="c:\repos-github\ndi-for-android\tests\mauiapp.uitests\bin\debug\net10.0\mauiapp.uitests.dll" id="3f318dbb-eaa3-8e17-1209-f67eeee66ddf">
+      <Execution id="6267794e-1df4-4fa7-baf8-c27956b9800f" />
+      <TestMethod codeBase="C:\repos-github\NDI-for-Android\tests\MauiApp.UITests\bin\Debug\net10.0\MauiApp.UITests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="MauiApp.UITests.AppLaunchTests" name="AdaptiveNavigation_Landscape_ShowsLeftRailPlacement" />
+    </UnitTest>
+    <UnitTest name="MauiApp.UITests.StartupSmokeTests.AppStartup_DoesNotAbort_DriverSessionEstablished" storage="c:\repos-github\ndi-for-android\tests\mauiapp.uitests\bin\debug\net10.0\mauiapp.uitests.dll" id="9e4c9a88-f28d-1bf9-c5a5-9f0eb5fc6468">
+      <Execution id="71372bea-1fd5-4987-ab7b-fe88d361074b" />
+      <TestMethod codeBase="C:\repos-github\NDI-for-Android\tests\MauiApp.UITests\bin\Debug\net10.0\MauiApp.UITests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="MauiApp.UITests.StartupSmokeTests" name="AppStartup_DoesNotAbort_DriverSessionEstablished" />
+    </UnitTest>
+    <UnitTest name="MauiApp.UITests.AppLaunchTests.AdaptiveNavigation_Portrait_ShowsBottomPlacement" storage="c:\repos-github\ndi-for-android\tests\mauiapp.uitests\bin\debug\net10.0\mauiapp.uitests.dll" id="9c57f024-cda6-9398-2e98-6ae79302fae9">
+      <Execution id="cf36b92d-628a-43da-9ebd-6208510a6e53" />
+      <TestMethod codeBase="C:\repos-github\NDI-for-Android\tests\MauiApp.UITests\bin\Debug\net10.0\MauiApp.UITests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="MauiApp.UITests.AppLaunchTests" name="AdaptiveNavigation_Portrait_ShowsBottomPlacement" />
+    </UnitTest>
+    <UnitTest name="MauiApp.UITests.AppLaunchTests.AppLaunches_ShowsSourceListPage" storage="c:\repos-github\ndi-for-android\tests\mauiapp.uitests\bin\debug\net10.0\mauiapp.uitests.dll" id="76b01061-1f71-ea6e-2ac0-8e20fcd5a547">
+      <Execution id="cc602d7a-82ec-46c8-8da8-8428ba41563d" />
+      <TestMethod codeBase="C:\repos-github\NDI-for-Android\tests\MauiApp.UITests\bin\Debug\net10.0\MauiApp.UITests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="MauiApp.UITests.AppLaunchTests" name="AppLaunches_ShowsSourceListPage" />
+    </UnitTest>
+    <UnitTest name="MauiApp.UITests.AppLaunchTests.Navigation_SourcesToViewer_WhenWatchButtonPresent" storage="c:\repos-github\ndi-for-android\tests\mauiapp.uitests\bin\debug\net10.0\mauiapp.uitests.dll" id="9e4cb98b-205b-ec4e-4115-5eb5252f9932">
+      <Execution id="10cade43-7da3-404a-b2df-4fda8a735946" />
+      <TestMethod codeBase="C:\repos-github\NDI-for-Android\tests\MauiApp.UITests\bin\Debug\net10.0\MauiApp.UITests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="MauiApp.UITests.AppLaunchTests" name="Navigation_SourcesToViewer_WhenWatchButtonPresent" />
+    </UnitTest>
+    <UnitTest name="MauiApp.UITests.AppLaunchTests.AdaptiveNavigation_AllFourPrimaryDestinations_AreReachable" storage="c:\repos-github\ndi-for-android\tests\mauiapp.uitests\bin\debug\net10.0\mauiapp.uitests.dll" id="0cdfef7a-7fa0-b158-440a-0886b43f31e1">
+      <Execution id="86b6e66f-5944-4abe-b40c-8fcd1e81b728" />
+      <TestMethod codeBase="C:\repos-github\NDI-for-Android\tests\MauiApp.UITests\bin\Debug\net10.0\MauiApp.UITests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="MauiApp.UITests.AppLaunchTests" name="AdaptiveNavigation_AllFourPrimaryDestinations_AreReachable" />
+    </UnitTest>
+  </TestDefinitions>
+  <TestEntries>
+    <TestEntry testId="11a307ca-3a31-d369-a7ed-76d2011e2b65" executionId="8c4cb75a-b546-4257-8922-1de82ba67160" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="0cdfef7a-7fa0-b158-440a-0886b43f31e1" executionId="86b6e66f-5944-4abe-b40c-8fcd1e81b728" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="9e4cb98b-205b-ec4e-4115-5eb5252f9932" executionId="10cade43-7da3-404a-b2df-4fda8a735946" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="76b01061-1f71-ea6e-2ac0-8e20fcd5a547" executionId="cc602d7a-82ec-46c8-8da8-8428ba41563d" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="50245e68-a1c5-bed1-ed73-942d53315e72" executionId="76c50dc4-565f-46d6-a75b-a55983ab2fdc" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="3f318dbb-eaa3-8e17-1209-f67eeee66ddf" executionId="6267794e-1df4-4fa7-baf8-c27956b9800f" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="9c57f024-cda6-9398-2e98-6ae79302fae9" executionId="cf36b92d-628a-43da-9ebd-6208510a6e53" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="9e4c9a88-f28d-1bf9-c5a5-9f0eb5fc6468" executionId="71372bea-1fd5-4987-ab7b-fe88d361074b" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+  </TestEntries>
+  <TestLists>
+    <TestList name="Results Not in a List" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="All Loaded Results" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Completed">
+    <Counters total="8" executed="0" passed="0" failed="0" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+    <Output>
+      <StdOut>[xUnit.net 00:00:00.01] xUnit.net VSTest Adapter v2.8.2+699d445a1a (64-bit .NET 10.0.8)&#xD;
+[xUnit.net 00:00:00.39]   Discovering: MauiApp.UITests&#xD;
+[xUnit.net 00:00:00.52]   Discovered:  MauiApp.UITests&#xD;
+[xUnit.net 00:00:00.53]   Starting:    MauiApp.UITests&#xD;
+[xUnit.net 00:00:02.85]       ANDROID_APK_PATH environment variable is not set — no emulator available.&#xD;
+[xUnit.net 00:00:03.68]       ANDROID_APK_PATH environment variable is not set — no emulator available.&#xD;
+[xUnit.net 00:00:03.68]       ANDROID_APK_PATH environment variable is not set — no emulator available.&#xD;
+[xUnit.net 00:00:03.68]       ANDROID_APK_PATH environment variable is not set — no emulator available.&#xD;
+[xUnit.net 00:00:03.69]       ANDROID_APK_PATH environment variable is not set — no emulator available.&#xD;
+[xUnit.net 00:00:03.69]       ANDROID_APK_PATH environment variable is not set — no emulator available.&#xD;
+[xUnit.net 00:00:03.70]       ANDROID_APK_PATH environment variable is not set — no emulator available.&#xD;
+[xUnit.net 00:00:03.70]       ANDROID_APK_PATH environment variable is not set — no emulator available.&#xD;
+[xUnit.net 00:00:03.73]   Finished:    MauiApp.UITests&#xD;
+Test 'MauiApp.UITests.AppLaunchTests.AdaptiveNavigation_AllFourPrimaryDestinations_AreReachable' was skipped in the test run.&#xD;
+Test 'MauiApp.UITests.AppLaunchTests.AppLaunches_ShowsSourceListPage' was skipped in the test run.&#xD;
+Test 'MauiApp.UITests.AppLaunchTests.Navigation_SourcesToViewer_WhenWatchButtonPresent' was skipped in the test run.&#xD;
+Test 'MauiApp.UITests.AppLaunchTests.AdaptiveNavigation_Portrait_ShowsBottomPlacement' was skipped in the test run.&#xD;
+Test 'MauiApp.UITests.AppLaunchTests.Navigation_ToSettings_AndBack' was skipped in the test run.&#xD;
+Test 'MauiApp.UITests.AppLaunchTests.AdaptiveNavigation_Landscape_ShowsLeftRailPlacement' was skipped in the test run.&#xD;
+Test 'MauiApp.UITests.StartupSmokeTests.AppStartup_DoesNotAbort_DriverSessionEstablished' was skipped in the test run.&#xD;
+Test 'MauiApp.UITests.StartupSmokeTests.AppStartup_RendersUiWithin15Seconds' was skipped in the test run.&#xD;
+</StdOut>
+    </Output>
+    <RunInfos>
+      <RunInfo computerName="NL-01A8422423FB" outcome="Warning" timestamp="2026-06-05T14:52:59.0346549+02:00">
+        <Text>[xUnit.net 00:00:02.85]     MauiApp.UITests.AppLaunchTests.AdaptiveNavigation_AllFourPrimaryDestinations_AreReachable [SKIP]</Text>
+      </RunInfo>
+      <RunInfo computerName="NL-01A8422423FB" outcome="Warning" timestamp="2026-06-05T14:52:59.8237396+02:00">
+        <Text>[xUnit.net 00:00:03.68]     MauiApp.UITests.AppLaunchTests.AppLaunches_ShowsSourceListPage [SKIP]</Text>
+      </RunInfo>
+      <RunInfo computerName="NL-01A8422423FB" outcome="Warning" timestamp="2026-06-05T14:52:59.8268250+02:00">
+        <Text>[xUnit.net 00:00:03.68]     MauiApp.UITests.AppLaunchTests.Navigation_SourcesToViewer_WhenWatchButtonPresent [SKIP]</Text>
+      </RunInfo>
+      <RunInfo computerName="NL-01A8422423FB" outcome="Warning" timestamp="2026-06-05T14:52:59.8300620+02:00">
+        <Text>[xUnit.net 00:00:03.68]     MauiApp.UITests.AppLaunchTests.AdaptiveNavigation_Portrait_ShowsBottomPlacement [SKIP]</Text>
+      </RunInfo>
+      <RunInfo computerName="NL-01A8422423FB" outcome="Warning" timestamp="2026-06-05T14:52:59.8319763+02:00">
+        <Text>[xUnit.net 00:00:03.69]     MauiApp.UITests.AppLaunchTests.Navigation_ToSettings_AndBack [SKIP]</Text>
+      </RunInfo>
+      <RunInfo computerName="NL-01A8422423FB" outcome="Warning" timestamp="2026-06-05T14:52:59.8352884+02:00">
+        <Text>[xUnit.net 00:00:03.69]     MauiApp.UITests.AppLaunchTests.AdaptiveNavigation_Landscape_ShowsLeftRailPlacement [SKIP]</Text>
+      </RunInfo>
+      <RunInfo computerName="NL-01A8422423FB" outcome="Warning" timestamp="2026-06-05T14:52:59.8407691+02:00">
+        <Text>[xUnit.net 00:00:03.70]     MauiApp.UITests.StartupSmokeTests.AppStartup_DoesNotAbort_DriverSessionEstablished [SKIP]</Text>
+      </RunInfo>
+      <RunInfo computerName="NL-01A8422423FB" outcome="Warning" timestamp="2026-06-05T14:52:59.8448898+02:00">
+        <Text>[xUnit.net 00:00:03.70]     MauiApp.UITests.StartupSmokeTests.AppStartup_RendersUiWithin15Seconds [SKIP]</Text>
+      </RunInfo>
+    </RunInfos>
+  </ResultSummary>
+</TestRun>
