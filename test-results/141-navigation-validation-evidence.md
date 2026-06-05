@@ -5,59 +5,78 @@ Branch: `bugfix/141-fix-broken-navigation-flows`
 
 ## Scope
 
-Validated navigation wiring introduced/fixed for issue #141 using available local checks:
+Validated adaptive navigation parity for issue #141 using local checks and captured artifacts:
 
-1. Sources -> Viewer
-2. Sources -> Output
-3. Settings tab navigation
-4. Back navigation handling via shell navigation service
+1. Four primary destinations remain wired (Home/Stream/View/Settings)
+2. Adaptive placement behavior (left rail in landscape)
+3. Navigation visual style parity improvements between portrait and landscape (T011)
+4. Unit and UI test coverage updates for model/policy/viewmodel and orientation-aware navigation
 
 ## Evidence collected
 
-### 1. Unit test evidence (navigation command routes)
+### 1. Unit test evidence (T007)
 
 Test project: `tests/MauiApp.Tests`
 
-Validated assertions include:
+Added and validated navigation parity coverage in `tests/MauiApp.Tests/Features/Navigation/AdaptiveNavigationTests.cs`:
 
-1. Viewer command uses `viewer?sourceId=<escaped>`
-2. Output command uses `output?sourceId=<escaped>`
-3. URI escaping for query parameter values
+1. Metadata contains exactly four authoritative primary items and icon keys
+2. Orientation policy resolves portrait -> bottom and landscape -> left rail
+3. Adaptive shell state viewmodel exposes destination mapping and placement transitions
 
-Result: pass (5/5 in `SourceListViewModelTests`)
+Result: pass (`dotnet test tests/MauiApp.Tests/MauiApp.Tests.csproj`) with 24/24 tests succeeded.
 
-### 2. Shell route registration and query binding audit
+### 2. UI/integration test evidence (T008)
 
-Verified in source:
+Test project: `tests/MauiApp.UITests`
 
-1. `Routing.RegisterRoute("viewer", typeof(ViewerPage))`
-2. `Routing.RegisterRoute("output", typeof(OutputPage))`
-3. `[QueryProperty(nameof(SourceId), "sourceId")]` on `ViewerPage` and `OutputPage`
-4. `ShellNavigationService` logs and rethrows navigation failures
+Extended `tests/MauiApp.UITests/AppLaunchTests.cs` with adaptive navigation checks:
 
-Result: route and query plumbing verified as present and consistent.
+1. Portrait placement assertion path
+2. Landscape placement assertion path
+3. Four-destination click-through (Home/Stream/View/Settings)
 
-### 3. UI smoke validation path
+Result in this workspace:
 
-UI smoke test added in `tests/MauiApp.UITests/AppLaunchTests.cs`:
+1. UI tests compile and execute successfully.
+2. Runtime UI scenarios are skipped locally without `ANDROID_APK_PATH` / Appium environment.
 
-1. Open Sources page
-2. Tap first available `Watch` button
-3. Assert Viewer page presence (`content-desc='Viewer'` or `@text='Viewer'`)
+### 3. T011 style parity implementation evidence
 
-Result: automation path implemented for emulator execution in CI/local Appium runs.
+Code changes:
 
-### 4. Local environment limitation
+1. `src/MauiApp/AppShell.xaml`
+: aligned tab bar palette to match rail palette (`#1C1C1E` background, white selected text, gray unselected text)
+2. `src/MauiApp/AppShell.xaml.cs`
+: aligned rail selection styling to tab-style behavior (no unique card highlight, color/opacity based state)
 
-`tests/MauiApp.UITests` executed in this workspace without an attached emulator APK path.
+Device screenshots (captured 2026-06-05):
 
-Observed result:
+1. Landscape artifact: `test-results/141-nav-landscape.png`
+2. Portrait capture artifact: `test-results/141-nav-portrait.png`
 
-1. UI tests built successfully.
-2. UI tests were skipped with `ANDROID_APK_PATH environment variable is not set`.
+Reference portraits from issue discussion:
 
-This means functional emulator navigation execution is prepared but not completed in this local session.
+1. Portrait sample: `https://github.com/user-attachments/assets/2785ba99-9394-4531-ae88-52307263b773`
+2. Landscape sample: `https://github.com/user-attachments/assets/e9c4f1a2-74ff-4b71-b291-720fa46a819d`
+
+Environment note:
+
+- Connected device in this session consistently rendered a wide frame even when forcing portrait lock through ADB window rotation commands.
+- Because of that device behavior, local portrait image capture did not present bottom-placement evidence in this environment.
+- Portrait bottom-placement behavior remains covered by the new UI test path and is expected to be validated in emulator/Appium pipeline runs.
+
+### 4. Icon traceability table (T009)
+
+| Legacy destination | MAUI destination enum | Route family | MAUI icon asset |
+|---|---|---|---|
+| Home | `PrimaryNavDestination.Home` | `//home-*` | `nav_home.svg` |
+| Stream | `PrimaryNavDestination.Stream` | `//stream-*` | `nav_stream.svg` |
+| View | `PrimaryNavDestination.View` | `//view-*` | `nav_view.svg` |
+| Settings | `PrimaryNavDestination.Settings` | `//settings-*` | `nav_settings.svg` |
 
 ## Notes
 
-The project currently discovers live NDI sources through the bridge. In environments with no discoverable sources, the Watch/Output buttons will not render. The UI smoke test therefore guards the path when at least one source row is present.
+1. The project discovers live NDI sources through the bridge; when no sources are found, Watch/Output action paths are naturally absent.
+2. T007 and T008 implementation is in branch commits and test projects, but child issue close/sync must still be performed in GitHub issue workflow (T010).
+3. T011 style parity changes are implemented and evidenced by code + landscape artifact; portrait runtime capture in this session is constrained by device rotation behavior.

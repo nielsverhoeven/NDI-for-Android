@@ -2,7 +2,7 @@
 
 ## Summary
 - Parent issue: #141
-- Total tasks: 10
+- Total tasks: 11
 - Layers covered: Data, Repository/Service, ViewModel, View/XAML, Platform/Android, NDI Bridge, Unit Test, UI/Integration Test, Docs, Issue Ops
 - Branch: bugfix/141-fix-broken-navigation-flows
 
@@ -19,8 +19,10 @@ graph TD
     T006 --> T007
     T005 --> T008[T008 UI/integration tests for portrait and landscape nav]
     T006 --> T008
+    T008 --> T011[T011 Consistent nav bar style in portrait and landscape]
     T007 --> T009[T009 Documentation and icon traceability update]
     T008 --> T009
+    T011 --> T009
     T009 --> T010[T010 Parent issue status sync and closure checklist]
 ```
 
@@ -32,7 +34,8 @@ T002 -> T003
 T003 -> T004
 T004 -> T005, T006
 T005, T006 -> T007, T008
-T007, T008 -> T009
+T008 -> T011
+T007, T008, T011 -> T009
 T009 -> T010
 ```
 
@@ -94,10 +97,17 @@ T009 -> T010
 - **Acceptance**: UI tests assert both orientation layouts and successful navigation for all four items.
 - **GitHub issue**: #176
 
+### T011: Ensure navigation bar style parity across portrait and landscape
+- **Layer**: View / XAML
+- **Description**: Align visual style and interaction affordances for the primary navigation bar so portrait and landscape present the same look-and-feel, not two unrelated visual systems.
+- **Depends on**: T008
+- **Acceptance**: Navigation in portrait and landscape has matching icon treatment, label styling, and selection state design.
+- **GitHub issue**: #189
+
 ### T009: Document legacy icon mapping and navigation parity evidence
 - **Layer**: Docs
 - **Description**: Update navigation docs and test evidence with an explicit icon-traceability table (`legacy icon reference` -> `MAUI asset`) plus screenshots/logs for portrait and landscape behavior.
-- **Depends on**: T007, T008
+- **Depends on**: T007, T008, T011
 - **Acceptance**: Documentation includes icon mapping evidence and orientation validation artifacts committed to repo.
 - **GitHub issue**: #177
 

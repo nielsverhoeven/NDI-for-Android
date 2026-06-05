@@ -9,6 +9,10 @@
        Shell.FlyoutBehavior="Disabled"
        Shell.FlyoutWidth="72"
        Shell.FlyoutBackgroundColor="#1C1C1E"
+    Shell.TabBarBackgroundColor="#1C1C1E"
+    Shell.TabBarForegroundColor="#FFFFFF"
+    Shell.TabBarTitleColor="#FFFFFF"
+    Shell.TabBarUnselectedColor="#8E8E93"
        Title="NDI for Android">
 
     <!-- Custom left navigation rail rendered when FlyoutBehavior = Locked (landscape) -->

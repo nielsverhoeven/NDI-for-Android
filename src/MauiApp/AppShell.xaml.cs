@@ -33,11 +33,10 @@ public partial class AppShell : Shell
 
     private PrimaryNavDestination _currentPrimaryDestination = PrimaryNavDestination.Home;
 
-    // Map destination -> rail button for highlight updates
-    private readonly Dictionary<PrimaryNavDestination, (Frame Container, Label Label)> _railButtons = [];
+    // Map destination -> rail button parts for selection state updates.
+    private readonly Dictionary<PrimaryNavDestination, (Frame Container, Label Label, Image Icon)> _railButtons = [];
 
     private static readonly Color RailBg = Color.FromArgb("#1C1C1E");
-    private static readonly Color ActiveBg = Color.FromArgb("#3A3A3C");
     private static readonly Color InactiveText = Color.FromArgb("#8E8E93");
     private static readonly Color ActiveText = Color.FromArgb("#FFFFFF");
 
@@ -95,7 +94,7 @@ public partial class AppShell : Shell
                 Children = { icon, label },
             };
 
-            // Use a Frame for the active highlight (supports CornerRadius without Shapes dependency)
+            // Keep a transparent container so landscape rail and portrait tab bar share the same visual style.
             var frame = new Frame
             {
                 BackgroundColor = Colors.Transparent,
@@ -113,7 +112,7 @@ public partial class AppShell : Shell
             tap.Tapped += (_, _) => _stateViewModel.SelectDestination(destination);
             frame.GestureRecognizers.Add(tap);
 
-            _railButtons[destination] = (frame, label);
+            _railButtons[destination] = (frame, label, icon);
             RailItems.Children.Add(frame);
         }
 
@@ -125,8 +124,9 @@ public partial class AppShell : Shell
         foreach (var kvp in _railButtons)
         {
             bool isActive = kvp.Key == active;
-            kvp.Value.Container.BackgroundColor = isActive ? ActiveBg : Colors.Transparent;
+            kvp.Value.Container.BackgroundColor = Colors.Transparent;
             kvp.Value.Label.TextColor = isActive ? ActiveText : InactiveText;
+            kvp.Value.Icon.Opacity = isActive ? 1.0 : 0.62;
         }
     }
 
