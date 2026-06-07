@@ -9,15 +9,18 @@ public sealed class SettingsRepository : ISettingsRepository
     private readonly NdiDatabase _db;
     private readonly ISettingsValidationService _validationService;
     private readonly IDiscoverySettingsOrchestrator _orchestrator;
+    private readonly IAppearanceService _appearanceService;
 
     public SettingsRepository(
         NdiDatabase db,
         ISettingsValidationService validationService,
-        IDiscoverySettingsOrchestrator orchestrator)
+        IDiscoverySettingsOrchestrator orchestrator,
+        IAppearanceService appearanceService)
     {
         _db = db;
         _validationService = validationService;
         _orchestrator = orchestrator;
+        _appearanceService = appearanceService;
     }
 
     public async Task<NdiSettingsSnapshot> GetSettingsAsync()
@@ -27,12 +30,14 @@ public sealed class SettingsRepository : ISettingsRepository
             var loaded = await _db.GetSettingsAsync();
             var sanitized = _validationService.Sanitize(loaded);
             await _orchestrator.ApplyAsync(sanitized);
+            _appearanceService.Apply(sanitized.ThemeMode, sanitized.AccentColor);
             return sanitized;
         }
         catch
         {
             var fallback = NdiSettingsSnapshot.CreateDefault();
             await _orchestrator.ApplyAsync(fallback);
+            _appearanceService.Apply(fallback.ThemeMode, fallback.AccentColor);
             return fallback;
         }
     }
@@ -45,5 +50,6 @@ public sealed class SettingsRepository : ISettingsRepository
 
         await _db.SaveSettingsAsync(sanitized);
         await _orchestrator.ApplyAsync(sanitized);
+        _appearanceService.Apply(sanitized.ThemeMode, sanitized.AccentColor);
     }
 }
