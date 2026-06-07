@@ -73,7 +73,7 @@ public sealed class AppLaunchTests
             try
             {
                 return d.FindElement(By.XPath(
-                    "//*[@text='General' or @text='Appearance' or @text='Discovery Servers' or @text='Save']"));
+                    "//*[@text='General' or @text='Appearance' or @text='Discovery' or @text='Apply']"));
             }
             catch (NoSuchElementException)
             {
@@ -213,7 +213,7 @@ public sealed class AppLaunchTests
         AssertPageVisible(driver, "//*[@text='Viewer' or contains(@content-desc,'Viewer')]", 15);
 
         ClickNav(driver, "Settings");
-        AssertPageVisible(driver, "//*[@text='General' or @text='Appearance' or @text='Discovery Servers' or @text='Save']", 15);
+        AssertPageVisible(driver, "//*[@text='General' or @text='Appearance' or @text='Discovery' or @text='Apply']", 15);
     }
 
     [SkippableFact]
@@ -225,11 +225,12 @@ public sealed class AppLaunchTests
 
         ClickNav(driver, "Settings");
 
-        AssertPageVisible(driver, "//*[@text='General']", 15);
-        AssertPageVisible(driver, "//*[@text='Appearance']", 15);
-        AssertPageVisible(driver, "//*[@text='Discovery Servers']", 15);
-        AssertPageVisible(driver, "//*[@text='Developer Tools']", 15);
-        AssertPageVisible(driver, "//*[@text='About']", 15);
+        // Section nav buttons use exact XAML text; also guard against Android all-caps button rendering
+        AssertPageVisible(driver, "//*[@text='General' or @text='GENERAL']", 15);
+        AssertPageVisible(driver, "//*[@text='Appearance' or @text='APPEARANCE']", 15);
+        AssertPageVisible(driver, "//*[@text='Discovery' or @text='DISCOVERY']", 15);
+        AssertPageVisible(driver, "//*[@text='Developer tools' or @text='DEVELOPER TOOLS']", 15);
+        AssertPageVisible(driver, "//*[@text='About' or @text='ABOUT']", 15);
     }
 
     [SkippableFact]
@@ -240,17 +241,24 @@ public sealed class AppLaunchTests
         var driver = _fixture.Driver!;
         ClickNav(driver, "Settings");
 
+        // The settings page has a left sidebar with section buttons. Discovery host/port
+        // inputs live inside the Discovery section panel which is hidden by default.
+        // Click the Discovery sidebar button first to reveal the EditText fields.
+        var discoveryNavButton = FindElement(driver, "//*[@text='Discovery' or @text='DISCOVERY']", 10);
+        Assert.NotNull(discoveryNavButton);
+        discoveryNavButton!.Click();
+
         var hostEntry = FindElement(driver, "(//android.widget.EditText)[1]", 15);
         Assert.NotNull(hostEntry);
 
         hostEntry!.Clear();
         hostEntry.SendKeys("persist.test.local");
 
-        var saveButton = FindElement(driver, "//*[@text='Save' or @content-desc='Save']", 10);
+        var saveButton = FindElement(driver, "//*[@text='Apply' or @content-desc='Apply']", 10);
         Assert.NotNull(saveButton);
         saveButton!.Click();
 
-        AssertPageVisible(driver, "//*[@text='Settings saved.']", 10);
+        AssertPageVisible(driver, "//*[@text='Settings applied.']", 10);
 
         var packageName = "com.ndi.android";
         try
@@ -264,6 +272,11 @@ public sealed class AppLaunchTests
         }
 
         ClickNav(driver, "Settings");
+        // Navigate to Discovery section again after restart to reveal EditText fields
+        var discoveryNavButtonAfterRestart = FindElement(driver, "//*[@text='Discovery' or @text='DISCOVERY']", 10);
+        Assert.NotNull(discoveryNavButtonAfterRestart);
+        discoveryNavButtonAfterRestart!.Click();
+
         var hostEntryAfterRestart = FindElement(driver, "(//android.widget.EditText)[1]", 15);
         Assert.NotNull(hostEntryAfterRestart);
 
