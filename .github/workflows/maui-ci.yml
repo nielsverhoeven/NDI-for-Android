@@ -40,3 +40,4 @@ jobs:
         with:
           name: test-results
           path: test-results/*.trx
+          if-no-files-found: warn

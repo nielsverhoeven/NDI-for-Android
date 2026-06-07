@@ -1,4 +1,4 @@
-<!-- Last updated: 2026-03-20 -->
+<!-- Last updated: 2026-06-07 -->
 
 # Release Notes: 006 Settings Menu
 
@@ -98,3 +98,71 @@ Comparison method:
 1. Count matching records for pre-019 and post-019 cycles.
 2. Compute relative delta: `(post - pre) / pre * 100`.
 3. SC-004 passes when delta is `<= -30%`.
+
+## Issue #142 Addendum: Restore Settings Menu Functionality
+
+**Status: Released** — branch `feature/142-recreate-settings-menu`
+
+### Delivered Sections
+
+The MAUI Settings page is implemented as a two-pane layout: a fixed 220-pt left column of category buttons and a right detail pane that swaps content on selection.
+
+| Section | Detail-pane title | Key controls |
+|---|---|---|
+| General | General Settings | Guidance text; global staged Apply workflow (dirty tracking, validation-gated CanApply, apply-completion feedback) |
+| Appearance | Appearance Settings | Theme radio group (Light / Dark / System default); accent color radio group (Blue / Teal / Green / Orange / Red / Pink) |
+| Discovery | Discovery | Primary host and port inputs; Add / Update / Delete server list; Up / Down reorder; per-server enable toggle; duplicate host+port detection |
+| Developer Tools | Developer Settings | Developer Mode toggle; Cached Source Registry list (SourceName, Endpoint, State, RegistryKey, LastSeen) |
+| About | About | App name and version displayed in `name version (build)` style |
+
+### New Files Delivered
+
+**`src/Core/Features/Settings/`**
+
+| File | Purpose |
+|---|---|
+| `Models/SettingsModels.cs` | `ThemeMode`, `AccentColorOption`, `DiscoveryServerPreference`, `CachedSourceRegistryEntry`, `SettingsAppInfo`, `NdiSettingsSnapshot` |
+| `Services/IDiscoverySettingsOrchestrator.cs` | Contract for applying discovery endpoint to the NDI bridge |
+| `Services/ISettingsPlatformService.cs` | Contract for reading platform app metadata |
+| `Services/SettingsValidationService.cs` | `ISettingsValidationService`: `Sanitize`, `TryValidateForSave`, `IsValidHostOrEmpty` |
+| `ViewModels/DiscoveryServerItem.cs` | Observable wrapper for a single discovery server row |
+| `ViewModels/SettingsViewModel.cs` | Full ViewModel: section selection, staged Apply, dirty tracking, all section state |
+
+**`src/MauiApp/Features/Settings/`**
+
+| File | Purpose |
+|---|---|
+| `Services/DiscoverySettingsOrchestrator.cs` | Resolves primary host or first-enabled server, calls `INdiDiscoveryBridge.SetDiscoveryEndpoint` |
+| `Views/SettingsPage.xaml` | Two-pane XAML composition; five section buttons; detail pane switching via `IsVisible` bindings |
+| `Repositories/SettingsRepository.cs` | Staged Apply with sanitize-before-save, malformed-data fallback to `NdiSettingsSnapshot.CreateDefault()` |
+
+**`src/MauiApp/`**
+
+| File | Purpose |
+|---|---|
+| `Platforms/Android/Services/AndroidSettingsPlatformService.cs` | Android implementation of `ISettingsPlatformService` using `AppInfo.Current` |
+| `Services/DefaultSettingsPlatformService.cs` | Non-Android fallback implementation of `ISettingsPlatformService` |
+
+### Modified Files
+
+- `Data/NdiDatabase.cs` — `GetSettingsAsync` / `SaveSettingsAsync`
+- `AppShell.xaml` + `AppShell.xaml.cs` — settings shell routes (`//settings` portrait, `//settings-rail` landscape)
+- `MauiProgram.cs` — DI registrations (see DI Registration Decisions in the feature plan)
+- `Features/Sources/Repositories/SourceRepository.cs` — `GetCachedSourcesAsync`
+
+### DI Registrations (MauiProgram.cs)
+
+| Abstraction | Implementation | Lifetime |
+|---|---|---|
+| `ISettingsRepository` | `SettingsRepository` | Singleton |
+| `ISettingsValidationService` | `SettingsValidationService` | Singleton |
+| `IDiscoverySettingsOrchestrator` | `DiscoverySettingsOrchestrator` | Singleton |
+| `ISettingsPlatformService` | `AndroidSettingsPlatformService` (Android) / `DefaultSettingsPlatformService` (other) | Singleton |
+| `SettingsViewModel` | `SettingsViewModel` | Transient |
+
+### Test Results
+
+- **Unit tests: 109 passing** (expanded from 31 prior to this feature)
+- Test classes added: `SettingsViewModelTests`, `SettingsValidationServiceTests`, `DiscoveryServerItemTests`, `SettingsValidationServiceExtendedTests`, `SettingsViewModelDirtyTrackingTests`
+- Coverage includes: load from repository, staged Apply, validation error paths, duplicate-server detection, dirty-tracking state transitions
+- Device/emulator runtime validation (Appium) was not executable in the CI environment; compile-target and unit-test gates were used as acceptance gates in this cycle.

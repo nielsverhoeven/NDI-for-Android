@@ -9,13 +9,14 @@
        Shell.FlyoutBehavior="Disabled"
        Shell.FlyoutWidth="72"
        Shell.FlyoutBackgroundColor="#1C1C1E"
-    Shell.TabBarBackgroundColor="#1C1C1E"
-    Shell.TabBarForegroundColor="#FFFFFF"
-    Shell.TabBarTitleColor="#FFFFFF"
-    Shell.TabBarUnselectedColor="#8E8E93"
+       Shell.TabBarBackgroundColor="#1C1C1E"
+       Shell.TabBarForegroundColor="#FFFFFF"
+       Shell.TabBarTitleColor="#FFFFFF"
+       Shell.TabBarUnselectedColor="#8E8E93"
        Title="NDI for Android">
 
-    <!-- Custom left navigation rail rendered when FlyoutBehavior = Locked (landscape) -->
+    <!-- Custom left navigation rail. FlyoutHeaderTemplate intentionally omitted:
+         setting it alongside FlyoutContent triggers a MAUI compat renderer NRE. -->
     <Shell.FlyoutContent>
         <Grid BackgroundColor="#1C1C1E" WidthRequest="64">
             <VerticalStackLayout x:Name="RailItems"
@@ -24,13 +25,6 @@
                                  Spacing="0" />
         </Grid>
     </Shell.FlyoutContent>
-
-    <Shell.FlyoutHeaderTemplate>
-        <DataTemplate>
-            <!-- Suppress default flyout header -->
-            <BoxView HeightRequest="0" />
-        </DataTemplate>
-    </Shell.FlyoutHeaderTemplate>
 
     <FlyoutItem x:Name="HomeRailItem"
                 Route="home-rail-item"
@@ -83,7 +77,7 @@
                       Icon="nav_view.svg" />
         <ShellContent Title="Settings"
                       ContentTemplate="{DataTemplate settings:SettingsPage}"
-                      Route="settings-tab"
+                      Route="settings"
                       Icon="nav_settings.svg" />
     </TabBar>
 

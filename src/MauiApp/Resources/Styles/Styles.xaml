@@ -3,19 +3,24 @@
                     xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
                     xmlns:converters="clr-namespace:NdiForAndroid.Converters">
 
-    <Style TargetType="ActivityIndicator">
-        <Setter Property="Color" Value="{AppThemeBinding Light={StaticResource Primary}, Dark={StaticResource White}}" />
+    <!-- ═══════════════════════════════════════════════════
+         All styles use DynamicResource so MauiAppearanceService
+         can update every element instantly without navigation.
+         ═══════════════════════════════════════════════════ -->
+
+    <Style TargetType="ContentPage" ApplyToDerivedTypes="True">
+        <Setter Property="BackgroundColor" Value="{DynamicResource PageBackground}" />
     </Style>
 
     <Style TargetType="Label">
-        <Setter Property="TextColor" Value="{AppThemeBinding Light={StaticResource Gray900}, Dark={StaticResource White}}" />
+        <Setter Property="TextColor" Value="{DynamicResource TextPrimary}" />
         <Setter Property="FontFamily" Value="OpenSansRegular" />
         <Setter Property="FontSize" Value="14" />
     </Style>
 
     <Style TargetType="Button">
-        <Setter Property="TextColor" Value="{StaticResource White}" />
-        <Setter Property="BackgroundColor" Value="{StaticResource Primary}" />
+        <Setter Property="TextColor" Value="{DynamicResource OnPrimary}" />
+        <Setter Property="BackgroundColor" Value="{DynamicResource Primary}" />
         <Setter Property="FontFamily" Value="OpenSansSemibold" />
         <Setter Property="FontSize" Value="14" />
         <Setter Property="CornerRadius" Value="8" />
@@ -23,11 +28,88 @@
     </Style>
 
     <Style TargetType="Entry">
-        <Setter Property="TextColor" Value="{AppThemeBinding Light={StaticResource Gray900}, Dark={StaticResource White}}" />
-        <Setter Property="PlaceholderColor" Value="{StaticResource Gray200}" />
-        <Setter Property="BackgroundColor" Value="Transparent" />
+        <Setter Property="TextColor" Value="{DynamicResource TextPrimary}" />
+        <Setter Property="PlaceholderColor" Value="{DynamicResource TextPlaceholder}" />
+        <Setter Property="BackgroundColor" Value="{DynamicResource InputBackground}" />
         <Setter Property="FontFamily" Value="OpenSansRegular" />
         <Setter Property="FontSize" Value="14" />
+    </Style>
+
+    <Style TargetType="RadioButton">
+        <Setter Property="BackgroundColor" Value="{DynamicResource ControlBackground}" />
+        <Setter Property="TextColor" Value="{DynamicResource TextPrimary}" />
+        <Setter Property="ControlTemplate">
+            <Setter.Value>
+                <ControlTemplate>
+                    <!-- Pure MAUI radio button — bypasses native Android widget
+                         so DynamicResource color keys work correctly. -->
+                    <Grid ColumnDefinitions="22,*" ColumnSpacing="10"
+                          Padding="0,6">
+                        <!-- Radio circle -->
+                        <Grid WidthRequest="20" HeightRequest="20"
+                              VerticalOptions="Center"
+                              HorizontalOptions="Start">
+                            <Ellipse Stroke="{DynamicResource Primary}"
+                                     StrokeThickness="2"
+                                     Fill="Transparent"
+                                     WidthRequest="20" HeightRequest="20" />
+                            <Ellipse Fill="{DynamicResource Primary}"
+                                     WidthRequest="10" HeightRequest="10"
+                                     HorizontalOptions="Center"
+                                     VerticalOptions="Center">
+                                <Ellipse.Triggers>
+                                    <DataTrigger TargetType="Ellipse"
+                                                 Binding="{TemplateBinding IsChecked}"
+                                                 Value="False">
+                                        <Setter Property="Fill" Value="Transparent" />
+                                    </DataTrigger>
+                                </Ellipse.Triggers>
+                            </Ellipse>
+                        </Grid>
+                        <!-- Label -->
+                        <Label Grid.Column="1"
+                               Text="{TemplateBinding Content}"
+                               TextColor="{DynamicResource TextPrimary}"
+                               VerticalOptions="Center"
+                               FontFamily="OpenSansRegular"
+                               FontSize="14" />
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style TargetType="Switch">
+        <Setter Property="OnColor" Value="{DynamicResource Primary}" />
+        <Setter Property="ThumbColor" Value="{DynamicResource OnPrimary}" />
+    </Style>
+
+    <Style TargetType="ActivityIndicator">
+        <Setter Property="Color" Value="{DynamicResource Primary}" />
+    </Style>
+
+    <Style TargetType="RefreshView">
+        <Setter Property="RefreshColor" Value="{DynamicResource Primary}" />
+    </Style>
+
+    <Style TargetType="CollectionView">
+        <Setter Property="BackgroundColor" Value="{DynamicResource PageBackground}" />
+    </Style>
+
+    <Style TargetType="ScrollView">
+        <Setter Property="BackgroundColor" Value="{DynamicResource PageBackground}" />
+    </Style>
+
+    <Style TargetType="Grid">
+        <Setter Property="BackgroundColor" Value="Transparent" />
+    </Style>
+
+    <Style TargetType="VerticalStackLayout">
+        <Setter Property="BackgroundColor" Value="Transparent" />
+    </Style>
+
+    <Style TargetType="HorizontalStackLayout">
+        <Setter Property="BackgroundColor" Value="Transparent" />
     </Style>
 
     <!-- Utility converters -->

@@ -2,35 +2,158 @@
 <ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              xmlns:vm="clr-namespace:NdiForAndroid.Features.Settings.ViewModels;assembly=NdiForAndroid.Core"
+             xmlns:model="clr-namespace:NdiForAndroid.Features.Settings.Models;assembly=NdiForAndroid.Core"
              x:Class="NdiForAndroid.Features.Settings.Views.SettingsPage"
+             x:Name="SettingsRoot"
              x:DataType="vm:SettingsViewModel"
              Title="Settings">
     <ScrollView>
-        <VerticalStackLayout Padding="16" Spacing="16">
+              <Grid Padding="16" ColumnDefinitions="220,*" ColumnSpacing="16">
+                     <VerticalStackLayout Grid.Column="0" Spacing="10">
+                            <Button Text="General"
+                                          Command="{Binding SelectSectionCommand}"
+                                   CommandParameter="{x:Static vm:SettingsSection.General}" />
+                            <Button Text="Appearance"
+                                          Command="{Binding SelectSectionCommand}"
+                                   CommandParameter="{x:Static vm:SettingsSection.Appearance}" />
+                            <Button Text="Discovery"
+                                          Command="{Binding SelectSectionCommand}"
+                                   CommandParameter="{x:Static vm:SettingsSection.Discovery}" />
+                            <Button Text="Developer tools"
+                                          Command="{Binding SelectSectionCommand}"
+                                   CommandParameter="{x:Static vm:SettingsSection.DeveloperTools}" />
+                            <Button Text="About"
+                                          Command="{Binding SelectSectionCommand}"
+                                   CommandParameter="{x:Static vm:SettingsSection.About}" />
+                     </VerticalStackLayout>
 
-            <Label Text="Discovery Server" FontAttributes="Bold" FontSize="18" />
+                     <VerticalStackLayout Grid.Column="1" Spacing="12">
+                            <VerticalStackLayout IsVisible="{Binding IsGeneralSectionSelected}" Spacing="8">
+                                   <Label Text="General Settings" FontAttributes="Bold" FontSize="20" />
+                                   <Label Text="{Binding GeneralGuidanceText}" />
+                            </VerticalStackLayout>
 
-            <Entry Placeholder="Host (e.g. 192.168.1.100)"
-                   Text="{Binding DiscoveryHost}"
-                   Keyboard="Url" />
+                            <VerticalStackLayout IsVisible="{Binding IsAppearanceSectionSelected}" Spacing="10">
+                                   <Label Text="Appearance Settings" FontAttributes="Bold" FontSize="20" />
 
-            <Entry Placeholder="Port (e.g. 5960)"
-                   Text="{Binding DiscoveryPort}"
-                   Keyboard="Numeric" />
+                                   <Label Text="Theme" FontAttributes="Bold" />
+                                   <VerticalStackLayout Spacing="4"
+                                                                       RadioButtonGroup.GroupName="ThemeMode"
+                                                                       RadioButtonGroup.SelectedValue="{Binding SelectedThemeOption}">
+                                          <RadioButton Content="Light" Value="Light" />
+                                          <RadioButton Content="Dark" Value="Dark" />
+                                          <RadioButton Content="System default" Value="System default" />
+                                   </VerticalStackLayout>
 
-            <Label Text="{Binding ValidationError}"
-                   TextColor="Red"
-                   IsVisible="{Binding ValidationError, Converter={StaticResource IsNotNullConverter}}" />
+                                   <Label Text="Accent color" FontAttributes="Bold" />
+                                   <FlexLayout Wrap="Wrap"
+                                                        Direction="Row"
+                                                        JustifyContent="Start"
+                                                        AlignItems="Center"
+                                                        RadioButtonGroup.GroupName="AccentColor"
+                                                        RadioButtonGroup.SelectedValue="{Binding SelectedAccentColor}">
+                                          <RadioButton Content="Blue" Value="Blue" Margin="0,0,16,0" />
+                                          <RadioButton Content="Teal" Value="Teal" Margin="0,0,16,0" />
+                                          <RadioButton Content="Green" Value="Green" Margin="0,0,16,0" />
+                                          <RadioButton Content="Orange" Value="Orange" Margin="0,0,16,0" />
+                                          <RadioButton Content="Red" Value="Red" Margin="0,0,16,0" />
+                                          <RadioButton Content="Pink" Value="Pink" Margin="0,0,16,0" />
+                                   </FlexLayout>
+                            </VerticalStackLayout>
 
-            <Label Text="Developer Mode" FontAttributes="Bold" FontSize="16" />
-            <Switch IsToggled="{Binding DeveloperModeEnabled}" />
+                            <VerticalStackLayout IsVisible="{Binding IsDiscoverySectionSelected}" Spacing="10">
+                                   <Label Text="Discovery Settings" FontAttributes="Bold" FontSize="20" />
 
-            <Button Text="Save" Command="{Binding SaveCommand}" HorizontalOptions="Start" />
+                                   <Entry Placeholder="Host or IP"
+                                             Text="{Binding DiscoveryHost}"
+                                             Keyboard="Url" />
+                                   <Entry Placeholder="Port (default 5959)"
+                                             Text="{Binding DiscoveryPort}"
+                                             Keyboard="Numeric" />
 
-            <Label Text="Settings saved."
-                   TextColor="Green"
-                   IsVisible="{Binding IsSaved}" />
+                                   <Grid ColumnDefinitions="*,*,Auto" ColumnSpacing="8">
+                                          <Entry Grid.Column="0"
+                                                    Placeholder="Server host"
+                                                    Text="{Binding DiscoveryServerHostInput}" />
+                                          <Entry Grid.Column="1"
+                                                    Placeholder="Server port"
+                                                    Keyboard="Numeric"
+                                                    Text="{Binding DiscoveryServerPortInput}" />
+                                          <Button Grid.Column="2"
+                                                        Text="{Binding DiscoveryServerActionText}"
+                                                        Command="{Binding AddOrUpdateDiscoveryServerCommand}" />
+                                   </Grid>
 
-        </VerticalStackLayout>
+                                   <Label Text="{Binding DiscoveryServersValidationMessage}" TextColor="Red" />
+
+                                   <CollectionView ItemsSource="{Binding DiscoveryServers}">
+                                          <CollectionView.ItemTemplate>
+                                                 <DataTemplate x:DataType="vm:DiscoveryServerItem">
+                                                        <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto,Auto" RowDefinitions="Auto" ColumnSpacing="8" Padding="0,4">
+                                                               <Label Grid.Column="0" Text="{Binding EndpointDisplay}" VerticalOptions="Center" />
+                                                               <Switch Grid.Column="1" IsToggled="{Binding Enabled}" />
+                                                               <Button Grid.Column="2"
+                                                                             Text="Up"
+                                                                             Command="{Binding Source={x:Reference SettingsRoot}, Path=BindingContext.MoveDiscoveryServerUpCommand}"
+                                                                             CommandParameter="{Binding .}" />
+                                                               <Button Grid.Column="3"
+                                                                             Text="Down"
+                                                                             Command="{Binding Source={x:Reference SettingsRoot}, Path=BindingContext.MoveDiscoveryServerDownCommand}"
+                                                                             CommandParameter="{Binding .}" />
+                                                               <Button Grid.Column="4"
+                                                                             Text="Edit"
+                                                                             Command="{Binding Source={x:Reference SettingsRoot}, Path=BindingContext.EditDiscoveryServerCommand}"
+                                                                             CommandParameter="{Binding .}" />
+                                                               <Button Grid.Column="5"
+                                                                             Text="Delete"
+                                                                             Command="{Binding Source={x:Reference SettingsRoot}, Path=BindingContext.RemoveDiscoveryServerCommand}"
+                                                                             CommandParameter="{Binding .}" />
+                                                        </Grid>
+                                                 </DataTemplate>
+                                          </CollectionView.ItemTemplate>
+                                   </CollectionView>
+                            </VerticalStackLayout>
+
+                            <VerticalStackLayout IsVisible="{Binding IsDeveloperToolsSectionSelected}" Spacing="10">
+                                   <Label Text="Developer Settings" FontAttributes="Bold" FontSize="20" />
+
+                                   <HorizontalStackLayout Spacing="8">
+                                          <Switch IsToggled="{Binding DeveloperModeEnabled}" />
+                                          <Label Text="Developer Mode" VerticalOptions="Center" />
+                                   </HorizontalStackLayout>
+
+                                   <Label Text="Cached Source Registry" FontAttributes="Bold" />
+                                   <CollectionView ItemsSource="{Binding CachedSourceRegistry}">
+                                          <CollectionView.ItemTemplate>
+                                                 <DataTemplate x:DataType="model:CachedSourceRegistryEntry">
+                                                        <VerticalStackLayout Spacing="2" Padding="0,6">
+                                                               <Label Text="{Binding SourceName}" FontAttributes="Bold" />
+                                                               <Label Text="{Binding Endpoint, StringFormat='Endpoint: {0}'}" />
+                                                               <Label Text="{Binding State, StringFormat='State: {0}'}" />
+                                                               <Label Text="{Binding RegistryKey, StringFormat='Key: {0}'}" />
+                                                               <Label Text="{Binding LastSeenDisplay, StringFormat='Last seen: {0}'}" />
+                                                        </VerticalStackLayout>
+                                                 </DataTemplate>
+                                          </CollectionView.ItemTemplate>
+                                   </CollectionView>
+                            </VerticalStackLayout>
+
+                            <VerticalStackLayout IsVisible="{Binding IsAboutSectionSelected}" Spacing="8">
+                                   <Label Text="About" FontAttributes="Bold" FontSize="20" />
+                                   <Label Text="{Binding AppName}" FontAttributes="Bold" />
+                                   <Label Text="{Binding AppVersionBuild}" />
+                            </VerticalStackLayout>
+
+                            <Label Text="{Binding ValidationError}" TextColor="Red" />
+
+                            <Button Text="Apply"
+                                          Command="{Binding ApplyCommand}"
+                                          HorizontalOptions="Center" />
+
+                            <Label Text="Settings applied."
+                                      TextColor="Green"
+                                      IsVisible="{Binding IsApplied}" />
+                     </VerticalStackLayout>
+              </Grid>
     </ScrollView>
 </ContentPage>

@@ -79,11 +79,7 @@ You are the master orchestrator for feature development in this .NET MAUI NDI ap
 
 ## Constitution
 
-Before starting any feature, read `docs/constitution.md`. This file contains the authoritative technology choices, architecture principles, testing standards, and development agreements for this project. Every agent in the network must respect it.
-
-If `docs/constitution.md` does not exist:
-1. Invoke `architect` with the prompt: "Create the initial project constitution at docs/constitution.md for this .NET MAUI NDI application."
-2. Wait for `architect` to complete before proceeding.
+Before starting any feature, read **`.github/KNOWLEDGE-BASE.md`** — it is a compact single-file reference for tech stack, key file paths, code patterns, and agent efficiency rules. Only fall back to the full `docs/constitution.md` when the knowledge base does not cover the needed detail.
 
 ---
 

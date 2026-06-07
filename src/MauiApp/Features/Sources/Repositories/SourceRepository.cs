@@ -1,4 +1,5 @@
 using NdiForAndroid.Data;
+using NdiForAndroid.Features.Settings.Repositories;
 using NdiForAndroid.Features.Sources.Models;
 using NdiForAndroid.NdiBridge;
 
@@ -8,11 +9,13 @@ public sealed class SourceRepository : ISourceRepository
 {
     private readonly INdiDiscoveryBridge _bridge;
     private readonly NdiDatabase _db;
+    private readonly ISettingsRepository _settingsRepository;
 
-    public SourceRepository(INdiDiscoveryBridge bridge, NdiDatabase db)
+    public SourceRepository(INdiDiscoveryBridge bridge, NdiDatabase db, ISettingsRepository settingsRepository)
     {
         _bridge = bridge;
         _db = db;
+        _settingsRepository = settingsRepository;
     }
 
     public async Task<DiscoverySnapshot> DiscoverAsync(CancellationToken cancellationToken = default)
@@ -20,6 +23,8 @@ public sealed class SourceRepository : ISourceRepository
         var snapshotId = Guid.NewGuid().ToString();
         try
         {
+            _ = await _settingsRepository.GetSettingsAsync();
+
             var entries = await _bridge.DiscoverSourcesAsync(cancellationToken);
             var sources = entries.Select(e => new NdiSource(
                 e.SourceId, e.DisplayName, e.EndpointAddress, e.IsAvailable, e.LastSeenAtEpochMillis)).ToList();

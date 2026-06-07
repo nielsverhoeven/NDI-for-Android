@@ -1,6 +1,7 @@
 using SQLite;
 using NdiForAndroid.Features.Sources.Models;
 using NdiForAndroid.Features.Settings.Models;
+using System.Text.Json;
 
 namespace NdiForAndroid.Data;
 
@@ -24,6 +25,9 @@ public class SettingsEntity
     public string? DiscoveryHost { get; set; }
     public int? DiscoveryPort { get; set; }
     public bool DeveloperModeEnabled { get; set; }
+    public string? ThemeMode { get; set; }
+    public string? AccentColor { get; set; }
+    public string? DiscoveryServersJson { get; set; }
     public long UpdatedAtEpochMillis { get; set; }
 }
 
@@ -43,6 +47,7 @@ public sealed class NdiDatabase
     {
         await _connection.CreateTableAsync<SourceEntity>();
         await _connection.CreateTableAsync<SettingsEntity>();
+        await EnsureSettingsColumnsAsync();
     }
 
     private Task EnsureInitializedAsync() => _initTask;
@@ -80,11 +85,26 @@ public sealed class NdiDatabase
     public async Task<NdiSettingsSnapshot> GetSettingsAsync()
     {
         await EnsureInitializedAsync();
-        var entity = await _connection.FindAsync<SettingsEntity>(1);
-        if (entity is null)
-            return new NdiSettingsSnapshot(null, null, false, 0);
-        return new NdiSettingsSnapshot(
-            entity.DiscoveryHost, entity.DiscoveryPort, entity.DeveloperModeEnabled, entity.UpdatedAtEpochMillis);
+
+        try
+        {
+            var entity = await _connection.FindAsync<SettingsEntity>(1);
+            if (entity is null)
+                return NdiSettingsSnapshot.CreateDefault();
+
+            return new NdiSettingsSnapshot(
+                string.IsNullOrWhiteSpace(entity.DiscoveryHost) ? null : entity.DiscoveryHost.Trim(),
+                entity.DiscoveryPort,
+                entity.DeveloperModeEnabled,
+                entity.UpdatedAtEpochMillis,
+                ParseThemeMode(entity.ThemeMode),
+                ParseAccentColor(entity.AccentColor),
+                ParseDiscoveryServers(entity.DiscoveryServersJson));
+        }
+        catch
+        {
+            return NdiSettingsSnapshot.CreateDefault();
+        }
     }
 
     public async Task SaveSettingsAsync(NdiSettingsSnapshot settings)
@@ -96,8 +116,64 @@ public sealed class NdiDatabase
             DiscoveryHost = settings.DiscoveryHost,
             DiscoveryPort = settings.DiscoveryPort,
             DeveloperModeEnabled = settings.DeveloperModeEnabled,
+            ThemeMode = settings.ThemeMode.ToString(),
+            AccentColor = settings.AccentColor.ToString(),
+            DiscoveryServersJson = SerializeDiscoveryServers(settings.DiscoveryServers),
             UpdatedAtEpochMillis = settings.UpdatedAtEpochMillis,
         };
         await _connection.InsertOrReplaceAsync(entity);
     }
+
+    private async Task EnsureSettingsColumnsAsync()
+    {
+        var tableInfo = await _connection.GetTableInfoAsync("settings");
+        var columnNames = tableInfo.Select(column => column.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        if (!columnNames.Contains("ThemeMode"))
+            await _connection.ExecuteAsync("ALTER TABLE settings ADD COLUMN ThemeMode TEXT");
+
+        if (!columnNames.Contains("AccentColor"))
+            await _connection.ExecuteAsync("ALTER TABLE settings ADD COLUMN AccentColor TEXT");
+
+        if (!columnNames.Contains("DiscoveryServersJson"))
+            await _connection.ExecuteAsync("ALTER TABLE settings ADD COLUMN DiscoveryServersJson TEXT");
+    }
+
+    private static ThemeMode ParseThemeMode(string? value)
+    {
+        if (Enum.TryParse<ThemeMode>(value, ignoreCase: true, out var parsed) && Enum.IsDefined(parsed))
+            return parsed;
+
+        return ThemeMode.System;
+    }
+
+    private static AccentColorOption ParseAccentColor(string? value)
+    {
+        if (Enum.TryParse<AccentColorOption>(value, ignoreCase: true, out var parsed) && Enum.IsDefined(parsed))
+            return parsed;
+
+        return AccentColorOption.Blue;
+    }
+
+    private static IReadOnlyList<DiscoveryServerPreference> ParseDiscoveryServers(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+            return Array.Empty<DiscoveryServerPreference>();
+
+        try
+        {
+            var parsed = JsonSerializer.Deserialize<List<DiscoveryServerPreference>>(raw);
+            if (parsed is null)
+                return Array.Empty<DiscoveryServerPreference>();
+
+            return parsed;
+        }
+        catch
+        {
+            return Array.Empty<DiscoveryServerPreference>();
+        }
+    }
+
+    private static string SerializeDiscoveryServers(IReadOnlyList<DiscoveryServerPreference> servers)
+        => JsonSerializer.Serialize(servers);
 }

@@ -4,8 +4,8 @@ using NdiForAndroid.Features.Navigation.Services;
 using NdiForAndroid.Features.Navigation.ViewModels;
 using NdiForAndroid.Features.Output.ViewModels;
 using NdiForAndroid.Features.Settings.Repositories;
-using NdiForAndroid.Features.Settings.ViewModels;
-using NdiForAndroid.Features.Sources.Repositories;
+using NdiForAndroid.Features.Settings.Services;
+using NdiForAndroid.Features.Settings.ViewModels;using NdiForAndroid.Features.Sources.Repositories;
 using NdiForAndroid.Features.Sources.ViewModels;
 using NdiForAndroid.Features.Viewer.ViewModels;
 using NdiForAndroid.NdiBridge;
@@ -46,6 +46,9 @@ public static class MauiProgram
         // Repositories
         builder.Services.AddSingleton<ISourceRepository, SourceRepository>();
         builder.Services.AddSingleton<ISettingsRepository, SettingsRepository>();
+        builder.Services.AddSingleton<ISettingsValidationService, SettingsValidationService>();
+        builder.Services.AddSingleton<IDiscoverySettingsOrchestrator, DiscoverySettingsOrchestrator>();
+        builder.Services.AddSingleton<IAppearanceService, MauiAppearanceService>();
 
         // Services
         builder.Services.AddSingleton<ITelemetryService, TelemetryService>();
@@ -57,8 +60,10 @@ public static class MauiProgram
 
 #if ANDROID
         builder.Services.AddSingleton<IScreenSharePlatformService, AndroidScreenSharePlatformService>();
+        builder.Services.AddSingleton<ISettingsPlatformService, AndroidSettingsPlatformService>();
 #else
         builder.Services.AddSingleton<IScreenSharePlatformService, NoopScreenSharePlatformService>();
+        builder.Services.AddSingleton<ISettingsPlatformService, DefaultSettingsPlatformService>();
 #endif
 
         // ViewModels

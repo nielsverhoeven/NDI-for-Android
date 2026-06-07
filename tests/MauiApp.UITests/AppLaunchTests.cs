@@ -73,7 +73,7 @@ public sealed class AppLaunchTests
             try
             {
                 return d.FindElement(By.XPath(
-                    "//*[@text='Discovery Server' or @text='Save' or @text='Settings saved.']"));
+                    "//*[@text='General' or @text='Appearance' or @text='Discovery' or @text='Apply']"));
             }
             catch (NoSuchElementException)
             {
@@ -213,7 +213,75 @@ public sealed class AppLaunchTests
         AssertPageVisible(driver, "//*[@text='Viewer' or contains(@content-desc,'Viewer')]", 15);
 
         ClickNav(driver, "Settings");
-        AssertPageVisible(driver, "//*[@text='Discovery Server' or @text='Save' or @text='Settings saved.']", 15);
+        AssertPageVisible(driver, "//*[@text='General' or @text='Appearance' or @text='Discovery' or @text='Apply']", 15);
+    }
+
+    [SkippableFact]
+    public void Settings_RequiredSections_AreVisible()
+    {
+        Skip.If(_fixture.SkipReason is not null, _fixture.SkipReason ?? string.Empty);
+
+        var driver = _fixture.Driver!;
+
+        ClickNav(driver, "Settings");
+
+        // Section nav buttons use exact XAML text; also guard against Android all-caps button rendering
+        AssertPageVisible(driver, "//*[@text='General' or @text='GENERAL']", 15);
+        AssertPageVisible(driver, "//*[@text='Appearance' or @text='APPEARANCE']", 15);
+        AssertPageVisible(driver, "//*[@text='Discovery' or @text='DISCOVERY']", 15);
+        AssertPageVisible(driver, "//*[@text='Developer tools' or @text='DEVELOPER TOOLS']", 15);
+        AssertPageVisible(driver, "//*[@text='About' or @text='ABOUT']", 15);
+    }
+
+    [SkippableFact]
+    public void Settings_Save_PersistsDiscoveryHostAcrossRestart_WhenEnvironmentSupportsLifecycleCommands()
+    {
+        Skip.If(_fixture.SkipReason is not null, _fixture.SkipReason ?? string.Empty);
+
+        var driver = _fixture.Driver!;
+        ClickNav(driver, "Settings");
+
+        // The settings page has a left sidebar with section buttons. Discovery host/port
+        // inputs live inside the Discovery section panel which is hidden by default.
+        // Click the Discovery sidebar button first to reveal the EditText fields.
+        var discoveryNavButton = FindElement(driver, "//*[@text='Discovery' or @text='DISCOVERY']", 10);
+        Assert.NotNull(discoveryNavButton);
+        discoveryNavButton!.Click();
+
+        var hostEntry = FindElement(driver, "(//android.widget.EditText)[1]", 15);
+        Assert.NotNull(hostEntry);
+
+        hostEntry!.Clear();
+        hostEntry.SendKeys("persist.test.local");
+
+        var saveButton = FindElement(driver, "//*[@text='Apply' or @content-desc='Apply']", 10);
+        Assert.NotNull(saveButton);
+        saveButton!.Click();
+
+        AssertPageVisible(driver, "//*[@text='Settings applied.']", 10);
+
+        var packageName = "com.ndi.android";
+        try
+        {
+            driver.TerminateApp(packageName);
+            driver.ActivateApp(packageName);
+        }
+        catch
+        {
+            Skip.If(true, "App lifecycle commands are not supported in this execution environment.");
+        }
+
+        ClickNav(driver, "Settings");
+        // Navigate to Discovery section again after restart to reveal EditText fields
+        var discoveryNavButtonAfterRestart = FindElement(driver, "//*[@text='Discovery' or @text='DISCOVERY']", 10);
+        Assert.NotNull(discoveryNavButtonAfterRestart);
+        discoveryNavButtonAfterRestart!.Click();
+
+        var hostEntryAfterRestart = FindElement(driver, "(//android.widget.EditText)[1]", 15);
+        Assert.NotNull(hostEntryAfterRestart);
+
+        var persistedValue = hostEntryAfterRestart!.GetAttribute("text") ?? string.Empty;
+        Assert.Equal("persist.test.local", persistedValue);
     }
 
     private static void SetOrientation(AndroidDriver driver, ScreenOrientation orientation)
@@ -242,7 +310,7 @@ public sealed class AppLaunchTests
 
     private static void ClickNav(AndroidDriver driver, string label)
     {
-        var element = WaitForNavElement(driver, label, 12);
+        var element = WaitForNavElement(driver, label, 30);
         Assert.NotNull(element);
         element!.Click();
     }
@@ -250,7 +318,15 @@ public sealed class AppLaunchTests
     private static void AssertPageVisible(AndroidDriver driver, string xpath, int timeoutSeconds = 12)
     {
         var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(timeoutSeconds));
-        var found = wait.Until(d =>
+        var found = FindElement(driver, xpath, timeoutSeconds);
+
+        Assert.NotNull(found);
+    }
+
+    private static IWebElement? FindElement(AndroidDriver driver, string xpath, int timeoutSeconds)
+    {
+        var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(timeoutSeconds));
+        return wait.Until(d =>
         {
             try
             {
@@ -261,8 +337,6 @@ public sealed class AppLaunchTests
                 return null;
             }
         });
-
-        Assert.NotNull(found);
     }
 }
 

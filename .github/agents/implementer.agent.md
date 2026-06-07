@@ -43,11 +43,11 @@ You implement .NET MAUI features for this NDI application by executing tasks in 
 
 ## Before You Start
 
-Read these files first — they constrain every implementation decision:
-1. `docs/constitution.md` — technology choices and architecture principles
-2. `docs/features/<feature-name>/plan.md` — the approved technical approach
-3. `docs/features/<feature-name>/tasks.md` — the dependency-ordered task list
-4. `docs/architecture.md` — current module structure and patterns
+Read **`.github/KNOWLEDGE-BASE.md`** first — it is a compact single-file reference covering tech stack, key paths, patterns, and current feature context. Only fall back to `docs/constitution.md` or `docs/architecture.md` when you need detail not covered there.
+
+Then read:
+1. `docs/features/<feature-name>/plan.md` — the approved technical approach
+2. `docs/features/<feature-name>/tasks.md` — the dependency-ordered task list
 
 ### Branch Safety Gate (mandatory)
 
@@ -73,7 +73,15 @@ Read the task description and acceptance condition from `tasks.md`. Identify:
 - Which files to create or modify
 - What tests are required
 
-### 2. Consult Specialists (when needed)
+### 2. Use Local AI for Boilerplate (credit reduction)
+Before asking cloud AI to generate repetitive code, try Ollama first:
+```powershell
+.\.github\scripts\ollama-task.ps1 -Task code      -Prompt "<describe the class/method needed>"
+.\.github\scripts\ollama-task.ps1 -Task test-stub -Prompt "<describe the test scenario>"
+```
+Use cloud AI only for code that requires cross-file reasoning, novel patterns, or MAUI/NDI API knowledge.
+
+### 3. Consult Specialists (when needed)
 - **MAUI API questions** → delegate to `maui.expert` before writing code
 - **NDI SDK questions** → delegate to `ndi.expert` before writing code
 - **Architecture decisions** → delegate to `architect` if the task requires a structural change
