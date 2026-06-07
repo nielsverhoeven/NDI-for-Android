@@ -16,8 +16,12 @@
     <Color x:Key="Gray200">#C8C8C8</Color>
     <Color x:Key="Gray900">#212121</Color>
 
+    <!-- Semantic colours — overridden at runtime by MauiAppearanceService for light/dark -->
     <Color x:Key="PageBackground">#1E1E2E</Color>
     <Color x:Key="CardBackground">#2A2A3E</Color>
+    <Color x:Key="ShellBackground">#1C1C1E</Color>
+    <Color x:Key="ShellForeground">#FFFFFF</Color>
+    <Color x:Key="ShellUnselected">#8E8E93</Color>
     <Color x:Key="TextPrimary">#FFFFFF</Color>
     <Color x:Key="TextSecondary">#AAAACC</Color>
 
