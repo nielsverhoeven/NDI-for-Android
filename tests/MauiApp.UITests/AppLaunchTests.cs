@@ -73,7 +73,7 @@ public sealed class AppLaunchTests
             try
             {
                 return d.FindElement(By.XPath(
-                    "//*[@text='Discovery Server' or @text='Save' or @text='Settings saved.']"));
+                    "//*[@text='General' or @text='Appearance' or @text='Discovery Servers' or @text='Save']"));
             }
             catch (NoSuchElementException)
             {
@@ -213,7 +213,62 @@ public sealed class AppLaunchTests
         AssertPageVisible(driver, "//*[@text='Viewer' or contains(@content-desc,'Viewer')]", 15);
 
         ClickNav(driver, "Settings");
-        AssertPageVisible(driver, "//*[@text='Discovery Server' or @text='Save' or @text='Settings saved.']", 15);
+        AssertPageVisible(driver, "//*[@text='General' or @text='Appearance' or @text='Discovery Servers' or @text='Save']", 15);
+    }
+
+    [SkippableFact]
+    public void Settings_RequiredSections_AreVisible()
+    {
+        Skip.If(_fixture.SkipReason is not null, _fixture.SkipReason ?? string.Empty);
+
+        var driver = _fixture.Driver!;
+
+        ClickNav(driver, "Settings");
+
+        AssertPageVisible(driver, "//*[@text='General']", 15);
+        AssertPageVisible(driver, "//*[@text='Appearance']", 15);
+        AssertPageVisible(driver, "//*[@text='Discovery Servers']", 15);
+        AssertPageVisible(driver, "//*[@text='Developer Tools']", 15);
+        AssertPageVisible(driver, "//*[@text='About']", 15);
+    }
+
+    [SkippableFact]
+    public void Settings_Save_PersistsDiscoveryHostAcrossRestart_WhenEnvironmentSupportsLifecycleCommands()
+    {
+        Skip.If(_fixture.SkipReason is not null, _fixture.SkipReason ?? string.Empty);
+
+        var driver = _fixture.Driver!;
+        ClickNav(driver, "Settings");
+
+        var hostEntry = FindElement(driver, "(//android.widget.EditText)[1]", 15);
+        Assert.NotNull(hostEntry);
+
+        hostEntry!.Clear();
+        hostEntry.SendKeys("persist.test.local");
+
+        var saveButton = FindElement(driver, "//*[@text='Save' or @content-desc='Save']", 10);
+        Assert.NotNull(saveButton);
+        saveButton!.Click();
+
+        AssertPageVisible(driver, "//*[@text='Settings saved.']", 10);
+
+        var packageName = "com.ndi.android";
+        try
+        {
+            driver.TerminateApp(packageName);
+            driver.ActivateApp(packageName);
+        }
+        catch
+        {
+            Skip.If(true, "App lifecycle commands are not supported in this execution environment.");
+        }
+
+        ClickNav(driver, "Settings");
+        var hostEntryAfterRestart = FindElement(driver, "(//android.widget.EditText)[1]", 15);
+        Assert.NotNull(hostEntryAfterRestart);
+
+        var persistedValue = hostEntryAfterRestart!.GetAttribute("text") ?? string.Empty;
+        Assert.Equal("persist.test.local", persistedValue);
     }
 
     private static void SetOrientation(AndroidDriver driver, ScreenOrientation orientation)
@@ -250,7 +305,15 @@ public sealed class AppLaunchTests
     private static void AssertPageVisible(AndroidDriver driver, string xpath, int timeoutSeconds = 12)
     {
         var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(timeoutSeconds));
-        var found = wait.Until(d =>
+        var found = FindElement(driver, xpath, timeoutSeconds);
+
+        Assert.NotNull(found);
+    }
+
+    private static IWebElement? FindElement(AndroidDriver driver, string xpath, int timeoutSeconds)
+    {
+        var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(timeoutSeconds));
+        return wait.Until(d =>
         {
             try
             {
@@ -261,8 +324,6 @@ public sealed class AppLaunchTests
                 return null;
             }
         });
-
-        Assert.NotNull(found);
     }
 }
 

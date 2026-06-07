@@ -98,3 +98,19 @@ Comparison method:
 1. Count matching records for pre-019 and post-019 cycles.
 2. Compute relative delta: `(post - pre) / pre * 100`.
 3. SC-004 passes when delta is `<= -30%`.
+
+## Issue #142 Addendum: Restore Settings Menu Functionality
+
+Delivered parity restorations:
+
+- Restored required settings sections in MAUI Settings page: General, Appearance, Discovery Servers, Developer Tools, and About.
+- Added deterministic defaults and malformed-data fallback for settings load from local persistence.
+- Added repository-side save validation for discovery host and port, discovery server rows, and duplicate host+port prevention.
+- Added discovery endpoint apply orchestration at the NDI bridge boundary using plain C# contracts.
+- Added ViewModel unit test coverage for settings load, save, validation, and discovery-server reorder behavior.
+- Added UI test coverage scaffolds for required section visibility and save plus restart persistence flow.
+
+Intentional exclusions in this implementation cycle:
+
+- No Android device or emulator execution evidence was captured in this environment because `ANDROID_APK_PATH` and Appium runtime were unavailable.
+- Full APK packaging verification (`_BuildApkEmbed`) was not used as a Stage 5 gate in this run; compile-target verification was used to validate implementation changes.

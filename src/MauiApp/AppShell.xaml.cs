@@ -12,19 +12,19 @@ public partial class AppShell : Shell
     private readonly IReadOnlyDictionary<PrimaryNavDestination, string> _landscapeRoutes =
         new Dictionary<PrimaryNavDestination, string>
         {
-            [PrimaryNavDestination.Home] = "//home-rail",
-            [PrimaryNavDestination.Stream] = "//stream-rail",
-            [PrimaryNavDestination.View] = "//view-rail",
+            [PrimaryNavDestination.Home]     = "//home-rail",
+            [PrimaryNavDestination.Stream]   = "//stream-rail",
+            [PrimaryNavDestination.View]     = "//view-rail",
             [PrimaryNavDestination.Settings] = "//settings-rail",
         };
 
     private readonly IReadOnlyDictionary<PrimaryNavDestination, string> _portraitRoutes =
         new Dictionary<PrimaryNavDestination, string>
         {
-            [PrimaryNavDestination.Home] = "//home-tab",
-            [PrimaryNavDestination.Stream] = "//stream-tab",
-            [PrimaryNavDestination.View] = "//view-tab",
-            [PrimaryNavDestination.Settings] = "//settings-tab",
+            [PrimaryNavDestination.Home]     = "//home-tab",
+            [PrimaryNavDestination.Stream]   = "//stream-tab",
+            [PrimaryNavDestination.View]     = "//view-tab",
+            [PrimaryNavDestination.Settings] = "//settings",
         };
 
     private readonly AdaptiveShellStateViewModel _stateViewModel;
@@ -33,12 +33,10 @@ public partial class AppShell : Shell
 
     private PrimaryNavDestination _currentPrimaryDestination = PrimaryNavDestination.Home;
 
-    // Map destination -> rail button parts for selection state updates.
     private readonly Dictionary<PrimaryNavDestination, (Frame Container, Label Label, Image Icon)> _railButtons = [];
 
-    private static readonly Color RailBg = Color.FromArgb("#1C1C1E");
     private static readonly Color InactiveText = Color.FromArgb("#8E8E93");
-    private static readonly Color ActiveText = Color.FromArgb("#FFFFFF");
+    private static readonly Color ActiveText   = Color.FromArgb("#FFFFFF");
 
     public AppShell(
         AdaptiveShellStateViewModel stateViewModel,
@@ -47,9 +45,9 @@ public partial class AppShell : Shell
     {
         InitializeComponent();
 
-        _stateViewModel = stateViewModel;
+        _stateViewModel   = stateViewModel;
         _orientationBridge = orientationBridge;
-        _handoffService = handoffService;
+        _handoffService   = handoffService;
 
         Routing.RegisterRoute("viewer", typeof(ViewerPage));
         Routing.RegisterRoute("output", typeof(OutputPage));
@@ -74,7 +72,7 @@ public partial class AppShell : Shell
             {
                 Source = item.IconKey,
                 HeightRequest = 28,
-                WidthRequest = 28,
+                WidthRequest  = 28,
                 HorizontalOptions = LayoutOptions.Center,
             };
 
@@ -94,17 +92,16 @@ public partial class AppShell : Shell
                 Children = { icon, label },
             };
 
-            // Keep a transparent container so landscape rail and portrait tab bar share the same visual style.
             var frame = new Frame
             {
                 BackgroundColor = Colors.Transparent,
-                CornerRadius = 12,
-                BorderColor = Colors.Transparent,
-                Padding = 0,
-                Margin = new Thickness(8, 2),
-                Content = stack,
-                HeightRequest = 64,
-                HasShadow = false,
+                CornerRadius    = 12,
+                BorderColor     = Colors.Transparent,
+                Padding         = 0,
+                Margin          = new Thickness(8, 2),
+                Content         = stack,
+                HeightRequest   = 64,
+                HasShadow       = false,
             };
 
             var destination = item.Destination;
@@ -126,7 +123,7 @@ public partial class AppShell : Shell
             bool isActive = kvp.Key == active;
             kvp.Value.Container.BackgroundColor = Colors.Transparent;
             kvp.Value.Label.TextColor = isActive ? ActiveText : InactiveText;
-            kvp.Value.Icon.Opacity = isActive ? 1.0 : 0.62;
+            kvp.Value.Icon.Opacity    = isActive ? 1.0 : 0.62;
         }
     }
 
@@ -142,14 +139,12 @@ public partial class AppShell : Shell
     {
         if (_stateViewModel.IsLeftRailNavigationVisible)
         {
-            // Landscape: show locked flyout (nav rail), hide bottom tab bar
-            FlyoutBehavior = FlyoutBehavior.Locked;
+            FlyoutBehavior         = FlyoutBehavior.Locked;
             PrimaryTabBar.IsVisible = false;
         }
         else
         {
-            // Portrait: hide flyout, show bottom tab bar
-            FlyoutBehavior = FlyoutBehavior.Disabled;
+            FlyoutBehavior         = FlyoutBehavior.Disabled;
             PrimaryTabBar.IsVisible = true;
         }
 
@@ -182,10 +177,10 @@ public partial class AppShell : Shell
     {
         if (string.IsNullOrWhiteSpace(location)) return null;
         var s = location.ToLowerInvariant();
-        if (s.Contains("home") || s.Contains("sources")) return PrimaryNavDestination.Home;
-        if (s.Contains("stream") || s.Contains("output")) return PrimaryNavDestination.Stream;
-        if (s.Contains("view") || s.Contains("viewer")) return PrimaryNavDestination.View;
-        if (s.Contains("settings")) return PrimaryNavDestination.Settings;
+        if (s.Contains("home")     || s.Contains("sources")) return PrimaryNavDestination.Home;
+        if (s.Contains("stream")   || s.Contains("output"))  return PrimaryNavDestination.Stream;
+        if (s.Contains("view")     || s.Contains("viewer"))  return PrimaryNavDestination.View;
+        if (s.Contains("settings"))                          return PrimaryNavDestination.Settings;
         return null;
     }
 

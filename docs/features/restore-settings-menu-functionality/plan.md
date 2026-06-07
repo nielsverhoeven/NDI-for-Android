@@ -18,6 +18,10 @@ Constitution alignment points:
   - Validate and preserve navigation contract for the Settings destination and existing entry points from Source, Viewer, and Output flows.
   - Ensure route registration remains stable and discoverable through AppShell.
 - New pages, view models, services:
+  - Implement a two-pane settings workspace matching issue screenshots:
+    - left pane: category cards (`General`, `Appearance`, `Discovery`, `Developer tools`, `About`)
+    - right pane: selected section detail panel
+    - global bottom `Apply` action affecting current staged changes
   - Extend the Settings page composition to represent required sections from baseline.
   - Expand Settings view model state and commands to support restored controls and section-level validation.
   - Add or extend supporting services only where UI state composition requires non-repository dependencies.
@@ -64,6 +68,43 @@ The implementation and validation baseline is fixed to issue #142 artifacts and 
 | Developer Tools | Developer mode toggle | Required | Boolean state saves and reloads without crash | `DeveloperModeEnabled` | `false` | None |
 | About | App info block | Required | Must render app name and version metadata without runtime errors | N/A | N/A | None |
 
+## Screenshot Conformance Requirements
+The issue screenshots are now treated as the primary UX parity target for issue #142.
+
+1. Global layout and interaction model:
+  - Left-side category card list includes exactly five visible categories:
+    - `General`
+    - `Appearance`
+    - `Discovery`
+    - `Developer tools`
+    - `About`
+  - Right pane shows section-specific content for the selected category.
+  - `Apply` button is centered near bottom of detail area and is disabled until a mutable setting changes.
+  - Selecting categories does not immediately persist; persistence occurs through explicit `Apply`.
+
+2. General section parity:
+  - Right pane title: `General Settings`.
+  - Guidance text communicates adjusting settings by category and applying to save.
+
+3. Appearance section parity:
+  - Right pane title: `Appearance Settings`.
+  - Theme mode radio group includes `Light`, `Dark`, `System default`.
+  - Accent color radio group includes `Blue`, `Teal`, `Green`, `Orange`, `Red`, `Pink`.
+
+4. Discovery section parity:
+  - Host or IP input and separate port input with hint `Port (default 5959)`.
+  - `Add Server` action available.
+  - Server list rows include reorder affordance, endpoint text, enable toggle, edit action, and delete action.
+
+5. Developer tools section parity:
+  - Right pane title: `Developer Settings`.
+  - `Developer Mode` toggle appears in detail pane.
+  - `Cached Source Registry` list renders entries with fields: source name, endpoint, state, key, and last-seen timestamp.
+
+6. About section parity:
+  - Right pane title: `About`.
+  - App version is displayed in `name` plus `version (build)` style.
+
 ## Navigation Contract Assertions
 The route contract must remain stable and explicitly verifiable.
 
@@ -107,12 +148,13 @@ All DI changes remain centralized in `MauiProgram.cs` with explicit lifetimes.
 
 ## Testing Strategy
 - Unit test scope:
-  - Settings ViewModel load/save behavior for each restored section.
+  - Settings ViewModel category selection and staged-change behavior for each restored section.
   - Validation logic for invalid inputs and error messaging.
   - Repository mapping tests for persisted snapshot round-trip behavior.
 - MAUI UI test scope:
-  - Settings page renders required sections and controls.
+  - Settings page renders required categories and detail-pane controls matching screenshot parity checklist.
   - Settings controls are interactive and save feedback is visible.
+  - `Apply` enabled/disabled state transitions are validated.
   - Restart-oriented smoke check where automation environment allows persisted-value verification.
 - NDI e2e validation requirements:
   - For discovery-impacting settings, validate runtime discovery behavior on device/emulator with settings reapplied.

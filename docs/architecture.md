@@ -1,4 +1,4 @@
-<!-- Last updated: 2026-06-05 -->
+<!-- Last updated: 2026-06-06 -->
 
 # Architecture
 
@@ -124,3 +124,10 @@ Persistence architecture:
 2. Settings and discovery server configuration are restored on app startup before first discovery run.
 3. Async APIs are mandatory for data access and persistence writes.
 4. ViewModels never access SQLite directly.
+
+## Settings Restoration Notes (Issue #142)
+
+1. Settings baseline now includes General, Appearance, Discovery Servers, Developer Tools, and About sections.
+2. Settings persistence schema is additive-only with deterministic fallback defaults for missing or malformed fields.
+3. Discovery server runtime endpoint application is orchestrated through repository-to-bridge service boundaries.
+4. Android-specific settings capabilities (app metadata retrieval) are isolated behind a platform service implementation under Platforms/Android.
