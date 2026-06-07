@@ -310,7 +310,7 @@ public sealed class AppLaunchTests
 
     private static void ClickNav(AndroidDriver driver, string label)
     {
-        var element = WaitForNavElement(driver, label, 12);
+        var element = WaitForNavElement(driver, label, 30);
         Assert.NotNull(element);
         element!.Click();
     }

@@ -22,6 +22,25 @@ cleanup() {
 }
 trap cleanup EXIT
 
+echo "Waiting for emulator to fully boot..."
+BOOT_COMPLETE=0
+for i in $(seq 1 60); do
+  BOOT=$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')
+  if [[ "$BOOT" == "1" ]]; then
+    echo "Emulator boot complete after ${i}s"
+    BOOT_COMPLETE=1
+    break
+  fi
+  sleep 2
+done
+if [[ "$BOOT_COMPLETE" -ne 1 ]]; then
+  echo "Emulator did not report boot_completed within 120s — aborting"
+  exit 1
+fi
+
+# Extra settle time so the launcher and system services are stable
+sleep 5
+
 echo "Installing APK: $APK_PATH"
 adb uninstall com.ndi.android >/dev/null 2>&1 || true
 adb install -r "$APK_PATH"

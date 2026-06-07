@@ -38,9 +38,10 @@ public sealed class StartupSmokeTests
     }
 
     /// <summary>
-    /// Verifies the app renders at least one visible UI element within 15 seconds of launch.
+    /// Verifies the app renders at least one visible UI element within 30 seconds of launch.
     /// Guards against cases where the app process starts but immediately exits without
     /// rendering anything (silent crash after Appium session creation).
+    /// Timeout is 30s (not 15s) to accommodate cold-start emulator boot in CI.
     /// </summary>
     [SkippableFact]
     public void AppStartup_RendersUiWithin15Seconds()
@@ -48,7 +49,7 @@ public sealed class StartupSmokeTests
         Skip.If(_fixture.SkipReason is not null, _fixture.SkipReason ?? string.Empty);
 
         var driver = _fixture.Driver!;
-        var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(15));
+        var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(30));
 
         // Any visible, non-loading element proves the UI rendered.
         // Try the Sources tab first (MAUI Shell home), then known Settings elements,

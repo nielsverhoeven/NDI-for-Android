@@ -107,7 +107,7 @@ jobs:
       - name: Setup Node.js for Appium
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
 
       - name: Install Appium and UIAutomator2 driver
         run: |
