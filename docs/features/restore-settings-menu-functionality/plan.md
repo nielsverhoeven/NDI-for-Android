@@ -1,3 +1,5 @@
+<!-- Last updated: 2026-06-07 -->
+
 # Technical Plan: Restore Missing and Broken Settings Menu Functionality
 
 ## Architecture Fit
@@ -185,3 +187,41 @@ All DI changes remain centralized in `MauiProgram.cs` with explicit lifetimes.
   - Compliance: register or update dependencies centrally in DI root.
 - Principle: Test standards and build hygiene.
   - Compliance: add or update unit/UI coverage for restored behavior and require passing build/test gates before completion.
+
+---
+
+## Completion Summary
+
+**Status: Complete** — branch `feature/142-recreate-settings-menu`, issue #142
+
+### Task Outcomes (T001–T009)
+
+All implementation tasks are complete and verified by unit tests. See `tasks.md` for the full task-by-task status.
+
+| Task | Status | Evidence |
+|---|---|---|
+| T001 — Data contracts and defaults | Done | `SettingsModels.cs`: `ThemeMode`, `AccentColorOption`, `DiscoveryServerPreference`, `CachedSourceRegistryEntry`, `SettingsAppInfo`, `NdiSettingsSnapshot` with `CreateDefault()` |
+| T002 — Repository compatibility and persistence hardening | Done | `SettingsRepository.cs`: sanitize-before-save, exception fallback to defaults, atomic Apply |
+| T003 — General section and global Apply workflow | Done | `SettingsViewModel`: `ApplyCommand`, `CanApply`, `IsDirty`, `IsApplied`, `ValidationError`, `GeneralGuidanceText` |
+| T004 — Appearance section | Done | Theme radio group (Light/Dark/System default); accent color radio group (Blue/Teal/Green/Orange/Red/Pink); staged selection |
+| T005 — Discovery section | Done | Host/port inputs, Add/Update/Delete, Up/Down reorder, per-server enable toggle, duplicate host+port detection |
+| T006 — Developer Tools section | Done | `DeveloperModeEnabled` toggle; Cached Source Registry list via `ISourceRepository.GetCachedSourcesAsync` |
+| T007 — About section | Done | `SettingsAppInfo` via `ISettingsPlatformService.GetAppInfo()`; displayed in `name version (build)` format |
+| T008 — Two-pane shell composition | Done | `SettingsPage.xaml`: 220-pt left column of category buttons; right pane with `IsVisible` section switching |
+| T009 — Screenshot-parity tests | Done | 109 unit tests passing across five test classes |
+
+### Pending (Outside Implementation Scope)
+
+- **T010 — GitHub status sync**: Manual comment and close action on parent issue #142 and sub-issues #201–#210. Not automated.
+
+### Key Architectural Decisions Made
+
+1. **`ISettingsValidationService`** introduced as a singleton to centralize host/port/duplicate validation away from the ViewModel.
+2. **`IDiscoverySettingsOrchestrator`** introduced as a singleton; resolves primary host or first-enabled server and calls `INdiDiscoveryBridge.SetDiscoveryEndpoint` on every load and Apply.
+3. **`ISettingsPlatformService`** introduced to isolate `AppInfo.Current` calls behind a testable boundary; Android and non-Android implementations registered conditionally in `MauiProgram.cs`.
+4. **`SettingsViewModel`** remains Transient; all stateful singletons are repository/service layer only.
+5. **Settings route**: `//settings` (portrait), `//settings-rail` (landscape) — both resolved by `AppShell.xaml.cs` adaptive routing logic.
+
+### Environment Notes
+
+Device/emulator runtime validation (Appium) was not executable in the CI environment used for this cycle. Compile-target build and 109-passing unit tests were used as the acceptance gate. See `docs/006-settings-menu-release-notes.md` for the full release record.
