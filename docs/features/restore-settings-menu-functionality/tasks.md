@@ -105,4 +105,4 @@ T009 -> T010
 - [x] T007 / #207: About parity implemented (version plus build display).
 - [x] T008 / #208: Two-pane category menu composition implemented.
 - [x] T009 / #209: Settings parity and Apply behavior unit tests updated and passing.
-- [ ] T010 / #210: GitHub status sync is pending manual comment or close actions from this run.
+- [x] T010 / #210: GitHub status sync complete — CI passing comment on #142, all child issues #201–#209 closed with `completed` label, PR #211 ready for review.
