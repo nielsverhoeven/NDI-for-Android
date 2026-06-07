@@ -38,6 +38,45 @@
     <Style TargetType="RadioButton">
         <Setter Property="BackgroundColor" Value="{DynamicResource ControlBackground}" />
         <Setter Property="TextColor" Value="{DynamicResource TextPrimary}" />
+        <Setter Property="ControlTemplate">
+            <Setter.Value>
+                <ControlTemplate>
+                    <!-- Pure MAUI radio button — bypasses native Android widget
+                         so DynamicResource color keys work correctly. -->
+                    <Grid ColumnDefinitions="22,*" ColumnSpacing="10"
+                          Padding="0,6">
+                        <!-- Radio circle -->
+                        <Grid WidthRequest="20" HeightRequest="20"
+                              VerticalOptions="Center"
+                              HorizontalOptions="Start">
+                            <Ellipse Stroke="{DynamicResource Primary}"
+                                     StrokeThickness="2"
+                                     Fill="Transparent"
+                                     WidthRequest="20" HeightRequest="20" />
+                            <Ellipse Fill="{DynamicResource Primary}"
+                                     WidthRequest="10" HeightRequest="10"
+                                     HorizontalOptions="Center"
+                                     VerticalOptions="Center">
+                                <Ellipse.Triggers>
+                                    <DataTrigger TargetType="Ellipse"
+                                                 Binding="{TemplateBinding IsChecked}"
+                                                 Value="False">
+                                        <Setter Property="Fill" Value="Transparent" />
+                                    </DataTrigger>
+                                </Ellipse.Triggers>
+                            </Ellipse>
+                        </Grid>
+                        <!-- Label -->
+                        <Label Grid.Column="1"
+                               Text="{TemplateBinding Content}"
+                               TextColor="{DynamicResource TextPrimary}"
+                               VerticalOptions="Center"
+                               FontFamily="OpenSansRegular"
+                               FontSize="14" />
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
     </Style>
 
     <Style TargetType="Switch">

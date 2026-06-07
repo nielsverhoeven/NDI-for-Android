@@ -2,8 +2,10 @@ using Android.App;
 using Android.OS;
 using Android.Content.Res;
 using Android.Content.PM;
+using AndroidX.Core.View;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Maui;
+using NdiForAndroid.Features.Settings.Services;
 using NdiForAndroid.Services;
 
 namespace NdiForAndroid;
@@ -21,6 +23,17 @@ public class MainActivity : MauiAppCompatActivity
     protected override void OnCreate(Bundle? savedInstanceState)
     {
         base.OnCreate(savedInstanceState);
+
+        // Allow the app to draw behind the status bar so Shell chrome and
+        // the status bar background are seamless across the full screen width.
+        if (Window is not null)
+        {
+            WindowCompat.SetDecorFitsSystemWindows(Window, false);
+            Window.SetFlags(
+                Android.Views.WindowManagerFlags.DrawsSystemBarBackgrounds,
+                Android.Views.WindowManagerFlags.DrawsSystemBarBackgrounds);
+        }
+
         SyncNavigationOrientation();
     }
 
