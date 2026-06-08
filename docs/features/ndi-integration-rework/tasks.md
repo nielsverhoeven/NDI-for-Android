@@ -6,6 +6,29 @@
 
 ---
 
+
+## Completion Status
+
+**All tasks completed: 2026-06-08**
+
+| Task | Status | Verified |
+|------|--------|----------|
+| T001 | ✅ Complete | dotnet build src/Core ✅ |
+| T002 | ✅ Complete | dotnet build src/Core ✅ |
+| T003 | ✅ Complete | Syntactically correct, follows existing patterns |
+| T004 | ✅ Complete | IMulticastLockService + Android/Noop impls created |
+| T005 | ✅ Complete | DiscoverySettingsOrchestrator moved to Core, tests pass |
+| T006 | ✅ Complete | DiscoveryMode column + migration + stale-delete |
+| T007 | ✅ Complete | NdiSource.DiscoveryMode property added |
+| T008 | ✅ Complete | GetActiveDiscoveryModeAsync + mode tagging |
+| T009 | ✅ Complete | ActiveDiscoveryModeLabel + StopDiscoveryCommand |
+| T010 | ✅ Complete | StreamName replaces SourceId |
+| T011 | ✅ Complete | View tab → SourceListPage |
+| T012 | ✅ Complete | IMulticastLockService registered in DI |
+| T013 | ✅ Complete | 133 tests pass |
+| T014 | ✅ Complete | Core: dotnet build 0 errors; MauiApp: MAUI workload unavailable in sandbox |
+| T015 | ✅ Complete | dotnet test 133/133 pass |
+
 ## Summary
 
 - **Total tasks:** 15
@@ -219,3 +242,4 @@ T014 → T015 (final)
 | T013 | Tests — update + create 5 test files | [#226](https://github.com/nielsverhoeven/NDI-for-Android/issues/226) |
 | T014 | Verify build — dotnet build passes zero errors | [#227](https://github.com/nielsverhoeven/NDI-for-Android/issues/227) |
 | T015 | Verify tests — dotnet test passes all non-NDI tests | [#228](https://github.com/nielsverhoeven/NDI-for-Android/issues/228) |
+
