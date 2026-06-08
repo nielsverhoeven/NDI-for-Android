@@ -117,4 +117,68 @@ public class DiscoverySettingsOrchestratorTests
 
         Assert.Equal(DiscoveryMode.Mdns, sut.ActiveMode);
     }
+
+    // ── AC-2: Additional coverage ─────────────────────────────────────────────
+
+    [Fact]
+    public async Task ApplyAsync_WithMixedEnabledDisabledServers_OnlyPassesEnabledEndpointsToBridge()
+    {
+        // AC-2: only enabled servers should become endpoints; disabled ones must be filtered out.
+        var sut = CreateSut();
+        var settings = SnapshotWithServers(
+            new DiscoveryServerPreference("active.local",   5961, Enabled: true,  Order: 0),
+            new DiscoveryServerPreference("inactive.local", 5961, Enabled: false, Order: 1),
+            new DiscoveryServerPreference("also-active.local", 5960, Enabled: true, Order: 2));
+
+        await sut.ApplyAsync(settings);
+
+        _bridgeMock.Verify(b => b.SetDiscoveryMode(
+            DiscoveryMode.DiscoveryServer,
+            It.Is<IReadOnlyList<DiscoveryServerEndpoint>>(eps =>
+                eps.Count == 2 &&
+                eps.Any(e => e.Host == "active.local") &&
+                eps.Any(e => e.Host == "also-active.local") &&
+                eps.All(e => e.Host != "inactive.local"))),
+            Times.Once);
+        Assert.Equal(DiscoveryMode.DiscoveryServer, sut.ActiveMode);
+    }
+
+    [Fact]
+    public async Task ApplyAsync_EachCall_MakesExactlyOneBridgeCall()
+    {
+        // AC-2: Each ApplyAsync triggers exactly one atomic SetDiscoveryMode call —
+        // no double-stop, no partial-start race condition.
+        var sut = CreateSut();
+
+        await sut.ApplyAsync(SnapshotWithNoServers()); // mDNS call
+        var serverSettings = SnapshotWithServers(
+            new DiscoveryServerPreference("srv.local", 5961, Enabled: true, Order: 0));
+        await sut.ApplyAsync(serverSettings);          // DS call
+
+        // Exactly 2 total calls (one per ApplyAsync).
+        _bridgeMock.Verify(
+            b => b.SetDiscoveryMode(It.IsAny<DiscoveryMode>(), It.IsAny<IReadOnlyList<DiscoveryServerEndpoint>>()),
+            Times.Exactly(2));
+    }
+
+    [Fact]
+    public async Task ApplyAsync_MultipleHotSwitches_ActiveModeTracksEachTransition()
+    {
+        // AC-4 (orchestrator layer): ActiveMode property must update with every ApplyAsync.
+        var sut = CreateSut();
+        var dsSettings = SnapshotWithServers(
+            new DiscoveryServerPreference("192.168.1.50", 5961, Enabled: true, Order: 0));
+
+        await sut.ApplyAsync(SnapshotWithNoServers());
+        Assert.Equal(DiscoveryMode.Mdns, sut.ActiveMode);
+
+        await sut.ApplyAsync(dsSettings);
+        Assert.Equal(DiscoveryMode.DiscoveryServer, sut.ActiveMode);
+
+        await sut.ApplyAsync(SnapshotWithNoServers());
+        Assert.Equal(DiscoveryMode.Mdns, sut.ActiveMode);
+
+        await sut.ApplyAsync(dsSettings);
+        Assert.Equal(DiscoveryMode.DiscoveryServer, sut.ActiveMode);
+    }
 }

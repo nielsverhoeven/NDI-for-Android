@@ -126,4 +126,74 @@ public class SourceListViewModelTests
         var prop = type.GetProperty("NavigateToOutputCommand");
         Assert.Null(prop);
     }
+
+    // ── AC-4: Hot-switch label reflects new mode without app restart ──────────
+
+    [Fact]
+    public async Task RefreshCommand_AfterHotSwitchToDiscoveryServer_ReflectsNewModeLabel()
+    {
+        // AC-4: Start in mDNS; orchestrator switches to DS between refreshes.
+        _repositoryMock.Setup(r => r.DiscoverAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new DiscoverySnapshot("snap-1", DiscoveryStatus.Success, Array.Empty<NdiSource>(),
+                DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()));
+
+        _orchestratorMock.Setup(o => o.ActiveMode).Returns(DiscoveryMode.Mdns);
+        var sut = new SourceListViewModel(_repositoryMock.Object, _navigationMock.Object, _orchestratorMock.Object);
+
+        // First refresh — mDNS mode
+        await sut.RefreshCommand.ExecuteAsync(null);
+        Assert.Equal("mDNS", sut.ActiveDiscoveryModeLabel);
+
+        // Hot-switch: orchestrator now reports DiscoveryServer
+        _orchestratorMock.Setup(o => o.ActiveMode).Returns(DiscoveryMode.DiscoveryServer);
+        await sut.RefreshCommand.ExecuteAsync(null);
+
+        Assert.Contains("Discovery Server", sut.ActiveDiscoveryModeLabel);
+    }
+
+    [Fact]
+    public async Task RefreshCommand_AfterHotSwitchBackToMdns_ReflectsMdnsLabel()
+    {
+        // AC-4: Start in DS; orchestrator hot-switches back to mDNS between refreshes.
+        _repositoryMock.Setup(r => r.DiscoverAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new DiscoverySnapshot("snap-2", DiscoveryStatus.Success, Array.Empty<NdiSource>(),
+                DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()));
+
+        _orchestratorMock.Setup(o => o.ActiveMode).Returns(DiscoveryMode.DiscoveryServer);
+        var sut = new SourceListViewModel(_repositoryMock.Object, _navigationMock.Object, _orchestratorMock.Object);
+
+        // First refresh — DS mode
+        await sut.RefreshCommand.ExecuteAsync(null);
+        Assert.Contains("Discovery Server", sut.ActiveDiscoveryModeLabel);
+
+        // Hot-switch back to mDNS
+        _orchestratorMock.Setup(o => o.ActiveMode).Returns(DiscoveryMode.Mdns);
+        await sut.RefreshCommand.ExecuteAsync(null);
+
+        Assert.Equal("mDNS", sut.ActiveDiscoveryModeLabel);
+    }
+
+    [Fact]
+    public async Task RefreshCommand_HotSwitchDoesNotRequireRebuildingViewModel()
+    {
+        // AC-4: Same ViewModel instance must respond correctly across multiple mode switches.
+        _repositoryMock.Setup(r => r.DiscoverAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new DiscoverySnapshot("snap-3", DiscoveryStatus.Success, Array.Empty<NdiSource>(),
+                DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()));
+
+        _orchestratorMock.Setup(o => o.ActiveMode).Returns(DiscoveryMode.Mdns);
+        var sut = new SourceListViewModel(_repositoryMock.Object, _navigationMock.Object, _orchestratorMock.Object);
+
+        // mDNS → DS → mDNS on the same instance
+        await sut.RefreshCommand.ExecuteAsync(null);
+        Assert.Equal("mDNS", sut.ActiveDiscoveryModeLabel);
+
+        _orchestratorMock.Setup(o => o.ActiveMode).Returns(DiscoveryMode.DiscoveryServer);
+        await sut.RefreshCommand.ExecuteAsync(null);
+        Assert.Contains("Discovery Server", sut.ActiveDiscoveryModeLabel);
+
+        _orchestratorMock.Setup(o => o.ActiveMode).Returns(DiscoveryMode.Mdns);
+        await sut.RefreshCommand.ExecuteAsync(null);
+        Assert.Equal("mDNS", sut.ActiveDiscoveryModeLabel);
+    }
 }
