@@ -29,16 +29,17 @@ public sealed class MauiAppearanceService : IAppearanceService
         if (Application.Current is null)
             return;
 
-        var isLight = theme == ThemeMode.Light
-            || (theme == ThemeMode.System
-                && Application.Current.RequestedTheme == AppTheme.Light);
-
+        // Set UserAppTheme first so that when theme == System, MAUI resolves
+        // RequestedTheme from the OS immediately — reading it before this call
+        // would return the previously-forced value (the bug: Light→System stays Light).
         Application.Current.UserAppTheme = theme switch
         {
             ThemeMode.Light => AppTheme.Light,
             ThemeMode.Dark  => AppTheme.Dark,
             _               => AppTheme.Unspecified,
         };
+
+        var isLight = Application.Current.RequestedTheme == AppTheme.Light;
 
         var palette = isLight ? LightPalette : DarkPalette;
         var accent  = ResolveAccent(accentColor);
