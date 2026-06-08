@@ -210,7 +210,8 @@ public sealed class AppLaunchTests
         AssertPageVisible(driver, "//*[@text='Start Output' or @text='Stop Output' or contains(@content-desc,'Output')]", 15);
 
         ClickNav(driver, "View");
-        AssertPageVisible(driver, "//*[@text='Viewer' or contains(@content-desc,'Viewer')]", 15);
+        // View tab now hosts SourceListPage (NDI source discovery), not ViewerPage directly
+        AssertPageVisible(driver, "//*[@text='NDI Sources' or @text='Sources' or contains(@content-desc,'Sources') or contains(@content-desc,'mDNS') or contains(@content-desc,'Discovery')]", 15);
 
         ClickNav(driver, "Settings");
         AssertPageVisible(driver, "//*[@text='General' or @text='Appearance' or @text='Discovery' or @text='Apply']", 15);

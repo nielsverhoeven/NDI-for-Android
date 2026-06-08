@@ -1,3 +1,5 @@
+using NdiForAndroid.NdiBridge;
+
 namespace NdiForAndroid.Features.Sources.Models;
 
 public enum DiscoveryStatus { InProgress, Success, Empty, Failure }
@@ -8,7 +10,8 @@ public record NdiSource(
     string? EndpointAddress,
     bool IsAvailable,
     long LastSeenAtEpochMillis,
-    bool PreviouslyConnected = false);
+    bool PreviouslyConnected = false,
+    DiscoveryMode DiscoveryMode = DiscoveryMode.Mdns);
 
 public record DiscoverySnapshot(
     string SnapshotId,

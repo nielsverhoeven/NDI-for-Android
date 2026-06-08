@@ -59,9 +59,11 @@ public static class MauiProgram
         builder.Services.AddSingleton<IAppLifecycleService, AppLifecycleService>();
 
 #if ANDROID
+        builder.Services.AddSingleton<IMulticastLockService, AndroidMulticastLockService>();
         builder.Services.AddSingleton<IScreenSharePlatformService, AndroidScreenSharePlatformService>();
         builder.Services.AddSingleton<ISettingsPlatformService, AndroidSettingsPlatformService>();
 #else
+        builder.Services.AddSingleton<IMulticastLockService, NoopMulticastLockService>();
         builder.Services.AddSingleton<IScreenSharePlatformService, NoopScreenSharePlatformService>();
         builder.Services.AddSingleton<ISettingsPlatformService, DefaultSettingsPlatformService>();
 #endif

@@ -48,7 +48,7 @@
                 Route="view-rail-item"
                 Shell.FlyoutItemIsVisible="False">
         <ShellContent Title="View"
-                      ContentTemplate="{DataTemplate viewer:ViewerPage}"
+                      ContentTemplate="{DataTemplate sources:SourceListPage}"
                       Route="view-rail"
                       Icon="nav_view.svg" />
     </FlyoutItem>
@@ -72,7 +72,7 @@
                       Route="stream-tab"
                       Icon="nav_stream.svg" />
         <ShellContent Title="View"
-                      ContentTemplate="{DataTemplate viewer:ViewerPage}"
+                      ContentTemplate="{DataTemplate sources:SourceListPage}"
                       Route="view-tab"
                       Icon="nav_view.svg" />
         <ShellContent Title="Settings"

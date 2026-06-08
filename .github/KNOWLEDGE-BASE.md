@@ -1,5 +1,5 @@
 # NDI-for-Android — Agent Knowledge Base
-<!-- Last updated: 2026-06-07 | Read this INSTEAD of re-reading constitution.md + architecture.md for implementation tasks -->
+<!-- Last updated: 2026-06-08 | Read this INSTEAD of re-reading constitution.md + architecture.md for implementation tasks -->
 
 ## Tech Stack (authoritative)
 - **Platform**: .NET MAUI `net10.0-android` | **Language**: C# 12, nullable enabled
@@ -63,12 +63,29 @@ tests/
 5. **Android APIs** isolated in `Platforms/Android/` behind interfaces
 
 ## Shell Routes
-- `//sources` — Source list (home)
-- `//sources/viewer?sourceId={id}` — NDI viewer
-- `//sources/output?sourceId={id}` — NDI output
-- `//settings` — Settings
 
-## Settings Feature (Issue #142 context)
+Portrait (TabBar):
+
+| Route | Page | Purpose |
+|---|---|---|
+| `//home-tab` | `SourceListPage` | Home tab — NDI discovery + tap-to-view |
+| `//stream-tab` | `OutputPage` | Stream tab — outgoing NDI output only; no `sourceId` param |
+| `//view-tab` | `SourceListPage` | View tab — same page as Home; discovery + tap-to-view |
+| `//settings` | `SettingsPage` | Settings |
+| `viewer?sourceId={id}` | `ViewerPage` | Pushed relative to current tab; registered via `Routing.RegisterRoute("viewer", typeof(ViewerPage))` in `AppShell.xaml.cs` |
+
+Landscape (left navigation rail):
+
+| Route | Page |
+|---|---|
+| `//home-rail` | `SourceListPage` |
+| `//stream-rail` | `OutputPage` |
+| `//view-rail` | `SourceListPage` |
+| `//settings-rail` | `SettingsPage` |
+
+`AppShell` selects portrait vs. landscape routes from `AdaptiveShellStateViewModel.IsLeftRailNavigationVisible`.
+
+## Settings Feature (Issue #142 — MERGED to main, PR #211)
 - **ViewModel**: `SettingsViewModel` — 5 sections: General, Appearance, Discovery, DeveloperTools, About
 - **Model**: `NdiSettingsSnapshot` — holds all persisted settings as immutable record
 - **Sections**: `SettingsSection` enum drives `IsXxxSectionSelected` properties
@@ -76,8 +93,65 @@ tests/
 - **Pending state**: `HasPendingChanges` tracked by comparing current state to `_baselineSnapshot`
 - **Platform info**: `ISettingsPlatformService.GetAppInfo()` → `SettingsAppInfo(AppName, Version, Build)`
 - **Cached sources**: loaded from `ISourceRepository.GetCachedSourcesAsync()`
+- **Appearance service**: `IAppearanceService` / `MauiAppearanceService` — central runtime color application
+  - `DarkPalette` / `LightPalette` records hold all 16 semantic color values
+  - `UpdateResources()` writes to `Application.Current.Resources` (DynamicResource triggers)
+  - `UpdateShell()` sets Shell tab bar, title, foreground via `SetValue()`
+  - `UpdateAndroidStatusBar()` — `#if ANDROID` guard — sets status bar color via `WindowCompat`
+- **Color system**: `Colors.xaml` defines 16 semantic keys (e.g. `PageBackground`, `ShellBackground`, `Primary`). ALL elements must use `DynamicResource` — never `StaticResource` or hardcoded hex.
+- **RadioButton**: uses pure MAUI `ControlTemplate` (two `Ellipse` elements) — native Android `MaterialRadioButton` ignores `DynamicResource`.
 
-## Code Patterns
+## NDI Integration Rework (Issue #213 — **MERGED**, PR #229, branch: feature/213-ndi-integration-rework)
+
+Feature plan: `docs/features/ndi-integration-rework/plan.md`
+Release notes: `docs/features/ndi-integration-rework/release-notes.md`
+
+### Key design decisions
+| Concern | Decision |
+|---------|----------|
+| Discovery mode selection | `DiscoveryMode` enum (`Mdns` \| `DiscoveryServer`) in `src/Core/NdiBridge/NdiBridgeModels.cs`; activated via `INdiDiscoveryBridge.SetDiscoveryMode()` |
+| mDNS activation | `NDIlib_find_create_v3` with no server address; `IMulticastLockService` acquired before each mDNS poll, released on switch to Discovery Server mode |
+| MulticastLock | `IMulticastLockService` / `AndroidMulticastLockService` — acquired on mDNS start, released on mode switch; `NoopMulticastLockService` on non-Android targets |
+| Discovery Server mode | Multi-server; TCP reachability check (2-second timeout) per server; results merged + deduplicated by `DisplayName` |
+| Stale source cleanup | `NdiDatabase.MarkDiscoveryServerSourcesStaleAsync()` soft-deletes DS sources not in latest poll; called by `SourceRepository.DiscoverAsync` after every DS poll |
+| Bridge API | `SetDiscoveryEndpoint(host, port)` replaced by `SetDiscoveryMode(mode, endpoints)` guarded by `SemaphoreSlim(1)` |
+| Schema migration | `DiscoveryMode TEXT NOT NULL DEFAULT 'Mdns'` added to `sources` table via `ALTER TABLE` in `NdiDatabase.EnsureSourceColumnsAsync()` — additive, safe for existing installs |
+| Shell nav | Home and View tabs → `SourceListPage`; Stream tab → self-contained `OutputPage` (no sourceId param) |
+| `NdiSource` model | `DiscoveryMode` property (`DiscoveryMode` enum — crosses bridge boundary as plain C# type, permitted by constitution) |
+| `SourceListViewModel` | `ActiveDiscoveryModeLabel` (observable string), `StopDiscoveryCommand` (cancels periodic refresh CTS), `NavigateToViewerAsync` — no `NavigateToOutputAsync` |
+| `OutputViewModel` | `StreamName` (observable, default `"NDI-Android"`) drives output; `StartOutputAsync(CancellationToken)` — no source selection required; no `SourceId` |
+| `IDiscoverySettingsOrchestrator` | `ActiveMode` property reflects current mode after `ApplyAsync`; read by `SourceRepository` and `SourceListViewModel` |
+
+### DI registrations added in `MauiProgram.cs`
+```csharp
+// Platform-conditional multicast lock
+#if ANDROID
+builder.Services.AddSingleton<IMulticastLockService, AndroidMulticastLockService>();
+#else
+builder.Services.AddSingleton<IMulticastLockService, NoopMulticastLockService>();
+#endif
+
+// Orchestrator (singleton, already registered — verify before adding again)
+builder.Services.AddSingleton<IDiscoverySettingsOrchestrator, DiscoverySettingsOrchestrator>();
+```
+
+### New/changed files for #213
+- `src/Core/NdiBridge/INdiBridges.cs` — `SetDiscoveryMode()` replaces `SetDiscoveryEndpoint()`; `INdiOutputBridge.StartOutputAsync(streamName)` — no sourceId
+- `src/Core/NdiBridge/NdiBridgeModels.cs` — `DiscoveryMode` enum, `DiscoveryServerEndpoint` record, `DiscoveryMode` on `NdiSourceEntry`
+- `src/Core/Features/Sources/Models/SourceModels.cs` — `DiscoveryMode` property on `NdiSource`
+- `src/Core/Features/Sources/Repositories/ISourceRepository.cs` — `GetActiveDiscoveryModeAsync()` added
+- `src/Core/Features/Settings/Services/IDiscoverySettingsOrchestrator.cs` — `ActiveMode` property added
+- `src/Core/Features/Settings/Services/DiscoverySettingsOrchestrator.cs` — `ApplyAsync` sets mode on bridge; `ActiveMode` tracked
+- `src/MauiApp/NdiBridge/NdiBridgeImplementations.cs` — dual-mode `NdiDiscoveryBridge`; `NdiOutputBridge.StartOutputAsync(streamName)`
+- `src/MauiApp/Data/NdiDatabase.cs` — `DiscoveryMode` column migration + `MarkDiscoveryServerSourcesStaleAsync()`
+- `src/MauiApp/Features/Sources/Repositories/SourceRepository.cs` — mode tagging + stale soft-delete after DS poll
+- `src/Core/Features/Sources/ViewModels/SourceListViewModel.cs` — `ActiveDiscoveryModeLabel`, `StopDiscoveryCommand`, `NavigateToViewerAsync`
+- `src/Core/Features/Output/ViewModels/OutputViewModel.cs` — `StreamName` drives output; no source selection
+- `src/MauiApp/Platforms/Android/Services/AndroidMulticastLockService.cs` — NEW
+- `src/MauiApp/Services/NoopMulticastLockService.cs` — NEW
+- `src/Core/Services/IMulticastLockService.cs` — NEW
+- `src/MauiApp/MauiProgram.cs` — registers `IMulticastLockService` conditionally
+- `src/MauiApp/AppShell.xaml` — View tab → `SourceListPage`; Stream tab → `OutputPage`
 
 ### ViewModel (CommunityToolkit)
 ```csharp
@@ -153,7 +227,32 @@ Invoke-RestMethod http://localhost:11434/api/tags   # lists available models
 Get-Process ollama -ErrorAction SilentlyContinue
 ```
 
-## Agent Efficiency Rules
+## CI / Emulator Test Patterns
+
+- **Node.js version**: `22` (upgraded from 20 — EOL June 2026). Do NOT revert to 20.
+- **Emulator cold-start**: always poll `sys.boot_completed=1` before `adb install` — see `testing/e2e/scripts/run-emulator-tests.sh`
+- **UI test timeouts**: `ClickNav` base wait = **30s**, `AssertPageVisible` = **30s** for cold emulator. Do not reduce below 30s.
+- **APK to install**: always use `com.ndi.android-Signed.apk` (not the unsigned variant) — path: `src/MauiApp/bin/Debug/net10.0-android/com.ndi.android-Signed.apk`
+- **`DELETE_FAILED_INTERNAL_ERROR`** on `adb uninstall` is harmless — package was not installed; `adb install` will succeed.
+- **`INSTALL_PARSE_FAILED_NO_CERTIFICATES`** means unsigned APK was used — switch to `-Signed.apk`.
+
+## MAUI Theming Rules (lessons from #142)
+
+- **Always `DynamicResource`** — `StaticResource` resolves once at XAML parse time; runtime theme changes have no effect.
+- **Writing to resources**: `Application.Current.Resources["Key"] = value` at the top-level dict overrides merged dicts and fires all `DynamicResource` listeners immediately.
+- **Shell colors at runtime**: must use `shell.SetValue(Shell.TabBarBackgroundColorProperty, color)` — XAML-set Shell colors are static.
+- **Android status bar**: `WindowCompat.SetDecorFitsSystemWindows(Window, false)` + `Window.AddFlags(DrawsSystemBarBackgrounds)` in `MainActivity.OnCreate()`. Call `UpdateAndroidStatusBar()` from `MauiAppearanceService` on every theme change.
+- **`Color.ToAndroid()` unavailable**: use `new Android.Graphics.Color((byte)(r*255), (byte)(g*255), (byte)(b*255), (byte)(a*255))` instead.
+- **RadioButton**: native Android `MaterialRadioButton` ignores `DynamicResource` — use pure MAUI `ControlTemplate` with two `Ellipse` elements.
+
+## Agent Workflow Lessons
+
+- **Branch first, plan second**: always create and check out the feature branch (Stage -1) before running `feature.planner`. Planner commits the plan file to whatever branch is checked out.
+- **Pass branch explicitly**: when delegating to sub-agents, always state `Current branch: feature/XXX-slug` in the prompt so they don't commit to `main` or a stale branch.
+- **Stop agents on wrong branch**: if an agent is found to be working on the wrong branch, stop it immediately. Re-run it with the correct branch after checkout.
+- **Verify branch before push**: sub-agents should run `git branch --show-current` before any commit.
+
+
 - **Read this file first** — do not re-read `docs/constitution.md` or `docs/architecture.md` unless you need the full detail
 - **Use Ollama for small tasks** — run `.github/scripts/ollama-task.ps1` for boilerplate, log classification, and issue messages before spending cloud AI credits
 - **Stage 5 shortcut**: if task breakdown (T001–T010) already exists in GitHub, call `implementer` directly — do NOT go through `orchestrator`

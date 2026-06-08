@@ -1,6 +1,7 @@
 using SQLite;
 using NdiForAndroid.Features.Sources.Models;
 using NdiForAndroid.Features.Settings.Models;
+using NdiForAndroid.NdiBridge;
 using System.Text.Json;
 
 namespace NdiForAndroid.Data;
@@ -15,6 +16,7 @@ public class SourceEntity
     public bool IsAvailable { get; set; }
     public long LastSeenAtEpochMillis { get; set; }
     public bool PreviouslyConnected { get; set; }
+    public string DiscoveryMode { get; set; } = "Mdns";
 }
 
 [Table("settings")]
@@ -48,6 +50,7 @@ public sealed class NdiDatabase
         await _connection.CreateTableAsync<SourceEntity>();
         await _connection.CreateTableAsync<SettingsEntity>();
         await EnsureSettingsColumnsAsync();
+        await EnsureSourceColumnsAsync();
     }
 
     private Task EnsureInitializedAsync() => _initTask;
@@ -63,6 +66,7 @@ public sealed class NdiDatabase
             IsAvailable = source.IsAvailable,
             LastSeenAtEpochMillis = source.LastSeenAtEpochMillis,
             PreviouslyConnected = source.PreviouslyConnected,
+            DiscoveryMode = source.DiscoveryMode.ToString(),
         };
         await _connection.InsertOrReplaceAsync(entity);
     }
@@ -73,7 +77,8 @@ public sealed class NdiDatabase
         var entities = await _connection.Table<SourceEntity>().ToListAsync();
         return entities.Select(e => new NdiSource(
             e.SourceId, e.DisplayName, e.EndpointAddress, e.IsAvailable,
-            e.LastSeenAtEpochMillis, e.PreviouslyConnected)).ToList();
+            e.LastSeenAtEpochMillis, e.PreviouslyConnected,
+            ParseDiscoveryMode(e.DiscoveryMode))).ToList();
     }
 
     public async Task DeleteSourceAsync(string sourceId)
@@ -137,6 +142,50 @@ public sealed class NdiDatabase
 
         if (!columnNames.Contains("DiscoveryServersJson"))
             await _connection.ExecuteAsync("ALTER TABLE settings ADD COLUMN DiscoveryServersJson TEXT");
+    }
+
+    private async Task EnsureSourceColumnsAsync()
+    {
+        var tableInfo = await _connection.GetTableInfoAsync("sources");
+        var columnNames = tableInfo.Select(column => column.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        if (!columnNames.Contains("DiscoveryMode"))
+            await _connection.ExecuteAsync(
+                "ALTER TABLE sources ADD COLUMN DiscoveryMode TEXT NOT NULL DEFAULT 'Mdns'");
+    }
+
+    /// <summary>
+    /// Sets IsAvailable = false for all Discovery Server sources whose SourceId
+    /// is NOT in <paramref name="currentSourceIds"/>.
+    /// mDNS sources are excluded from soft-delete (they use natural expiry).
+    /// </summary>
+    public async Task MarkDiscoveryServerSourcesStaleAsync(IEnumerable<string> currentSourceIds)
+    {
+        await EnsureInitializedAsync();
+
+        var allDiscoveryServerSources = await _connection
+            .Table<SourceEntity>()
+            .Where(e => e.DiscoveryMode == "DiscoveryServer")
+            .ToListAsync();
+
+        var currentIds = new HashSet<string>(currentSourceIds, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var entity in allDiscoveryServerSources)
+        {
+            if (!currentIds.Contains(entity.SourceId) && entity.IsAvailable)
+            {
+                entity.IsAvailable = false;
+                await _connection.UpdateAsync(entity);
+            }
+        }
+    }
+
+    private static DiscoveryMode ParseDiscoveryMode(string? value)
+    {
+        if (Enum.TryParse<DiscoveryMode>(value, ignoreCase: true, out var parsed) && Enum.IsDefined(parsed))
+            return parsed;
+
+        return DiscoveryMode.Mdns;
     }
 
     private static ThemeMode ParseThemeMode(string? value)

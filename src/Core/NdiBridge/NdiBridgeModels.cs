@@ -1,12 +1,26 @@
 namespace NdiForAndroid.NdiBridge;
 
+/// <summary>Discovery mode used to find NDI sources.</summary>
+public enum DiscoveryMode
+{
+    /// <summary>Use mDNS (zero-config multicast) to discover local NDI sources.</summary>
+    Mdns,
+
+    /// <summary>Use one or more NDI Discovery Servers (unicast TCP) as the source of truth.</summary>
+    DiscoveryServer,
+}
+
+/// <summary>A single NDI Discovery Server endpoint (host + port).</summary>
+public record DiscoveryServerEndpoint(string Host, int Port);
+
 /// <summary>NDI source entry returned by discovery.</summary>
 public record NdiSourceEntry(
     string SourceId,
     string DisplayName,
     string? EndpointAddress,
     bool IsAvailable,
-    long LastSeenAtEpochMillis);
+    long LastSeenAtEpochMillis,
+    DiscoveryMode DiscoveryMode = DiscoveryMode.Mdns);
 
 /// <summary>A single decoded video frame from an NDI receiver.</summary>
 public record NdiVideoFrame(

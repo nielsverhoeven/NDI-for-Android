@@ -11,7 +11,7 @@ public partial class OutputViewModel : ObservableObject
     private readonly IScreenSharePlatformService _screenSharePlatformService;
 
     [ObservableProperty]
-    private string? _sourceId;
+    private string _streamName = "NDI-Android";
 
     [ObservableProperty]
     private bool _isOutputActive;
@@ -23,30 +23,24 @@ public partial class OutputViewModel : ObservableObject
     {
         _bridge = bridge;
         _screenSharePlatformService = screenSharePlatformService;
-        StatusMessage = "Select a source on Home before starting output.";
+        StatusMessage = "Tap Start to begin broadcasting from this device.";
     }
 
     [RelayCommand]
     private async Task StartOutputAsync(CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(SourceId))
+        if (string.IsNullOrWhiteSpace(StreamName))
         {
-            StatusMessage = "Select a source on Home before starting output.";
+            StatusMessage = "Please enter a stream name before starting output.";
             return;
         }
 
         StatusMessage = null;
 
-        if (!await _bridge.IsSourceReachableAsync(SourceId, cancellationToken))
-        {
-            StatusMessage = "Source is not reachable.";
-            return;
-        }
-
         try
         {
-            await _screenSharePlatformService.StartForegroundSessionAsync("NDI-Android", cancellationToken);
-            await _bridge.StartOutputAsync(SourceId, "NDI-Android", cancellationToken);
+            await _screenSharePlatformService.StartForegroundSessionAsync(StreamName, cancellationToken);
+            await _bridge.StartOutputAsync(StreamName, cancellationToken);
             IsOutputActive = true;
             StatusMessage = "Output active";
         }

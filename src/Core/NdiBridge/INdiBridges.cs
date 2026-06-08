@@ -13,7 +13,18 @@ public interface INdiDiscoveryBridge
     Task<NdiDiscoveryCheckResult> PerformDiscoveryCheckAsync(
         string host, int port, string correlationId, CancellationToken cancellationToken = default);
 
-    void SetDiscoveryEndpoint(string? host, int? port);
+    /// <summary>
+    /// Sets the active discovery mode. Calling this is idempotent and triggers
+    /// an immediate internal switch (stopping the previous mode cleanly).
+    /// </summary>
+    /// <param name="mode">The discovery mode to activate.</param>
+    /// <param name="serverEndpoints">
+    /// Non-empty only when <paramref name="mode"/> is <see cref="DiscoveryMode.DiscoveryServer"/>.
+    /// All endpoints are queried; results are merged with deduplication.
+    /// </param>
+    void SetDiscoveryMode(
+        DiscoveryMode mode,
+        IReadOnlyList<DiscoveryServerEndpoint>? serverEndpoints = null);
 }
 
 /// <summary>
@@ -35,7 +46,10 @@ public interface INdiViewerBridge
 /// </summary>
 public interface INdiOutputBridge
 {
-    Task<bool> IsSourceReachableAsync(string sourceId, CancellationToken cancellationToken = default);
-    Task StartOutputAsync(string sourceId, string streamName, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Starts an NDI sender that advertises this device on the network under
+    /// <paramref name="streamName"/>. No remote sourceId is required.
+    /// </summary>
+    Task StartOutputAsync(string streamName, CancellationToken cancellationToken = default);
     Task StopOutputAsync(CancellationToken cancellationToken = default);
 }

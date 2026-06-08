@@ -6,6 +6,10 @@
              x:DataType="vm:OutputViewModel"
              Title="Output">
     <VerticalStackLayout Padding="16" Spacing="16">
+        <Label Text="Stream Name" FontAttributes="Bold" />
+        <Entry Text="{Binding StreamName}"
+               Placeholder="NDI-Android"
+               IsEnabled="{Binding IsOutputActive, Converter={StaticResource InverseBoolConverter}}" />
         <Label Text="{Binding StatusMessage}" HorizontalOptions="Center" />
         <Button Text="Start Output" Command="{Binding StartOutputCommand}"
                 IsVisible="{Binding IsOutputActive, Converter={StaticResource InverseBoolConverter}}"
