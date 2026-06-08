@@ -1,5 +1,5 @@
 # NDI-for-Android — Agent Knowledge Base
-<!-- Last updated: 2026-06-07 (session 2) | Read this INSTEAD of re-reading constitution.md + architecture.md for implementation tasks -->
+<!-- Last updated: 2026-06-08 | Read this INSTEAD of re-reading constitution.md + architecture.md for implementation tasks -->
 
 ## Tech Stack (authoritative)
 - **Platform**: .NET MAUI `net10.0-android` | **Language**: C# 12, nullable enabled
@@ -63,12 +63,27 @@ tests/
 5. **Android APIs** isolated in `Platforms/Android/` behind interfaces
 
 ## Shell Routes
-- `//view-tab` — Source list (NDI discovery + tap-to-view) — **SourceListPage**
-- `//view-tab/viewer?sourceId={id}` — NDI viewer — **ViewerPage** (pushed modally)
-- `//stream-tab` — Self-contained NDI output (no sourceId dependency) — **OutputPage**
-- `//settings` — Settings
 
-> ⚠️ **Issue #213 in progress**: Shell nav is being reworked. The current `//home`→SourceListPage and `//view`→ViewerPage mapping is being replaced. Do not add new routes targeting the old mapping.
+Portrait (TabBar):
+
+| Route | Page | Purpose |
+|---|---|---|
+| `//home-tab` | `SourceListPage` | Home tab — NDI discovery + tap-to-view |
+| `//stream-tab` | `OutputPage` | Stream tab — outgoing NDI output only; no `sourceId` param |
+| `//view-tab` | `SourceListPage` | View tab — same page as Home; discovery + tap-to-view |
+| `//settings` | `SettingsPage` | Settings |
+| `viewer?sourceId={id}` | `ViewerPage` | Pushed relative to current tab; registered via `Routing.RegisterRoute("viewer", typeof(ViewerPage))` in `AppShell.xaml.cs` |
+
+Landscape (left navigation rail):
+
+| Route | Page |
+|---|---|
+| `//home-rail` | `SourceListPage` |
+| `//stream-rail` | `OutputPage` |
+| `//view-rail` | `SourceListPage` |
+| `//settings-rail` | `SettingsPage` |
+
+`AppShell` selects portrait vs. landscape routes from `AdaptiveShellStateViewModel.IsLeftRailNavigationVisible`.
 
 ## Settings Feature (Issue #142 — MERGED to main, PR #211)
 - **ViewModel**: `SettingsViewModel` — 5 sections: General, Appearance, Discovery, DeveloperTools, About
@@ -86,35 +101,57 @@ tests/
 - **Color system**: `Colors.xaml` defines 16 semantic keys (e.g. `PageBackground`, `ShellBackground`, `Primary`). ALL elements must use `DynamicResource` — never `StaticResource` or hardcoded hex.
 - **RadioButton**: uses pure MAUI `ControlTemplate` (two `Ellipse` elements) — native Android `MaterialRadioButton` ignores `DynamicResource`.
 
-## NDI Integration Rework (Issue #213 — in progress, branch: feature/213-ndi-integration-rework)
+## NDI Integration Rework (Issue #213 — **MERGED**, PR #229, branch: feature/213-ndi-integration-rework)
 
-Feature plan: `docs/features/ndi-integration-rework/plan.md` (Stage 2 complete — awaiting Stage 3 Architecture Validation)
+Feature plan: `docs/features/ndi-integration-rework/plan.md`
+Release notes: `docs/features/ndi-integration-rework/release-notes.md`
 
 ### Key design decisions
 | Concern | Decision |
 |---------|----------|
-| Discovery mode selection | `DiscoveryMode` enum: `Mdns` \| `DiscoveryServer` — set on bridge via `SetDiscoveryMode()` |
-| mDNS activation | `NDIlib_find_create_v3` with no server address; fallback to Android `NsdManager` if P/Invoke unavailable |
-| MulticastLock | New `IMulticastLockService` / `AndroidMulticastLockService` — acquired on mDNS start, released on stop |
-| Discovery Server mode | Multi-server; TCP reachability check per server; results merged + deduplicated |
-| Stale source cleanup | `MarkDiscoveryServerSourcesStaleAsync()` soft-deletes DS sources not in latest poll |
-| Bridge API change | `SetDiscoveryEndpoint(host, port)` → `SetDiscoveryMode(mode, endpoints)` with `SemaphoreSlim(1)` |
-| Schema migration | `DiscoveryMode TEXT NOT NULL DEFAULT 'Mdns'` column on `SourceEntity` (ALTER TABLE pattern) |
-| Shell nav | View tab → `SourceListPage`; Stream tab → self-contained `OutputPage` (no sourceId param) |
-| `NdiSource` model | New `DiscoveryMode` property (plain C# enum — permitted to cross bridge boundary) |
+| Discovery mode selection | `DiscoveryMode` enum (`Mdns` \| `DiscoveryServer`) in `src/Core/NdiBridge/NdiBridgeModels.cs`; activated via `INdiDiscoveryBridge.SetDiscoveryMode()` |
+| mDNS activation | `NDIlib_find_create_v3` with no server address; `IMulticastLockService` acquired before each mDNS poll, released on switch to Discovery Server mode |
+| MulticastLock | `IMulticastLockService` / `AndroidMulticastLockService` — acquired on mDNS start, released on mode switch; `NoopMulticastLockService` on non-Android targets |
+| Discovery Server mode | Multi-server; TCP reachability check (2-second timeout) per server; results merged + deduplicated by `DisplayName` |
+| Stale source cleanup | `NdiDatabase.MarkDiscoveryServerSourcesStaleAsync()` soft-deletes DS sources not in latest poll; called by `SourceRepository.DiscoverAsync` after every DS poll |
+| Bridge API | `SetDiscoveryEndpoint(host, port)` replaced by `SetDiscoveryMode(mode, endpoints)` guarded by `SemaphoreSlim(1)` |
+| Schema migration | `DiscoveryMode TEXT NOT NULL DEFAULT 'Mdns'` added to `sources` table via `ALTER TABLE` in `NdiDatabase.EnsureSourceColumnsAsync()` — additive, safe for existing installs |
+| Shell nav | Home and View tabs → `SourceListPage`; Stream tab → self-contained `OutputPage` (no sourceId param) |
+| `NdiSource` model | `DiscoveryMode` property (`DiscoveryMode` enum — crosses bridge boundary as plain C# type, permitted by constitution) |
+| `SourceListViewModel` | `ActiveDiscoveryModeLabel` (observable string), `StopDiscoveryCommand` (cancels periodic refresh CTS), `NavigateToViewerAsync` — no `NavigateToOutputAsync` |
+| `OutputViewModel` | `StreamName` (observable, default `"NDI-Android"`) drives output; `StartOutputAsync(CancellationToken)` — no source selection required; no `SourceId` |
+| `IDiscoverySettingsOrchestrator` | `ActiveMode` property reflects current mode after `ApplyAsync`; read by `SourceRepository` and `SourceListViewModel` |
+
+### DI registrations added in `MauiProgram.cs`
+```csharp
+// Platform-conditional multicast lock
+#if ANDROID
+builder.Services.AddSingleton<IMulticastLockService, AndroidMulticastLockService>();
+#else
+builder.Services.AddSingleton<IMulticastLockService, NoopMulticastLockService>();
+#endif
+
+// Orchestrator (singleton, already registered — verify before adding again)
+builder.Services.AddSingleton<IDiscoverySettingsOrchestrator, DiscoverySettingsOrchestrator>();
+```
 
 ### New/changed files for #213
-- `src/Core/NdiBridge/INdiBridges.cs` — new `SetDiscoveryMode()` method, new model types
-- `src/Core/NdiBridge/NdiBridgeModels.cs` — `DiscoveryMode` enum, `DiscoveryServerEndpoint` record
+- `src/Core/NdiBridge/INdiBridges.cs` — `SetDiscoveryMode()` replaces `SetDiscoveryEndpoint()`; `INdiOutputBridge.StartOutputAsync(streamName)` — no sourceId
+- `src/Core/NdiBridge/NdiBridgeModels.cs` — `DiscoveryMode` enum, `DiscoveryServerEndpoint` record, `DiscoveryMode` on `NdiSourceEntry`
 - `src/Core/Features/Sources/Models/SourceModels.cs` — `DiscoveryMode` property on `NdiSource`
-- `src/MauiApp/NdiBridge/NdiBridgeImplementations.cs` — full bridge rewrite for dual-mode discovery
-- `src/MauiApp/Data/NdiDatabase.cs` — schema migration + `MarkDiscoveryServerSourcesStaleAsync()`
+- `src/Core/Features/Sources/Repositories/ISourceRepository.cs` — `GetActiveDiscoveryModeAsync()` added
+- `src/Core/Features/Settings/Services/IDiscoverySettingsOrchestrator.cs` — `ActiveMode` property added
+- `src/Core/Features/Settings/Services/DiscoverySettingsOrchestrator.cs` — `ApplyAsync` sets mode on bridge; `ActiveMode` tracked
+- `src/MauiApp/NdiBridge/NdiBridgeImplementations.cs` — dual-mode `NdiDiscoveryBridge`; `NdiOutputBridge.StartOutputAsync(streamName)`
+- `src/MauiApp/Data/NdiDatabase.cs` — `DiscoveryMode` column migration + `MarkDiscoveryServerSourcesStaleAsync()`
+- `src/MauiApp/Features/Sources/Repositories/SourceRepository.cs` — mode tagging + stale soft-delete after DS poll
+- `src/Core/Features/Sources/ViewModels/SourceListViewModel.cs` — `ActiveDiscoveryModeLabel`, `StopDiscoveryCommand`, `NavigateToViewerAsync`
+- `src/Core/Features/Output/ViewModels/OutputViewModel.cs` — `StreamName` drives output; no source selection
 - `src/MauiApp/Platforms/Android/Services/AndroidMulticastLockService.cs` — NEW
-- `src/MauiApp/Services/NoopMulticastLockService.cs` — NEW (non-Android build compat)
-- `src/MauiApp/MauiProgram.cs` — register `IMulticastLockService`
-- `src/MauiApp/AppShell.xaml` — swap View/Stream tab content templates
-
-
+- `src/MauiApp/Services/NoopMulticastLockService.cs` — NEW
+- `src/Core/Services/IMulticastLockService.cs` — NEW
+- `src/MauiApp/MauiProgram.cs` — registers `IMulticastLockService` conditionally
+- `src/MauiApp/AppShell.xaml` — View tab → `SourceListPage`; Stream tab → `OutputPage`
 
 ### ViewModel (CommunityToolkit)
 ```csharp

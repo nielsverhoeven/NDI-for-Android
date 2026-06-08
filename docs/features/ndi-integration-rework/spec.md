@@ -1,5 +1,6 @@
 # Feature: NDI Integration Rework — mDNS Fallback, Discovery Server Sourcing, and View/Stream Screen Separation
 
+<!-- Status: ✅ Implemented — PR #229 merged to feature/213-ndi-integration-rework -->
 <!-- Issue: #213 -->
 <!-- Created: 2026-06-07 -->
 
