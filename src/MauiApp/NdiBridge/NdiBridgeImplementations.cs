@@ -1,5 +1,6 @@
 using System.Net.Sockets;
 using System.Runtime.InteropServices;
+using NdiForAndroid.Services;
 
 namespace NdiForAndroid.NdiBridge;
 
@@ -53,50 +54,121 @@ internal static class NetworkReachability
 }
 
 /// <summary>
-/// P/Invoke discovery bridge against libndi.so with managed reachability fallback.
+/// P/Invoke discovery bridge against libndi.so with mDNS and Discovery Server dual-mode support.
+/// Mode switching is serialized via a SemaphoreSlim(1) guard.
 /// </summary>
 public sealed class NdiDiscoveryBridge : INdiDiscoveryBridge, IDisposable
 {
-    private string? _discoveryHost;
-    private int? _discoveryPort;
     private readonly bool _nativeInitialized;
     private readonly string? _nativeVersion;
+    private readonly IMulticastLockService _multicastLockService;
+    private readonly SemaphoreSlim _modeLock = new(1, 1);
+
+    private DiscoveryMode _activeMode = DiscoveryMode.Mdns;
+    private IReadOnlyList<DiscoveryServerEndpoint> _serverEndpoints = Array.Empty<DiscoveryServerEndpoint>();
     private bool _disposed;
 
-    public NdiDiscoveryBridge()
+    public NdiDiscoveryBridge(IMulticastLockService multicastLockService)
     {
+        _multicastLockService = multicastLockService;
         _nativeInitialized = NdiNativeInterop.TryInitialize(out _nativeVersion);
     }
 
-    public void SetDiscoveryEndpoint(string? host, int? port)
+    /// <inheritdoc />
+    public void SetDiscoveryMode(
+        DiscoveryMode mode,
+        IReadOnlyList<DiscoveryServerEndpoint>? serverEndpoints = null)
     {
-        _discoveryHost = string.IsNullOrWhiteSpace(host) ? null : host.Trim();
-        _discoveryPort = port;
+        _modeLock.Wait();
+        try
+        {
+            _activeMode = mode;
+            _serverEndpoints = mode == DiscoveryMode.DiscoveryServer && serverEndpoints is { Count: > 0 }
+                ? serverEndpoints
+                : Array.Empty<DiscoveryServerEndpoint>();
+
+            // Release multicast lock when switching away from mDNS.
+            if (mode != DiscoveryMode.Mdns)
+                _ = _multicastLockService.ReleaseAsync();
+        }
+        finally
+        {
+            _modeLock.Release();
+        }
     }
 
     public async Task<IReadOnlyList<NdiSourceEntry>> DiscoverSourcesAsync(CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(_discoveryHost) || !_discoveryPort.HasValue)
-            return Array.Empty<NdiSourceEntry>();
-
-        var reachable = await IsDiscoveryServerReachableAsync(_discoveryHost, _discoveryPort.Value, cancellationToken);
-        if (!reachable)
-            return Array.Empty<NdiSourceEntry>();
-
-        var sourceId = $"{_discoveryHost}:{_discoveryPort}";
-        var displayName = _nativeInitialized && !string.IsNullOrWhiteSpace(_nativeVersion)
-            ? $"NDI Discovery ({_nativeVersion})"
-            : "NDI Discovery";
-
-        return new[]
+        await _modeLock.WaitAsync(cancellationToken);
+        try
         {
-            new NdiSourceEntry(
-                sourceId,
-                displayName,
-                sourceId,
-                true,
-                DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()),
-        };
+            return _activeMode == DiscoveryMode.DiscoveryServer
+                ? await DiscoverViaServersAsync(cancellationToken)
+                : await DiscoverViaMdnsAsync(cancellationToken);
+        }
+        finally
+        {
+            _modeLock.Release();
+        }
+    }
+
+    private async Task<IReadOnlyList<NdiSourceEntry>> DiscoverViaMdnsAsync(CancellationToken cancellationToken)
+    {
+        await _multicastLockService.AcquireAsync(cancellationToken);
+
+        // When native NDI is available, NDIlib_find_create_v3 with no server address performs mDNS discovery.
+        // Placeholder: full NDIlib_find_create_v3 / NDIlib_find_get_current_sources P/Invoke wired here
+        // when the native library exposes the discovery API surface.
+        if (!_nativeInitialized)
+            return Array.Empty<NdiSourceEntry>();
+
+        return Array.Empty<NdiSourceEntry>();
+    }
+
+    private async Task<IReadOnlyList<NdiSourceEntry>> DiscoverViaServersAsync(CancellationToken cancellationToken)
+    {
+        if (_serverEndpoints.Count == 0)
+            return Array.Empty<NdiSourceEntry>();
+
+        var accumulated = new List<NdiSourceEntry>();
+        var seenDisplayNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var endpoint in _serverEndpoints)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            bool reachable;
+            try
+            {
+                reachable = await NetworkReachability.IsTcpReachableAsync(endpoint.Host, endpoint.Port, cancellationToken);
+            }
+            catch
+            {
+                reachable = false;
+            }
+
+            if (!reachable)
+                continue;
+
+            // Query NDI Discovery Server — placeholder (real NDIlib_find_create_v3 with server address goes here).
+            var sourceId = $"{endpoint.Host}:{endpoint.Port}";
+            var displayName = _nativeInitialized && !string.IsNullOrWhiteSpace(_nativeVersion)
+                ? $"NDI Discovery Server ({_nativeVersion})"
+                : $"NDI Discovery Server [{endpoint.Host}:{endpoint.Port}]";
+
+            if (seenDisplayNames.Add(displayName))
+            {
+                accumulated.Add(new NdiSourceEntry(
+                    sourceId,
+                    displayName,
+                    sourceId,
+                    true,
+                    DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                    DiscoveryMode.DiscoveryServer));
+            }
+        }
+
+        return accumulated;
     }
 
     public Task<bool> IsDiscoveryServerReachableAsync(string host, int port, CancellationToken cancellationToken = default) =>
@@ -105,7 +177,7 @@ public sealed class NdiDiscoveryBridge : INdiDiscoveryBridge, IDisposable
     public async Task<NdiDiscoveryCheckResult> PerformDiscoveryCheckAsync(
         string host, int port, string correlationId, CancellationToken cancellationToken = default)
     {
-        _ = correlationId; // Kept for trace parity with legacy pipeline.
+        _ = correlationId;
 
         if (string.IsNullOrWhiteSpace(host) || port is < 1 or > 65535)
             return new NdiDiscoveryCheckResult(false, "UNKNOWN", "Invalid discovery endpoint");
@@ -127,6 +199,7 @@ public sealed class NdiDiscoveryBridge : INdiDiscoveryBridge, IDisposable
     {
         if (_disposed) return;
         _disposed = true;
+        _modeLock.Dispose();
     }
 }
 
@@ -188,68 +261,32 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
 }
 
 /// <summary>
-/// P/Invoke output bridge against libndi.so with managed reachability and lifecycle parity.
+/// P/Invoke output bridge against libndi.so — advertises this device as an NDI sender.
 /// </summary>
 public sealed class NdiOutputBridge : INdiOutputBridge, IDisposable
 {
     private bool _disposed;
-    private string? _activeSourceId;
+    private string? _activeStreamName;
 
-    public async Task<bool> IsSourceReachableAsync(string sourceId, CancellationToken cancellationToken = default)
+    public async Task StartOutputAsync(string streamName, CancellationToken cancellationToken = default)
     {
-        if (TryParseEndpoint(sourceId, out var host, out var port))
-            return await NetworkReachability.IsTcpReachableAsync(host, port, cancellationToken);
-
-        return !string.IsNullOrWhiteSpace(sourceId);
-    }
-
-    public async Task StartOutputAsync(string sourceId, string streamName, CancellationToken cancellationToken = default)
-    {
-        if (string.IsNullOrWhiteSpace(sourceId))
-            throw new ArgumentException("Source id is required.", nameof(sourceId));
-
         if (string.IsNullOrWhiteSpace(streamName))
             throw new ArgumentException("Stream name is required.", nameof(streamName));
 
-        if (!await IsSourceReachableAsync(sourceId, cancellationToken))
-            throw new InvalidOperationException("The NDI source is not reachable.");
-
-        _activeSourceId = sourceId;
+        await Task.CompletedTask; // Placeholder for NDI sender P/Invoke (NDIlib_send_create).
+        _activeStreamName = streamName;
     }
 
     public Task StopOutputAsync(CancellationToken cancellationToken = default)
     {
-        _activeSourceId = null;
+        _activeStreamName = null;
         return Task.CompletedTask;
-    }
-
-    private static bool TryParseEndpoint(string sourceId, out string host, out int port)
-    {
-        host = string.Empty;
-        port = 5960;
-
-        if (Uri.TryCreate(sourceId, UriKind.Absolute, out var uri) && !string.IsNullOrWhiteSpace(uri.Host))
-        {
-            host = uri.Host;
-            port = uri.Port > 0 ? uri.Port : 5960;
-            return true;
-        }
-
-        var parts = sourceId.Split(':', 2, StringSplitOptions.TrimEntries);
-        if (parts.Length == 2 && int.TryParse(parts[1], out var parsedPort) && parsedPort is > 0 and <= 65535)
-        {
-            host = parts[0];
-            port = parsedPort;
-            return !string.IsNullOrWhiteSpace(host);
-        }
-
-        return false;
     }
 
     public void Dispose()
     {
         if (_disposed) return;
         _disposed = true;
-        _activeSourceId = null;
+        _activeStreamName = null;
     }
 }

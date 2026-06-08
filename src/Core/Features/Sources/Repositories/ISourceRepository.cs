@@ -1,4 +1,5 @@
 using NdiForAndroid.Features.Sources.Models;
+using NdiForAndroid.NdiBridge;
 
 namespace NdiForAndroid.Features.Sources.Repositories;
 
@@ -8,4 +9,5 @@ public interface ISourceRepository
     Task<IReadOnlyList<NdiSource>> GetCachedSourcesAsync();
     Task SaveSourceAsync(NdiSource source);
     Task RemoveSourceAsync(string sourceId);
+    Task<DiscoveryMode> GetActiveDiscoveryModeAsync();
 }
