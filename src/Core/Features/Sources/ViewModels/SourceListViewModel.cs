@@ -13,8 +13,7 @@ public partial class SourceListViewModel : ObservableObject
     private readonly ISourceRepository _repository;
     private readonly INavigationService _navigation;
     private readonly IDiscoverySettingsOrchestrator _orchestrator;
-
-    private CancellationTokenSource? _periodicRefreshCts;
+    private readonly IDiscoveryRefreshService _refreshService;
 
     [ObservableProperty]
     private IReadOnlyList<NdiSource> _sources = Array.Empty<NdiSource>();
@@ -31,39 +30,41 @@ public partial class SourceListViewModel : ObservableObject
     public SourceListViewModel(
         ISourceRepository repository,
         INavigationService navigation,
-        IDiscoverySettingsOrchestrator orchestrator)
+        IDiscoverySettingsOrchestrator orchestrator,
+        IDiscoveryRefreshService refreshService)
     {
-        _repository = repository;
-        _navigation = navigation;
-        _orchestrator = orchestrator;
+        _repository     = repository;
+        _navigation     = navigation;
+        _orchestrator   = orchestrator;
+        _refreshService = refreshService;
+
+        _refreshService.SnapshotReady += OnSnapshotReady;
+    }
+
+    private void OnSnapshotReady(object? sender, DiscoverySnapshot snapshot)
+    {
+        // MAUI's binding infrastructure dispatches ObservableProperty change notifications
+        // to the UI thread automatically; no explicit MainThread.Invoke needed in Core layer.
+        Sources      = snapshot.Sources;
+        ErrorMessage = snapshot.Status == DiscoveryStatus.Failure ? snapshot.ErrorMessage : null;
+        IsRefreshing = false;
+        UpdateDiscoveryModeLabel();
     }
 
     [RelayCommand]
-    private async Task RefreshAsync(CancellationToken cancellationToken)
+    private Task RefreshAsync(CancellationToken cancellationToken)
     {
         IsRefreshing = true;
         ErrorMessage = null;
-        try
-        {
-            var snapshot = await _repository.DiscoverAsync(cancellationToken);
-            Sources = snapshot.Sources;
-            if (snapshot.Status == DiscoveryStatus.Failure)
-                ErrorMessage = snapshot.ErrorMessage;
-
-            UpdateDiscoveryModeLabel();
-        }
-        finally
-        {
-            IsRefreshing = false;
-        }
+        // Delegate to the service; result arrives asynchronously via SnapshotReady
+        _refreshService.RequestRefresh();
+        return Task.CompletedTask;
     }
 
     [RelayCommand]
     private void StopDiscovery()
     {
-        _periodicRefreshCts?.Cancel();
-        _periodicRefreshCts?.Dispose();
-        _periodicRefreshCts = null;
+        _refreshService.Stop();
     }
 
     [RelayCommand]
@@ -82,7 +83,6 @@ public partial class SourceListViewModel : ObservableObject
     private string BuildDiscoveryServerLabel()
     {
         // The label shows the primary (first) active endpoint for user feedback.
-        // The orchestrator manages the full endpoint list; we surface only the primary one here.
         return "Discovery Server";
     }
 }
