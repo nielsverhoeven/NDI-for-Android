@@ -1,5 +1,14 @@
 # Tasks: Automatic Viewer Reconnection with Retry Window
 
+## Implementation Status
+
+All tasks **T001–T017 complete** on branch `feature/233-automatic-viewer-reconnection-retry`.
+
+- `dotnet build NdiForAndroid.sln` → **0 errors** (full MAUI Android compile green).
+- `dotnet test tests/MauiApp.Tests` → **153 passed, 0 failed** (10 reconnection tests + regressions).
+- Deviation: drop detection implemented as a 1s `TimeProvider`-backed monitor poll timer
+  (started on `Start`/resumed on successful reconnect); the plan left the exact poll wiring open.
+
 ## Summary
 - Total tasks: 17
 - Parent feature issue: **#233** (`feat: implement automatic viewer reconnection with retry window`)
