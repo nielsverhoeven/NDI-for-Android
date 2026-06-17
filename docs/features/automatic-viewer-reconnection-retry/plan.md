@@ -57,7 +57,9 @@ This plan honors the five resolved clarifications (D1–D5) recorded in the spec
 - **NFR1** — All timing uses an injected `TimeProvider` (`TimeProvider.System` in production,
   a fake in tests). No `Task.Delay`/`DateTimeOffset.UtcNow` in testable logic. (Constitution §3)
 - **NFR2** — Every state change driven by a timer or connection poll marshals to the UI thread
-  via `MainThread.BeginInvokeOnMainThread`. (Constitution §2.3)
+  via an injected `IMainThreadDispatcher` (Core abstraction with a MAUI implementation wrapping
+  `MainThread.BeginInvokeOnMainThread`). The Core project does not reference MAUI, so `MainThread`
+  cannot be called directly from `ViewerViewModel`. (Constitution §2.3)
 - **NFR3** — No NDI types cross the bridge boundary; `ConnectionState` is a plain C# enum.
   (Constitution §2.1/§2.3)
 - **NFR4** — All new behaviour is covered by xUnit + Moq tests in `tests/MauiApp.Tests/`,
@@ -93,10 +95,16 @@ Maps to the MAUI layering in `docs/constitution.md` §2.1–§2.3:
 - **NDI Bridge** — `INdiViewerBridge` is extended with one method-style getter
   (`GetConnectionState()`), consistent with the existing `Get*()` contract and §2.3's
   "no NDI types cross the boundary" rule (`ConnectionState` is a plain enum).
-- **DI root** — `MauiProgram.cs` registers `TimeProvider.System`; `ViewerViewModel` stays
-  `Transient`. (§1 DI table, §2.2)
+- **DI root** — `MauiProgram.cs` registers `TimeProvider.System` and
+  `IMainThreadDispatcher → MauiMainThreadDispatcher`; `ViewerViewModel` stays `Transient`.
+  (§1 DI table, §2.2)
+- **UI-thread abstraction** — because the Core project (`NdiForAndroid.Core.csproj`, plain
+  `net10.0`) cannot reference MAUI, UI-thread marshaling uses an injected `IMainThreadDispatcher`
+  (interface in `src/Core/Services/`, MAUI implementation in `src/MauiApp/Services/`), mirroring
+  the existing `INavigationService` / `IMulticastLockService` / `IAppLifecycleService` platform-
+  abstraction pattern. (§2.2, §2.3)
 - **Tests** — `tests/MauiApp.Tests/Features/Viewer/` extends `ViewerViewModelTests` patterns
-  with a fake `TimeProvider`, per §3.
+  with a fake `TimeProvider` and a synchronous fake `IMainThreadDispatcher`, per §3.
 
 > **Planner caveat (carried from spec):** the issue references `DiscoveryRefreshService` as an
 > existing `TimeProvider` pattern. It does **not** exist on this branch (it is in unmerged
@@ -196,12 +204,46 @@ public ConnectionState GetConnectionState() =>
 > once real libndi is wired — out of scope for this work. The stub only needs to be deterministic
 > so the ViewModel state machine is verifiable.
 
-### 4.3 ViewModel Changes (`ViewerViewModel`)
+### 4.2a Main-Thread Dispatcher Abstraction (UI-thread seam)
 
-New constructor signature (TimeProvider injected — **fresh**):
+The Core project (`NdiForAndroid.Core.csproj`) targets plain `net10.0` and references only
+`CommunityToolkit.Mvvm` + DI abstractions. It does **not** reference MAUI, so
+`MainThread.BeginInvokeOnMainThread` / `IDispatcher` are unavailable inside `ViewerViewModel`.
+UI-thread marshaling therefore goes through an **injected** abstraction, mirroring the existing
+`INavigationService` / `IMulticastLockService` / `IAppLifecycleService` platform-abstraction
+pattern.
 
 ```csharp
-public ViewerViewModel(INdiViewerBridge bridge, TimeProvider timeProvider)
+// src/Core/Services/IMainThreadDispatcher.cs   (NEW, Core)
+/// <summary>Marshals an action onto the UI/main thread. MAUI-free seam for Core ViewModels.</summary>
+public interface IMainThreadDispatcher
+{
+    void Invoke(Action action);
+    Task InvokeAsync(Func<Task> action);
+}
+```
+
+```csharp
+// src/MauiApp/Services/MauiMainThreadDispatcher.cs   (NEW, MAUI implementation)
+public sealed class MauiMainThreadDispatcher : IMainThreadDispatcher
+{
+    public void Invoke(Action action) => MainThread.BeginInvokeOnMainThread(action);
+    public Task InvokeAsync(Func<Task> action) => MainThread.InvokeOnMainThreadAsync(action);
+}
+```
+
+Registered in `MauiProgram.cs` as `AddSingleton<IMainThreadDispatcher, MauiMainThreadDispatcher>()`
+(see §4.5). In unit tests a synchronous fake runs the action inline (see §7).
+
+### 4.3 ViewModel Changes (`ViewerViewModel`)
+
+New constructor signature (TimeProvider + dispatcher injected — **fresh**):
+
+```csharp
+public ViewerViewModel(
+    INdiViewerBridge bridge,
+    TimeProvider timeProvider,
+    IMainThreadDispatcher mainThread)
 ```
 
 New observable properties (`[ObservableProperty]`):
@@ -217,6 +259,7 @@ New private fields:
 | Field | Purpose |
 |---|---|
 | `_timeProvider` | injected `TimeProvider` |
+| `_mainThread` | injected `IMainThreadDispatcher` (UI-thread marshaling seam) |
 | `_userInitiatedStop` | suppress retry on intentional `Stop` (FR8) |
 | `_retryDeadline` / `_remainingSeconds` | countdown bookkeeping |
 | `_countdownTimer` (`ITimer`) | 1s tick for countdown text |
@@ -244,9 +287,10 @@ Modified members:
   `CompleteReconnect()`, `FailReconnect()`, `DisposeTimers()` helpers.
 
 UI-thread rule: every timer callback body wraps its observable mutations in
-`MainThread.BeginInvokeOnMainThread(...)` (NFR2). To keep this testable, route through a small
-`InvokeOnMainThread(Action)` seam that runs the action inline when no MAUI dispatcher is present
-(tests) and via `MainThread.BeginInvokeOnMainThread` at runtime.
+`_mainThread.Invoke(...)` (NFR2), where `_mainThread` is the injected `IMainThreadDispatcher`
+(§4.2a). At runtime the MAUI implementation calls `MainThread.BeginInvokeOnMainThread`; in tests
+the synchronous fake runs the action inline. The Core ViewModel never references `MainThread`
+directly (it cannot — the Core project has no MAUI reference).
 
 Timers use `_timeProvider.CreateTimer(...)`; the fake `TimeProvider` advances them
 deterministically in tests.
@@ -281,10 +325,14 @@ Pure XAML additions (no code-behind logic):
 ```csharp
 // Register the system clock for TimeProvider-driven services/ViewModels.
 builder.Services.AddSingleton(TimeProvider.System);
+
+// Register the MAUI main-thread dispatcher abstraction (Core ViewModels cannot use MainThread directly).
+builder.Services.AddSingleton<IMainThreadDispatcher, MauiMainThreadDispatcher>();
 ```
 
 `ViewerViewModel` stays `AddTransient<ViewerViewModel>()` — DI resolves the new `TimeProvider`
-parameter automatically. Verify no other registration relies on the old single-arg constructor.
+and `IMainThreadDispatcher` parameters automatically. Verify no other registration relies on the
+old constructor.
 
 ---
 
@@ -304,29 +352,35 @@ Dependency-aware; each task should leave `dotnet build` green (Constitution §4.
   (`src/Core/NdiBridge/INdiBridges.cs`). *(dep: T001)*
 - **T003** — Implement stub `GetConnectionState()` in `NdiViewerBridge`
   (`src/MauiApp/NdiBridge/NdiBridgeImplementations.cs`). *(dep: T002)*
-- **T004** — Inject `TimeProvider` into `ViewerViewModel` constructor; add `_timeProvider` field;
-  update existing `ViewerViewModelTests` construction (pass a fake). *(dep: T002)*
-- **T005** — Register `TimeProvider.System` in `MauiProgram.cs`; verify `ViewerViewModel`
-  lifetime/registration. *(dep: T004)*
-- **T006** — Add observable state (`IsReconnecting`, `RetryStatusMessage`, `CanReconnect`),
-  fields, constants, and the `InvokeOnMainThread` seam to `ViewerViewModel`. *(dep: T004)*
-- **T007** — Implement drop detection + `BeginReconnectWindow()` (state machine entry, FR1/FR2).
-  *(dep: T006)*
-- **T008** — Implement the 2s attempt loop `RunAttempt()` (Stop→Start, stop on `Connected`)
-  and the success path `CompleteReconnect()` (FR3). *(dep: T007)*
-- **T009** — Implement the 1s countdown `TickCountdown()` + `RetryStatusMessage` formatting (FR4).
+- **T004** — Add `IMainThreadDispatcher` interface (`Invoke(Action)` + `InvokeAsync(Func<Task>)`)
+  to `src/Core/Services/`; add `MauiMainThreadDispatcher` to `src/MauiApp/Services/` wrapping
+  `MainThread.BeginInvokeOnMainThread`; register
+  `AddSingleton<IMainThreadDispatcher, MauiMainThreadDispatcher>()` in `MauiProgram.cs`. *(no deps)*
+- **T005** — Inject `TimeProvider` **and** `IMainThreadDispatcher` into the `ViewerViewModel`
+  constructor; add `_timeProvider` and `_mainThread` fields; update existing `ViewerViewModelTests`
+  construction (pass a fake `TimeProvider` + synchronous fake dispatcher). *(dep: T002, T004)*
+- **T006** — Register `TimeProvider.System` in `MauiProgram.cs`; verify `ViewerViewModel`
+  lifetime/registration resolves both new parameters. *(dep: T004, T005)*
+- **T007** — Add observable state (`IsReconnecting`, `RetryStatusMessage`, `CanReconnect`),
+  fields, and constants to `ViewerViewModel`; route all timer-callback mutations through
+  `_mainThread.Invoke(...)`. *(dep: T005)*
+- **T008** — Implement drop detection + `BeginReconnectWindow()` (state machine entry, FR1/FR2).
   *(dep: T007)*
-- **T010** — Implement expiry `FailReconnect()` → terminal message + `CanReconnect = true` (FR5).
-  *(dep: T008, T009)*
-- **T011** — Implement `CancelRetryCommand` (FR6) and `DisposeTimers()` cleanup. *(dep: T008)*
-- **T012** — Update `Stop()` to set `_userInitiatedStop`, dispose timers, suppress retry (FR8);
-  update `Start()` to reset the flag and record `_lastSourceId`. *(dep: T007)*
-- **T013** — Implement `ReconnectCommand` (FR7, guarded by `CanReconnect`). *(dep: T010, T012)*
-- **T014** — Add XAML bindings (retry label, Cancel button, Reconnect button) to
-  `ViewerPage.xaml`. *(dep: T006)*
-- **T015** — Write/extend unit tests in `ViewerViewModelTests` (see §7), incl. fake `TimeProvider`.
-  *(dep: T007–T013)*
-- **T016** — Run `dotnet test` (non-NDI) green; update spec/plan checkboxes if needed.
+- **T009** — Implement the 2s attempt loop `RunAttempt()` (Stop→Start, stop on `Connected`)
+  and the success path `CompleteReconnect()` (FR3). *(dep: T008)*
+- **T010** — Implement the 1s countdown `TickCountdown()` + `RetryStatusMessage` formatting (FR4).
+  *(dep: T008)*
+- **T011** — Implement expiry `FailReconnect()` → terminal message + `CanReconnect = true` (FR5).
+  *(dep: T009, T010)*
+- **T012** — Implement `CancelRetryCommand` (FR6) and `DisposeTimers()` cleanup. *(dep: T009)*
+- **T013** — Update `Stop()` to set `_userInitiatedStop`, dispose timers, suppress retry (FR8);
+  update `Start()` to reset the flag and record `_lastSourceId`. *(dep: T008)*
+- **T014** — Implement `ReconnectCommand` (FR7, guarded by `CanReconnect`). *(dep: T011, T013)*
+- **T015** — Add XAML bindings (retry label, Cancel button, Reconnect button) to
+  `ViewerPage.xaml`. *(dep: T007)*
+- **T016** — Write/extend unit tests in `ViewerViewModelTests` (see §7), incl. fake `TimeProvider`
+  and synchronous fake `IMainThreadDispatcher`. *(dep: T008–T014)*
+- **T017** — Run `dotnet test` (non-NDI) green; update spec/plan checkboxes if needed.
   *(dep: all)*
 
 ---
@@ -338,7 +392,14 @@ Stack: xUnit + Moq (already referenced). Add **`Microsoft.Extensions.TimeProvide
 (`FakeTimeProvider`) to `MauiApp.Tests.csproj`; if it cannot be added, implement a minimal manual
 `FakeTimeProvider : TimeProvider` exposing `Advance(TimeSpan)` and timer support.
 
-SUT factory updated to `new ViewerViewModel(_bridgeMock.Object, _fakeTime)`.
+Test doubles:
+- **`FakeTimeProvider`** — deterministic clock + timers advanced via `Advance(TimeSpan)`.
+- **`ImmediateMainThreadDispatcher : IMainThreadDispatcher`** — synchronous fake whose
+  `Invoke(Action a) => a()` and `InvokeAsync(Func<Task> a) => a()` run the action inline, so
+  UI-thread marshaling is transparent under test (no MAUI dependency).
+
+SUT factory updated to
+`new ViewerViewModel(_bridgeMock.Object, _fakeTime, new ImmediateMainThreadDispatcher())`.
 
 Unit tests (each deterministic; advance the fake clock, never real delays):
 
@@ -362,7 +423,8 @@ Unit tests (each deterministic; advance the fake clock, never real delays):
    → `StartReceiver(lastSourceId)` called, error state cleared. (FR7)
 9. **`Drop_DuringInitialConnect_EntersReconnecting`** — never reached `Connected`; poll returns
    `Disconnected` → window starts (edge case, §8).
-10. **Regression** — existing three tests still pass with the new constructor arg.
+10. **Regression** — existing three tests still pass with the new constructor args (fake
+    `TimeProvider` + `ImmediateMainThreadDispatcher`).
 
 NDI e2e / on-device validation: out of scope (bridge is a stub); covered later when libndi
 receive is wired.
@@ -378,9 +440,10 @@ receive is wired.
 | **App backgrounded mid-retry** | Timers are `TimeProvider`-backed and disposed on Stop/Cancel/success/expiry; document that lifecycle suspension (via `IAppLifecycleService`) should cancel the window. Wiring lifecycle is a follow-up; ensure `DisposeTimers()` is reachable from a future lifecycle hook. |
 | **Drop during initial connect (never reached Connected)** | Treat `Disconnected` while `IsPlaying` uniformly; window starts regardless of prior `Connected` (test 9). |
 | **Overlapping windows / timer leak** | `BeginReconnectWindow()` calls `DisposeTimers()` first; success/cancel/stop/expiry all dispose (NFR5). |
-| **Cross-thread observable mutation** | All timer callbacks route through the `InvokeOnMainThread` seam → `MainThread.BeginInvokeOnMainThread` at runtime (NFR2). |
+| **Cross-thread observable mutation** | All timer callbacks route through the injected `IMainThreadDispatcher` → MAUI impl calls `MainThread.BeginInvokeOnMainThread` at runtime; tests use a synchronous inline fake (NFR2). |
+| **Core project cannot reference MAUI** | `MainThread`/`IDispatcher` are unavailable in `ViewerViewModel`; the `IMainThreadDispatcher` abstraction (interface in `src/Core/Services`, impl in `src/MauiApp/Services`) keeps the ViewModel MAUI-free and compilable (D4, T004). |
 | **`FakeTimeProvider` package unavailable** | Fall back to a minimal hand-rolled `TimeProvider` fake with `Advance()` (§7). |
-| **Existing tests break on ctor change** | T004 updates the SUT factory in the same task that changes the constructor (test 10). |
+| **Existing tests break on ctor change** | T005 updates the SUT factory in the same task that changes the constructor (test 10). |
 
 ---
 
@@ -391,7 +454,7 @@ receive is wired.
 | §1 Tech stack (MAUI, C#, CommunityToolkit MVVM, DI via MauiProgram, xUnit+Moq) | Uses `[ObservableProperty]`/`[RelayCommand]`; DI registers `TimeProvider.System`; tests are xUnit+Moq. |
 | §2.1 Layering — no business logic in Views | All state-machine logic in `ViewerViewModel`; `ViewerPage.xaml.cs` stays a binding shim. |
 | §2.1/§2.3 No NDI types cross the bridge boundary | `GetConnectionState()` returns the plain `ConnectionState` enum. |
-| §2.3 Threading — marshal to UI thread | Timer/poll callbacks use `MainThread.BeginInvokeOnMainThread` via the seam (NFR2). |
+| §2.3 Threading — marshal to UI thread | Timer/poll callbacks marshal via the injected `IMainThreadDispatcher` (Core abstraction, MAUI impl wraps `MainThread.BeginInvokeOnMainThread`); the Core ViewModel never references MAUI (NFR2). |
 | §2.3 Mock bridge for unit tests | Logic verified against `Mock<INdiViewerBridge>` + fake `TimeProvider`; no native lib. |
 | §3 Testing standards (happy + error path per method; no native dependency) | §7 covers success/expiry/cancel/stop/edge paths deterministically. |
 | §4.1 `dotnet build` green per task | Task list (§6) ordered so each task compiles independently. |

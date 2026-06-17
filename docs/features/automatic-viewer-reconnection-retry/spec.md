@@ -100,9 +100,12 @@ by the ViewModel. Keeps user-Stop intentional and retry-free (acceptance criteri
 ## Interface Changes
 
 ```csharp
-// src/Core/NdiBridge/INdiBridges.cs
+// src/Core/NdiBridge/NdiBridgeModels.cs   (enum lives here, alongside DiscoveryMode)
 public enum ConnectionState { Connecting, Connected, Disconnected }
+```
 
+```csharp
+// src/Core/NdiBridge/INdiBridges.cs   (interface member only)
 public interface INdiViewerBridge
 {
     void StartReceiver(string sourceId);
@@ -122,10 +125,12 @@ public interface INdiViewerBridge
   intentional `Stop`.
 - Inject `TimeProvider` (constructor) for the 15s window + per-tick countdown (D4) and the 2s
   attempt cadence (D3).
+- Inject `IMainThreadDispatcher` (Core abstraction) for UI-thread marshaling — the Core project
+  does not reference MAUI, so `MainThread`/`IDispatcher` are unavailable directly.
 - New `[RelayCommand] CancelRetry()` — aborts the window immediately → stopped state.
 - New `[RelayCommand] Reconnect()` — restarts the flow from the stopped/error state (D5).
-- All callback/timer-driven state changes marshal to the UI thread via
-  `MainThread.BeginInvokeOnMainThread` (constitution §2.3).
+- All callback/timer-driven state changes marshal to the UI thread via the injected
+  `IMainThreadDispatcher` (constitution §2.3).
 
 ## View Changes (`ViewerPage.xaml`)
 
