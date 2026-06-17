@@ -39,6 +39,12 @@ public interface INdiViewerBridge
     float GetDroppedFramePercent();
     (int Width, int Height) GetActualResolution();
     float GetMeasuredFps();
+
+    /// <summary>
+    /// Returns the current connection state of the receiver. Used by the
+    /// ViewModel reconnection state machine to detect unexpected drops.
+    /// </summary>
+    ConnectionState GetConnectionState();
 }
 
 /// <summary>
