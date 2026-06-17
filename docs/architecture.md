@@ -1,4 +1,4 @@
-<!-- Last updated: 2026-06-08 -->
+<!-- Last updated: 2026-06-09 -->
 
 # Architecture
 
@@ -150,6 +150,37 @@ Standard bridge pattern:
 ### INdiOutputBridge
 
 `INdiOutputBridge.StartOutputAsync(string streamName, CancellationToken)` starts an NDI sender advertising this device under `streamName`. No remote `sourceId` is required or accepted. The sender is implemented by `NdiOutputBridge` in `NdiBridgeImplementations.cs`.
+
+### INdiViewerBridge connection state (Issue #233)
+
+`INdiViewerBridge` exposes connection liveness through a method-style getter consistent with the rest of the contract (`GetLatestFrame()`, `GetMeasuredFps()`, `GetDroppedFramePercent()`, `GetActualResolution()`):
+
+```csharp
+ConnectionState GetConnectionState();
+```
+
+- `ConnectionState { Connecting, Connected, Disconnected }` is a **plain C# enum** defined in `src/Core/NdiBridge/NdiBridgeModels.cs`, alongside `DiscoveryMode`. No NDI SDK type crosses the bridge boundary (Dependency Rule 5).
+- The stub `NdiViewerBridge` returns `Connected` while an active source is set and `Disconnected` otherwise, so the viewer reconnection state machine is fully verifiable against `Mock<INdiViewerBridge>` with no native library.
+- **Drop detection is polling-based for now:** the `ViewerViewModel` reads `GetConnectionState()` on a `TimeProvider`-driven cadence rather than subscribing to a bridge event. This is acceptable while the receive loop is a stub. **Future-architecture implication:** once real `libndi` is wired, the frame-arrival watchdog and the 3 s drop threshold become an internal bridge concern; the bridge may surface drops via a native callback that must be marshaled to the UI thread per the bridge threading rule. The `GetConnectionState()` getter remains the contract either way, so the ViewModel state machine is insulated from that change.
+
+### Viewer reconnection component (Issue #233)
+
+The 15-second automatic reconnection state machine lives entirely in `ViewerViewModel` (`src/Core/Features/Viewer/ViewModels`), keeping the View a pure XAML binding surface (Dependency Rule 1, "no business logic in Views").
+
+- **Timing** is driven by an injected `TimeProvider` (constructor injection; `TimeProvider.System` registered as a singleton in `MauiProgram.cs`). No wall-clock or `Task.Delay` in testable logic — tests advance a `FakeTimeProvider`.
+- **UI-thread marshaling from Core:** the Core project targets plain `net10.0` and does **not** reference MAUI, so `MainThread.BeginInvokeOnMainThread` / `IDispatcher` are **not** available inside `ViewerViewModel`. Timer-callback-driven observable mutations must therefore be marshaled through an **injected main-thread dispatcher abstraction** defined in `src/Core/Services` with a MAUI implementation in `src/MauiApp` registered in `MauiProgram.cs` — following the established platform-abstraction pattern (`INavigationService`, `IMulticastLockService`, `IAppLifecycleService`). A direct `MainThread.*` call in a Core ViewModel is a layering violation.
+
+```mermaid
+graph TB
+    POLL["ViewerViewModel TimeProvider poll"] --> GCS["INdiViewerBridge.GetConnectionState()"]
+    GCS -->|Connected| PLAY["IsPlaying playback"]
+    GCS -->|Disconnected while playing and not user Stop| WINDOW["15s retry window"]
+    WINDOW --> ATTEMPT["Every 2s: StopReceiver then StartReceiver(SourceId)"]
+    ATTEMPT -->|first Connected| PLAY
+    ATTEMPT -->|window elapsed| FAILED["Stopped/error state + Reconnect command"]
+    WINDOW --> DISP["IMainThreadDispatcher marshals observable mutations"]
+    DISP --> WINDOW
+```
 
 ### DiscoverySettingsOrchestrator
 
