@@ -57,6 +57,14 @@ public static class MauiProgram
         builder.Services.AddSingleton<INavigationHandoffService, NdiNavigationHandoffService>();
         builder.Services.AddSingleton<IAndroidOrientationBridge, AndroidOrientationBridge>();
         builder.Services.AddSingleton<IAppLifecycleService, AppLifecycleService>();
+        builder.Services.AddSingleton<IMainThreadDispatcher>(sp =>
+#if ANDROID
+            (IMainThreadDispatcher)new AndroidMainThreadDispatcher()
+#else
+            (IMainThreadDispatcher)new DefaultMainThreadDispatcher()
+#endif
+        );
+        builder.Services.AddSingleton<TimeProvider>(TimeProvider.System);
 
 #if ANDROID
         builder.Services.AddSingleton<IMulticastLockService, AndroidMulticastLockService>();
