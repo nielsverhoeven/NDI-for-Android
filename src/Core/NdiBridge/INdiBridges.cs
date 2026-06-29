@@ -35,6 +35,7 @@ public interface INdiViewerBridge
 {
     void StartReceiver(string sourceId);
     void StopReceiver();
+    ConnectionState GetConnectionState();
     NdiVideoFrame? GetLatestFrame();
     float GetDroppedFramePercent();
     (int Width, int Height) GetActualResolution();
