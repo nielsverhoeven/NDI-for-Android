@@ -240,4 +240,98 @@ public sealed class NdiDatabase
 
     private static string SerializeDiscoveryServers(IReadOnlyList<DiscoveryServerPreference> servers)
         => JsonSerializer.Serialize(servers);
+
+    // =====================================================================
+    // Issue #238: connection history
+    // =====================================================================
+
+    public async Task SaveConnectionHistoryEntryAsync(ConnectionHistoryEntity entry)
+    {
+        await EnsureInitializedAsync();
+        await _connection.InsertOrReplaceAsync(entry);
+    }
+
+    public async Task<IReadOnlyList<ConnectionHistoryEntity>> GetConnectionHistoryAsync(int count = 50)
+    {
+        await EnsureInitializedAsync();
+        var results = await _connection.Table<ConnectionHistoryEntity>()
+            .OrderByDescending(c => c.ConnectedAtEpochMillis)
+            .Take(count)
+            .ToListAsync();
+        return results.AsReadOnly();
+    }
+
+    public async Task<IReadOnlyList<ConnectionHistoryEntity>> GetConnectionHistoryForSourceAsync(string sourceId, int count = 50)
+    {
+        await EnsureInitializedAsync();
+        var results = await _connection.Table<ConnectionHistoryEntity>()
+            .Where(c => c.SourceId == sourceId)
+            .OrderByDescending(c => c.ConnectedAtEpochMillis)
+            .Take(count)
+            .ToListAsync();
+        return results.AsReadOnly();
+    }
+
+    public async Task DeleteOldConnectionHistoryAsync(DateTimeOffset before)
+    {
+        await EnsureInitializedAsync();
+        var toDelete = await _connection.Table<ConnectionHistoryEntity>()
+            .Where(c => c.ConnectedAtEpochMillis < before.ToUnixTimeMilliseconds())
+            .ToListAsync();
+        foreach (var entry in toDelete)
+        {
+            await _connection.DeleteAsync(entry);
+        }
+    }
+
+    public async Task<IReadOnlyList<ConnectionHistoryEntity>> GetConnectionSummaryAsync(int daysBack = 7)
+    {
+        // Returns a summary grouped by source with total connection time estimates.
+        var cutoffMillis = DateTimeOffset.UtcNow.AddDays(-daysBack).ToUnixTimeMilliseconds();
+        var entries = await _connection.Table<ConnectionHistoryEntity>()
+            .Where(c => c.ConnectedAtEpochMillis >= cutoffMillis)
+            .ToListAsync();
+
+        var summaryBySource = entries
+            .GroupBy(e => e.SourceId)
+            .Select(g => new
+            {
+                SourceId = g.Key,
+                DisplayName = g.First().DisplayName,
+                ConnectionCount = g.Count(),
+                LastConnected = g.Max(e => e.ConnectedAtEpochMillis),
+            })
+            .OrderByDescending(s => s.LastConnected)
+            .ToList();
+
+        return summaryBySource.Select(s => new ConnectionHistoryEntity(
+            s.SourceId,
+            s.DisplayName,
+            null, // DisconnectedAt — we don't track it in the summary
+            (long)s.LastConnected,
+            QualityProfile.Balanced)) as IReadOnlyList<ConnectionHistoryEntity>;
+    }
+
+    /// <summary>
+    /// Simple entity for tracking NDI source connection events.
+    /// Uses SourceId + ConnectedAtEpochMillis as a composite key via [PrimaryKey].
+    /// </summary>
+    [Table("connection_history")]
+    public class ConnectionHistoryEntity
+    {
+        [PrimaryKey, AutoIncrement]
+        public int Id { get; set; }
+
+        [PrimaryKey]
+        public string SourceId { get; set; } = string.Empty;
+
+        public string DisplayName { get; set; } = string.Empty;
+
+        public long ConnectedAtEpochMillis { get; set; }
+
+        public QualityProfile QualityProfile { get; set; }
+
+        public int DurationSeconds { get; set; } // 0 if still connected
+    }
+
 }
