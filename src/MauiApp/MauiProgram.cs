@@ -57,6 +57,7 @@ public static class MauiProgram
         builder.Services.AddSingleton<INavigationHandoffService, NdiNavigationHandoffService>();
         builder.Services.AddSingleton<IAndroidOrientationBridge, AndroidOrientationBridge>();
         builder.Services.AddSingleton<IAppLifecycleService, AppLifecycleService>();
+        builder.Services.AddSingleton<IDiscoveryRefreshService, DiscoveryRefreshService>();
         builder.Services.AddSingleton<IMainThreadDispatcher>(sp =>
 #if ANDROID
             (IMainThreadDispatcher)new AndroidMainThreadDispatcher()
@@ -78,14 +79,14 @@ public static class MauiProgram
 
         // ViewModels
         builder.Services.AddSingleton<AdaptiveShellStateViewModel>();
-        builder.Services.AddTransient<SourceListViewModel>();
+        builder.Services.AddSingleton<SourceListViewModel>();  // Singleton: subscribes to singleton IDiscoveryRefreshService
         builder.Services.AddTransient<ViewerViewModel>();
         builder.Services.AddTransient<OutputViewModel>();
         builder.Services.AddTransient<SettingsViewModel>();
 
         // Views
         builder.Services.AddSingleton<AppShell>();
-        builder.Services.AddTransient<Features.Sources.Views.SourceListPage>();
+        builder.Services.AddSingleton<Features.Sources.Views.SourceListPage>();  // Singleton: matches ViewModel lifetime (C1)
         builder.Services.AddTransient<Features.Viewer.Views.ViewerPage>();
         builder.Services.AddTransient<Features.Output.Views.OutputPage>();
         builder.Services.AddTransient<Features.Settings.Views.SettingsPage>();

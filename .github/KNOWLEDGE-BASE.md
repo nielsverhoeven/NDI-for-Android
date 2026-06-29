@@ -1,5 +1,5 @@
 # NDI-for-Android — Agent Knowledge Base
-<!-- Last updated: 2026-06-08 | Read this INSTEAD of re-reading constitution.md + architecture.md for implementation tasks -->
+<!-- Last updated: 2026-06-15 | Read this INSTEAD of re-reading constitution.md + architecture.md for implementation tasks -->
 
 ## Tech Stack (authoritative)
 - **Platform**: .NET MAUI `net10.0-android` | **Language**: C# 12, nullable enabled
@@ -118,7 +118,7 @@ Release notes: `docs/features/ndi-integration-rework/release-notes.md`
 | Schema migration | `DiscoveryMode TEXT NOT NULL DEFAULT 'Mdns'` added to `sources` table via `ALTER TABLE` in `NdiDatabase.EnsureSourceColumnsAsync()` — additive, safe for existing installs |
 | Shell nav | Home and View tabs → `SourceListPage`; Stream tab → self-contained `OutputPage` (no sourceId param) |
 | `NdiSource` model | `DiscoveryMode` property (`DiscoveryMode` enum — crosses bridge boundary as plain C# type, permitted by constitution) |
-| `SourceListViewModel` | `ActiveDiscoveryModeLabel` (observable string), `StopDiscoveryCommand` (cancels periodic refresh CTS), `NavigateToViewerAsync` — no `NavigateToOutputAsync` |
+| `SourceListViewModel` | `ActiveDiscoveryModeLabel` (observable string), `StopDiscoveryCommand` (calls `IDiscoveryRefreshService.Stop()`), `NavigateToViewerAsync` — no `NavigateToOutputAsync`; constructor requires `IDiscoveryRefreshService` 4th arg; **Singleton** lifetime |
 | `OutputViewModel` | `StreamName` (observable, default `"NDI-Android"`) drives output; `StartOutputAsync(CancellationToken)` — no source selection required; no `SourceId` |
 | `IDiscoverySettingsOrchestrator` | `ActiveMode` property reflects current mode after `ApplyAsync`; read by `SourceRepository` and `SourceListViewModel` |
 
@@ -133,6 +133,12 @@ builder.Services.AddSingleton<IMulticastLockService, NoopMulticastLockService>()
 
 // Orchestrator (singleton, already registered — verify before adding again)
 builder.Services.AddSingleton<IDiscoverySettingsOrchestrator, DiscoverySettingsOrchestrator>();
+
+// Auto-refresh polling service (#232)
+builder.Services.AddSingleton<IDiscoveryRefreshService, DiscoveryRefreshService>();
+// SourceListViewModel + SourceListPage are Singleton (subscribes to singleton refresh service)
+builder.Services.AddSingleton<SourceListViewModel>();
+builder.Services.AddSingleton<Features.Sources.Views.SourceListPage>();
 ```
 
 ### New/changed files for #213
@@ -152,6 +158,18 @@ builder.Services.AddSingleton<IDiscoverySettingsOrchestrator, DiscoverySettingsO
 - `src/Core/Services/IMulticastLockService.cs` — NEW
 - `src/MauiApp/MauiProgram.cs` — registers `IMulticastLockService` conditionally
 - `src/MauiApp/AppShell.xaml` — View tab → `SourceListPage`; Stream tab → `OutputPage`
+
+### New/changed files for #232 (auto-refresh — PR #242)
+- `src/Core/Services/IDiscoveryRefreshService.cs` — NEW: polling service interface (`Start`, `Stop`, `RequestRefresh`, `SnapshotReady` event)
+- `src/Core/Services/DiscoveryRefreshService.cs` — NEW: 5s polling loop; `Interlocked.CompareExchange` guards; `TimeProvider` injected; subscribes to `IAppLifecycleService.AppResumed/AppPaused`
+- `src/Core/Services/IAppLifecycleService.cs` — `AppResumed` and `AppPaused` events added
+- `src/Core/Services/AppLifecycleService.cs` — MOVED from `src/MauiApp/Services/` (no platform deps → Core per rule 7); fires new events
+- `src/Core/Features/Sources/ViewModels/SourceListViewModel.cs` — injects `IDiscoveryRefreshService` (4th ctor param); subscribes to `SnapshotReady`; `RefreshCommand` delegates to `RequestRefresh()`; **Singleton** lifetime
+- `src/MauiApp/MauiProgram.cs` — registers `IDiscoveryRefreshService` Singleton; `SourceListViewModel` + `SourceListPage` promoted to Singleton
+- `src/Core/NdiForAndroid.Core.csproj` — adds `Microsoft.Extensions.Logging.Abstractions`
+- `tests/MauiApp.Tests/Services/DiscoveryRefreshServiceTests.cs` — NEW: 11 unit tests
+- `tests/MauiApp.Tests/Services/AppLifecycleServiceTests.cs` — NEW: 4 event tests
+- `tests/MauiApp.Tests/Features/Sources/SourceListViewModelTests.cs` — rewritten to use `SnapshotReady` event-raising pattern (Moq `Raise`)
 
 ### ViewModel (CommunityToolkit)
 ```csharp

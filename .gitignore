@@ -1,3 +1,6 @@
+# Legacy Kotlin/Android reference codebase (restored from pre-PR-135, not for commit)
+legacy_app/
+
 # .NET / MAUI build artifacts
 **/bin/
 **/obj/
