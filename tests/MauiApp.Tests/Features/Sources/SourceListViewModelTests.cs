@@ -1,4 +1,6 @@
 using Moq;
+using NdiForAndroid.Features.AppState.Models;
+using NdiForAndroid.Features.AppState.Repositories;
 using NdiForAndroid.Features.Settings.Services;
 using NdiForAndroid.Features.Sources.Models;
 using NdiForAndroid.Features.Sources.Repositories;
@@ -15,11 +17,19 @@ public class SourceListViewModelTests
     private readonly Mock<INavigationService> _navigationMock = new();
     private readonly Mock<IDiscoverySettingsOrchestrator> _orchestratorMock = new();
     private readonly Mock<IDiscoveryRefreshService> _refreshServiceMock = new();
+    private readonly Mock<IAppStateRepository> _appStateRepoMock = new();
+
+    public SourceListViewModelTests()
+    {
+        _appStateRepoMock
+            .Setup(r => r.RestoreStateAsync())
+            .ReturnsAsync(AppStateSnapshot.Empty);
+    }
 
     private SourceListViewModel CreateSut(DiscoveryMode mode = DiscoveryMode.Mdns)
     {
         _orchestratorMock.Setup(o => o.ActiveMode).Returns(mode);
-        return new(_repositoryMock.Object, _navigationMock.Object, _orchestratorMock.Object, _refreshServiceMock.Object);
+        return new(_repositoryMock.Object, _navigationMock.Object, _orchestratorMock.Object, _refreshServiceMock.Object, _appStateRepoMock.Object);
     }
 
     private DiscoverySnapshot SuccessSnapshot(IReadOnlyList<NdiSource>? sources = null) => new(
@@ -110,6 +120,8 @@ public class SourceListViewModelTests
 
         await sut.NavigateToViewerCommand.ExecuteAsync(source);
 
+        _appStateRepoMock.Verify(r => r.RestoreStateAsync(), Times.Once);
+        _appStateRepoMock.Verify(r => r.SaveAsync(It.IsAny<AppStateSnapshot>()), Times.Once);
         var expectedRoute = $"viewer?sourceId={Uri.EscapeDataString("src-abc")}";
         _navigationMock.Verify(
             n => n.NavigateToAsync(expectedRoute),

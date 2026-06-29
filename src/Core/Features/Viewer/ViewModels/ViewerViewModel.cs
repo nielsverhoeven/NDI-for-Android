@@ -1,5 +1,7 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using NdiForAndroid.Features.AppState.Models;
+using NdiForAndroid.Features.AppState.Repositories;
 using NdiForAndroid.NdiBridge;
 using NdiForAndroid.Services;
 using Timer = System.Threading.Timer;
@@ -20,6 +22,8 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
     private readonly INdiViewerBridge _bridge;
     private readonly TimeProvider _timeProvider;
     private readonly IMainThreadDispatcher _dispatcher;
+    private readonly IAppStateRepository _appStateRepo;
+    private readonly IAppLifecycleService _lifecycle;
 
     [ObservableProperty]
     private string? _sourceId;
@@ -47,18 +51,53 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
     private Timer? _attemptTimer;
     private volatile bool _userInitiatedStop;
     private string? _lastSourceId;
+    private bool _wasPlayingBeforeResume;
 
     // State machine
     private enum ReconnectState { Idle, InWindow, Attempting, Successful, Failed }
     private ReconnectState _reconnectState = ReconnectState.Idle;
 
-    public ViewerViewModel(INdiViewerBridge bridge, TimeProvider timeProvider, IMainThreadDispatcher dispatcher)
+    public ViewerViewModel(
+        INdiViewerBridge bridge,
+        TimeProvider timeProvider,
+        IMainThreadDispatcher dispatcher,
+        IAppStateRepository appStateRepo,
+        IAppLifecycleService lifecycle)
     {
         _bridge = bridge;
         _timeProvider = timeProvider;
         _dispatcher = dispatcher;
+        _appStateRepo = appStateRepo;
+        _lifecycle = lifecycle;
         RetryRemainingSeconds = ReconnectConstants.RetryWindowSeconds;
         StatusMessage = "Select a source on Home to start viewing.";
+
+        _lifecycle.AppResumed += OnAppResumed;
+    }
+
+    private void OnAppResumed()
+    {
+        // If we were playing when the app went background, try to restore
+        if (_wasPlayingBeforeResume && !string.IsNullOrEmpty(SourceId) && !IsPlaying)
+        {
+            _wasPlayingBeforeResume = false;
+            RetryStatusMessage = "Restoring viewer...";
+            IsReconnecting = true;
+            _bridge.StartReceiver(SourceId);
+            var state = _bridge.GetConnectionState();
+            if (state == ConnectionState.Connected)
+            {
+                IsPlaying = true;
+                IsReconnecting = false;
+                StatusMessage = "Connected.";
+                RetryStatusMessage = null;
+            }
+        }
+    }
+
+    partial void OnIsPlayingChanged(bool value)
+    {
+        _wasPlayingBeforeResume = value;
     }
 
     partial void OnSourceIdChanged(string? value)
@@ -78,6 +117,8 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
 
         _userInitiatedStop = false;
         _lastSourceId = SourceId;
+        // Persist last active viewer source for resume recovery
+        _appStateRepo.SaveAsync(new AppStateSnapshot(SourceId, null, false, null)).ConfigureAwait(continueOnCapturedContext: true);
         _bridge.StartReceiver(SourceId);
         IsPlaying = true;
         StatusMessage = "Connecting...";
@@ -99,6 +140,7 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
     {
         DisposeTimers();
         _userInitiatedStop = true;
+        _lifecycle.AppResumed -= OnAppResumed;
     }
 
     private void DisposeTimers()
