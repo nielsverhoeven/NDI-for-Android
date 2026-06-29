@@ -7,6 +7,21 @@
              Title="Viewer">
     <VerticalStackLayout Padding="16" Spacing="16">
         <Label Text="{Binding StatusMessage}" HorizontalOptions="Center" />
+
+        <!-- Retry indicator (shown during reconnect window) -->
+        <HorizontalStackLayout HorizontalOptions="Center" Spacing="8" IsVisible="{Binding IsReconnecting}">
+            <ActivityIndicator IsRunning="{Binding IsReconnecting}" Color="{AppThemeBinding Dark=White, Light=Black}" />
+            <Label Text="{Binding RetryStatusMessage}" HorizontalOptions="Center" />
+        </HorizontalStackLayout>
+
+        <!-- Cancel retry button -->
+        <Button Text="Cancel Retry" Command="{Binding CancelRetryCommand}"
+                IsVisible="{Binding IsReconnecting}" HorizontalOptions="Center" />
+
+        <!-- Reconnect button (shown after reconnection failure) -->
+        <Button Text="Reconnect" Command="{Binding ReconnectCommand}"
+                IsVisible="{Binding CanReconnect}" HorizontalOptions="Center" />
+
         <Button Text="Stop" Command="{Binding StopCommand}"
                 IsVisible="{Binding IsPlaying}" HorizontalOptions="Center" />
     </VerticalStackLayout>

@@ -210,6 +210,7 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
 {
     private string? _activeSourceId;
     private DateTimeOffset? _startedAt;
+    private ConnectionState _connectionState = ConnectionState.Disconnected;
     private bool _disposed;
 
     public void StartReceiver(string sourceId)
@@ -219,13 +220,17 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
 
         _activeSourceId = sourceId;
         _startedAt = DateTimeOffset.UtcNow;
+        _connectionState = ConnectionState.Connected;
     }
 
     public void StopReceiver()
     {
         _activeSourceId = null;
         _startedAt = null;
+        _connectionState = ConnectionState.Disconnected;
     }
+
+    public ConnectionState GetConnectionState() => _connectionState;
 
     public NdiVideoFrame? GetLatestFrame()
     {
