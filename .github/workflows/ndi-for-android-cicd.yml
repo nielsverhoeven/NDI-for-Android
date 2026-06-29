@@ -12,14 +12,14 @@ permissions:
 
 jobs:
   # ════════════════════════════════════════════════
-  # Stage 1 — Build Solution (Core + MauiApp)
-  # Windows runner. Restores and builds both projects.
+  # Stage 1 — Build & Unit Tests (Core + MauiApp + tests)
+  # Windows runner. Installs MAUI workload once, builds both projects, runs unit tests.
   # Always runs on PRs and main. Required check.
   # ════════════════════════════════════════════════
-  build:
-    name: Build Solution
+  build-and-test:
+    name: Build & Unit Tests
     runs-on: windows-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
 
     steps:
       - uses: actions/checkout@v4
@@ -29,45 +29,20 @@ jobs:
         with:
           dotnet-version: '10.0.301'
 
-      - name: Install MAUI workload
+      - name: Install MAUI workload (once)
         run: dotnet workload install maui-android
 
       - name: Restore dependencies
         run: dotnet restore NdiForAndroid.sln --ignore-failed-sources
 
-      - name: Build NdiForAndroid Core (Release)
+      - name: Build Core (Release)
         run: dotnet build src/Core/NdiForAndroid.Core.csproj -c Release --no-restore
 
-      - name: Build NdiForAndroid App (Release)
+      - name: Build App (Release)
         run: >
           dotnet build src/MauiApp/NdiForAndroid.csproj
           -f net10.0-android -c Release --no-restore
           /p:AndroidUseToolchain=True
-
-  # ════════════════════════════════════════════════
-  # Stage 2 — Run Unit Tests (needs build)
-  # Windows runner. Runs dotnet test against the built solution.
-  # Always runs on PRs and main after stage 1 succeeds. Required check.
-  # ════════════════════════════════════════════════
-  unit-tests:
-    name: Run Unit Tests
-    needs: build
-    runs-on: windows-latest
-    timeout-minutes: 15
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup .NET SDK
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '10.0.301'
-
-      - name: Install MAUI workload
-        run: dotnet workload install maui-android
-
-      - name: Restore dependencies
-        run: dotnet restore NdiForAndroid.sln --ignore-failed-sources
 
       - name: Run unit tests
         run: dotnet test tests/MauiApp.Tests/NdiForAndroid.Tests.csproj -c Release --logger "trx;LogFileName=test-results.trx" --results-directory test-results
@@ -82,13 +57,13 @@ jobs:
           if-no-files-found: warn
 
   # ════════════════════════════════════════════════
-  # Stage 3 — Build Release APK (needs unit-tests)
+  # Stage 2 — Build Release APK (needs build-and-test)
   # Ubuntu runner. Publishes a release APK as an artifact.
   # Only on main to avoid wasting CI time on PRs.
   # ════════════════════════════════════════════════
   build-apk:
     name: Build Release APK
-    needs: unit-tests
+    needs: build-and-test
     runs-on: ubuntu-latest
     timeout-minutes: 20
     if: github.ref == 'refs/heads/main'
