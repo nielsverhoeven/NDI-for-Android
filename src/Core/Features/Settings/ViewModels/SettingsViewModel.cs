@@ -1,5 +1,6 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using NdiForAndroid.Features.DiagOverlay.Services;
 using NdiForAndroid.Features.Settings.Models;
 using NdiForAndroid.Features.Settings.Repositories;
 using NdiForAndroid.Features.Settings.Services;
@@ -26,6 +27,7 @@ public partial class SettingsViewModel : ObservableObject
     private readonly ISettingsValidationService _validationService;
     private readonly ISettingsPlatformService _platformService;
     private readonly ISourceRepository _sourceRepository;
+    private readonly IDiagnosticOverlayService _overlayService;
 
     private NdiSettingsSnapshot _baselineSnapshot = NdiSettingsSnapshot.CreateDefault();
     private DiscoveryServerItem? _editingDiscoveryServer;
@@ -100,18 +102,26 @@ public partial class SettingsViewModel : ObservableObject
         ISettingsRepository repository,
         ISettingsValidationService validationService,
         ISettingsPlatformService platformService,
-        ISourceRepository sourceRepository)
+        ISourceRepository sourceRepository,
+        IDiagnosticOverlayService overlayService)
     {
         _repository = repository;
         _validationService = validationService;
         _platformService = platformService;
         _sourceRepository = sourceRepository;
+        _overlayService = overlayService;
 
         var info = _platformService.GetAppInfo();
         AppName = info.AppName;
         AppVersionBuild = $"{info.Version} ({info.Build})";
 
         DiscoveryServers.CollectionChanged += OnDiscoveryServersCollectionChanged;
+    }
+
+    [RelayCommand]
+    private async Task OpenDiagnosticLogAsync()
+    {
+        await Shell.Current.GoToAsync("//diagnostic-log");
     }
 
     [RelayCommand]
@@ -344,6 +354,9 @@ public partial class SettingsViewModel : ObservableObject
         _ = value;
         IsApplied = false;
         RefreshPendingState();
+
+        // Sync with diagnostic overlay service immediately (no wait for Apply)
+        _overlayService.IsDeveloperMode = DeveloperModeEnabled;
     }
 
     partial void OnSelectedThemeOptionChanged(string value)

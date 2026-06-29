@@ -133,6 +133,9 @@
                                                  </DataTemplate>
                                           </CollectionView.ItemTemplate>
                                    </CollectionView>
+
+                                   <Button Text="Diagnostic Log"
+                                           Command="{Binding OpenDiagnosticLogCommand}" />
                             </VerticalStackLayout>
 
                             <VerticalStackLayout IsVisible="{Binding IsAboutSectionSelected}" Spacing="8">
