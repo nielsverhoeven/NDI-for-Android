@@ -209,23 +209,20 @@ public sealed class SettingsViewModelDirtyTrackingTests
     public void EditDiscoveryServerCommand_PopulatesInputFields()
     {
         var sut = CreateSut();
-        sut.DiscoveryServerHostInput = "10.0.0.5";
-        sut.DiscoveryServerPortInput = "5960";
+        sut.DiscoveryServerEndpointInput = "10.0.0.5:5960";
         sut.AddOrUpdateDiscoveryServerCommand.Execute(null);
 
         var itemToEdit = sut.DiscoveryServers[0];
         sut.EditDiscoveryServerCommand.Execute(itemToEdit);
 
-        Assert.Equal("10.0.0.5", sut.DiscoveryServerHostInput);
-        Assert.Equal("5960", sut.DiscoveryServerPortInput);
+        Assert.Equal("10.0.0.5:5960", sut.DiscoveryServerEndpointInput);
     }
 
     [Fact]
     public void EditDiscoveryServerCommand_SetsActionTextToUpdateServer()
     {
         var sut = CreateSut();
-        sut.DiscoveryServerHostInput = "10.0.0.5";
-        sut.DiscoveryServerPortInput = "5960";
+        sut.DiscoveryServerEndpointInput = "10.0.0.5:5960";
         sut.AddOrUpdateDiscoveryServerCommand.Execute(null);
 
         sut.EditDiscoveryServerCommand.Execute(sut.DiscoveryServers[0]);
@@ -250,8 +247,7 @@ public sealed class SettingsViewModelDirtyTrackingTests
     public void RemoveDiscoveryServerCommand_RemovesItem()
     {
         var sut = CreateSut();
-        sut.DiscoveryServerHostInput = "10.0.0.5";
-        sut.DiscoveryServerPortInput = "5960";
+        sut.DiscoveryServerEndpointInput = "10.0.0.5:5960";
         sut.AddOrUpdateDiscoveryServerCommand.Execute(null);
 
         sut.RemoveDiscoveryServerCommand.Execute(sut.DiscoveryServers[0]);
@@ -270,8 +266,7 @@ public sealed class SettingsViewModelDirtyTrackingTests
         _repositoryMock.Setup(r => r.SaveSettingsAsync(It.IsAny<NdiSettingsSnapshot>()))
             .Returns(Task.CompletedTask);
 
-        sut.DiscoveryServerHostInput = "10.0.0.5";
-        sut.DiscoveryServerPortInput = "5960";
+        sut.DiscoveryServerEndpointInput = "10.0.0.5:5960";
         sut.AddOrUpdateDiscoveryServerCommand.Execute(null);
         await sut.ApplyCommand.ExecuteAsync(null);
         // Now baseline has one server, pending = false
@@ -286,8 +281,7 @@ public sealed class SettingsViewModelDirtyTrackingTests
     {
         var sut = CreateSut();
 
-        sut.DiscoveryServerHostInput = "10.0.0.5";
-        sut.DiscoveryServerPortInput = "5960";
+        sut.DiscoveryServerEndpointInput = "10.0.0.5:5960";
         sut.AddOrUpdateDiscoveryServerCommand.Execute(null);
 
         var item = sut.DiscoveryServers[0];
@@ -297,16 +291,14 @@ public sealed class SettingsViewModelDirtyTrackingTests
         sut.RemoveDiscoveryServerCommand.Execute(item);
 
         Assert.Equal("Add Server", sut.DiscoveryServerActionText);
-        Assert.Equal(string.Empty, sut.DiscoveryServerHostInput);
-        Assert.Equal(string.Empty, sut.DiscoveryServerPortInput);
+        Assert.Equal(string.Empty, sut.DiscoveryServerEndpointInput);
     }
 
     [Fact]
     public void RemoveDiscoveryServerCommand_Null_DoesNothing()
     {
         var sut = CreateSut();
-        sut.DiscoveryServerHostInput = "10.0.0.5";
-        sut.DiscoveryServerPortInput = "5960";
+        sut.DiscoveryServerEndpointInput = "10.0.0.5:5960";
         sut.AddOrUpdateDiscoveryServerCommand.Execute(null);
 
         sut.RemoveDiscoveryServerCommand.Execute(null);
@@ -321,12 +313,10 @@ public sealed class SettingsViewModelDirtyTrackingTests
     {
         var sut = CreateSut();
 
-        sut.DiscoveryServerHostInput = "alpha";
-        sut.DiscoveryServerPortInput = "5960";
+        sut.DiscoveryServerEndpointInput = "alpha:5960";
         sut.AddOrUpdateDiscoveryServerCommand.Execute(null);
 
-        sut.DiscoveryServerHostInput = "beta";
-        sut.DiscoveryServerPortInput = "5961";
+        sut.DiscoveryServerEndpointInput = "beta:5961";
         sut.AddOrUpdateDiscoveryServerCommand.Execute(null);
 
         var second = sut.DiscoveryServers[1];
@@ -341,12 +331,10 @@ public sealed class SettingsViewModelDirtyTrackingTests
     {
         var sut = CreateSut();
 
-        sut.DiscoveryServerHostInput = "alpha";
-        sut.DiscoveryServerPortInput = "5960";
+        sut.DiscoveryServerEndpointInput = "alpha:5960";
         sut.AddOrUpdateDiscoveryServerCommand.Execute(null);
 
-        sut.DiscoveryServerHostInput = "beta";
-        sut.DiscoveryServerPortInput = "5961";
+        sut.DiscoveryServerEndpointInput = "beta:5961";
         sut.AddOrUpdateDiscoveryServerCommand.Execute(null);
 
         sut.MoveDiscoveryServerUpCommand.Execute(sut.DiscoveryServers[0]); // already first
@@ -360,12 +348,10 @@ public sealed class SettingsViewModelDirtyTrackingTests
     {
         var sut = CreateSut();
 
-        sut.DiscoveryServerHostInput = "alpha";
-        sut.DiscoveryServerPortInput = "5960";
+        sut.DiscoveryServerEndpointInput = "alpha:5960";
         sut.AddOrUpdateDiscoveryServerCommand.Execute(null);
 
-        sut.DiscoveryServerHostInput = "beta";
-        sut.DiscoveryServerPortInput = "5961";
+        sut.DiscoveryServerEndpointInput = "beta:5961";
         sut.AddOrUpdateDiscoveryServerCommand.Execute(null);
 
         sut.MoveDiscoveryServerDownCommand.Execute(sut.DiscoveryServers[1]); // already last
@@ -476,16 +462,14 @@ public sealed class SettingsViewModelDirtyTrackingTests
         var sut = CreateSut();
 
         // Add original
-        sut.DiscoveryServerHostInput = "original-host";
-        sut.DiscoveryServerPortInput = "5960";
+        sut.DiscoveryServerEndpointInput = "original-host:5960";
         sut.AddOrUpdateDiscoveryServerCommand.Execute(null);
 
         // Edit it
         var item = sut.DiscoveryServers[0];
         sut.EditDiscoveryServerCommand.Execute(item);
 
-        sut.DiscoveryServerHostInput = "updated-host";
-        sut.DiscoveryServerPortInput = "7000";
+        sut.DiscoveryServerEndpointInput = "updated-host:7000";
         sut.AddOrUpdateDiscoveryServerCommand.Execute(null);
 
         Assert.Single(sut.DiscoveryServers);
