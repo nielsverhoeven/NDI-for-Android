@@ -1,6 +1,8 @@
 using Microsoft.Extensions.Logging;
 using NdiForAndroid.Data;
 using NdiForAndroid.Features.AppState.Repositories;
+using NdiForAndroid.Features.ConnectionHistory;
+using NdiForAndroid.Features.DeepLinking;
 using NdiForAndroid.Features.Home.ViewModels;
 using NdiForAndroid.Features.Navigation.Services;
 using NdiForAndroid.Features.Navigation.ViewModels;
@@ -56,6 +58,7 @@ public static class MauiProgram
         builder.Services.AddSingleton<NdiForAndroid.Features.Home.ViewModels.HomeDashboardService>();
         builder.Services.AddSingleton<IAppStateRepository>(sp =>
             new AppStateRepository(Path.Combine(FileSystem.AppDataDirectory, "app_state.db3")));
+        builder.Services.AddSingleton<IDeepLinkService, DeepLinkService>();
         builder.Services.AddSingleton<ITelemetryService, TelemetryService>();
         builder.Services.AddSingleton<INavigationService, ShellNavigationService>();
         builder.Services.AddSingleton<INavigationPolicyService, NavigationPolicyService>();
