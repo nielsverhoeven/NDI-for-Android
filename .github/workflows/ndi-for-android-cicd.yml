@@ -36,7 +36,7 @@ jobs:
         run: dotnet restore NdiForAndroid.sln --ignore-failed-sources
 
       - name: Build Core (Release)
-        run: dotnet build src/Core/NdiForAndroid.Core.csproj -c Release --no-restore --logger "console;verbosity=minimal"
+        run: dotnet build src/Core/NdiForAndroid.Core.csproj -c Release --no-restore
 
       - name: Build MauiApp (Release)
         run: >
@@ -71,12 +71,7 @@ jobs:
         run: dotnet restore NdiForAndroid.sln --ignore-failed-sources
 
       - name: Run unit tests
-        run: >
-          dotnet test
-          tests/MauiApp.Tests/NdiForAndroid.Tests.csproj
-          -c Release
-          --logger "trx;LogFileName=test-results.trx"
-          --results-directory test-results
+        run: dotnet test tests/MauiApp.Tests/NdiForAndroid.Tests.csproj -c Release --logger "trx;LogFileName=test-results.trx" --results-directory test-results
 
       - name: Upload test results
         if: always()
