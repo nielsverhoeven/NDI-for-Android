@@ -44,3 +44,4 @@ test-results/_tmp_*.txt
 exports/*.apk
 crash_capture.txt
 live_log.txt
+publish-output/*

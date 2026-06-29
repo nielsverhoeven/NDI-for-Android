@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <Shell xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
        xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
-       xmlns:home="clr-namespace:NdiForAndroid.Features.Home.Views;assembly=NdiForAndroid.Core"
+       xmlns:home="clr-namespace:NdiForAndroid.Features.Home.Views"
        xmlns:sources="clr-namespace:NdiForAndroid.Features.Sources.Views"
        xmlns:viewer="clr-namespace:NdiForAndroid.Features.Viewer.Views"
        xmlns:output="clr-namespace:NdiForAndroid.Features.Output.Views"
