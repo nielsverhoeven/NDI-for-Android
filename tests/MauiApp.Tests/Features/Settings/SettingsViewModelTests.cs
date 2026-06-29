@@ -67,8 +67,7 @@ public class SettingsViewModelTests
         sut.DiscoveryPort = "5960";
         sut.SelectedThemeOption = "Light";
         sut.SelectedAccentColor = "Red";
-        sut.DiscoveryServerHostInput = "10.0.0.10";
-        sut.DiscoveryServerPortInput = "5961";
+        sut.DiscoveryServerEndpointInput = "10.0.0.10:5961";
         sut.AddOrUpdateDiscoveryServerCommand.Execute(null);
         await sut.ApplyCommand.ExecuteAsync(null);
 
@@ -109,12 +108,10 @@ public class SettingsViewModelTests
     public void AddOrUpdateDiscoveryServerCommand_DuplicateHostAndPort_SetsValidationError()
     {
         var sut = CreateSut();
-        sut.DiscoveryServerHostInput = "10.1.0.7";
-        sut.DiscoveryServerPortInput = "5960";
+        sut.DiscoveryServerEndpointInput = "10.1.0.7:5960";
         sut.AddOrUpdateDiscoveryServerCommand.Execute(null);
 
-        sut.DiscoveryServerHostInput = "10.1.0.7";
-        sut.DiscoveryServerPortInput = "5960";
+        sut.DiscoveryServerEndpointInput = "10.1.0.7:5960";
         sut.AddOrUpdateDiscoveryServerCommand.Execute(null);
 
         Assert.Single(sut.DiscoveryServers);
@@ -126,12 +123,10 @@ public class SettingsViewModelTests
     {
         var sut = CreateSut();
 
-        sut.DiscoveryServerHostInput = "10.1.0.10";
-        sut.DiscoveryServerPortInput = "5960";
+        sut.DiscoveryServerEndpointInput = "10.1.0.10:5960";
         sut.AddOrUpdateDiscoveryServerCommand.Execute(null);
 
-        sut.DiscoveryServerHostInput = "10.1.0.11";
-        sut.DiscoveryServerPortInput = "5961";
+        sut.DiscoveryServerEndpointInput = "10.1.0.11:5961";
         sut.AddOrUpdateDiscoveryServerCommand.Execute(null);
 
         var first = sut.DiscoveryServers[0];

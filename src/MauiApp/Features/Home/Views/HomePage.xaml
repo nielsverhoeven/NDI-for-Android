@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:vm="clr-namespace:NdiForAndroid.Features.Home.ViewModels;assembly=NdiForAndroid.Core"
+             x:Class="NdiForAndroid.Features.Home.Views.HomePage"
+             x:DataType="vm:HomeViewModel"
+             Title="Home"
+             BackgroundColor="#F2F2F7">
+    <ScrollView>
+        <VerticalStackLayout Padding="16" Spacing="16">
+            <!-- Discovery Status Card -->
+            <Frame BackgroundColor="White" HasShadow="True" CornerRadius="12" Padding="16">
+                <VerticalStackLayout Spacing="8">
+                    <Label Text="Discovery Status" FontAttributes="Bold" FontSize="18" TextColor="#1C1C1E"/>
+                    <Label Text="{Binding DiscoveryStatus}" FontSize="15" TextColor="#3A3A3C"/>
+                    <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+                        <Label Grid.Column="0" Text="{Binding SourceCount, StringFormat='Sources found: {0}'}" FontSize="14" TextColor="#636366"/>
+                        <Label Grid.Column="1" Text="{Binding LastRefreshDisplay}" FontSize="14" TextColor="#636366" HorizontalOptions="End"/>
+                    </Grid>
+                </VerticalStackLayout>
+            </Frame>
+
+            <!-- Viewer Status Card -->
+            <Frame BackgroundColor="White" HasShadow="True" CornerRadius="12" Padding="16">
+                <VerticalStackLayout Spacing="8">
+                    <Label Text="Viewer Status" FontAttributes="Bold" FontSize="18" TextColor="#1C1C1E"/>
+                    <Label Text="{Binding ViewerStatus}" FontSize="15" TextColor="#3A3A3C"/>
+                </VerticalStackLayout>
+            </Frame>
+
+            <!-- Output Status Card -->
+            <Frame BackgroundColor="White" HasShadow="True" CornerRadius="12" Padding="16">
+                <VerticalStackLayout Spacing="8">
+                    <Label Text="Output Status" FontAttributes="Bold" FontSize="18" TextColor="#1C1C1E"/>
+                    <Label Text="{Binding OutputStatus}" FontSize="15" TextColor="#3A3A3C"/>
+                </VerticalStackLayout>
+            </Frame>
+
+            <!-- Quick Actions -->
+            <Label Text="Quick Actions" FontAttributes="Bold" FontSize="18" TextColor="#1C1C1E" Margin="0,8,0,0"/>
+            
+            <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+                <Button Text="Start Viewing Last Source"
+                        Command="{Binding StartViewingLastSourceCommand}"
+                        BackgroundColor="#007AFF"
+                        CornerRadius="10"
+                        FontAttributes="Bold"/>
+                
+                <Button Text="Resume Output"
+                        Command="{Binding ResumeOutputCommand}"
+                        BackgroundColor="#34C759"
+                        CornerRadius="10"
+                        FontAttributes="Bold"/>
+            </Grid>
+        </VerticalStackLayout>
+    </ScrollView>
+</ContentPage>

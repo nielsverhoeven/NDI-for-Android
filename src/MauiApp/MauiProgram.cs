@@ -1,12 +1,13 @@
 using Microsoft.Extensions.Logging;
 using NdiForAndroid.Data;
 using NdiForAndroid.Features.AppState.Repositories;
+using NdiForAndroid.Features.Home.ViewModels;
 using NdiForAndroid.Features.Navigation.Services;
 using NdiForAndroid.Features.Navigation.ViewModels;
 using NdiForAndroid.Features.Output.ViewModels;
 using NdiForAndroid.Features.Settings.Repositories;
 using NdiForAndroid.Features.Settings.Services;
-using NdiForAndroid.Features.Settings.ViewModels;using NdiForAndroid.Features.Sources.Repositories;
+using NdiForAndroid.Features.Settings.ViewModels; using NdiForAndroid.Features.Sources.Repositories;
 using NdiForAndroid.Features.Sources.ViewModels;
 using NdiForAndroid.Features.Viewer.ViewModels;
 using NdiForAndroid.NdiBridge;
@@ -52,6 +53,7 @@ public static class MauiProgram
         builder.Services.AddSingleton<IAppearanceService, MauiAppearanceService>();
 
         // Services
+        builder.Services.AddSingleton<NdiForAndroid.Features.Home.ViewModels.HomeDashboardService>();
         builder.Services.AddSingleton<IAppStateRepository>(sp =>
             new AppStateRepository(Path.Combine(FileSystem.AppDataDirectory, "app_state.db3")));
         builder.Services.AddSingleton<ITelemetryService, TelemetryService>();
@@ -83,12 +85,14 @@ public static class MauiProgram
         // ViewModels
         builder.Services.AddSingleton<AdaptiveShellStateViewModel>();
         builder.Services.AddSingleton<SourceListViewModel>();  // Singleton: subscribes to singleton IDiscoveryRefreshService
+        builder.Services.AddTransient<HomeViewModel>();
         builder.Services.AddTransient<ViewerViewModel>();
         builder.Services.AddTransient<OutputViewModel>();
         builder.Services.AddTransient<SettingsViewModel>();
 
         // Views
         builder.Services.AddSingleton<AppShell>();
+        builder.Services.AddTransient<Features.Home.Views.HomePage>();
         builder.Services.AddSingleton<Features.Sources.Views.SourceListPage>();  // Singleton: matches ViewModel lifetime (C1)
         builder.Services.AddTransient<Features.Viewer.Views.ViewerPage>();
         builder.Services.AddTransient<Features.Output.Views.OutputPage>();
