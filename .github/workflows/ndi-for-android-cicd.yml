@@ -43,7 +43,6 @@ jobs:
           dotnet build src/MauiApp/NdiForAndroid.csproj
           -f net10.0-android -c Release --no-restore
           /p:AndroidUseToolchain=True
-          /logger:"Console;verbosity=minimal"
 
   # ════════════════════════════════════════════════
   # Stage 2 — Run Unit Tests (needs build)
