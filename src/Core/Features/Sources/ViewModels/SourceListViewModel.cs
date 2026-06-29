@@ -1,5 +1,7 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using NdiForAndroid.Features.AppState.Models;
+using NdiForAndroid.Features.AppState.Repositories;
 using NdiForAndroid.Features.Settings.Services;
 using NdiForAndroid.Features.Sources.Models;
 using NdiForAndroid.Features.Sources.Repositories;
@@ -14,6 +16,7 @@ public partial class SourceListViewModel : ObservableObject
     private readonly INavigationService _navigation;
     private readonly IDiscoverySettingsOrchestrator _orchestrator;
     private readonly IDiscoveryRefreshService _refreshService;
+    private readonly IAppStateRepository _appStateRepo;
 
     [ObservableProperty]
     private IReadOnlyList<NdiSource> _sources = Array.Empty<NdiSource>();
@@ -31,12 +34,14 @@ public partial class SourceListViewModel : ObservableObject
         ISourceRepository repository,
         INavigationService navigation,
         IDiscoverySettingsOrchestrator orchestrator,
-        IDiscoveryRefreshService refreshService)
+        IDiscoveryRefreshService refreshService,
+        IAppStateRepository appStateRepo)
     {
         _repository     = repository;
         _navigation     = navigation;
         _orchestrator   = orchestrator;
         _refreshService = refreshService;
+        _appStateRepo   = appStateRepo;
 
         _refreshService.SnapshotReady += OnSnapshotReady;
     }
@@ -68,8 +73,18 @@ public partial class SourceListViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private Task NavigateToViewerAsync(NdiSource source) =>
-        _navigation.NavigateToAsync($"viewer?sourceId={Uri.EscapeDataString(source.SourceId)}");
+    private async Task NavigateToViewerAsync(NdiSource source)
+    {
+        // Persist last selected source for resume recovery
+        var snapshot = await _appStateRepo.RestoreStateAsync();
+        await _appStateRepo.SaveAsync(new AppStateSnapshot(
+            snapshot.LastViewerSourceId,
+            snapshot.StreamName,
+            snapshot.IsOutputActive,
+            source.SourceId));
+        // Navigate (fire and forget in ViewModel — Shell handles result)
+        try { await _navigation.NavigateToAsync($"viewer?sourceId={Uri.EscapeDataString(source.SourceId)}"); } catch { /* Navigation failures are handled by Shell */ }
+    }
 
     private void UpdateDiscoveryModeLabel()
     {

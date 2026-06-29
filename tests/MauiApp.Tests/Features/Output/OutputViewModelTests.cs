@@ -1,4 +1,6 @@
 using Moq;
+using NdiForAndroid.Features.AppState.Models;
+using NdiForAndroid.Features.AppState.Repositories;
 using NdiForAndroid.Features.Output.ViewModels;
 using NdiForAndroid.NdiBridge;
 using NdiForAndroid.Services;
@@ -10,8 +12,21 @@ public class OutputViewModelTests
 {
     private readonly Mock<INdiOutputBridge> _bridgeMock = new();
     private readonly Mock<IScreenSharePlatformService> _screenShareMock = new();
+    private readonly Mock<IAppStateRepository> _appStateRepoMock = new();
+    private readonly Mock<IAppLifecycleService> _lifecycleMock = new();
 
-    private OutputViewModel CreateSut() => new(_bridgeMock.Object, _screenShareMock.Object);
+    public OutputViewModelTests()
+    {
+        _bridgeMock.Setup(b => b.StartOutputAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        _bridgeMock.Setup(b => b.StopOutputAsync(It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        _appStateRepoMock
+            .Setup(r => r.RestoreStateAsync())
+            .ReturnsAsync(AppStateSnapshot.Empty);
+    }
+
+    private OutputViewModel CreateSut() => new(_bridgeMock.Object, _screenShareMock.Object, _appStateRepoMock.Object, _lifecycleMock.Object);
 
     [Fact]
     public void Constructor_SetsInitialStatusMessage()
