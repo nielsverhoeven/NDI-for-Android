@@ -7,7 +7,7 @@ using NdiForAndroid.NdiBridge;
 using NdiForAndroid.Services;
 using Xunit;
 
-namespace MauiApp.Tests.Features.Viewer;
+namespace NdiForAndroid.Tests.Features.Viewer;
 
 public class ViewerViewModelTests
 {

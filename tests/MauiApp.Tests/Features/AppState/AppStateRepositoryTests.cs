@@ -2,7 +2,7 @@ using NdiForAndroid.Features.AppState.Models;
 using NdiForAndroid.Features.AppState.Repositories;
 using Xunit;
 
-namespace MauiApp.Tests.Features.AppState;
+namespace NdiForAndroid.Tests.Features.AppState;
 
 public class AppStateRepositoryTests
 {

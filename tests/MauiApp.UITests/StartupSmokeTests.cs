@@ -3,7 +3,7 @@ using OpenQA.Selenium.Appium.Android;
 using OpenQA.Selenium.Support.UI;
 using Xunit;
 
-namespace MauiApp.UITests;
+namespace NdiForAndroid.UITests;
 
 /// <summary>
 /// Smoke tests that validate the app launches and reaches a visible UI state

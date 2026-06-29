@@ -5,7 +5,7 @@ using NdiForAndroid.Features.Sources.Repositories;
 using NdiForAndroid.Services;
 using Xunit;
 
-namespace MauiApp.Tests.Services;
+namespace NdiForAndroid.Tests.Services;
 
 public class DiscoveryRefreshServiceTests
 {

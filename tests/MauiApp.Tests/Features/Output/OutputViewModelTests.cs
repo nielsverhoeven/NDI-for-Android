@@ -6,7 +6,7 @@ using NdiForAndroid.NdiBridge;
 using NdiForAndroid.Services;
 using Xunit;
 
-namespace MauiApp.Tests.Features.Output;
+namespace NdiForAndroid.Tests.Features.Output;
 
 public class OutputViewModelTests
 {

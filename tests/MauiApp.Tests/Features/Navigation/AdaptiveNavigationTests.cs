@@ -3,7 +3,7 @@ using NdiForAndroid.Features.Navigation.Services;
 using NdiForAndroid.Features.Navigation.ViewModels;
 using Xunit;
 
-namespace MauiApp.Tests.Features.Navigation;
+namespace NdiForAndroid.Tests.Features.Navigation;
 
 public sealed class PrimaryNavigationMetadataTests
 {
