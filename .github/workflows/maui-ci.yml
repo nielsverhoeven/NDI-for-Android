@@ -11,67 +11,13 @@ permissions:
   checks: write
 
 jobs:
-  # ──────────────────────────────────────────────────────
-  # Stage 1 — Build Core + MauiApp + Unit Tests
-  # ──────────────────────────────────────────────────────
-  build-and-test:
-    name: Build & Test
+  # ════════════════════════════════════════════════
+  # Stage 1 — Build Core library (windows-latest)
+  # Runs first. Produces NdiForAndroid.Core.dll artifact
+  # ════════════════════════════════════════════════
+  build-core:
+    name: Build Core
     runs-on: windows-latest
-    timeout-minutes: 20
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup .NET SDK
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '10.0.301'
-
-      - name: Cache MAUI workload
-        id: cache-workload
-        uses: actions/cache@v4
-        with:
-          path: ~/.dotnet/workloads
-          key: workload-net10.0-android-10.0.20
-          restore-keys: |
-            workload-net10.0-android-
-
-      - name: Install MAUI Android workload
-        if: steps.cache-workload.outputs.cache-hit != 'true'
-        run: dotnet workload install maui-android --skip-manifest-update
-
-      - name: Restore dependencies
-        run: dotnet restore NdiForAndroid.sln
-
-      - name: Build Core
-        run: dotnet build src/Core/NdiForAndroid.Core.csproj -c Release --no-restore
-
-      - name: Build MauiApp
-        run: dotnet build src/MauiApp/NdiForAndroid.csproj -c Release --no-restore
-
-      - name: Run unit tests
-        run: >
-          dotnet test
-          tests/MauiApp.Tests/NdiForAndroid.Tests.csproj
-          -c Release --no-restore
-          --logger "trx;LogFileName=test-results.trx"
-          --results-directory test-results
-
-      - name: Upload test results
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: test-results
-          path: test-results/*.trx
-          if-no-files-found: warn
-
-  # ──────────────────────────────────────────────────────
-  # Stage 2 — Publish APK (only if build-and-test passed)
-  # ──────────────────────────────────────────────────────
-  publish-apk:
-    name: Publish APK
-    needs: build-and-test
-    runs-on: ubuntu-latest
     timeout-minutes: 15
 
     steps:
@@ -82,18 +28,36 @@ jobs:
         with:
           dotnet-version: '10.0.301'
 
-      - name: Cache MAUI workload
-        id: cache-workload
-        uses: actions/cache@v4
-        with:
-          path: ~/.dotnet/workloads
-          key: workload-net10.0-android-10.0.20
-          restore-keys: |
-            workload-net10.0-android-
+      - name: Restore dependencies
+        run: dotnet restore NdiForAndroid.sln --ignore-failed-sources
 
-      - name: Install MAUI Android workload (skip if cached)
-        if: steps.cache-workload.outputs.cache-hit != 'true'
-        run: dotnet workload install maui-android --skip-manifest-update
+      - name: Build Core (Release)
+        run: dotnet build src/Core/NdiForAndroid.Core.csproj -c Release --no-restore --logger "console;verbosity=minimal"
+
+      - name: Upload Core DLL artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: core-dll
+          path: src/Core/bin/Release/net10.0/NdiForAndroid.Core.dll
+          retention-days: 1
+
+  # ════════════════════════════════════════════════
+  # Stage 2 — Build MauiApp → Release APK (ubuntu-latest)
+  # Runs in parallel with stage 1 (no dependency).
+  # Produces release-apk artifact for downstream jobs.
+  # ════════════════════════════════════════════════
+  build-apk:
+    name: Build Release APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.301'
 
       - name: Cache NuGet packages
         uses: actions/cache@v4
@@ -102,51 +66,229 @@ jobs:
           key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
           restore-keys: ${{ runner.os }}-nuget-
 
+      - name: Install MAUI Android workload
+        run: dotnet workload install maui-android
+
+      - name: Restore dependencies
+        run: dotnet restore NdiForAndroid.sln --ignore-failed-sources
+
       - name: Publish Release APK
         run: >
           dotnet publish src/MauiApp/NdiForAndroid.csproj
           -f net10.0-android -c Release -o publish-output
           /p:AndroidPackageFormat=apk
+          /p:AndroidUseToolchain=True
 
       - name: Locate APK
         shell: pwsh
         run: |
-          $apk = Get-ChildItem -Path publish-output -Filter "*.apk" -Recurse | Select-Object -First 1
+          $apk = Get-ChildItem -Path publish-output -Filter "*.apk" -Recurse -File | Sort-Object LastWriteTime -Descending | Select-Object -First 1
           "APK_PATH=$($apk.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8
+          echo "APK: $($apk.Name) ($([math]::Round($($apk.Length/1MB),2)) MB)"
 
-      # ── On main → create/release a GitHub Release
-      - name: Read version
-        if: github.ref == 'refs/heads/main'
-        id: version
-        shell: pwsh
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-apk
+          path: ${{ env.APK_PATH }}
+          retention-days: 1
+
+  # ════════════════════════════════════════════════
+  # Stage 3 — Run unit tests (windows-latest, needs build-core)
+  # Only runs after stage 1 succeeds. Builds MauiApp,
+  # runs dotnet test, uploads TRX results.
+  # ════════════════════════════════════════════════
+  run-unit-tests:
+    name: Run Unit Tests
+    needs: build-core
+    runs-on: windows-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.301'
+
+      - name: Install MAUI workload
+        run: dotnet workload install maui-android
+
+      - name: Restore dependencies
+        run: dotnet restore NdiForAndroid.sln --ignore-failed-sources
+
+      - name: Build MauiApp (Release)
+        run: >
+          dotnet build src/MauiApp/NdiForAndroid.csproj
+          -c Release --no-restore
+          /p:AndroidUseToolchain=True
+          /logger:"Console;verbosity=minimal"
+
+      - name: Run unit tests
+        run: >
+          dotnet test
+          tests/MauiApp.Tests/NdiForAndroid.Tests.csproj
+          -c Release --no-restore
+          --logger "trx;LogFileName=test-results.trx"
+          --results-directory test-results
+          --no-build
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: test-results/*.trx
+          retention-days: 1
+          if-no-files-found: warn
+
+  # ════════════════════════════════════════════════
+  # Stage 4 — Run Android Emulator UI Tests (main only)
+  # Ubuntu runner, downloads APK from stage 2.
+  # Only runs on main branch after stage 3 succeeds.
+  # ════════════════════════════════════════════════
+  emulator-tests:
+    name: Run Emulator UI Tests
+    needs: run-unit-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    if: github.ref == 'refs/heads/main'
+
+    env:
+      APPIUM_SERVER_URL: http://127.0.0.1:4723/
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Download APK artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: release-apk
+          path: apk
+
+      - name: Locate downloaded APK
         run: |
-          $props = @{}
-          Get-Content version.properties | ForEach-Object {
-            if ($_ -match '^\s*([^#=]+)=(.*)$') { $props[$matches[1].Trim()] = $matches[2].Trim() }
-          }
-          $vn = $props['versionName']
-          if ([string]::IsNullOrWhiteSpace($vn)) { Write-Error 'versionName missing'; exit 1 }
-          "VERSION_NAME=$vn" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "TAG_NAME=v$vn" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "tag_name=v$vn" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          APK_PATH=$(find apk -name "*.apk" | head -1)
+          echo "APK_PATH=$APK_PATH" >> $GITHUB_ENV
+          echo "Using APK: $APK_PATH"
 
-      # GitHub Release (main only)
-      - name: Publish release
-        if: github.ref == 'refs/heads/main'
+      - name: Setup Node.js for Appium
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install Appium and UIAutomator2 driver
+        run: |
+          npm install -g appium
+          appium driver install uiautomator2
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Cache Android AVD and system image
+        uses: actions/cache@v4
+        id: avd-cache
+        with:
+          path: |
+            ~/.android/avd/*
+            ~/.android/adb*
+          key: avd-api35-x86_64-v1
+
+      - name: Create AVD (only on cache miss)
+        if: steps.avd-cache.outputs.cache-hit != 'true'
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: Nexus 6
+          force-avd-creation: false
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: false
+          script: echo "AVD created and cached."
+
+      - name: Run emulator tests
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: Nexus 6
+          force-avd-creation: false
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          emulator-boot-timeout: 300
+          script: bash ./testing/e2e/scripts/run-emulator-tests.sh "$APK_PATH"
+
+      - name: Upload emulator test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: emulator-test-results
+          path: test-results/*.trx
+          retention-days: 1
+          if-no-files-found: warn
+
+      - name: Upload emulator diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: emulator-diagnostics
+          path: |
+            test-results/*.log
+            test-results/*.txt
+          retention-days: 1
+          if-no-files-found: warn
+
+  # ════════════════════════════════════════════════
+  # Stage 5 — Publish GitHub Release (main only)
+  # Ubuntu runner, downloads APK from stage 2.
+  # Only runs on main after stage 4 succeeds.
+  # ════════════════════════════════════════════════
+  publish-release:
+    name: Publish GitHub Release
+    needs: emulator-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read version from version.properties
+        id: version
+        run: |
+          VN=$(grep '^versionName=' version.properties | cut -d= -f2 | tr -d '[:space:]')
+          if [ -z "$VN" ]; then echo "Error: versionName not found"; exit 1; fi
+          echo "VERSION_NAME=$VN" >> $GITHUB_OUTPUT
+          echo "TAG_NAME=v$VN" >> $GITHUB_OUTPUT
+
+      - name: Download APK artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: release-apk
+          path: apk
+
+      - name: Locate APK
+        run: |
+          APK_PATH=$(find apk -name "*.apk" | head -1)
+          echo "APK_PATH=$APK_PATH" >> $GITHUB_ENV
+          echo "Publishing: $(basename $APK_PATH)"
+
+      - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.version.outputs.tag_name }}
-          name: NDI for Android ${{ env.VERSION_NAME }}
+          tag_name: v${{ steps.version.outputs.VERSION_NAME }}
+          name: NDI for Android ${{ steps.version.outputs.VERSION_NAME }}
           files: ${{ env.APK_PATH }}
           fail_on_unmatched_files: true
           generate_release_notes: true
-
-      # PR artifact (feature branches)
-      - name: Upload APK to PR
-        if: github.ref != 'refs/heads/main'
-        uses: actions/upload-artifact@v4
-        with:
-          name: apk-build
-          path: ${{ env.APK_PATH }}
-          retention-days: 3
-
+          prerelease: false
