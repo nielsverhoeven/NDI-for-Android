@@ -1,6 +1,7 @@
 using Moq;
 using NdiForAndroid.Features.AppState.Models;
 using NdiForAndroid.Features.AppState.Repositories;
+using NdiForAndroid.Features.Sources.Repositories;
 using NdiForAndroid.Features.Viewer.ViewModels;
 using NdiForAndroid.NdiBridge;
 using NdiForAndroid.Services;
@@ -15,6 +16,7 @@ public class ViewerViewModelTests
     private readonly FakeMainThreadDispatcher _dispatcher = new();
     private readonly Mock<IAppStateRepository> _appStateRepoMock = new();
     private readonly Mock<IAppLifecycleService> _lifecycleMock = new();
+    private readonly Mock<ISourceRepository> _sourceRepoMock = new();
 
     public ViewerViewModelTests()
     {
@@ -24,9 +26,12 @@ public class ViewerViewModelTests
         _appStateRepoMock
             .Setup(r => r.SaveAsync(It.IsAny<AppStateSnapshot>()))
             .Returns(Task.CompletedTask);
+        _sourceRepoMock
+            .Setup(r => r.GetCachedSourcesAsync())
+            .ReturnsAsync(new List<NdiForAndroid.Features.Sources.Models.NdiSource>());
     }
 
-    private ViewerViewModel CreateSut() => new(_bridgeMock.Object, _timeProvider, _dispatcher, _appStateRepoMock.Object, _lifecycleMock.Object);
+    private ViewerViewModel CreateSut() => new(_bridgeMock.Object, _timeProvider, _dispatcher, _appStateRepoMock.Object, _lifecycleMock.Object, _sourceRepoMock.Object);
 
     [Fact]
     public void StartCommand_WithSourceId_StartsReceiverAndSetsIsPlaying()

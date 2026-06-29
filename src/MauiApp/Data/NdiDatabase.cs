@@ -17,6 +17,7 @@ public class SourceEntity
     public long LastSeenAtEpochMillis { get; set; }
     public bool PreviouslyConnected { get; set; }
     public string DiscoveryMode { get; set; } = "Mdns";
+    public string QualityProfile { get; set; } = "Balanced";
 }
 
 [Table("settings")]
@@ -67,6 +68,7 @@ public sealed class NdiDatabase
             LastSeenAtEpochMillis = source.LastSeenAtEpochMillis,
             PreviouslyConnected = source.PreviouslyConnected,
             DiscoveryMode = source.DiscoveryMode.ToString(),
+            QualityProfile = source.QualityProfile.ToString(),
         };
         await _connection.InsertOrReplaceAsync(entity);
     }
@@ -78,7 +80,8 @@ public sealed class NdiDatabase
         return entities.Select(e => new NdiSource(
             e.SourceId, e.DisplayName, e.EndpointAddress, e.IsAvailable,
             e.LastSeenAtEpochMillis, e.PreviouslyConnected,
-            ParseDiscoveryMode(e.DiscoveryMode))).ToList();
+            ParseDiscoveryMode(e.DiscoveryMode),
+            ParseQualityProfile(e.QualityProfile))).ToList();
     }
 
     public async Task DeleteSourceAsync(string sourceId)
@@ -152,6 +155,10 @@ public sealed class NdiDatabase
         if (!columnNames.Contains("DiscoveryMode"))
             await _connection.ExecuteAsync(
                 "ALTER TABLE sources ADD COLUMN DiscoveryMode TEXT NOT NULL DEFAULT 'Mdns'");
+
+        if (!columnNames.Contains("QualityProfile"))
+            await _connection.ExecuteAsync(
+                "ALTER TABLE sources ADD COLUMN QualityProfile TEXT NOT NULL DEFAULT 'Balanced'");
     }
 
     /// <summary>
@@ -186,6 +193,14 @@ public sealed class NdiDatabase
             return parsed;
 
         return DiscoveryMode.Mdns;
+    }
+
+    private static QualityProfile ParseQualityProfile(string? value)
+    {
+        if (Enum.TryParse<QualityProfile>(value, ignoreCase: true, out var parsed) && Enum.IsDefined(parsed))
+            return parsed;
+
+        return QualityProfile.Balanced;
     }
 
     private static ThemeMode ParseThemeMode(string? value)

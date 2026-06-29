@@ -33,13 +33,15 @@ public interface INdiDiscoveryBridge
 /// </summary>
 public interface INdiViewerBridge
 {
-    void StartReceiver(string sourceId);
+    void StartReceiver(string sourceId, QualityProfile qualityProfile = QualityProfile.Balanced);
     void StopReceiver();
+    void SetQualityProfile(QualityProfile profile);
     ConnectionState GetConnectionState();
     NdiVideoFrame? GetLatestFrame();
     float GetDroppedFramePercent();
     (int Width, int Height) GetActualResolution();
     float GetMeasuredFps();
+    QualityProfile ActiveQualityProfile { get; }
 }
 
 /// <summary>
