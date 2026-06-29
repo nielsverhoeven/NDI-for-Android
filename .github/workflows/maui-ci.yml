@@ -22,13 +22,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup .NET
+      - name: Setup .NET SDK
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '10.0.x'
+          dotnet-version: '10.0.301'
 
-      - name: Install MAUI workload
-        run: dotnet workload install maui-android
+      - name: Cache MAUI workload
+        id: cache-workload
+        uses: actions/cache@v4
+        with:
+          path: ~/.dotnet/workloads
+          key: workload-net10.0-android-10.0.20
+          restore-keys: |
+            workload-net10.0-android-
+
+      - name: Install MAUI Android workload
+        if: steps.cache-workload.outputs.cache-hit != 'true'
+        run: dotnet workload install maui-android --skip-manifest-update
 
       - name: Restore dependencies
         run: dotnet restore NdiForAndroid.sln
@@ -67,10 +77,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup .NET
+      - name: Setup .NET SDK
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '10.0.x'
+          dotnet-version: '10.0.301'
+
+      - name: Cache MAUI workload
+        id: cache-workload
+        uses: actions/cache@v4
+        with:
+          path: ~/.dotnet/workloads
+          key: workload-net10.0-android-10.0.20
+          restore-keys: |
+            workload-net10.0-android-
+
+      - name: Install MAUI Android workload (skip if cached)
+        if: steps.cache-workload.outputs.cache-hit != 'true'
+        run: dotnet workload install maui-android --skip-manifest-update
 
       - name: Cache NuGet packages
         uses: actions/cache@v4
@@ -78,9 +101,6 @@ jobs:
           path: ~/.nuget/packages
           key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
           restore-keys: ${{ runner.os }}-nuget-
-
-      - name: Install MAUI workload
-        run: dotnet workload install maui-android
 
       - name: Publish Release APK
         run: >
