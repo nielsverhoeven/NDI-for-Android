@@ -35,10 +35,10 @@ jobs:
       - name: Restore dependencies
         run: dotnet restore NdiForAndroid.sln --ignore-failed-sources
 
-      - name: Build Core (Release)
+      - name: Build NdiForAndroid Core (Release)
         run: dotnet build src/Core/NdiForAndroid.Core.csproj -c Release --no-restore
 
-      - name: Build MauiApp (Release)
+      - name: Build NdiForAndroid App (Release)
         run: >
           dotnet build src/MauiApp/NdiForAndroid.csproj
           -f net10.0-android -c Release --no-restore
