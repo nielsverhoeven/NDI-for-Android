@@ -1,4 +1,4 @@
-name: MAUI CI
+name: NDI for Android - Release
 
 on:
   push:
