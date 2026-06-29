@@ -23,6 +23,20 @@ public partial class OutputViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private string? _statusMessage;
 
+    /// <summary>
+    /// When true, the output will capture and re-stream a discovered NDI source
+    /// rather than broadcasting the local screen share.
+    /// </summary>
+    [ObservableProperty]
+    private bool _isReStreamMode;
+
+    /// <summary>
+    /// The SourceId of the discovered NDI source to re-stream (set when switching
+    /// into re-stream mode).
+    /// </summary>
+    [ObservableProperty]
+    private string? _reStreamSourceId;
+
     public OutputViewModel(
         INdiOutputBridge bridge,
         IScreenSharePlatformService screenSharePlatformService,
@@ -51,6 +65,31 @@ public partial class OutputViewModel : ObservableObject, IDisposable
     }
 
     [RelayCommand]
+    private async Task ToggleReStreamModeAsync()
+    {
+        IsReStreamMode = !IsReStreamMode;
+
+        if (IsReStreamMode)
+        {
+            // When switching to re-stream mode, default stream name uses the source identifier.
+            StreamName = $"NDI-{string.Concat(ReStreamSourceId!.TakeWhile(char.IsLetterOrDigit)).Take(32)}";
+            StatusMessage = "Re-stream mode: select a discovered source on the Sources page.";
+        }
+        else
+        {
+            StatusMessage = "Screen-share mode: stream your screen as an NDI sender.";
+        }
+
+        // Persist mode so it survives app restarts / process death.
+        var state = await _appStateRepo.RestoreStateAsync();
+        await _appStateRepo.SaveAsync(new AppStateSnapshot(
+            state.LastViewerSourceId,
+            StreamName,
+            false, // isOutputActive resets when switching modes
+            state.LastSelectedSourceId));
+    }
+
+    [RelayCommand]
     private async Task StartOutputAsync(CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(StreamName))
@@ -63,11 +102,25 @@ public partial class OutputViewModel : ObservableObject, IDisposable
 
         try
         {
-            await _screenSharePlatformService.StartForegroundSessionAsync(StreamName, cancellationToken);
-            await _bridge.StartOutputAsync(StreamName, cancellationToken);
-            IsOutputActive = true;
-            StatusMessage = "Output active";
-            // Persist output state so it survives resume / process death
+            if (IsReStreamMode && !string.IsNullOrEmpty(ReStreamSourceId))
+            {
+                // Start re-streaming from the selected NDI source.
+                await _bridge.StartReStreamFromSourceAsync(
+                    ReStreamSourceId, QualityProfile.Balanced, cancellationToken);
+
+                IsOutputActive = true;
+                StatusMessage = "Re-stream active";
+            }
+            else
+            {
+                // Start screen-share mode (broadcast local display as NDI).
+                await _screenSharePlatformService.StartForegroundSessionAsync(StreamName, cancellationToken);
+                await _bridge.StartOutputAsync(StreamName, cancellationToken);
+                IsOutputActive = true;
+                StatusMessage = "Output active";
+            }
+
+            // Persist output state so it survives resume / process death.
             var snapshot = await _appStateRepo.RestoreStateAsync();
             await _appStateRepo.SaveAsync(new AppStateSnapshot(
                 snapshot.LastViewerSourceId,
@@ -86,11 +139,20 @@ public partial class OutputViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private async Task StopOutputAsync(CancellationToken cancellationToken)
     {
-        await _bridge.StopOutputAsync(cancellationToken);
-        await _screenSharePlatformService.StopForegroundSessionAsync(cancellationToken);
+        if (IsReStreamMode)
+        {
+            await _bridge.StopReStreamAsync(cancellationToken);
+        }
+        else
+        {
+            await _bridge.StopOutputAsync(cancellationToken);
+            await _screenSharePlatformService.StopForegroundSessionAsync(cancellationToken);
+        }
+
         IsOutputActive = false;
         StatusMessage = null;
-        // Clear output state but keep viewer source
+
+        // Clear output state but keep viewer source.
         var snapshot = await _appStateRepo.RestoreStateAsync();
         await _appStateRepo.SaveAsync(new AppStateSnapshot(
             snapshot.LastViewerSourceId,
