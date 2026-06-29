@@ -8,6 +8,16 @@
     <VerticalStackLayout Padding="16" Spacing="16">
         <Label Text="{Binding StatusMessage}" HorizontalOptions="Center" />
 
+        <!-- Quality profile selector (shown when IsPlaying) -->
+        <HorizontalStackLayout HorizontalOptions="Center" Spacing="8" IsVisible="{Binding IsPlaying}">
+            <Button Text="Smooth" Command="{Binding ChangeQualityProfileCommand}" 
+                    CommandParameter="Smooth" HorizontalOptions="Center" />
+            <Button Text="Balanced" Command="{Binding ChangeQualityProfileCommand}" 
+                    CommandParameter="Balanced" HorizontalOptions="Center" />
+            <Button Text="High" Command="{Binding ChangeQualityProfileCommand}" 
+                    CommandParameter="High" HorizontalOptions="Center" />
+        </HorizontalStackLayout>
+
         <!-- Retry indicator (shown during reconnect window) -->
         <HorizontalStackLayout HorizontalOptions="Center" Spacing="8" IsVisible="{Binding IsReconnecting}">
             <ActivityIndicator IsRunning="{Binding IsReconnecting}" Color="{AppThemeBinding Dark=White, Light=Black}" />

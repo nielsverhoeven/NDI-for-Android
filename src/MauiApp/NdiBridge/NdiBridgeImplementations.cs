@@ -211,14 +211,18 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
     private string? _activeSourceId;
     private DateTimeOffset? _startedAt;
     private ConnectionState _connectionState = ConnectionState.Disconnected;
+    private QualityProfile _qualityProfile = QualityProfile.Balanced;
     private bool _disposed;
 
-    public void StartReceiver(string sourceId)
+    public QualityProfile ActiveQualityProfile => _qualityProfile;
+
+    public void StartReceiver(string sourceId, QualityProfile qualityProfile = QualityProfile.Balanced)
     {
         if (string.IsNullOrWhiteSpace(sourceId))
             throw new ArgumentException("Source id is required.", nameof(sourceId));
 
         _activeSourceId = sourceId;
+        _qualityProfile = qualityProfile;
         _startedAt = DateTimeOffset.UtcNow;
         _connectionState = ConnectionState.Connected;
     }
@@ -228,6 +232,11 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
         _activeSourceId = null;
         _startedAt = null;
         _connectionState = ConnectionState.Disconnected;
+    }
+
+    public void SetQualityProfile(QualityProfile profile)
+    {
+        _qualityProfile = profile;
     }
 
     public ConnectionState GetConnectionState() => _connectionState;

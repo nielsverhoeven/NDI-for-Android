@@ -2,6 +2,8 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using NdiForAndroid.Features.AppState.Models;
 using NdiForAndroid.Features.AppState.Repositories;
+using NdiForAndroid.Features.Sources.Models;
+using NdiForAndroid.Features.Sources.Repositories;
 using NdiForAndroid.NdiBridge;
 using NdiForAndroid.Services;
 using Timer = System.Threading.Timer;
@@ -24,6 +26,7 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
     private readonly IMainThreadDispatcher _dispatcher;
     private readonly IAppStateRepository _appStateRepo;
     private readonly IAppLifecycleService _lifecycle;
+    private readonly ISourceRepository _sourceRepository;
 
     [ObservableProperty]
     private string? _sourceId;
@@ -53,6 +56,21 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
     private string? _lastSourceId;
     private bool _wasPlayingBeforeResume;
 
+    // Quality profile selection
+    [ObservableProperty]
+    private QualityProfile _qualityProfile = QualityProfile.Balanced;
+
+    private QualityProfile? _previousQualityProfile;
+    private float? _lastMeasuredFps;
+    private int _sustainedDropCount;
+    private static readonly int AutoDegradationThreshold = 3;
+    private const float DegradationThresholdFps = 15f;
+
+    public IEnumerable<QualityProfile> AvailableProfiles => new[] { QualityProfile.Smooth, QualityProfile.Balanced, QualityProfile.High };
+
+    /// <summary>Developer-visible label for the current quality profile.</summary>
+    public string? QualityProfileLabel => IsPlaying ? $"QProfile: {QualityProfile}" : null;
+
     // State machine
     private enum ReconnectState { Idle, InWindow, Attempting, Successful, Failed }
     private ReconnectState _reconnectState = ReconnectState.Idle;
@@ -62,13 +80,15 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
         TimeProvider timeProvider,
         IMainThreadDispatcher dispatcher,
         IAppStateRepository appStateRepo,
-        IAppLifecycleService lifecycle)
+        IAppLifecycleService lifecycle,
+        ISourceRepository sourceRepository)
     {
         _bridge = bridge;
         _timeProvider = timeProvider;
         _dispatcher = dispatcher;
         _appStateRepo = appStateRepo;
         _lifecycle = lifecycle;
+        _sourceRepository = sourceRepository;
         RetryRemainingSeconds = ReconnectConstants.RetryWindowSeconds;
         StatusMessage = "Select a source on Home to start viewing.";
 
@@ -83,13 +103,26 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
             _wasPlayingBeforeResume = false;
             RetryStatusMessage = "Restoring viewer...";
             IsReconnecting = true;
-            _bridge.StartReceiver(SourceId);
+            
+            // Restore quality profile for this source from cached sources
+            try
+            {
+                var sources = Task.Run(async () => await _sourceRepository.GetCachedSourcesAsync()).Result;
+                var source = sources.FirstOrDefault(s => s.SourceId == SourceId);
+                if (source != null)
+                {
+                    QualityProfile = source.QualityProfile;
+                }
+            }
+            catch { /* Silent fail – will default to Balanced */ }
+
+            _bridge.StartReceiver(SourceId, QualityProfile);
             var state = _bridge.GetConnectionState();
             if (state == ConnectionState.Connected)
             {
                 IsPlaying = true;
                 IsReconnecting = false;
-                StatusMessage = "Connected.";
+                StatusMessage = $"Connected. (QProfile: {QualityProfile})";
                 RetryStatusMessage = null;
             }
         }
@@ -107,7 +140,7 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
     }
 
     [RelayCommand]
-    private void Start()
+    private async void Start()
     {
         if (string.IsNullOrEmpty(SourceId))
         {
@@ -117,11 +150,25 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
 
         _userInitiatedStop = false;
         _lastSourceId = SourceId;
+        
+        // Restore quality profile for this source from cached sources
+        try
+        {
+            var sources = await _sourceRepository.GetCachedSourcesAsync();
+            var source = sources.FirstOrDefault(s => s.SourceId == SourceId);
+            if (source != null)
+            {
+                QualityProfile = source.QualityProfile;
+            }
+        }
+        catch { /* Silent fail – will default to Balanced */ }
+
         // Persist last active viewer source for resume recovery
         _appStateRepo.SaveAsync(new AppStateSnapshot(SourceId, null, false, null)).ConfigureAwait(continueOnCapturedContext: true);
-        _bridge.StartReceiver(SourceId);
+        
+        _bridge.StartReceiver(SourceId, QualityProfile);
         IsPlaying = true;
-        StatusMessage = "Connecting...";
+        StatusMessage = $"Connecting... (QProfile: {QualityProfile})";
     }
 
     [RelayCommand]
@@ -236,7 +283,7 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
             _reconnectState = ReconnectState.Successful;
             IsReconnecting = false;
             IsPlaying = true;
-            StatusMessage = "Connected.";
+            StatusMessage = $"Connected. (QProfile: {QualityProfile})";
             RetryRemainingSeconds = 0;
             RetryStatusMessage = null;
             DisposeTimers();
@@ -310,5 +357,111 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
         StatusMessage = "Attempting reconnect...";
 
         BeginReconnectWindow();
+    }
+
+    // --- Quality Profile ---
+
+    [RelayCommand]
+    private async Task ChangeQualityProfileAsync(object? param)
+    {
+        if (param is not string profileName) return;
+
+        if (!Enum.TryParse<QualityProfile>(profileName, ignoreCase: true, out var profile)) return;
+
+        if (QualityProfile == profile) return;
+
+        _previousQualityProfile ??= QualityProfile;
+        QualityProfile = profile;
+        _bridge.SetQualityProfile(profile);
+
+        // Persist quality profile to source (if connected)
+        if (!string.IsNullOrEmpty(SourceId))
+        {
+            var sources = await _sourceRepository.GetCachedSourcesAsync();
+            var source = sources.FirstOrDefault(s => s.SourceId == SourceId);
+            if (source != null)
+            {
+                var updatedSource = source with { QualityProfile = profile };
+                await _sourceRepository.SaveSourceAsync(updatedSource);
+            }
+        }
+
+        StatusMessage = $"Quality profile set to {profile}.";
+    }
+
+    /// <summary>
+/// Monitor for quality degradation and auto-degrade if sustained drops detected.
+/// Call from a frame update loop or watchdog timer (e.g., every ~5 seconds).
+/// </summary>
+    public async void CheckAutoDegradation(float currentFps, float dropPercent)
+{
+    // Only degrade if playing and not already in reconnect window
+    if (!IsPlaying || IsReconnecting) return;
+
+    // Already degraded — only auto-recover
+    if (_previousQualityProfile != null)
+    {
+        if (currentFps > DegradationThresholdFps && dropPercent < 10f)
+        {
+            // Recover to previous profile
+                QualityProfile = _previousQualityProfile.Value;
+                _bridge.SetQualityProfile(QualityProfile);
+            _previousQualityProfile = null;
+            _sustainedDropCount = 0;
+            StatusMessage = "Connection stabilized — quality restored.";
+        }
+
+        // Don't keep degrading if already at lowest
+        return;
+    }
+
+    // Check for degradation: sustained low FPS or high drop rate
+    if (currentFps < DegradationThresholdFps || dropPercent > 30f)
+    {
+        _sustainedDropCount++;
+        if (_sustainedDropCount >= AutoDegradationThreshold && QualityProfile != QualityProfile.Smooth)
+        {
+            // Degrade one step
+                var next = QualityProfile switch
+            {
+                QualityProfile.High => QualityProfile.Balanced,
+                QualityProfile.Balanced => QualityProfile.Smooth,
+                _ => QualityProfile.Smooth
+            };
+
+                _previousQualityProfile = QualityProfile;
+                QualityProfile = next;
+            _bridge.SetQualityProfile(next);
+
+            // Persist
+            if (!string.IsNullOrEmpty(SourceId))
+            {
+                var sources = await _sourceRepository.GetCachedSourcesAsync();
+                var source = sources.FirstOrDefault(s => s.SourceId == SourceId);
+                if (source != null)
+                {
+                    var updatedSource = source with { QualityProfile = next };
+                    await _sourceRepository.SaveSourceAsync(updatedSource);
+                }
+            }
+
+            StatusMessage = $"Auto-degraded quality to {next} due to poor connection.";
+        }
+    }
+    else
+    {
+        // Good connection — reset drop counter but don't auto-recover yet
+        _sustainedDropCount = Math.Max(0, _sustainedDropCount - 1);
+    }
+}
+
+    public void ResumeQualityProfile()
+    {
+        if (_previousQualityProfile != null)
+        {
+            QualityProfile = _previousQualityProfile.Value;
+            _bridge.SetQualityProfile(QualityProfile);
+            StatusMessage = $"Quality profile resumed to {QualityProfile}.";
+        }
     }
 }

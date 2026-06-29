@@ -11,7 +11,8 @@ public record NdiSource(
     bool IsAvailable,
     long LastSeenAtEpochMillis,
     bool PreviouslyConnected = false,
-    DiscoveryMode DiscoveryMode = DiscoveryMode.Mdns);
+    DiscoveryMode DiscoveryMode = DiscoveryMode.Mdns,
+    QualityProfile QualityProfile = QualityProfile.Balanced);
 
 public record DiscoverySnapshot(
     string SnapshotId,
