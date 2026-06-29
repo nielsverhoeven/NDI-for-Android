@@ -1,4 +1,4 @@
-using System.Reactive.Linq;
+using NdiForAndroid.Features.DiagOverlay.Services;
 
 namespace NdiForAndroid.Features.DiagOverlay;
 
@@ -11,7 +11,7 @@ public sealed class DiagnosticOverlayService : IDiagnosticOverlayService
     private ViewerDiagnosticSnapshot _viewerDiagnostics;
     private DiscoveryDiagnosticSnapshot _discoveryDiagnostics;
     private bool _isDeveloperMode;
-    public readonly DiagnosticLogBuffer LogBuffer = new();
+    public DiagnosticLogBuffer LogBuffer { get; } = new();
 
     public bool IsDeveloperMode
     {

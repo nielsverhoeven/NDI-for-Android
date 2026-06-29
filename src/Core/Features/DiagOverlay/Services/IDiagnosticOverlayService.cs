@@ -6,6 +6,11 @@ namespace NdiForAndroid.Features.DiagOverlay.Services;
 public interface IDiagnosticOverlayService
 {
     /// <summary>
+    /// Gets the log buffer used by the diagnostic log page.
+    /// </summary>
+    DiagnosticLogBuffer LogBuffer { get; }
+
+    /// <summary>
     /// Gets/sets whether developer mode is enabled (controls overlay visibility).
     /// </summary>
     bool IsDeveloperMode { get; set; }

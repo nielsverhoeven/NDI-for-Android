@@ -1,4 +1,3 @@
-using NdiForAndroid.Features.DiagOverlay.Views;
 using NdiForAndroid.Features.Navigation.Models;
 using NdiForAndroid.Features.Navigation.Services;
 using NdiForAndroid.Features.Navigation.ViewModels;
@@ -50,7 +49,6 @@ public partial class AppShell : Shell
         _handoffService   = handoffService;
 
         Routing.RegisterRoute("viewer", typeof(ViewerPage));
-        Routing.RegisterRoute("diagnostic-log", typeof(DiagnosticLogPage));
         // OutputPage is a top-level tab — no route registration needed for push navigation.
 
         BuildRailItems();

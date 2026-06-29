@@ -1,25 +1,27 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using NdiForAndroid.Features.DiagOverlay.Services;
+using NdiForAndroid.Services;
 
 namespace NdiForAndroid.Features.DiagOverlay.ViewModels;
 
 public partial class DiagnosticLogViewModel : ObservableObject
 {
     private readonly IDiagnosticOverlayService _overlayService;
-    private Timer? _refreshTimer;
+    private readonly IMainThreadDispatcher _dispatcher;
+    private System.Timers.Timer? _refreshTimer;
 
     [ObservableProperty]
     private IReadOnlyList<LogEntryViewModel> _logEntries = Array.Empty<LogEntryViewModel>();
 
-    public DiagnosticLogViewModel(IDiagnosticOverlayService overlayService)
+    public DiagnosticLogViewModel(IDiagnosticOverlayService overlayService, IMainThreadDispatcher dispatcher)
     {
         _overlayService = overlayService;
+        _dispatcher = dispatcher;
         RefreshLog();
-        _refreshTimer = new Timer(_ =>
-        {
-            Application.Current!.MainDispatcher.Dispatch(RefreshLog);
-        }, null, TimeSpan.Zero, TimeSpan.FromSeconds(2));
+        _refreshTimer = new System.Timers.Timer(2000) { AutoReset = true };
+        _refreshTimer.Elapsed += (_, _) => _dispatcher.BeginInvokeOnMainThread(RefreshLog);
+        _refreshTimer.Start();
     }
 
     [RelayCommand]
@@ -51,9 +53,9 @@ public partial class DiagnosticLogViewModel : ObservableObject
             get
             {
                 var elapsed = DateTimeOffset.UtcNow - DateTimeOffset.FromUnixTimeMilliseconds(TimestampEpochMillis);
-                if (elapsed.TotalSeconds < 60) return $\"{(int)elapsed.TotalSeconds}s ago\";
-                if (elapsed.TotalMinutes < 60) return $\"{(int)elapsed.TotalMinutes}m ago\";
-                return $\"{(int)elapsed.TotalHours}h ago\";
+                if (elapsed.TotalSeconds < 60) return $"{(int)elapsed.TotalSeconds}s ago";
+                if (elapsed.TotalMinutes < 60) return $"{(int)elapsed.TotalMinutes}m ago";
+                return $"{(int)elapsed.TotalHours}h ago";
             }
         }
     }

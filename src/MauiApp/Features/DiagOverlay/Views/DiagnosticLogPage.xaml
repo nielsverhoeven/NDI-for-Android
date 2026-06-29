@@ -1,28 +1,28 @@
-<?xml version=\"1.0\" encoding=\"utf-8\" ?>
-<ContentPage xmlns=\"http://schemas.microsoft.com/dotnet/2021/maui\"
-             xmlns:x=\"http://schemas.microsoft.com/winfx/2009/xaml\"
-             xmlns:vm=\"clr-namespace:NdiForAndroid.Features.DiagOverlay;assembly=NdiForAndroid.Core\"
-             x:Class=\"NdiForAndroid.Features.DiagOverlay.Views.DiagnosticLogPage\"
-             x:DataType=\"vm:DiagnosticLogViewModel\"
-             Title=\"Diagnostic Log\">
-    <VerticalStackLayout Padding=\"16\" Spacing=\"8\">
-        <Label Text=\"In-Memory Diagnostic Log Buffer (last 200 entries)\" FontAttributes=\"Bold\" />
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:vm="clr-namespace:NdiForAndroid.Features.DiagOverlay.ViewModels;assembly=NdiForAndroid.Core"
+             x:Class="NdiForAndroid.Features.DiagOverlay.Views.DiagnosticLogPage"
+             x:DataType="vm:DiagnosticLogViewModel"
+             Title="Diagnostic Log">
+    <VerticalStackLayout Padding="16" Spacing="8">
+        <Label Text="In-Memory Diagnostic Log Buffer (last 200 entries)" FontAttributes="Bold" />
 
-        <CollectionView ItemsSource=\"{Binding LogEntries}\"
-                        SelectionMode=\"None\">
+        <CollectionView ItemsSource="{Binding LogEntries}"
+                        SelectionMode="None">
             <CollectionView.ItemTemplate>
-                <DataTemplate x:DataType=\"vm:LogEntryViewModel\">
-                    <Frame Padding=\"8\" Margin=\"0,2\">
-                        <HorizontalStackLayout Spacing=\"6\">
-                            <Label Text=\"[{Binding Level}]\" WidthSpec=\"Fixed\" Width=\"70\" TextColor=\"{Binding LevelColor}\" FontAttributes=\"Bold\" />
-                            <Label Text=\"{Binding TimestampRelative}\" WidthSpec=\"Fixed\" Width=\"80\" Opacity=\"0.7\" />
-                            <Label Text=\"{Binding Message}\" LineBreakMode=\"TailTruncation\" />
+                <DataTemplate x:DataType="vm:LogEntryViewModel">
+                    <Frame Padding="8" Margin="0,2">
+                        <HorizontalStackLayout Spacing="6">
+                            <Label Text="{Binding Level, StringFormat='[{{0}}]'}" WidthSpec="Fixed" Width="70" TextColor="{Binding LevelColor}" FontAttributes="Bold" />
+                            <Label Text="{Binding TimestampRelative}" WidthSpec="Fixed" Width="80" Opacity="0.7" />
+                            <Label Text="{Binding Message}" LineBreakMode="TailTruncation" />
                         </HorizontalStackLayout>
                     </Frame>
                 </DataTemplate>
             </CollectionView.ItemTemplate>
         </CollectionView>
 
-        <Button Text=\"Clear Log\" Command=\"{Binding ClearCommand}\" HorizontalOptions=\"Center\" />
+        <Button Text="Clear Log" Command="{Binding ClearCommand}" HorizontalOptions="Center" />
     </VerticalStackLayout>
 </ContentPage>
