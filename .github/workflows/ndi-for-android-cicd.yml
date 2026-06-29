@@ -1,4 +1,4 @@
-name: NDI for Android - Release
+name: NDI for Android - CI/CD
 
 on:
   push:
@@ -12,11 +12,47 @@ permissions:
 
 jobs:
   # ════════════════════════════════════════════════
-  # Stage 1 — Build Core library (windows-latest)
-  # Runs first. Produces NdiForAndroid.Core.dll artifact
+  # Stage 1 — Build Solution (Core + MauiApp)
+  # Windows runner. Restores and builds both projects.
+  # Always runs on PRs and main. Required check.
   # ════════════════════════════════════════════════
-  build-core:
-    name: Build Core
+  build:
+    name: Build Solution
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.301'
+
+      - name: Install MAUI workload
+        run: dotnet workload install maui-android
+
+      - name: Restore dependencies
+        run: dotnet restore NdiForAndroid.sln --ignore-failed-sources
+
+      - name: Build Core (Release)
+        run: dotnet build src/Core/NdiForAndroid.Core.csproj -c Release --no-restore --logger "console;verbosity=minimal"
+
+      - name: Build MauiApp (Release)
+        run: >
+          dotnet build src/MauiApp/NdiForAndroid.csproj
+          -f net10.0-android -c Release --no-restore
+          /p:AndroidUseToolchain=True
+          /logger:"Console;verbosity=minimal"
+
+  # ════════════════════════════════════════════════
+  # Stage 2 — Run Unit Tests (needs build)
+  # Windows runner. Runs dotnet test against the built solution.
+  # Always runs on PRs and main after stage 1 succeeds. Required check.
+  # ════════════════════════════════════════════════
+  unit-tests:
+    name: Run Unit Tests
+    needs: build
     runs-on: windows-latest
     timeout-minutes: 15
 
@@ -28,28 +64,40 @@ jobs:
         with:
           dotnet-version: '10.0.301'
 
+      - name: Install MAUI workload
+        run: dotnet workload install maui-android
+
       - name: Restore dependencies
         run: dotnet restore NdiForAndroid.sln --ignore-failed-sources
 
-      - name: Build Core (Release)
-        run: dotnet build src/Core/NdiForAndroid.Core.csproj -c Release --no-restore --logger "console;verbosity=minimal"
+      - name: Run unit tests
+        run: >
+          dotnet test
+          tests/MauiApp.Tests/NdiForAndroid.Tests.csproj
+          -c Release
+          --logger "trx;LogFileName=test-results.trx"
+          --results-directory test-results
 
-      - name: Upload Core DLL artifact
+      - name: Upload test results
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: core-dll
-          path: src/Core/bin/Release/net10.0/NdiForAndroid.Core.dll
+          name: test-results
+          path: test-results/*.trx
           retention-days: 1
+          if-no-files-found: warn
 
   # ════════════════════════════════════════════════
-  # Stage 2 — Build MauiApp → Release APK (ubuntu-latest)
-  # Runs in parallel with stage 1 (no dependency).
-  # Produces release-apk artifact for downstream jobs.
+  # Stage 3 — Build Release APK (needs unit-tests)
+  # Ubuntu runner. Publishes a release APK as an artifact.
+  # Only on main to avoid wasting CI time on PRs.
   # ════════════════════════════════════════════════
   build-apk:
     name: Build Release APK
+    needs: unit-tests
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    if: github.ref == 'refs/heads/main'
 
     steps:
       - uses: actions/checkout@v4
@@ -84,7 +132,6 @@ jobs:
         run: |
           $apk = Get-ChildItem -Path publish-output -Filter "*.apk" -Recurse -File | Sort-Object LastWriteTime -Descending | Select-Object -First 1
           "APK_PATH=$($apk.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8
-          echo "APK: $($apk.Name) ($([math]::Round($($apk.Length/1MB),2)) MB)"
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
@@ -94,63 +141,13 @@ jobs:
           retention-days: 1
 
   # ════════════════════════════════════════════════
-  # Stage 3 — Run unit tests (windows-latest, needs build-core)
-  # Only runs after stage 1 succeeds. Builds MauiApp,
-  # runs dotnet test, uploads TRX results.
-  # ════════════════════════════════════════════════
-  run-unit-tests:
-    name: Run Unit Tests
-    needs: build-core
-    runs-on: windows-latest
-    timeout-minutes: 15
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup .NET SDK
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '10.0.301'
-
-      - name: Install MAUI workload
-        run: dotnet workload install maui-android
-
-      - name: Restore dependencies
-        run: dotnet restore NdiForAndroid.sln --ignore-failed-sources
-
-      - name: Build MauiApp (Release)
-        run: >
-          dotnet build src/MauiApp/NdiForAndroid.csproj
-          -c Release --no-restore
-          /p:AndroidUseToolchain=True
-          /logger:"Console;verbosity=minimal"
-
-      - name: Run unit tests
-        run: >
-          dotnet test
-          tests/MauiApp.Tests/NdiForAndroid.Tests.csproj
-          -c Release --no-restore
-          --logger "trx;LogFileName=test-results.trx"
-          --results-directory test-results
-          --no-build
-
-      - name: Upload test results
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: test-results
-          path: test-results/*.trx
-          retention-days: 1
-          if-no-files-found: warn
-
-  # ════════════════════════════════════════════════
-  # Stage 4 — Run Android Emulator UI Tests (main only)
-  # Ubuntu runner, downloads APK from stage 2.
-  # Only runs on main branch after stage 3 succeeds.
+  # Stage 4 — Run Emulator UI Tests (needs build-apk)
+  # Ubuntu runner. Downloads APK from stage 3, boots AVD, runs Appium tests.
+  # Only on main. Skipped if stage 3 was skipped.
   # ════════════════════════════════════════════════
   emulator-tests:
     name: Run Emulator UI Tests
-    needs: run-unit-tests
+    needs: build-apk
     runs-on: ubuntu-latest
     timeout-minutes: 45
     if: github.ref == 'refs/heads/main'
@@ -249,9 +246,9 @@ jobs:
           if-no-files-found: warn
 
   # ════════════════════════════════════════════════
-  # Stage 5 — Publish GitHub Release (main only)
-  # Ubuntu runner, downloads APK from stage 2.
-  # Only runs on main after stage 4 succeeds.
+  # Stage 5 — Publish GitHub Release (needs emulator-tests)
+  # Ubuntu runner. Downloads the APK from stage 3 and creates a GitHub Release.
+  # Only on main. Skipped if stage 4 was skipped.
   # ════════════════════════════════════════════════
   publish-release:
     name: Publish GitHub Release
