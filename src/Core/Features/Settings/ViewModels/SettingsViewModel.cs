@@ -58,10 +58,9 @@ public partial class SettingsViewModel : ObservableObject
     private string _selectedAccentColor = AccentColorOption.Blue.ToString();
 
     [ObservableProperty]
-    private string _discoveryServerHostInput = string.Empty;
+    private string _discoveryServerEndpointInput = string.Empty;
 
-    [ObservableProperty]
-    private string _discoveryServerPortInput = string.Empty;
+    private const int DefaultDiscoveryServerPort = 5959;
 
     [ObservableProperty]
     private string _discoveryServerActionText = "Add Server";
@@ -199,17 +198,27 @@ public partial class SettingsViewModel : ObservableObject
     {
         IsApplied = false;
 
-        var host = NormalizeHost(DiscoveryServerHostInput);
+        var endpoint = DiscoveryServerEndpointInput.Trim();
+        var host = NormalizeHost(DiscoveryServerEndpointInput);
+        var port = DefaultDiscoveryServerPort;
+
+        // Parse optional port from "host:port" format
+        if (endpoint.Contains(':'))
+        {
+            var lastColon = endpoint.LastIndexOf(':');
+            var hostPart = endpoint[..lastColon].Trim();
+            var portPart = endpoint[(lastColon + 1)..].Trim();
+
+            if (!string.IsNullOrWhiteSpace(hostPart))
+                host = NormalizeHost(hostPart);
+
+            if (int.TryParse(portPart, out var parsedPort) && parsedPort is >= 1 and <= 65535)
+                port = parsedPort;
+        }
+
         if (!_validationService.IsValidHostOrEmpty(host) || string.IsNullOrWhiteSpace(host))
         {
             ValidationError = "Discovery server host must be a valid hostname or IP address.";
-            DiscoveryServersValidationMessage = ValidationError;
-            return;
-        }
-
-        if (!int.TryParse(DiscoveryServerPortInput, out var port) || port is < 1 or > 65535)
-        {
-            ValidationError = "Discovery server port must be a number between 1 and 65535.";
             DiscoveryServersValidationMessage = ValidationError;
             return;
         }
@@ -239,8 +248,7 @@ public partial class SettingsViewModel : ObservableObject
             DiscoveryServerActionText = "Add Server";
         }
 
-        DiscoveryServerHostInput = string.Empty;
-        DiscoveryServerPortInput = string.Empty;
+        DiscoveryServerEndpointInput = string.Empty;
         DiscoveryServersValidationMessage = string.Empty;
         ValidationError = null;
 
@@ -253,8 +261,8 @@ public partial class SettingsViewModel : ObservableObject
         if (item is null)
             return;
 
-        DiscoveryServerHostInput = item.Host;
-        DiscoveryServerPortInput = item.Port;
+        var port = string.IsNullOrWhiteSpace(item.Port) ? DefaultDiscoveryServerPort.ToString() : item.Port;
+        DiscoveryServerEndpointInput = $"{item.Host}:{port}";
         _editingDiscoveryServer = item;
         DiscoveryServerActionText = "Update Server";
     }
@@ -268,8 +276,7 @@ public partial class SettingsViewModel : ObservableObject
         if (ReferenceEquals(item, _editingDiscoveryServer))
         {
             _editingDiscoveryServer = null;
-            DiscoveryServerHostInput = string.Empty;
-            DiscoveryServerPortInput = string.Empty;
+            DiscoveryServerEndpointInput = string.Empty;
             DiscoveryServerActionText = "Add Server";
         }
 
