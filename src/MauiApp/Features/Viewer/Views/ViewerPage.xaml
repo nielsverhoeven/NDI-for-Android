@@ -31,8 +31,24 @@
         <!-- Reconnect button (shown after reconnection failure) -->
         <Button Text="Reconnect" Command="{Binding ReconnectCommand}"
                 IsVisible="{Binding CanReconnect}" HorizontalOptions="Center" />
+        <!-- Retry countdown indicator (FR4) -->
+        <Label Text="{Binding RetryStatusMessage}"
+               IsVisible="{Binding IsReconnecting}"
+               HorizontalOptions="Center" />
 
         <Button Text="Stop" Command="{Binding StopCommand}"
                 IsVisible="{Binding IsPlaying}" HorizontalOptions="Center" />
+
+        <!-- Cancel an in-progress reconnect window (FR6) -->
+        <Button Text="Cancel"
+                Command="{Binding CancelRetryCommand}"
+                IsVisible="{Binding IsReconnecting}"
+                HorizontalOptions="Center" />
+
+        <!-- Post-expiry manual recovery (FR7) -->
+        <Button Text="Reconnect"
+                Command="{Binding ReconnectCommand}"
+                IsVisible="{Binding CanReconnect}"
+                HorizontalOptions="Center" />
     </VerticalStackLayout>
 </ContentPage>
