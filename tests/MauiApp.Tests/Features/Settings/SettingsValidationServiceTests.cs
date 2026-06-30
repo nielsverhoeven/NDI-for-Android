@@ -2,7 +2,7 @@ using NdiForAndroid.Features.Settings.Models;
 using NdiForAndroid.Features.Settings.Services;
 using Xunit;
 
-namespace MauiApp.Tests.Features.Settings;
+namespace NdiForAndroid.Tests.Features.Settings;
 
 public sealed class SettingsValidationServiceTests
 {

@@ -6,7 +6,7 @@ using NdiForAndroid.Features.Settings.ViewModels;
 using NdiForAndroid.Features.Sources.Repositories;
 using Xunit;
 
-namespace MauiApp.Tests.Features.Settings;
+namespace NdiForAndroid.Tests.Features.Settings;
 
 /// <summary>
 /// Extended SettingsViewModel tests covering dirty-tracking, CanApply gate,

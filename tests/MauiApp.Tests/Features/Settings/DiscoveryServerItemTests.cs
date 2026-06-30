@@ -2,7 +2,7 @@ using NdiForAndroid.Features.Settings.ViewModels;
 using System.ComponentModel;
 using Xunit;
 
-namespace MauiApp.Tests.Features.Settings;
+namespace NdiForAndroid.Tests.Features.Settings;
 
 /// <summary>
 /// Tests for the DiscoveryServerItem ObservableObject —

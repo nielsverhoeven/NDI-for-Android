@@ -1,7 +1,7 @@
 using NdiForAndroid.Services;
 using Xunit;
 
-namespace MauiApp.Tests.Services;
+namespace NdiForAndroid.Tests.Services;
 
 public class AppLifecycleServiceTests
 {

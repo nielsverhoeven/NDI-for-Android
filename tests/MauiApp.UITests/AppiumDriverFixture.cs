@@ -2,7 +2,7 @@ using OpenQA.Selenium.Appium;
 using OpenQA.Selenium.Appium.Android;
 using Xunit;
 
-namespace MauiApp.UITests;
+namespace NdiForAndroid.UITests;
 
 /// <summary>
 /// xUnit async lifetime fixture that creates and manages the Appium AndroidDriver session.

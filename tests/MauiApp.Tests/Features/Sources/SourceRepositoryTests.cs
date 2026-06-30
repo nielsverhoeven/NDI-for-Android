@@ -4,7 +4,7 @@ using NdiForAndroid.Features.Sources.Repositories;
 using NdiForAndroid.NdiBridge;
 using Xunit;
 
-namespace MauiApp.Tests.Features.Sources;
+namespace NdiForAndroid.Tests.Features.Sources;
 
 /// <summary>
 /// Behavioral contract tests for <see cref="ISourceRepository"/>.
