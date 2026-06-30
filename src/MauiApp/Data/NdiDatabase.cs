@@ -34,6 +34,84 @@ public class SettingsEntity
     public long UpdatedAtEpochMillis { get; set; }
 }
 
+// ---------------------------------------------------------------------------
+// Issue #240: missing SQLite tables
+// ---------------------------------------------------------------------------
+
+[Table("viewer_session")]
+public sealed class ViewerSessionEntity
+{
+    [PrimaryKey] public string SourceId { get; set; } = string.Empty;
+    public string State { get; set; } = "Inactive";       // Active, Inactive, Paused
+    public int RetryCount { get; set; }
+    public long StartedAtEpochMillis { get; set; }
+    public long UpdatedAtEpochMillis { get; set; }
+}
+
+[Table("last_viewed_context")]
+public sealed class LastViewedContextEntity
+{
+    [PrimaryKey] public string SourceId { get; set; } = string.Empty;
+    public string? FrameImagePath { get; set; }
+    public long CapturedAtEpochMillis { get; set; }
+}
+
+[Table("output_configuration")]
+public sealed class OutputConfigurationEntity
+{
+    [PrimaryKey] public int Id { get; set; } = 1;
+    public string? PreferredStreamName { get; set; }
+    public string LastInputKind { get; set; } = "DeviceScreen";  // DeviceScreen, DiscoveredNdi
+    public string? LastSourceId { get; set; }
+    public bool RetryEnabled { get; set; } = true;
+    public int RetryWindowSeconds { get; set; } = 30;
+}
+
+[Table("output_session")]
+public sealed class OutputSessionEntity
+{
+    [PrimaryKey] public string Id { get; set; } = string.Empty;
+    public string InputKind { get; set; } = "DeviceScreen";
+    public string? StreamName { get; set; }
+    public string State { get; set; } = "Stopped";  // Running, Paused, Stopped
+    public int RetryCount { get; set; }
+    public long StartedAtEpochMillis { get; set; }
+}
+
+[Table("discovery_run_results")]
+public sealed class DiscoveryRunResultEntity
+{
+    [PrimaryKey] public string RunId { get; set; } = string.Empty;
+    public string Mode { get; set; } = "Mdns";       // Mdns, DiscoveryServer
+    public long DurationMs { get; set; }
+    public string Status { get; set; } = "Success";   // Success, Failure, Partial
+    public int SourceCount { get; set; }
+    public string? DiagnosticCode { get; set; }
+    public string? DiagnosticMessage { get; set; }
+    public long RanAtEpochMillis { get; set; }
+}
+
+[Table("discovery_server_check_status")]
+public sealed class DiscoveryServerCheckStatusEntity
+{
+    [PrimaryKey] public string Id { get; set; } = string.Empty;
+    public string ServerId { get; set; } = string.Empty;
+    public string CheckType { get; set; } = "Reachability";  // Reachability, NdiAvailable, etc.
+    public string Outcome { get; set; } = "Unknown";        // Success, Failure, Timeout
+    public string? FailureCategory { get; set; }
+    public string? FailureMessage { get; set; }
+    public string? CorrelationId { get; set; }
+    public long CheckedAtEpochMillis { get; set; }
+}
+
+[Table("cached_sources_discovery_server_crossref")]
+public sealed class CachedSourceCrossrefEntity
+{
+    [PrimaryKey, Column("source_id")] public string SourceId { get; set; } = string.Empty;
+    [PrimaryKey, Column("server_id")] public string ServerId { get; set; } = string.Empty;
+    public long FirstSeenViaServerAtEpochMillis { get; set; }
+}
+
 public sealed class NdiDatabase
 {
     private readonly SQLiteAsyncConnection _connection;
@@ -50,6 +128,13 @@ public sealed class NdiDatabase
     {
         await _connection.CreateTableAsync<SourceEntity>();
         await _connection.CreateTableAsync<SettingsEntity>();
+        await _connection.CreateTableAsync<ViewerSessionEntity>();
+        await _connection.CreateTableAsync<LastViewedContextEntity>();
+        await _connection.CreateTableAsync<OutputConfigurationEntity>();
+        await _connection.CreateTableAsync<OutputSessionEntity>();
+        await _connection.CreateTableAsync<DiscoveryRunResultEntity>();
+        await _connection.CreateTableAsync<DiscoveryServerCheckStatusEntity>();
+        await _connection.CreateTableAsync<CachedSourceCrossrefEntity>();
         await EnsureSettingsColumnsAsync();
         await EnsureSourceColumnsAsync();
     }
@@ -240,4 +325,136 @@ public sealed class NdiDatabase
 
     private static string SerializeDiscoveryServers(IReadOnlyList<DiscoveryServerPreference> servers)
         => JsonSerializer.Serialize(servers);
+
+    // =====================================================================
+    // Issue #240: repository methods for new tables
+    // =====================================================================
+
+    // --- viewer_session ---
+
+    public async Task SaveViewerSessionAsync(ViewerSessionEntity session)
+    {
+        await EnsureInitializedAsync();
+        await _connection.InsertOrReplaceAsync(session);
+    }
+
+    public async Task<ViewerSessionEntity?> GetViewerSessionAsync(string sourceId)
+    {
+        await EnsureInitializedAsync();
+        return await _connection.FindAsync<ViewerSessionEntity>(sourceId);
+    }
+
+    public async Task DeleteViewerSessionAsync(string sourceId)
+    {
+        await EnsureInitializedAsync();
+        await _connection.DeleteAsync<ViewerSessionEntity>(sourceId);
+    }
+
+    // --- last_viewed_context ---
+
+    public async Task SaveLastViewedContextAsync(LastViewedContextEntity ctx)
+    {
+        await EnsureInitializedAsync();
+        await _connection.InsertOrReplaceAsync(ctx);
+    }
+
+    public async Task<LastViewedContextEntity?> GetLastViewedContextAsync(string sourceId)
+    {
+        await EnsureInitializedAsync();
+        return await _connection.FindAsync<LastViewedContextEntity>(sourceId);
+    }
+
+    // --- output_configuration ---
+
+    public async Task SaveOutputConfigurationAsync(OutputConfigurationEntity cfg)
+    {
+        await EnsureInitializedAsync();
+        await _connection.InsertOrReplaceAsync(cfg);
+    }
+
+    public async Task<OutputConfigurationEntity?> GetOutputConfigurationAsync()
+    {
+        await EnsureInitializedAsync();
+        return await _connection.FindAsync<OutputConfigurationEntity>(1);
+    }
+
+    // --- output_session ---
+
+    public async Task SaveOutputSessionAsync(OutputSessionEntity session)
+    {
+        await EnsureInitializedAsync();
+        await _connection.InsertOrReplaceAsync(session);
+    }
+
+    public async Task<OutputSessionEntity?> GetOutputSessionAsync(string id)
+    {
+        await EnsureInitializedAsync();
+        return await _connection.FindAsync<OutputSessionEntity>(id);
+    }
+
+    // --- discovery_run_results ---
+
+    public async Task SaveDiscoveryRunResultAsync(DiscoveryRunResultEntity result)
+    {
+        await EnsureInitializedAsync();
+        await _connection.InsertOrReplaceAsync(result);
+    }
+
+    public async Task DeleteDiscoveryRunResultAsync(string runId)
+    {
+        await EnsureInitializedAsync();
+        await _connection.DeleteAsync<DiscoveryRunResultEntity>(runId);
+    }
+
+    public async Task<IReadOnlyList<DiscoveryRunResultEntity>> GetRecentDiscoveryRunsAsync(int count = 20)
+    {
+        await EnsureInitializedAsync();
+        var results = await _connection.Table<DiscoveryRunResultEntity>()
+            .OrderByDescending(r => r.RanAtEpochMillis)
+            .Take(count)
+            .ToListAsync();
+        return results.AsReadOnly();
+    }
+
+    // --- discovery_server_check_status ---
+
+    public async Task SaveDiscoveryServerCheckStatusAsync(DiscoveryServerCheckStatusEntity status)
+    {
+        await EnsureInitializedAsync();
+        await _connection.InsertOrReplaceAsync(status);
+    }
+
+    public async Task<IReadOnlyList<DiscoveryServerCheckStatusEntity>> GetRecentServerChecksAsync(int count = 20)
+    {
+        await EnsureInitializedAsync();
+        var results = await _connection.Table<DiscoveryServerCheckStatusEntity>()
+            .OrderByDescending(s => s.CheckedAtEpochMillis)
+            .Take(count)
+            .ToListAsync();
+        return results.AsReadOnly();
+    }
+
+    // --- cached_sources_discovery_server_crossref ---
+
+    public async Task SaveSourceServerCrossrefAsync(CachedSourceCrossrefEntity crossref)
+    {
+        await EnsureInitializedAsync();
+        await _connection.InsertOrReplaceAsync(crossref);
+    }
+
+    public async Task DeleteSourceServerCrossrefAsync(string sourceId, string serverId)
+    {
+        await EnsureInitializedAsync();
+        await _connection.DeleteAsync<CachedSourceCrossrefEntity>(new { sourceId, serverId });
+    }
+
+    public async Task<IReadOnlyList<CachedSourceCrossrefEntity>> GetSourceServerCrossrefsAsync(string sourceId)
+    {
+        await EnsureInitializedAsync();
+        var results = await _connection.Table<CachedSourceCrossrefEntity>()
+            .Where(c => c.SourceId == sourceId)
+            .ToListAsync();
+        return results.AsReadOnly();
+    }
+
 }

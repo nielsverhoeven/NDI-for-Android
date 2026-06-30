@@ -72,6 +72,10 @@ public static class MauiProgram
         );
         builder.Services.AddSingleton<TimeProvider>(TimeProvider.System);
 
+        // Reconnection infrastructure: system clock + UI-thread dispatcher abstraction.
+        builder.Services.AddSingleton(TimeProvider.System);
+        builder.Services.AddSingleton<IMainThreadDispatcher, MauiMainThreadDispatcher>();
+
 #if ANDROID
         builder.Services.AddSingleton<IMulticastLockService, AndroidMulticastLockService>();
         builder.Services.AddSingleton<IScreenSharePlatformService, AndroidScreenSharePlatformService>();
