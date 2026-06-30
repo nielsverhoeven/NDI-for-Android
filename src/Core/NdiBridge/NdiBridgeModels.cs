@@ -1,13 +1,5 @@
 namespace NdiForAndroid.NdiBridge;
 
-/// <summary>Connection state of an NDI receiver.</summary>
-public enum ConnectionState
-{
-    Connecting,
-    Connected,
-    Disconnected,
-}
-
 /// <summary>Discovery mode used to find NDI sources.</summary>
 public enum DiscoveryMode
 {
