@@ -6,10 +6,32 @@
              x:DataType="vm:OutputViewModel"
              Title="Output">
     <VerticalStackLayout Padding="16" Spacing="16">
+
+        <!-- Mode toggle -->
+        <Frame>
+            <HorizontalStackLayout Spacing="8" HorizontalOptions="Center">
+                <Label Text="Screen-share:" VerticalOptions="Center" />
+                <Switch IsToggled="{Binding IsReStreamMode, Converter={StaticResource InverseBoolConverter}}" />
+                <Label Text="Re-stream:" VerticalOptions="Center" />
+            </HorizontalStackLayout>
+        </Frame>
+
+        <!-- Stream name -->
         <Label Text="Stream Name" FontAttributes="Bold" />
         <Entry Text="{Binding StreamName}"
                Placeholder="NDI-Android"
                IsEnabled="{Binding IsOutputActive, Converter={StaticResource InverseBoolConverter}}" />
+
+        <!-- Re-stream source selector (only visible in re-stream mode) -->
+        <Label Text="Re-stream Source ID"
+               FontAttributes="Bold"
+               IsVisible="{Binding IsReStreamMode}" />
+        <Entry Text="{Binding ReStreamSourceId}"
+               Placeholder="Select a source on Sources page"
+               IsVisible="{Binding IsReStreamMode}"
+               IsEnabled="{Binding IsOutputActive, Converter={StaticResource InverseBoolConverter}}" />
+
+        <!-- Status -->
         <Label Text="{Binding StatusMessage}" HorizontalOptions="Center" />
         <Button Text="Start Output" Command="{Binding StartOutputCommand}"
                 IsVisible="{Binding IsOutputActive, Converter={StaticResource InverseBoolConverter}}"
