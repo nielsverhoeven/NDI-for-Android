@@ -304,12 +304,13 @@ public sealed class NdiDatabase
             .OrderByDescending(s => s.LastConnected)
             .ToList();
 
-        return summaryBySource.Select(s => new ConnectionHistoryEntity(
-            s.SourceId,
-            s.DisplayName,
-            null, // DisconnectedAt — we don't track it in the summary
-            (long)s.LastConnected,
-            QualityProfile.Balanced)) as IReadOnlyList<ConnectionHistoryEntity>;
+        return summaryBySource.Select(s => new ConnectionHistoryEntity
+        {
+            SourceId = s.SourceId,
+            DisplayName = s.DisplayName,
+            ConnectedAtEpochMillis = s.LastConnected,
+            QualityProfile = QualityProfile.Balanced
+        }).ToList().AsReadOnly();
     }
 
     /// <summary>

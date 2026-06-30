@@ -1,6 +1,7 @@
 using NdiForAndroid.Features.ConnectionHistory.Services;
 using NdiForAndroid.NdiBridge;
 using SQLite;
+using NdiForAndroid.Data;
 
 namespace NdiForAndroid.Features.ConnectionHistory;
 
@@ -16,7 +17,7 @@ public sealed class ConnectionHistoryService : IConnectionHistoryService
     /// <summary>
     /// Tracks the most recent active (not yet disconnected) connection for cleanup.
     /// </summary>
-    private ConnectionHistoryEntity? _activeEntry;
+    private NdiDatabase.ConnectionHistoryEntity? _activeEntry;
 
     public ConnectionHistoryService(SQLiteAsyncConnection db, TimeProvider time)
     {
@@ -68,7 +69,7 @@ public sealed class ConnectionHistoryService : IConnectionHistoryService
             e.DisplayName,
             e.ConnectedAtEpochMillis,
             e.QualityProfile,
-            e.DurationSeconds)).AsReadOnly();
+            e.DurationSeconds)).ToList().AsReadOnly();
     }
 
     public async Task<IReadOnlyList<ConnectionSourceSummary>> GetSummaryAsync(int daysBack = 7)
