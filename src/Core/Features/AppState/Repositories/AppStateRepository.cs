@@ -1,11 +1,12 @@
-using SQLite;
 using NdiForAndroid.Features.AppState.Models;
+using SQLite;
 
 namespace NdiForAndroid.Features.AppState.Repositories;
 
 /// <summary>
 /// Key-value persistence for app state that survives backgrounding and process death.
-/// Accepts a constructor parameter for the database file path so it doesn't depend on any MAUI-specific APIs.
+/// Writes to the same shared database file as NdiDatabase (ndi.db3) so all data
+/// lives in a single file — no split persistence across multiple DB files.
 /// </summary>
 public sealed class AppStateRepository : IDisposable, IAppStateRepository
 {
@@ -21,13 +22,15 @@ public sealed class AppStateRepository : IDisposable, IAppStateRepository
         public string Value { get; set; } = string.Empty;
     }
 
+    /// <summary>
+    /// Creates an AppStateRepository that writes to the same database file as NdiDatabase.
+    /// The path should be constructed to match NdiDatabase's database path: FileSystem.AppDataDirectory/ndi.db3
+    /// </summary>
     public AppStateRepository(string databasePath)
     {
         _connection = new SQLiteAsyncConnection(databasePath);
         _initTask = _connection.CreateTableAsync<KeyValueEntity>();
     }
-
-    private Task EnsureInitialized() => _initTask;
 
     public void Dispose()
     {
@@ -57,6 +60,8 @@ public sealed class AppStateRepository : IDisposable, IAppStateRepository
             isOutputActive == "true",
             string.IsNullOrEmpty(lastSelected) ? null : lastSelected);
     }
+
+    private async Task EnsureInitialized() => await _initTask;
 
     private async Task SetKey(string key, string value)
     {
