@@ -17,7 +17,7 @@ jobs:
   # Always runs on PRs and main. Required check.
   # ════════════════════════════════════════════════
   build-and-test:
-    name: Build & Unit Tests
+    name: build-and-test
     runs-on: windows-latest
     timeout-minutes: 30
 
