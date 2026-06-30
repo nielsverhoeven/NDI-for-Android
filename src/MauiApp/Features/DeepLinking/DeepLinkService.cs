@@ -1,6 +1,7 @@
 using NdiForAndroid.Features.DeepLinking.Services;
 using NdiForAndroid.NdiBridge;
 using Microsoft.Extensions.DependencyInjection;
+using NdiForAndroid.Services;
 
 namespace NdiForAndroid.Features.DeepLinking;
 
@@ -9,13 +10,13 @@ namespace NdiForAndroid.Features.DeepLinking;
 /// </summary>
 public sealed class DeepLinkService : IDeepLinkService
 {
-    private readonly IShellNavigationService _navigation;
+    private readonly INavigationService _navigation;
     private readonly IServiceProvider _serviceProvider;
     private string? _lastErrorMessage;
 
     public string? LastErrorMessage => _lastErrorMessage;
 
-    public DeepLinkService(IShellNavigationService navigation, IServiceProvider serviceProvider)
+    public DeepLinkService(INavigationService navigation, IServiceProvider serviceProvider)
     {
         _navigation = navigation;
         _serviceProvider = serviceProvider;
@@ -95,13 +96,13 @@ public sealed class DeepLinkService : IDeepLinkService
     private async Task NavigateToViewerAsync(string sourceId)
     {
         // Navigate to the viewer page and set the selected source
-        await _navigation.NavigateAsync($"//viewer?sourceId={Uri.EscapeDataString(sourceId)}");
+        await _navigation.NavigateToAsync($"//viewer?sourceId={Uri.EscapeDataString(sourceId)}");
     }
 
     private async Task NavigateToOutputForReStreamAsync(string sourceId)
     {
         // Navigate to the output page in re-stream mode with the source ID pre-set
-        await _navigation.NavigateAsync($"//output?reStreamSourceId={Uri.EscapeDataString(sourceId)}&isReStreamMode=true");
+        await _navigation.NavigateToAsync($"//output?reStreamSourceId={Uri.EscapeDataString(sourceId)}&isReStreamMode=true");
     }
 
     private static string? ParseQueryString(string query, string key)

@@ -1,7 +1,6 @@
 using Microsoft.Extensions.Logging;
 using NdiForAndroid.Data;
 using NdiForAndroid.Features.AppState.Repositories;
-using NdiForAndroid.Features.ConnectionHistory;
 using NdiForAndroid.Features.DeepLinking;
 using NdiForAndroid.Features.Home.ViewModels;
 using NdiForAndroid.Features.Navigation.Services;
@@ -9,7 +8,8 @@ using NdiForAndroid.Features.Navigation.ViewModels;
 using NdiForAndroid.Features.Output.ViewModels;
 using NdiForAndroid.Features.Settings.Repositories;
 using NdiForAndroid.Features.Settings.Services;
-using NdiForAndroid.Features.Settings.ViewModels; using NdiForAndroid.Features.Sources.Repositories;
+using NdiForAndroid.Features.Settings.ViewModels;
+using NdiForAndroid.Features.Sources.Repositories;
 using NdiForAndroid.Features.Sources.ViewModels;
 using NdiForAndroid.Features.Viewer.ViewModels;
 using NdiForAndroid.NdiBridge;
