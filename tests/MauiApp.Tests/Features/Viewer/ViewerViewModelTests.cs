@@ -1,6 +1,7 @@
 using Moq;
 using NdiForAndroid.Features.AppState.Models;
 using NdiForAndroid.Features.AppState.Repositories;
+using NdiForAndroid.Features.ConnectionHistory.Services;
 using NdiForAndroid.Features.Sources.Repositories;
 using NdiForAndroid.Features.Viewer.ViewModels;
 using NdiForAndroid.NdiBridge;
@@ -17,6 +18,7 @@ public class ViewerViewModelTests
     private readonly Mock<IAppStateRepository> _appStateRepoMock = new();
     private readonly Mock<IAppLifecycleService> _lifecycleMock = new();
     private readonly Mock<ISourceRepository> _sourceRepoMock = new();
+    private readonly Mock<IConnectionHistoryService> _connectionHistoryMock = new();
 
     public ViewerViewModelTests()
     {
@@ -31,7 +33,7 @@ public class ViewerViewModelTests
             .ReturnsAsync(new List<NdiForAndroid.Features.Sources.Models.NdiSource>());
     }
 
-    private ViewerViewModel CreateSut() => new(_bridgeMock.Object, _timeProvider, _dispatcher, _appStateRepoMock.Object, _lifecycleMock.Object, _sourceRepoMock.Object);
+    private ViewerViewModel CreateSut() => new(_bridgeMock.Object, _timeProvider, _dispatcher, _appStateRepoMock.Object, _lifecycleMock.Object, _sourceRepoMock.Object, _connectionHistoryMock.Object);
 
     [Fact]
     public void StartCommand_WithSourceId_StartsReceiverAndSetsIsPlaying()
