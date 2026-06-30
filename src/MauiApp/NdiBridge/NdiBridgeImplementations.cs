@@ -266,14 +266,6 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
         return elapsed.TotalMilliseconds > 0 ? 30f : 0f;
     }
 
-    /// <summary>
-    /// Stub: reports Connected while an active source is set, otherwise Disconnected.
-    /// The real frame-arrival watchdog (3s drop threshold) becomes an internal bridge
-    /// concern once libndi receive is wired — out of scope for this work.
-    /// </summary>
-    public ConnectionState GetConnectionState() =>
-        _activeSourceId is null ? ConnectionState.Disconnected : ConnectionState.Connected;
-
     public void Dispose()
     {
         if (_disposed) return;
@@ -325,7 +317,7 @@ public sealed class NdiOutputBridge : INdiOutputBridge, IDisposable
         lock (_reStreamLock)
         {
             if (_reStreamActive)
-                return Task.CompletedTask; // Already active — guard against double start.
+                return; // Already active — guard against double start.
 
             _reStreamSource = new NdiSourceEntry(
                 sourceId,
