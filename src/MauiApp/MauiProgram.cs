@@ -59,8 +59,9 @@ public static class MauiProgram
 
         // Services
         builder.Services.AddSingleton<NdiForAndroid.Features.Home.ViewModels.HomeDashboardService>();
+        var ndiDbPath = Path.Combine(FileSystem.AppDataDirectory, "ndi.db3");
         builder.Services.AddSingleton<IAppStateRepository>(sp =>
-            new AppStateRepository(Path.Combine(FileSystem.AppDataDirectory, "app_state.db3")));
+            new AppStateRepository(ndiDbPath));
         builder.Services.AddSingleton<IConnectionHistoryService, ConnectionHistoryService>();
         builder.Services.AddSingleton<IDeepLinkService, DeepLinkService>();
         builder.Services.AddSingleton<ITelemetryService, TelemetryService>();
