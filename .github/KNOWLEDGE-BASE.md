@@ -198,6 +198,54 @@ builder.Services.AddSingleton<IXRepository, XRepository>();
 builder.Services.AddTransient<XViewModel>();
 ```
 
+## Automatic Viewer Reconnection (Issue #233 — PR #260, branch: feature/233-automatic-viewer-reconnection-retry)
+
+Feature spec: `docs/features/automatic-viewer-reconnection-retry/spec.md`
+Release notes: `docs/features/automatic-viewer-reconnection-retry/release-notes.md`
+
+Auto-reconnect for up to **15s** when an active NDI connection drops unexpectedly. User-initiated `Stop` never auto-retries; explicit `Reconnect` restarts with the last `SourceId`. All timing is `TimeProvider`-driven and all observable mutations marshal to the UI thread — the ViewModel stays in Core (MAUI-free) and unit-testable.
+
+### Bridge contract
+| Member | Path | Notes |
+|--------|------|-------|
+| `ConnectionState { Connecting, Connected, Disconnected }` | `src/Core/NdiBridge/NdiBridgeModels.cs` | Plain C# enum — no NDI SDK types cross the bridge |
+| `ConnectionState GetConnectionState()` | `src/Core/NdiBridge/INdiBridges.cs` (`INdiViewerBridge`) | Polled by the VM state machine to detect drops |
+| Stub impl | `src/MauiApp/NdiBridge/NdiBridgeImplementations.cs` (`NdiViewerBridge`) | **Still a stub** — returns `Connected` while a source is set, else `Disconnected`. Real 3s frame-arrival watchdog is a future bridge concern (out of scope) |
+
+### `IMainThreadDispatcher` abstraction (NEW)
+| Item | Path | Notes |
+|------|------|-------|
+| Core interface | `src/Core/Services/IMainThreadDispatcher.cs` | `void Invoke(Action)` + `Task InvokeAsync(Func<Task>)` |
+| MAUI impl | `src/MauiApp/Services/MauiMainThreadDispatcher.cs` | Wraps `MainThread.BeginInvokeOnMainThread` / `InvokeOnMainThreadAsync` |
+| Why | — | Core cannot reference MAUI, so timer/poll callbacks dispatch via this seam; unit tests use a synchronous inline fake |
+
+### DI registrations added in `MauiProgram.cs`
+```csharp
+// Reconnection infrastructure: system clock + UI-thread dispatcher abstraction.
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddSingleton<IMainThreadDispatcher, MauiMainThreadDispatcher>();
+```
+
+### `ViewerViewModel` (`src/Core/Features/Viewer/ViewModels/ViewerViewModel.cs`)
+State machine: `Idle → Connecting → Connected → Dropped → Retrying(countdown) → {Reconnected | Failed}`.
+- Ctor injects `INdiViewerBridge`, `TimeProvider`, `IMainThreadDispatcher`.
+- Timers (all `TimeProvider.CreateTimer`): monitor poll (1s) detects drops; attempt loop (2s) does full `StopReceiver→StartReceiver`, stops on first `Connected`; countdown (1s) drives remaining-seconds text.
+- Window: 15s total; terminal failure after expiry.
+
+| Member | Type | Purpose |
+|--------|------|---------|
+| `IsReconnecting` | `[ObservableProperty] bool` | Drives retry label + Cancel button visibility |
+| `RetryStatusMessage` | `[ObservableProperty] string?` | `"Reconnecting... {n}s remaining"` |
+| `CanReconnect` | `[ObservableProperty] bool` | Drives Reconnect button (`NotifyCanExecuteChangedFor`) |
+| `CancelRetryCommand` | `[RelayCommand]` | Aborts the window immediately → stopped (FR6) |
+| `ReconnectCommand` | `[RelayCommand(CanExecute = CanReconnect)]` | Restarts with last `SourceId` from error state (FR7) |
+
+Terminal message constant: `"Connection lost. Reconnection failed."` Drop while playing → `"Connection lost. Reconnecting..."`.
+
+UI: `src/MauiApp/Features/Viewer/Views/ViewerPage.xaml` — retry-status label, Cancel button (visible while `IsReconnecting`), Reconnect button (visible while `CanReconnect`).
+
+See `docs/architecture.md` for the canonical module/threading diagram (already updated by architect — do not duplicate here).
+
 ## Conventional Commits
 ```
 feat(settings): add developer tools section

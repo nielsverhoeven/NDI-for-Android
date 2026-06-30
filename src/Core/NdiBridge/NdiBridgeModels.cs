@@ -1,13 +1,5 @@
 namespace NdiForAndroid.NdiBridge;
 
-/// <summary>Connection state of an NDI receiver.</summary>
-public enum ConnectionState
-{
-    Connecting,
-    Connected,
-    Disconnected,
-}
-
 /// <summary>Discovery mode used to find NDI sources.</summary>
 public enum DiscoveryMode
 {
@@ -16,6 +8,22 @@ public enum DiscoveryMode
 
     /// <summary>Use one or more NDI Discovery Servers (unicast TCP) as the source of truth.</summary>
     DiscoveryServer,
+}
+
+/// <summary>
+/// Connection state of an NDI receiver, surfaced for reconnection logic.
+/// Plain C# enum — no NDI SDK types cross the bridge boundary.
+/// </summary>
+public enum ConnectionState
+{
+    /// <summary>The receiver is attempting to establish a connection.</summary>
+    Connecting,
+
+    /// <summary>The receiver has an active connection and is receiving frames.</summary>
+    Connected,
+
+    /// <summary>The receiver has no active connection.</summary>
+    Disconnected,
 }
 
 /// <summary>A single NDI Discovery Server endpoint (host + port).</summary>

@@ -1,3 +1,4 @@
+using System.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using NdiForAndroid.Features.AppState.Models;
@@ -21,6 +22,11 @@ internal static class ReconnectConstants
 
 public partial class ViewerViewModel : ObservableObject, IDisposable
 {
+    private const int RetryWindowSeconds = 15;
+    private const int AttemptIntervalSeconds = 2;
+    private const int MonitorIntervalSeconds = 1;
+    private const string TerminalMessage = "Connection lost. Reconnection failed.";
+
     private readonly INdiViewerBridge _bridge;
     private readonly TimeProvider _timeProvider;
     private readonly IMainThreadDispatcher _dispatcher;
@@ -139,6 +145,8 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
             StartCommand.Execute(null);
     }
 
+    // ----- Commands -------------------------------------------------------
+
     [RelayCommand]
     private async void Start()
     {
@@ -178,6 +186,9 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
         DisposeTimers();
         _bridge.StopReceiver();
         IsPlaying = false;
+        IsReconnecting = false;
+        CanReconnect = false;
+        RetryStatusMessage = null;
         StatusMessage = null;
         RetryRemainingSeconds = ReconnectConstants.RetryWindowSeconds;
         RetryStatusMessage = null;
