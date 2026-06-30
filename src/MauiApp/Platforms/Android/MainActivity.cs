@@ -1,10 +1,13 @@
 using Android.App;
+using Android.Content;
 using Android.OS;
 using Android.Content.Res;
 using Android.Content.PM;
 using AndroidX.Core.View;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Maui;
+using NdiForAndroid.Features.DeepLinking;
+using NdiForAndroid.Features.DeepLinking.Services;
 using NdiForAndroid.Features.Settings.Services;
 using NdiForAndroid.Services;
 
@@ -18,11 +21,23 @@ namespace NdiForAndroid;
     LaunchMode = LaunchMode.SingleTop,
     ConfigurationChanges = ConfigChanges.ScreenSize | ConfigChanges.Orientation | ConfigChanges.UiMode |
                            ConfigChanges.ScreenLayout | ConfigChanges.SmallestScreenSize | ConfigChanges.Density)]
+[IntentFilter(
+    new[] { Intent.ActionView },
+    Categories = new[] { Intent.CategoryDefault, Intent.CategoryBrowsable },
+    DataScheme = "ndi",
+    DataHost = "*")]
 public class MainActivity : MauiAppCompatActivity
 {
     protected override void OnCreate(Bundle? savedInstanceState)
     {
         base.OnCreate(savedInstanceState);
+
+        // Check if launched from a deep link on startup
+        var launchIntent = Intent?.Data;
+        if (launchIntent != null && string.Equals(launchIntent.Scheme, "ndi", StringComparison.OrdinalIgnoreCase))
+        {
+            HandleDeepLinkAsync(launchIntent.ToString()).ConfigureAwait(continueOnCapturedContext: false);
+        }
 
         // Allow the app to draw behind the status bar so Shell chrome and
         // the status bar background are seamless across the full screen width.
@@ -35,6 +50,46 @@ public class MainActivity : MauiAppCompatActivity
         }
 
         SyncNavigationOrientation();
+    }
+
+    protected override void OnNewIntent(Intent intent)
+    {
+        base.OnNewIntent(intent);
+
+        // Process ndi:// deep links from external apps or shortcuts
+        var data = intent?.Data;
+        if (data != null && string.Equals(data.Scheme, "ndi", StringComparison.OrdinalIgnoreCase))
+        {
+            HandleDeepLinkAsync(data.ToString()).ConfigureAwait(continueOnCapturedContext: false);
+        }
+    }
+
+    private async Task HandleDeepLinkAsync(string uriString)
+    {
+        try
+        {
+            var deepLinkService = IPlatformApplication.Current?.Services.GetService<IDeepLinkService>();
+            if (deepLinkService == null)
+            {
+                await MainThread.InvokeOnMainThreadAsync(() =>
+                    Microsoft.Maui.ApplicationModel.Platform.CurrentActivity?.RunOnUiThread(() =>
+                        Android.Widget.Toast.MakeText(Microsoft.Maui.ApplicationModel.Platform.CurrentActivity, "Deep link service unavailable.", Android.Widget.ToastLength.Long).Show()));
+                return;
+            }
+
+            var success = await deepLinkService.ProcessDeepLinkAsync(uriString);
+            if (success) return;
+
+            // Show error message
+            var msg = deepLinkService.LastErrorMessage ?? "Unknown deep link error.";
+            await MainThread.InvokeOnMainThreadAsync(() =>
+                Android.Widget.Toast.MakeText(Microsoft.Maui.ApplicationModel.Platform.CurrentActivity, msg, Android.Widget.ToastLength.Long).Show());
+        }
+        catch (Exception ex)
+        {
+            await MainThread.InvokeOnMainThreadAsync(() =>
+                Android.Widget.Toast.MakeText(Microsoft.Maui.ApplicationModel.Platform.CurrentActivity, $"Deep link error: {ex.Message}", Android.Widget.ToastLength.Long).Show());
+        }
     }
 
     protected override void OnResume()

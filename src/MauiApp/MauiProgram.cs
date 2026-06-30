@@ -3,6 +3,8 @@ using NdiForAndroid.Data;
 using NdiForAndroid.Features.AppState.Repositories;
 using NdiForAndroid.Features.ConnectionHistory;
 using NdiForAndroid.Features.ConnectionHistory.Services;
+using NdiForAndroid.Features.DeepLinking;
+using NdiForAndroid.Features.DeepLinking.Services;
 using NdiForAndroid.Features.Home.ViewModels;
 using NdiForAndroid.Features.Navigation.Services;
 using NdiForAndroid.Features.Navigation.ViewModels;
@@ -60,6 +62,7 @@ public static class MauiProgram
         builder.Services.AddSingleton<IAppStateRepository>(sp =>
             new AppStateRepository(Path.Combine(FileSystem.AppDataDirectory, "app_state.db3")));
         builder.Services.AddSingleton<IConnectionHistoryService, ConnectionHistoryService>();
+        builder.Services.AddSingleton<IDeepLinkService, DeepLinkService>();
         builder.Services.AddSingleton<ITelemetryService, TelemetryService>();
         builder.Services.AddSingleton<INavigationService, ShellNavigationService>();
         builder.Services.AddSingleton<INavigationPolicyService, NavigationPolicyService>();
