@@ -54,5 +54,27 @@ public interface INdiOutputBridge
     /// <paramref name="streamName"/>. No remote sourceId is required.
     /// </summary>
     Task StartOutputAsync(string streamName, CancellationToken cancellationToken = default);
+
     Task StopOutputAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Starts an NDI sender that re-streams frames captured from the specified
+    /// remote NDI <paramref name="sourceId"/>. A new receiver is created
+    /// specifically for the re-stream; it does NOT affect the viewer bridge's
+    /// active connection.
+    /// </summary>
+    Task StartReStreamFromSourceAsync(
+        string sourceId,
+        QualityProfile qualityProfile,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Stops any active re-stream and releases the dedicated receiver resource.
+    /// </summary>
+    Task StopReStreamAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Returns true while a re-stream session is active.
+    /// </summary>
+    bool IsReStreamActive { get; }
 }
