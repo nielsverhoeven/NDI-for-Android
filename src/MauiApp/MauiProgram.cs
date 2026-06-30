@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 using NdiForAndroid.Data;
 using NdiForAndroid.Features.AppState.Repositories;
 using NdiForAndroid.Features.DeepLinking;
+using NdiForAndroid.Features.DeepLinking.Services;
 using NdiForAndroid.Features.Home.ViewModels;
 using NdiForAndroid.Features.Navigation.Services;
 using NdiForAndroid.Features.Navigation.ViewModels;

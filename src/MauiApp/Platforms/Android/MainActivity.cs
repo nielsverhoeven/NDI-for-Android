@@ -7,6 +7,7 @@ using AndroidX.Core.View;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Maui;
 using NdiForAndroid.Features.DeepLinking;
+using NdiForAndroid.Features.DeepLinking.Services;
 using NdiForAndroid.Features.Settings.Services;
 using NdiForAndroid.Services;
 
@@ -63,7 +64,7 @@ public class MainActivity : MauiAppCompatActivity
         }
     }
 
-    private async void HandleDeepLinkAsync(string uriString)
+    private async Task HandleDeepLinkAsync(string uriString)
     {
         try
         {

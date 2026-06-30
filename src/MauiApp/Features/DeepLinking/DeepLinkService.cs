@@ -53,7 +53,7 @@ public sealed class DeepLinkService : IDeepLinkService
             }
 
             // Check that the source exists in our cached discovery list
-            var sourceRepo = _serviceProvider.GetService<Core.Features.Sources.Repositories.ISourceRepository>();
+            var sourceRepo = _serviceProvider.GetService<NdiForAndroid.Features.Sources.Repositories.ISourceRepository>();
             if (sourceRepo != null)
             {
                 var cachedSources = await sourceRepo.GetCachedSourcesAsync();
