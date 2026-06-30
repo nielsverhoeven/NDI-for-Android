@@ -45,3 +45,4 @@ exports/*.apk
 crash_capture.txt
 live_log.txt
 publish-output/*
+/.vs/NdiForAndroid

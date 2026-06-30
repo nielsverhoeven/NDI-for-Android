@@ -1,7 +1,9 @@
+using System.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using NdiForAndroid.Features.AppState.Models;
 using NdiForAndroid.Features.AppState.Repositories;
+using NdiForAndroid.Features.ConnectionHistory.Services;
 using NdiForAndroid.Features.Sources.Models;
 using NdiForAndroid.Features.Sources.Repositories;
 using NdiForAndroid.NdiBridge;
@@ -21,12 +23,18 @@ internal static class ReconnectConstants
 
 public partial class ViewerViewModel : ObservableObject, IDisposable
 {
+    private const int RetryWindowSeconds = 15;
+    private const int AttemptIntervalSeconds = 2;
+    private const int MonitorIntervalSeconds = 1;
+    private const string TerminalMessage = "Connection lost. Reconnection failed.";
+
     private readonly INdiViewerBridge _bridge;
     private readonly TimeProvider _timeProvider;
     private readonly IMainThreadDispatcher _dispatcher;
     private readonly IAppStateRepository _appStateRepo;
     private readonly IAppLifecycleService _lifecycle;
     private readonly ISourceRepository _sourceRepository;
+    private readonly IConnectionHistoryService _connectionHistory;
 
     [ObservableProperty]
     private string? _sourceId;
@@ -81,7 +89,8 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
         IMainThreadDispatcher dispatcher,
         IAppStateRepository appStateRepo,
         IAppLifecycleService lifecycle,
-        ISourceRepository sourceRepository)
+        ISourceRepository sourceRepository,
+        IConnectionHistoryService connectionHistory)
     {
         _bridge = bridge;
         _timeProvider = timeProvider;
@@ -89,6 +98,7 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
         _appStateRepo = appStateRepo;
         _lifecycle = lifecycle;
         _sourceRepository = sourceRepository;
+        _connectionHistory = connectionHistory;
         RetryRemainingSeconds = ReconnectConstants.RetryWindowSeconds;
         StatusMessage = "Select a source on Home to start viewing.";
 
@@ -139,6 +149,8 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
             StartCommand.Execute(null);
     }
 
+    // ----- Commands -------------------------------------------------------
+
     [RelayCommand]
     private async void Start()
     {
@@ -165,7 +177,21 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
 
         // Persist last active viewer source for resume recovery
         _appStateRepo.SaveAsync(new AppStateSnapshot(SourceId, null, false, null)).ConfigureAwait(continueOnCapturedContext: true);
-        
+
+        // Record connection event for history tracking (try to resolve display name from cache)
+        string displayName = SourceId;
+        try
+        {
+            var cachedSources = await _sourceRepository.GetCachedSourcesAsync();
+            var cached = cachedSources.FirstOrDefault(s => s.SourceId == SourceId);
+            if (!string.IsNullOrEmpty(cached?.DisplayName))
+                displayName = cached.DisplayName;
+        }
+        catch { /* Silent fail – will fall back to sourceId */ }
+
+        _ = _connectionHistory.RecordConnectedAsync(SourceId, displayName, QualityProfile)
+            .ConfigureAwait(continueOnCapturedContext: true);
+
         _bridge.StartReceiver(SourceId, QualityProfile);
         IsPlaying = true;
         StatusMessage = $"Connecting... (QProfile: {QualityProfile})";
@@ -177,7 +203,15 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
         _userInitiatedStop = true;
         DisposeTimers();
         _bridge.StopReceiver();
+
+        // Record disconnection for history tracking
+        _ = _connectionHistory.RecordDisconnectedAsync()
+            .ConfigureAwait(continueOnCapturedContext: true);
+
         IsPlaying = false;
+        IsReconnecting = false;
+        CanReconnect = false;
+        RetryStatusMessage = null;
         StatusMessage = null;
         RetryRemainingSeconds = ReconnectConstants.RetryWindowSeconds;
         RetryStatusMessage = null;

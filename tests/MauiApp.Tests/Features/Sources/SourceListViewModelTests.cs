@@ -9,7 +9,7 @@ using NdiForAndroid.NdiBridge;
 using NdiForAndroid.Services;
 using Xunit;
 
-namespace MauiApp.Tests.Features.Sources;
+namespace NdiForAndroid.Tests.Features.Sources;
 
 public class SourceListViewModelTests
 {

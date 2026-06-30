@@ -4,7 +4,7 @@ using OpenQA.Selenium.Support.UI;
 using OpenQA.Selenium.Appium.Enums;
 using Xunit;
 
-namespace MauiApp.UITests;
+namespace NdiForAndroid.UITests;
 
 [Collection("AppiumSession")]
 public sealed class AppLaunchTests

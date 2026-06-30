@@ -2,7 +2,7 @@ using Moq;
 using NdiForAndroid.NdiBridge;
 using Xunit;
 
-namespace MauiApp.Tests.NdiBridge;
+namespace NdiForAndroid.Tests.NdiBridge;
 
 /// <summary>
 /// Contract tests for <see cref="INdiDiscoveryBridge"/> behavior.
