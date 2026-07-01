@@ -66,7 +66,7 @@ if [[ "$APP_READY" -ne 1 ]]; then
 fi
 
 set +e
-timeout 20m env ANDROID_APK_PATH="$APK_PATH" dotnet test tests/MauiApp.UITests/MauiApp.UITests.csproj -c Release \
+timeout 20m env ANDROID_APK_PATH="$APK_PATH" dotnet test tests/MauiApp.UITests/NdiForAndroid.UITests.csproj -c Release \
   --logger "trx;LogFileName=emulator-test-results.trx" \
   --results-directory test-results
 TEST_EXIT=$?
