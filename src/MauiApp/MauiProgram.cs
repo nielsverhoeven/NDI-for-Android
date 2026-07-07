@@ -17,6 +17,7 @@ using NdiForAndroid.Features.Sources.ViewModels;
 using NdiForAndroid.Features.Viewer.ViewModels;
 using NdiForAndroid.NdiBridge;
 using NdiForAndroid.Services;
+using SkiaSharp.Views.Maui.Controls.Hosting;
 
 #if ANDROID
 using NdiForAndroid.Platforms.Android.Services;
@@ -32,6 +33,7 @@ public static class MauiProgram
 
         builder
             .UseMauiApp<App>()
+            .UseSkiaSharp()
             .ConfigureFonts(fonts =>
             {
                 fonts.AddFont("OpenSans-Regular.ttf", "OpenSansRegular");
@@ -46,6 +48,7 @@ public static class MauiProgram
         builder.Services.AddSingleton<NdiDatabase>();
 
         // NDI Bridge
+        builder.Services.AddSingleton<NdiRuntime>();
         builder.Services.AddSingleton<INdiDiscoveryBridge, NdiDiscoveryBridge>();
         builder.Services.AddSingleton<INdiViewerBridge, NdiViewerBridge>();
         builder.Services.AddSingleton<INdiOutputBridge, NdiOutputBridge>();
@@ -90,10 +93,14 @@ public static class MauiProgram
         builder.Services.AddSingleton<IMulticastLockService, AndroidMulticastLockService>();
         builder.Services.AddSingleton<IScreenSharePlatformService, AndroidScreenSharePlatformService>();
         builder.Services.AddSingleton<ISettingsPlatformService, AndroidSettingsPlatformService>();
+        builder.Services.AddSingleton<INdiPlatformBootstrap, AndroidNsdBootstrap>();
+        builder.Services.AddSingleton<IAudioPlaybackSink, AndroidAudioPlaybackSink>();
 #else
         builder.Services.AddSingleton<IMulticastLockService, NoopMulticastLockService>();
         builder.Services.AddSingleton<IScreenSharePlatformService, NoopScreenSharePlatformService>();
         builder.Services.AddSingleton<ISettingsPlatformService, DefaultSettingsPlatformService>();
+        builder.Services.AddSingleton<INdiPlatformBootstrap, DefaultNdiPlatformBootstrap>();
+        builder.Services.AddSingleton<IAudioPlaybackSink, NoopAudioPlaybackSink>();
 #endif
 
         // ViewModels

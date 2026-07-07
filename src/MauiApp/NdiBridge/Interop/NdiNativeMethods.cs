@@ -1,0 +1,155 @@
+using System.Runtime.InteropServices;
+
+namespace NdiForAndroid.NdiBridge.Interop;
+
+/// <summary>
+/// P/Invoke surface for libndi.so (NDI SDK 6.3.1, Android). All symbols below were
+/// verified present in the bundled binary. Instance handles are opaque IntPtrs.
+/// Every captured frame MUST be freed with the matching NDIlib_recv_free_* /
+/// NDIlib_framesync_free_* call or native memory leaks at video rates.
+/// </summary>
+internal static partial class NdiNativeMethods
+{
+    private const string Lib = "ndi";
+
+    // ── Lifecycle ────────────────────────────────────────────────────────────
+
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    [return: MarshalAs(UnmanagedType.I1)]
+    public static extern bool NDIlib_initialize();
+
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    public static extern void NDIlib_destroy();
+
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    public static extern IntPtr NDIlib_version();
+
+    // ── Find (discovery) ─────────────────────────────────────────────────────
+
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    public static extern IntPtr NDIlib_find_create_v2(ref NdiFindCreateNative create);
+
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    public static extern void NDIlib_find_destroy(IntPtr instance);
+
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    [return: MarshalAs(UnmanagedType.I1)]
+    public static extern bool NDIlib_find_wait_for_sources(IntPtr instance, uint timeoutMs);
+
+    /// <summary>Returned pointer is owned by the finder — copy strings before the next call.</summary>
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    public static extern IntPtr NDIlib_find_get_current_sources(IntPtr instance, out uint count);
+
+    // ── Receive ──────────────────────────────────────────────────────────────
+
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    public static extern IntPtr NDIlib_recv_create_v3(ref NdiRecvCreateV3Native create);
+
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    public static extern void NDIlib_recv_destroy(IntPtr instance);
+
+    /// <summary>Pass IntPtr.Zero as source to disconnect without destroying.</summary>
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    public static extern void NDIlib_recv_connect(IntPtr instance, ref NdiSourceNative source);
+
+    [DllImport(Lib, EntryPoint = "NDIlib_recv_connect", CallingConvention = CallingConvention.Cdecl)]
+    public static extern void NDIlib_recv_disconnect(IntPtr instance, IntPtr nullSource);
+
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    public static extern NdiFrameType NDIlib_recv_capture_v3(
+        IntPtr instance,
+        ref NdiVideoFrameV2Native video,
+        IntPtr noAudio,
+        ref NdiMetadataFrameNative metadata,
+        uint timeoutMs);
+
+    /// <summary>Audio-only capture overload (video/metadata ignored).</summary>
+    [DllImport(Lib, EntryPoint = "NDIlib_recv_capture_v3", CallingConvention = CallingConvention.Cdecl)]
+    public static extern NdiFrameType NDIlib_recv_capture_audio_v3(
+        IntPtr instance,
+        IntPtr noVideo,
+        ref NdiAudioFrameV3Native audio,
+        IntPtr noMetadata,
+        uint timeoutMs);
+
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    public static extern void NDIlib_recv_free_video_v2(IntPtr instance, ref NdiVideoFrameV2Native video);
+
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    public static extern void NDIlib_recv_free_audio_v3(IntPtr instance, ref NdiAudioFrameV3Native audio);
+
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    public static extern void NDIlib_recv_free_metadata(IntPtr instance, ref NdiMetadataFrameNative metadata);
+
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    public static extern void NDIlib_recv_get_performance(
+        IntPtr instance,
+        out NdiRecvPerformanceNative total,
+        out NdiRecvPerformanceNative dropped);
+
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    public static extern int NDIlib_recv_get_no_connections(IntPtr instance);
+
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    public static extern void NDIlib_recv_set_tally(IntPtr instance, ref NdiTallyNative tally);
+
+    // ── PTZ (receiver-side control of a remote camera) ───────────────────────
+
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    [return: MarshalAs(UnmanagedType.I1)]
+    public static extern bool NDIlib_recv_ptz_is_supported(IntPtr instance);
+
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    [return: MarshalAs(UnmanagedType.I1)]
+    public static extern bool NDIlib_recv_ptz_zoom(IntPtr instance, float zoomValue);
+
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    [return: MarshalAs(UnmanagedType.I1)]
+    public static extern bool NDIlib_recv_ptz_zoom_speed(IntPtr instance, float zoomSpeed);
+
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    [return: MarshalAs(UnmanagedType.I1)]
+    public static extern bool NDIlib_recv_ptz_pan_tilt(IntPtr instance, float pan, float tilt);
+
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    [return: MarshalAs(UnmanagedType.I1)]
+    public static extern bool NDIlib_recv_ptz_pan_tilt_speed(IntPtr instance, float panSpeed, float tiltSpeed);
+
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    [return: MarshalAs(UnmanagedType.I1)]
+    public static extern bool NDIlib_recv_ptz_store_preset(IntPtr instance, int presetNo);
+
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    [return: MarshalAs(UnmanagedType.I1)]
+    public static extern bool NDIlib_recv_ptz_recall_preset(IntPtr instance, int presetNo, float speed);
+
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    [return: MarshalAs(UnmanagedType.I1)]
+    public static extern bool NDIlib_recv_ptz_auto_focus(IntPtr instance);
+
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    [return: MarshalAs(UnmanagedType.I1)]
+    public static extern bool NDIlib_recv_ptz_focus(IntPtr instance, float focusValue);
+
+    // ── Frame sync (pull-clocked receive on top of a recv instance) ──────────
+
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    public static extern IntPtr NDIlib_framesync_create(IntPtr recvInstance);
+
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    public static extern void NDIlib_framesync_destroy(IntPtr instance);
+
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    public static extern void NDIlib_framesync_capture_video(
+        IntPtr instance, ref NdiVideoFrameV2Native video, int fieldType);
+
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    public static extern void NDIlib_framesync_free_video(IntPtr instance, ref NdiVideoFrameV2Native video);
+
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    public static extern void NDIlib_framesync_capture_audio(
+        IntPtr instance, ref NdiAudioFrameV3Native audio, int sampleRate, int noChannels, int noSamples);
+
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    public static extern void NDIlib_framesync_free_audio(IntPtr instance, ref NdiAudioFrameV3Native audio);
+}
