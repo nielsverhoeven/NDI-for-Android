@@ -83,11 +83,30 @@ public interface INdiOutputBridge
 {
     /// <summary>
     /// Starts an NDI sender that advertises this device on the network under
-    /// <paramref name="streamName"/>. No remote sourceId is required.
+    /// <paramref name="streamName"/>, fed by the selected capture input.
     /// </summary>
-    Task StartOutputAsync(string streamName, CancellationToken cancellationToken = default);
+    /// <param name="streamName">Advertised NDI source name (device name is prepended by the SDK).</param>
+    /// <param name="inputKind">Video input: device screen or front/rear camera.</param>
+    /// <param name="captureMicrophone">Also capture and send device microphone audio.</param>
+    Task StartOutputAsync(
+        string streamName,
+        Services.VideoInputKind inputKind = Services.VideoInputKind.Screen,
+        bool captureMicrophone = false,
+        CancellationToken cancellationToken = default);
 
     Task StopOutputAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>True while any connected receiver reports this sender on program tally.</summary>
+    bool IsOnProgramTally { get; }
+
+    /// <summary>Number of receivers currently connected to this sender (0 when idle).</summary>
+    int ConnectionCount { get; }
+
+    /// <summary>
+    /// Raised (on a background thread) when <see cref="IsOnProgramTally"/> or
+    /// <see cref="ConnectionCount"/> changed. Subscribers marshal to the UI thread.
+    /// </summary>
+    event EventHandler? OutputStatusChanged;
 
     /// <summary>
     /// Starts an NDI sender that re-streams frames captured from the specified

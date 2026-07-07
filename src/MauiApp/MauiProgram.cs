@@ -8,6 +8,7 @@ using NdiForAndroid.Features.DeepLinking.Services;
 using NdiForAndroid.Features.Home.ViewModels;
 using NdiForAndroid.Features.Navigation.Services;
 using NdiForAndroid.Features.Navigation.ViewModels;
+using NdiForAndroid.Features.Output.Repositories;
 using NdiForAndroid.Features.Output.ViewModels;
 using NdiForAndroid.Features.Settings.Repositories;
 using NdiForAndroid.Features.Settings.Services;
@@ -55,6 +56,7 @@ public static class MauiProgram
 
         // Repositories
         builder.Services.AddSingleton<ISourceRepository, SourceRepository>();
+        builder.Services.AddSingleton<IOutputConfigurationRepository, OutputConfigurationRepository>();
         builder.Services.AddSingleton<ISettingsRepository, SettingsRepository>();
         builder.Services.AddSingleton<ISettingsValidationService, SettingsValidationService>();
         builder.Services.AddSingleton<IDiscoverySettingsOrchestrator, DiscoverySettingsOrchestrator>();
@@ -95,12 +97,16 @@ public static class MauiProgram
         builder.Services.AddSingleton<ISettingsPlatformService, AndroidSettingsPlatformService>();
         builder.Services.AddSingleton<INdiPlatformBootstrap, AndroidNsdBootstrap>();
         builder.Services.AddSingleton<IAudioPlaybackSink, AndroidAudioPlaybackSink>();
+        builder.Services.AddSingleton<IVideoCaptureSource, AndroidVideoCaptureSource>();
+        builder.Services.AddSingleton<IAudioCaptureSource, AndroidMicrophoneCaptureSource>();
 #else
         builder.Services.AddSingleton<IMulticastLockService, NoopMulticastLockService>();
         builder.Services.AddSingleton<IScreenSharePlatformService, NoopScreenSharePlatformService>();
         builder.Services.AddSingleton<ISettingsPlatformService, DefaultSettingsPlatformService>();
         builder.Services.AddSingleton<INdiPlatformBootstrap, DefaultNdiPlatformBootstrap>();
         builder.Services.AddSingleton<IAudioPlaybackSink, NoopAudioPlaybackSink>();
+        builder.Services.AddSingleton<IVideoCaptureSource, NoopVideoCaptureSource>();
+        builder.Services.AddSingleton<IAudioCaptureSource, NoopAudioCaptureSource>();
 #endif
 
         // ViewModels

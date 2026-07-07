@@ -6,9 +6,11 @@ using Android.Content.PM;
 using AndroidX.Core.View;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Maui;
+using Microsoft.Maui.ApplicationModel;
 using NdiForAndroid.Features.DeepLinking;
 using NdiForAndroid.Features.DeepLinking.Services;
 using NdiForAndroid.Features.Settings.Services;
+using NdiForAndroid.Platforms.Android.Services;
 using NdiForAndroid.Services;
 
 namespace NdiForAndroid;
@@ -52,6 +54,25 @@ public class MainActivity : MauiAppCompatActivity
         }
 
         SyncNavigationOrientation();
+
+        // API 33+: the screen-share foreground-service notification is only visible
+        // once the user grants notification permission — ask up front.
+        if (OperatingSystem.IsAndroidVersionAtLeast(33))
+            RequestPostNotificationsPermissionAsync().FireAndForget();
+    }
+
+    protected override void OnActivityResult(int requestCode, Result resultCode, Intent? data)
+    {
+        base.OnActivityResult(requestCode, resultCode, data);
+
+        // MediaProjection consent dialog result for NDI screen capture.
+        if (requestCode == AndroidVideoCaptureSource.ScreenCaptureRequestCode)
+            AndroidVideoCaptureSource.HandleScreenCaptureResult(resultCode, data);
+    }
+
+    private static async Task RequestPostNotificationsPermissionAsync()
+    {
+        await Permissions.RequestAsync<Permissions.PostNotifications>();
     }
 
     protected override void OnNewIntent(Intent? intent)
