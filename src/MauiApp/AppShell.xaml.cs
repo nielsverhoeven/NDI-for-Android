@@ -29,6 +29,7 @@ public partial class AppShell : Shell
     private readonly AdaptiveShellStateViewModel _stateViewModel;
     private readonly IAndroidOrientationBridge _orientationBridge;
     private readonly INavigationHandoffService _handoffService;
+    private readonly IWindowSizeClassService _windowSizeClassService;
 
     private PrimaryNavDestination _currentPrimaryDestination = PrimaryNavDestination.Home;
 
@@ -47,13 +48,15 @@ public partial class AppShell : Shell
     public AppShell(
         AdaptiveShellStateViewModel stateViewModel,
         IAndroidOrientationBridge orientationBridge,
-        INavigationHandoffService handoffService)
+        INavigationHandoffService handoffService,
+        IWindowSizeClassService windowSizeClassService)
     {
         InitializeComponent();
 
         _stateViewModel   = stateViewModel;
         _orientationBridge = orientationBridge;
         _handoffService   = handoffService;
+        _windowSizeClassService = windowSizeClassService;
 
         Routing.RegisterRoute("viewer", typeof(ViewerPage));
         Routing.RegisterRoute("diagnostic-log", typeof(Features.DiagOverlay.Views.DiagnosticLogPage));
@@ -67,6 +70,18 @@ public partial class AppShell : Shell
 
         _orientationBridge.SyncFromDisplayInfo();
         ApplyPlacement();
+    }
+
+    /// <summary>
+    /// Feeds the window width (device-independent units) into the size-class service.
+    /// Runs on the UI thread; the service only raises Changed on class transitions.
+    /// </summary>
+    protected override void OnSizeAllocated(double width, double height)
+    {
+        base.OnSizeAllocated(width, height);
+
+        if (width > 0)
+            _windowSizeClassService.UpdateFromWidth(width);
     }
 
     // ── Rail construction ────────────────────────────────────────────────────

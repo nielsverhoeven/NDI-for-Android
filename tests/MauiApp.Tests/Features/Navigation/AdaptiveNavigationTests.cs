@@ -54,30 +54,34 @@ public sealed class PrimaryNavigationMetadataTests
 
 public sealed class NavigationPolicyServiceTests
 {
-    [Fact]
-    public void ResolvePlacement_ReturnsBottom_ForPortrait()
+    private static (NavigationPolicyService Sut, WindowSizeClassService SizeClassService) CreateSut()
     {
-        var sut = new NavigationPolicyService();
-
-        var placement = sut.ResolvePlacement(DeviceOrientation.Portrait);
-
-        Assert.Equal(NavigationPlacementMode.Bottom, placement);
+        var sizeClassService = new WindowSizeClassService();
+        return (new NavigationPolicyService(sizeClassService), sizeClassService);
     }
 
-    [Fact]
-    public void ResolvePlacement_ReturnsLeftRail_ForLandscape()
+    // Placement matrix (#279): rail when landscape OR Expanded; bottom tabs otherwise.
+    [Theory]
+    [InlineData(DeviceOrientation.Portrait, WindowSizeClass.Compact, NavigationPlacementMode.Bottom)]
+    [InlineData(DeviceOrientation.Portrait, WindowSizeClass.Medium, NavigationPlacementMode.Bottom)]
+    [InlineData(DeviceOrientation.Portrait, WindowSizeClass.Expanded, NavigationPlacementMode.LeftRail)]
+    [InlineData(DeviceOrientation.Landscape, WindowSizeClass.Compact, NavigationPlacementMode.LeftRail)]
+    [InlineData(DeviceOrientation.Landscape, WindowSizeClass.Medium, NavigationPlacementMode.LeftRail)]
+    [InlineData(DeviceOrientation.Landscape, WindowSizeClass.Expanded, NavigationPlacementMode.LeftRail)]
+    public void ResolvePlacement_OrientationBySizeClassMatrix_ReturnsExpectedPlacement(
+        DeviceOrientation orientation, WindowSizeClass sizeClass, NavigationPlacementMode expected)
     {
-        var sut = new NavigationPolicyService();
+        var (sut, _) = CreateSut();
 
-        var placement = sut.ResolvePlacement(DeviceOrientation.Landscape);
+        var placement = sut.ResolvePlacement(orientation, sizeClass);
 
-        Assert.Equal(NavigationPlacementMode.LeftRail, placement);
+        Assert.Equal(expected, placement);
     }
 
     [Fact]
     public void UpdateOrientation_RaisesPlacementChanged_WhenPlacementActuallyChanges()
     {
-        var sut = new NavigationPolicyService();
+        var (sut, _) = CreateSut();
         var raised = false;
         NavigationPlacementMode? raisedValue = null;
 
@@ -97,7 +101,7 @@ public sealed class NavigationPolicyServiceTests
     [Fact]
     public void UpdateOrientation_DoesNotRaisePlacementChanged_WhenPlacementStaysSame()
     {
-        var sut = new NavigationPolicyService();
+        var (sut, _) = CreateSut();
         var eventCount = 0;
 
         sut.PlacementChanged += (_, _) => eventCount++;
@@ -106,6 +110,58 @@ public sealed class NavigationPolicyServiceTests
 
         Assert.Equal(0, eventCount);
         Assert.Equal(NavigationPlacementMode.Bottom, sut.CurrentPlacement);
+    }
+
+    [Fact]
+    public void SizeClassChangeToExpanded_InPortrait_SwitchesToLeftRail_WithoutOrientationChange()
+    {
+        var (sut, sizeClassService) = CreateSut();
+        sut.UpdateOrientation(DeviceOrientation.Portrait);
+        NavigationPlacementMode? raisedValue = null;
+        sut.PlacementChanged += (_, value) => raisedValue = value;
+
+        sizeClassService.UpdateFromWidth(900); // portrait 10" tablet → Expanded
+
+        Assert.Equal(NavigationPlacementMode.LeftRail, raisedValue);
+        Assert.Equal(NavigationPlacementMode.LeftRail, sut.CurrentPlacement);
+    }
+
+    [Fact]
+    public void SizeClassChangeBackToCompact_InPortrait_ReturnsToBottomTabs()
+    {
+        var (sut, sizeClassService) = CreateSut();
+        sut.UpdateOrientation(DeviceOrientation.Portrait);
+        sizeClassService.UpdateFromWidth(900); // → LeftRail (Expanded)
+
+        sizeClassService.UpdateFromWidth(400); // → Compact
+
+        Assert.Equal(NavigationPlacementMode.Bottom, sut.CurrentPlacement);
+    }
+
+    [Fact]
+    public void SizeClassChangeToExpanded_InLandscape_DoesNotRaiseRedundantPlacementChanged()
+    {
+        var (sut, sizeClassService) = CreateSut();
+        sut.UpdateOrientation(DeviceOrientation.Landscape); // already LeftRail
+        var eventCount = 0;
+        sut.PlacementChanged += (_, _) => eventCount++;
+
+        sizeClassService.UpdateFromWidth(900); // Expanded — placement is already LeftRail
+
+        Assert.Equal(0, eventCount);
+        Assert.Equal(NavigationPlacementMode.LeftRail, sut.CurrentPlacement);
+    }
+
+    [Fact]
+    public void RotateToPortrait_OnExpandedWindow_KeepsLeftRail()
+    {
+        var (sut, sizeClassService) = CreateSut();
+        sizeClassService.UpdateFromWidth(1000); // Expanded tablet
+        sut.UpdateOrientation(DeviceOrientation.Landscape);
+
+        sut.UpdateOrientation(DeviceOrientation.Portrait);
+
+        Assert.Equal(NavigationPlacementMode.LeftRail, sut.CurrentPlacement);
     }
 }
 
@@ -168,14 +224,14 @@ public sealed class AdaptiveShellStateViewModelTests
 
         public event EventHandler<NavigationPlacementMode>? PlacementChanged;
 
-        public NavigationPlacementMode ResolvePlacement(DeviceOrientation orientation)
-            => orientation == DeviceOrientation.Landscape
+        public NavigationPlacementMode ResolvePlacement(DeviceOrientation orientation, WindowSizeClass sizeClass)
+            => orientation == DeviceOrientation.Landscape || sizeClass == WindowSizeClass.Expanded
                 ? NavigationPlacementMode.LeftRail
                 : NavigationPlacementMode.Bottom;
 
         public void UpdateOrientation(DeviceOrientation orientation)
         {
-            var next = ResolvePlacement(orientation);
+            var next = ResolvePlacement(orientation, WindowSizeClass.Compact);
             if (next == CurrentPlacement)
                 return;
 

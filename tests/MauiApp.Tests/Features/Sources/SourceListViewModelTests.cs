@@ -1,10 +1,13 @@
 using Moq;
 using NdiForAndroid.Features.AppState.Models;
 using NdiForAndroid.Features.AppState.Repositories;
+using NdiForAndroid.Features.ConnectionHistory.Services;
+using NdiForAndroid.Features.Navigation.Services;
 using NdiForAndroid.Features.Settings.Services;
 using NdiForAndroid.Features.Sources.Models;
 using NdiForAndroid.Features.Sources.Repositories;
 using NdiForAndroid.Features.Sources.ViewModels;
+using NdiForAndroid.Features.Viewer.ViewModels;
 using NdiForAndroid.NdiBridge;
 using NdiForAndroid.Services;
 using Xunit;
@@ -18,18 +21,52 @@ public class SourceListViewModelTests
     private readonly Mock<IDiscoverySettingsOrchestrator> _orchestratorMock = new();
     private readonly Mock<IDiscoveryRefreshService> _refreshServiceMock = new();
     private readonly Mock<IAppStateRepository> _appStateRepoMock = new();
+    private readonly Mock<IWindowSizeClassService> _windowSizeClassMock = new();
+
+    // Dependencies for the pane's ViewerViewModel (created via the injected factory).
+    private readonly Mock<INdiViewerBridge> _viewerBridgeMock = new();
+    private readonly Mock<IAppLifecycleService> _lifecycleMock = new();
+    private readonly Mock<IConnectionHistoryService> _connectionHistoryMock = new();
+
+    private int _viewerFactoryInvocations;
 
     public SourceListViewModelTests()
     {
         _appStateRepoMock
             .Setup(r => r.RestoreStateAsync())
             .ReturnsAsync(AppStateSnapshot.Empty);
+        _repositoryMock
+            .Setup(r => r.GetCachedSourcesAsync())
+            .ReturnsAsync(new List<NdiSource>());
     }
 
-    private SourceListViewModel CreateSut(DiscoveryMode mode = DiscoveryMode.Mdns)
+    private ViewerViewModel CreateViewerViewModel()
+    {
+        _viewerFactoryInvocations++;
+        return new(
+            _viewerBridgeMock.Object,
+            TimeProvider.System,
+            new FakeMainThreadDispatcher(),
+            _appStateRepoMock.Object,
+            _lifecycleMock.Object,
+            _repositoryMock.Object,
+            _connectionHistoryMock.Object);
+    }
+
+    private SourceListViewModel CreateSut(
+        DiscoveryMode mode = DiscoveryMode.Mdns,
+        WindowSizeClass sizeClass = WindowSizeClass.Compact)
     {
         _orchestratorMock.Setup(o => o.ActiveMode).Returns(mode);
-        return new(_repositoryMock.Object, _navigationMock.Object, _orchestratorMock.Object, _refreshServiceMock.Object, _appStateRepoMock.Object);
+        _windowSizeClassMock.Setup(s => s.Current).Returns(sizeClass);
+        return new(
+            _repositoryMock.Object,
+            _navigationMock.Object,
+            _orchestratorMock.Object,
+            _refreshServiceMock.Object,
+            _appStateRepoMock.Object,
+            _windowSizeClassMock.Object,
+            CreateViewerViewModel);
     }
 
     private DiscoverySnapshot SuccessSnapshot(IReadOnlyList<NdiSource>? sources = null) => new(
@@ -229,6 +266,101 @@ public class SourceListViewModelTests
         _orchestratorMock.Setup(o => o.ActiveMode).Returns(DiscoveryMode.Mdns);
         _refreshServiceMock.Raise(r => r.SnapshotReady += null, sut, SuccessSnapshot());
         Assert.Equal("mDNS", sut.ActiveDiscoveryModeLabel);
+    }
+
+    // ── #279: two-pane selection routing on Expanded windows ─────────────────
+
+    [Fact]
+    public async Task NavigateToViewerCommand_OnExpanded_RoutesToPaneViewer_WithoutNavigation()
+    {
+        var source = new NdiSource("src-abc", "Camera 1", "192.168.1.10", true, 1000);
+        var sut = CreateSut(sizeClass: WindowSizeClass.Expanded);
+
+        await sut.NavigateToViewerCommand.ExecuteAsync(source);
+
+        Assert.NotNull(sut.PaneViewer);
+        Assert.Equal("src-abc", sut.PaneViewer.SourceId);
+        _navigationMock.Verify(n => n.NavigateToAsync(It.IsAny<string>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task NavigateToViewerCommand_OnCompact_NavigatesAndDoesNotCreatePaneViewer()
+    {
+        var source = new NdiSource("src-abc", "Camera 1", "192.168.1.10", true, 1000);
+        var sut = CreateSut(sizeClass: WindowSizeClass.Compact);
+
+        await sut.NavigateToViewerCommand.ExecuteAsync(source);
+
+        Assert.Null(sut.PaneViewer);
+        Assert.Equal(0, _viewerFactoryInvocations);
+        _navigationMock.Verify(
+            n => n.NavigateToAsync($"viewer?sourceId={Uri.EscapeDataString("src-abc")}"),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task NavigateToViewerCommand_OnMedium_NavigatesLikeCompact()
+    {
+        var source = new NdiSource("src-abc", "Camera 1", "192.168.1.10", true, 1000);
+        var sut = CreateSut(sizeClass: WindowSizeClass.Medium);
+
+        await sut.NavigateToViewerCommand.ExecuteAsync(source);
+
+        Assert.Null(sut.PaneViewer);
+        _navigationMock.Verify(n => n.NavigateToAsync(It.IsAny<string>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task NavigateToViewerCommand_OnExpanded_ReusesPaneViewerAcrossSelections()
+    {
+        var sut = CreateSut(sizeClass: WindowSizeClass.Expanded);
+
+        await sut.NavigateToViewerCommand.ExecuteAsync(new NdiSource("src-1", "Cam 1", "192.168.1.10", true, 1000));
+        var firstPane = sut.PaneViewer;
+        await sut.NavigateToViewerCommand.ExecuteAsync(new NdiSource("src-2", "Cam 2", "192.168.1.11", true, 2000));
+
+        Assert.Same(firstPane, sut.PaneViewer);
+        Assert.Equal(1, _viewerFactoryInvocations);
+        Assert.Equal("src-2", sut.PaneViewer!.SourceId); // non-null: asserted Same as non-null firstPane
+    }
+
+    [Fact]
+    public async Task SizeClassTransition_ExpandedToCompact_StopsPanePlayback()
+    {
+        var source = new NdiSource("src-abc", "Camera 1", "192.168.1.10", true, 1000);
+        var sut = CreateSut(sizeClass: WindowSizeClass.Expanded);
+        await sut.NavigateToViewerCommand.ExecuteAsync(source);
+        Assert.NotNull(sut.PaneViewer);
+        Assert.True(sut.PaneViewer.IsPlaying); // setting SourceId started playback
+
+        _windowSizeClassMock.Raise(s => s.Changed += null, this, WindowSizeClass.Compact);
+
+        Assert.False(sut.PaneViewer.IsPlaying);
+        _viewerBridgeMock.Verify(b => b.StopReceiver(), Times.AtLeastOnce);
+    }
+
+    [Fact]
+    public void SizeClassTransition_ToCompact_WithoutPaneViewer_IsSafeNoOp()
+    {
+        var sut = CreateSut(sizeClass: WindowSizeClass.Expanded);
+
+        _windowSizeClassMock.Raise(s => s.Changed += null, this, WindowSizeClass.Compact);
+
+        Assert.Null(sut.PaneViewer);
+        _viewerBridgeMock.Verify(b => b.StopReceiver(), Times.Never);
+    }
+
+    [Fact]
+    public async Task SizeClassTransition_IntoExpanded_DoesNotAutoPlay()
+    {
+        var sut = CreateSut(sizeClass: WindowSizeClass.Compact);
+        await sut.NavigateToViewerCommand.ExecuteAsync(new NdiSource("src-1", "Cam 1", "192.168.1.10", true, 1000));
+
+        _windowSizeClassMock.Raise(s => s.Changed += null, this, WindowSizeClass.Expanded);
+
+        // Entering Expanded never auto-plays: the pane stays untouched until a source is tapped.
+        Assert.Null(sut.PaneViewer);
+        _viewerBridgeMock.Verify(b => b.StartReceiver(It.IsAny<string>(), It.IsAny<QualityProfile>()), Times.Never);
     }
 }
 
