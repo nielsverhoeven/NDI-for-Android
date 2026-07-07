@@ -27,6 +27,8 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
     private const int AttemptIntervalSeconds = 2;
     private const int MonitorIntervalSeconds = 1;
     private const string TerminalMessage = "Connection lost. Reconnection failed.";
+    private const int PtzNudgeDurationMs = 250;
+    private const float PtzNudgeSpeed = 0.5f;
 
     private readonly INdiViewerBridge _bridge;
     private readonly TimeProvider _timeProvider;
@@ -44,6 +46,22 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
 
     [ObservableProperty]
     private string? _statusMessage;
+
+    // Tally / PTZ / audio state surfaced from the bridge
+    [ObservableProperty]
+    private bool _isTallyProgram;
+
+    [ObservableProperty]
+    private bool _isPtzSupported;
+
+    [ObservableProperty]
+    private bool _isAudioEnabled;
+
+    /// <summary>
+    /// Latest decoded frame from the bridge; polled by the View's render loop
+    /// (~30 fps). No change notification — the frame's timestamp is the dedupe key.
+    /// </summary>
+    public NdiVideoFrame? CurrentFrame => _bridge.GetLatestFrame();
 
     // Reconnect state
     [ObservableProperty]
@@ -69,7 +87,6 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
     private QualityProfile _qualityProfile = QualityProfile.Balanced;
 
     private QualityProfile? _previousQualityProfile;
-    private float? _lastMeasuredFps;
     private int _sustainedDropCount;
     private static readonly int AutoDegradationThreshold = 3;
     private const float DegradationThresholdFps = 15f;
@@ -101,8 +118,35 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
         _connectionHistory = connectionHistory;
         RetryRemainingSeconds = ReconnectConstants.RetryWindowSeconds;
         StatusMessage = "Select a source on Home to start viewing.";
+        _isAudioEnabled = bridge.IsAudioEnabled; // backing field: don't push the default back to the bridge
 
         _lifecycle.AppResumed += OnAppResumed;
+        _bridge.ConnectionStateChanged += OnBridgeConnectionStateChanged;
+        _bridge.TallyEchoChanged += OnBridgeTallyEchoChanged;
+    }
+
+    /// <summary>Forwards the user's audio toggle to the active bridge connection.</summary>
+    partial void OnIsAudioEnabledChanged(bool value)
+    {
+        _bridge.IsAudioEnabled = value;
+    }
+
+    private void OnBridgeConnectionStateChanged(object? sender, ConnectionState state)
+    {
+        _dispatcher.BeginInvokeOnMainThread(() =>
+        {
+            // PTZ support is only known once connection metadata has arrived.
+            IsPtzSupported = _bridge.IsPtzSupported;
+
+            // Minimal status refresh; drop handling stays with the reconnect state machine.
+            if (IsPlaying && !IsReconnecting && state == ConnectionState.Connected)
+                StatusMessage = $"Connected. (QProfile: {QualityProfile})";
+        });
+    }
+
+    private void OnBridgeTallyEchoChanged(object? sender, NdiTallyEcho echo)
+    {
+        _dispatcher.BeginInvokeOnMainThread(() => IsTallyProgram = echo.OnProgram);
     }
 
     // async void is intentional: MAUI lifecycle event handler. All awaits are guarded so
@@ -194,6 +238,7 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
         _connectionHistory.RecordConnectedAsync(SourceId, displayName, QualityProfile).FireAndForget();
 
         _bridge.StartReceiver(SourceId, QualityProfile);
+        _bridge.SetTally(onProgram: true, onPreview: false);
         IsPlaying = true;
         StatusMessage = $"Connecting... (QProfile: {QualityProfile})";
     }
@@ -203,6 +248,7 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
     {
         _userInitiatedStop = true;
         DisposeTimers();
+        _bridge.SetTally(onProgram: false, onPreview: false);
         _bridge.StopReceiver();
 
         // Record disconnection for history tracking
@@ -211,6 +257,8 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
         IsPlaying = false;
         IsReconnecting = false;
         CanReconnect = false;
+        IsTallyProgram = false;
+        IsPtzSupported = false;
         RetryStatusMessage = null;
         StatusMessage = null;
         RetryRemainingSeconds = ReconnectConstants.RetryWindowSeconds;
@@ -222,6 +270,8 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
         DisposeTimers();
         _userInitiatedStop = true;
         _lifecycle.AppResumed -= OnAppResumed;
+        _bridge.ConnectionStateChanged -= OnBridgeConnectionStateChanged;
+        _bridge.TallyEchoChanged -= OnBridgeTallyEchoChanged;
     }
 
     private void DisposeTimers()
@@ -392,6 +442,49 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
 
         BeginReconnectWindow();
     }
+
+    // --- PTZ (only offered when IsPtzSupported) ---
+
+    /// <summary>Short pan/tilt burst: run at ±<see cref="PtzNudgeSpeed"/> for 250 ms, then stop.</summary>
+    [RelayCommand]
+    private async Task PtzNudge(string? direction)
+    {
+        var (pan, tilt) = direction switch
+        {
+            "left" => (-PtzNudgeSpeed, 0f),
+            "right" => (PtzNudgeSpeed, 0f),
+            "up" => (0f, PtzNudgeSpeed),
+            "down" => (0f, -PtzNudgeSpeed),
+            _ => (0f, 0f),
+        };
+        if (pan == 0f && tilt == 0f)
+            return;
+
+        _bridge.PtzPanTiltSpeed(pan, tilt);
+        await Task.Delay(PtzNudgeDurationMs);
+        _bridge.PtzPanTiltSpeed(0f, 0f);
+    }
+
+    /// <summary>Short zoom burst: run at ±<see cref="PtzNudgeSpeed"/> for 250 ms, then stop.</summary>
+    [RelayCommand]
+    private async Task PtzZoomNudge(string? direction)
+    {
+        var speed = direction switch
+        {
+            "in" => PtzNudgeSpeed,
+            "out" => -PtzNudgeSpeed,
+            _ => 0f,
+        };
+        if (speed == 0f)
+            return;
+
+        _bridge.PtzZoomSpeed(speed);
+        await Task.Delay(PtzNudgeDurationMs);
+        _bridge.PtzZoomSpeed(0f);
+    }
+
+    [RelayCommand]
+    private void PtzAutoFocus() => _bridge.PtzAutoFocus();
 
     // --- Quality Profile ---
 

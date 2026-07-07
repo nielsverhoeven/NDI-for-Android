@@ -50,3 +50,16 @@ public record NdiDiscoveryCheckResult(
     bool Success,
     string FailureCategory,
     string? FailureMessage);
+
+/// <summary>
+/// Tally state echoed by the connected source (<c>ndi_tally_echo</c> metadata):
+/// whether ANY receiver anywhere has the source on program/preview.
+/// </summary>
+public record NdiTallyEcho(bool OnProgram, bool OnPreview);
+
+/// <summary>Live receiver statistics sampled by the frame pump.</summary>
+public record NdiReceiverStats(
+    float MeasuredFps,
+    float DroppedFramePercent,
+    int Width,
+    int Height);

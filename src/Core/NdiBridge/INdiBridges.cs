@@ -42,6 +42,38 @@ public interface INdiViewerBridge
     (int Width, int Height) GetActualResolution();
     float GetMeasuredFps();
     QualityProfile ActiveQualityProfile { get; }
+
+    /// <summary>Raised (on the pump thread) when the receiver's connection state changes.</summary>
+    event EventHandler<ConnectionState>? ConnectionStateChanged;
+
+    /// <summary>Raised (on the pump thread) when the source echoes a tally state change.</summary>
+    event EventHandler<NdiTallyEcho>? TallyEchoChanged;
+
+    /// <summary>Reports this receiver's tally state upstream to the source (retained across reconnects).</summary>
+    void SetTally(bool onProgram, bool onPreview);
+
+    /// <summary>Enables/disables audio playback for the active connection. Default: enabled.</summary>
+    bool IsAudioEnabled { get; set; }
+
+    // ── PTZ (available only when the connected source supports it) ──────────
+
+    /// <summary>True when the connected source exposes PTZ control. Only reliable after connection metadata has arrived.</summary>
+    bool IsPtzSupported { get; }
+
+    /// <summary>Continuous pan/tilt speed, each -1..+1 (0 stops).</summary>
+    bool PtzPanTiltSpeed(float panSpeed, float tiltSpeed);
+
+    /// <summary>Continuous zoom speed, -1..+1 (0 stops).</summary>
+    bool PtzZoomSpeed(float zoomSpeed);
+
+    /// <summary>Stores the current position as preset 0-99.</summary>
+    bool PtzStorePreset(int presetNo);
+
+    /// <summary>Recalls preset 0-99 at the given speed (0..1).</summary>
+    bool PtzRecallPreset(int presetNo, float speed = 1f);
+
+    /// <summary>Engages auto-focus.</summary>
+    bool PtzAutoFocus();
 }
 
 /// <summary>
