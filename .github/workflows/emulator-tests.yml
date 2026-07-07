@@ -86,7 +86,7 @@ jobs:
           restore-keys: ${{ runner.os }}-nuget-
 
       - name: Restore UITests project
-        run: dotnet restore tests/MauiApp.UITests/MauiApp.UITests.csproj
+        run: dotnet restore tests/MauiApp.UITests/NdiForAndroid.UITests.csproj
 
       - name: Download APK artifact
         uses: actions/download-artifact@v4
