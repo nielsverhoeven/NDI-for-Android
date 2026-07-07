@@ -69,10 +69,11 @@ public sealed class OutputConfigurationEntity
 {
     [PrimaryKey] public int Id { get; set; } = 1;
     public string? PreferredStreamName { get; set; }
-    public string LastInputKind { get; set; } = "DeviceScreen";  // DeviceScreen, DiscoveredNdi
+    public string LastInputKind { get; set; } = "DeviceScreen";  // legacy: DeviceScreen, DiscoveredNdi; current: VideoInputKind names
     public string? LastSourceId { get; set; }
     public bool RetryEnabled { get; set; } = true;
     public int RetryWindowSeconds { get; set; } = 30;
+    public bool CaptureMicrophone { get; set; }  // #278: send device microphone audio (additive column — CreateTableAsync migrates)
 }
 
 [Table("output_session")]

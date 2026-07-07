@@ -131,6 +131,43 @@ internal static partial class NdiNativeMethods
     [return: MarshalAs(UnmanagedType.I1)]
     public static extern bool NDIlib_recv_ptz_focus(IntPtr instance, float focusValue);
 
+    // ── Send ─────────────────────────────────────────────────────────────────
+
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    public static extern IntPtr NDIlib_send_create(ref NdiSendCreateNative create);
+
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    public static extern void NDIlib_send_destroy(IntPtr instance);
+
+    /// <summary>Synchronous send — buffer is fully consumed on return.</summary>
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    public static extern void NDIlib_send_send_video_v2(IntPtr instance, ref NdiVideoFrameV2Native video);
+
+    /// <summary>
+    /// Async send — the SDK owns the buffer until the NEXT async send (or flush).
+    /// Use ping-pong buffers and flush with <see cref="NDIlib_send_send_video_async_v2_flush"/>.
+    /// </summary>
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    public static extern void NDIlib_send_send_video_async_v2(IntPtr instance, ref NdiVideoFrameV2Native video);
+
+    [DllImport(Lib, EntryPoint = "NDIlib_send_send_video_async_v2", CallingConvention = CallingConvention.Cdecl)]
+    public static extern void NDIlib_send_send_video_async_v2_flush(IntPtr instance, IntPtr nullFrame);
+
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    public static extern void NDIlib_send_send_audio_v3(IntPtr instance, ref NdiAudioFrameV3Native audio);
+
+    /// <summary>Convenience: interleaved float PCM in, SDK converts to planar FLTP.</summary>
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    public static extern void NDIlib_util_send_send_audio_interleaved_32f(
+        IntPtr instance, ref NdiAudioFrameInterleaved32fNative audio);
+
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    [return: MarshalAs(UnmanagedType.I1)]
+    public static extern bool NDIlib_send_get_tally(IntPtr instance, ref NdiTallyNative tally, uint timeoutMs);
+
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    public static extern int NDIlib_send_get_no_connections(IntPtr instance, uint timeoutMs);
+
     // ── Frame sync (pull-clocked receive on top of a recv instance) ──────────
 
     [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]

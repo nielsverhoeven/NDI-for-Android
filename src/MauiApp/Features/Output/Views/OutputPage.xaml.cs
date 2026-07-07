@@ -13,4 +13,12 @@ public partial class OutputPage : ContentPage
         _viewModel = viewModel;
         BindingContext = viewModel;
     }
+
+    protected override void OnAppearing()
+    {
+        base.OnAppearing();
+
+        // Lifecycle wiring only (no logic): load the persisted output configuration.
+        _viewModel.LoadCommand.Execute(null);
+    }
 }

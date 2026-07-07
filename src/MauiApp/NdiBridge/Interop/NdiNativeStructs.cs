@@ -151,3 +151,24 @@ internal struct NdiRecvPerformanceNative
     public long audio_frames;
     public long metadata_frames;
 }
+
+/// <summary>NDIlib_send_create_t.</summary>
+[StructLayout(LayoutKind.Sequential)]
+internal struct NdiSendCreateNative
+{
+    public IntPtr p_ndi_name; // advertised source name (device name is prepended by the SDK)
+    public IntPtr p_groups;   // NULL for default
+    [MarshalAs(UnmanagedType.I1)] public bool clock_video; // true: send call paces to real time
+    [MarshalAs(UnmanagedType.I1)] public bool clock_audio;
+}
+
+/// <summary>NDIlib_audio_frame_interleaved_32f_t — for NDIlib_util_send_send_audio_interleaved_32f.</summary>
+[StructLayout(LayoutKind.Sequential)]
+internal struct NdiAudioFrameInterleaved32fNative
+{
+    public int sample_rate;
+    public int no_channels;
+    public int no_samples;
+    public long timecode;   // NdiVideoFrameV2Native.TimecodeSynthesize for auto
+    public IntPtr p_data;   // interleaved float PCM
+}
