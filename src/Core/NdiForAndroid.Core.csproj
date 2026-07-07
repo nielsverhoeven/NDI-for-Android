@@ -11,8 +11,8 @@
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.*" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.*" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.*" />
-    <PackageReference Include="sqlite-net-pcl" Version="1.*" />
-    <PackageReference Include="SQLitePCLRaw.bundle_green" Version="2.*" />
+    <!-- 1.11.x: moves to SQLitePCLRaw 3.x chain, fixing NU1903 (GHSA-2m69-gcr7-jv3q) in the retired bundle_green 2.1.11 line. -->
+    <PackageReference Include="sqlite-net-pcl" Version="1.11.284-beta" />
   </ItemGroup>
 
 </Project>

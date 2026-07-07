@@ -40,7 +40,7 @@
         <Setter Property="TextColor" Value="{DynamicResource TextPrimary}" />
         <Setter Property="ControlTemplate">
             <Setter.Value>
-                <ControlTemplate>
+                <ControlTemplate x:DataType="RadioButton">
                     <!-- Pure MAUI radio button — bypasses native Android widget
                          so DynamicResource color keys work correctly. -->
                     <Grid ColumnDefinitions="22,*" ColumnSpacing="10"

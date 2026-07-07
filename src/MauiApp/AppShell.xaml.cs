@@ -23,7 +23,7 @@ public partial class AppShell : Shell
             [PrimaryNavDestination.Home]     = "//home-tab",
             [PrimaryNavDestination.Stream]   = "//stream-tab",
             [PrimaryNavDestination.View]     = "//view-tab",
-            [PrimaryNavDestination.Settings] = "//settings",
+            [PrimaryNavDestination.Settings] = "//settings-tab",
         };
 
     private readonly AdaptiveShellStateViewModel _stateViewModel;
@@ -32,10 +32,17 @@ public partial class AppShell : Shell
 
     private PrimaryNavDestination _currentPrimaryDestination = PrimaryNavDestination.Home;
 
-    private readonly Dictionary<PrimaryNavDestination, (Frame Container, Label Label, Image Icon)> _railButtons = [];
+    private readonly Dictionary<PrimaryNavDestination, (Border Container, Label Label, Image Icon)> _railButtons = [];
 
-    private static readonly Color InactiveText = Color.FromArgb("#8E8E93");
-    private static readonly Color ActiveText   = Color.FromArgb("#FFFFFF");
+    // Rail text colors come from the shared theme palette (Colors.xaml) so the rail
+    // matches the tab bar; resolved per-use so appearance/theme changes are honored.
+    private static Color InactiveText => ResolveColor("ShellTabUnselected", Color.FromArgb("#8E8E93"));
+    private static Color ActiveText   => ResolveColor("ShellTabSelected", Colors.White);
+
+    private static Color ResolveColor(string key, Color fallback) =>
+        Application.Current?.Resources.TryGetValue(key, out var value) == true && value is Color color
+            ? color
+            : fallback;
 
     public AppShell(
         AdaptiveShellStateViewModel stateViewModel,
@@ -49,6 +56,7 @@ public partial class AppShell : Shell
         _handoffService   = handoffService;
 
         Routing.RegisterRoute("viewer", typeof(ViewerPage));
+        Routing.RegisterRoute("diagnostic-log", typeof(Features.DiagOverlay.Views.DiagnosticLogPage));
         // OutputPage is a top-level tab — no route registration needed for push navigation.
 
         BuildRailItems();
@@ -91,25 +99,24 @@ public partial class AppShell : Shell
                 Children = { icon, label },
             };
 
-            var frame = new Frame
+            var container = new Border
             {
                 BackgroundColor = Colors.Transparent,
-                CornerRadius    = 12,
-                BorderColor     = Colors.Transparent,
+                StrokeShape     = new Microsoft.Maui.Controls.Shapes.RoundRectangle { CornerRadius = 12 },
+                Stroke          = Colors.Transparent,
                 Padding         = 0,
                 Margin          = new Thickness(8, 2),
                 Content         = stack,
                 HeightRequest   = 64,
-                HasShadow       = false,
             };
 
             var destination = item.Destination;
             var tap = new TapGestureRecognizer();
             tap.Tapped += (_, _) => _stateViewModel.SelectDestination(destination);
-            frame.GestureRecognizers.Add(tap);
+            container.GestureRecognizers.Add(tap);
 
-            _railButtons[destination] = (frame, label, icon);
-            RailItems.Children.Add(frame);
+            _railButtons[destination] = (container, label, icon);
+            RailItems.Children.Add(container);
         }
 
         UpdateRailHighlight(PrimaryNavDestination.Home);

@@ -46,3 +46,6 @@ crash_capture.txt
 live_log.txt
 publish-output/*
 /.vs/NdiForAndroid
+
+# Ephemeral test runner state (evidence .md/.png files stay tracked per workflow)
+test-results/.last-run.json
