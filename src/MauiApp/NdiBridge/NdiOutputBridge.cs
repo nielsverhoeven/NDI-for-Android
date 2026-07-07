@@ -98,6 +98,7 @@ public sealed class NdiOutputBridge : INdiOutputBridge, IDisposable
                     clock_audio = false,
                 };
                 _send = NdiNativeMethods.NDIlib_send_create(ref create);
+                NdiConnectionMetadata.Apply(_send, isSender: true, sessionName: "output");
             }
             finally
             {
@@ -389,6 +390,7 @@ public sealed class NdiOutputBridge : INdiOutputBridge, IDisposable
                     clock_audio = false,
                 };
                 send = NdiNativeMethods.NDIlib_send_create(ref sendCreate);
+                NdiConnectionMetadata.Apply(send, isSender: true, sessionName: "re-stream");
             }
             finally
             {

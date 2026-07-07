@@ -1,5 +1,5 @@
 # Project Constitution
-<!-- Version: 1.0 — 2026-06-01 -->
+<!-- Version: 1.1 — 2026-07-07 (amendment: NDI integration decision recorded as P/Invoke implemented, SDK 6.3.1; §2.4 navigation routes aligned with the shipped Shell routes) -->
 <!-- Owned by: architect + orchestrator -->
 
 This document is the authoritative source for technology choices, architecture principles, and development agreements. Every agent must read this file before starting any feature work. Amendments require `architect` review and a version increment.
@@ -16,7 +16,7 @@ This document is the authoritative source for technology choices, architecture p
 | MVVM | CommunityToolkit.Mvvm | `ObservableObject`, `[RelayCommand]`, `[ObservableProperty]` |
 | Dependency Injection | `Microsoft.Extensions.DependencyInjection` via `MauiProgram.cs` | No service locator anti-pattern |
 | Persistence | SQLite-net-pcl | Async API only |
-| NDI Integration | P/Invoke against `libndi.so` | Existing arm64-v8a and armeabi-v7a binaries from `ndi/sdk-bridge/src/main/jniLibs/` |
+| NDI Integration | P/Invoke against `libndi.so` — **decided and implemented** (no binding library) | Bundled NDI SDK ANDROID 6.3.1 binaries (arm64-v8a + armeabi-v7a) in `src/MauiApp/Platforms/Android/libs/`; NDI soft-disables on other ABIs |
 | Build | `dotnet CLI` | `dotnet build`, `dotnet test` |
 | Tests | xUnit 2.x + Moq | `dotnet test` |
 | CI | GitHub Actions | `.github/workflows/` |
@@ -99,14 +99,17 @@ NDI native binaries (`.so` files) must be included in the Android project as `An
 
 ### 2.4 Navigation
 
-Use MAUI Shell with URI routing:
+Use MAUI Shell with URI routing. Top-level destinations exist in two placement variants
+(bottom tabs `//xxx-tab`, left rail `//xxx-rail`) selected by the adaptive navigation policy:
 
-- `//sources` — Source list (home page)
-- `//sources/viewer?sourceId={id}` — NDI viewer
-- `//sources/output?sourceId={id}` — NDI output
-- `//settings` — Settings
+- `//home-tab` / `//home-rail` — Home dashboard
+- `//stream-tab` / `//stream-rail` — NDI output (no `sourceId` parameter — output originates on this device)
+- `//view-tab` / `//view-rail` — Source list, tap-to-view
+- `//settings-tab` / `//settings-rail` — Settings
+- `viewer?sourceId={id}` — NDI viewer, pushed relative to the current tab
 
-Register routes in `AppShell.xaml.cs` using `Routing.RegisterRoute`.
+Register pushed (non-tab) routes in `AppShell.xaml.cs` using `Routing.RegisterRoute`.
+Full route tables and the size-class/orientation placement policy: `docs/architecture.md`.
 
 ---
 

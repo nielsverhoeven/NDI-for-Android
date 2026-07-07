@@ -5,6 +5,8 @@
              x:Class="NdiForAndroid.Features.Output.Views.OutputPage"
              x:DataType="vm:OutputViewModel"
              Title="Output">
+    <!-- ScrollView keeps the full form reachable in landscape / small windows (#280). -->
+    <ScrollView>
     <VerticalStackLayout Padding="16" Spacing="16">
 
         <!-- Mode toggle -->
@@ -71,4 +73,5 @@
         <Button Text="Stop Output" Command="{Binding StopOutputCommand}"
                 IsVisible="{Binding IsOutputActive}" HorizontalOptions="Center" />
     </VerticalStackLayout>
+    </ScrollView>
 </ContentPage>

@@ -145,6 +145,7 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
 
                 var source = create.source_to_connect_to;
                 NdiNativeMethods.NDIlib_recv_connect(_recv, ref source);
+                NdiConnectionMetadata.Apply(_recv, isSender: false, sessionName: "viewer");
             }
             finally
             {

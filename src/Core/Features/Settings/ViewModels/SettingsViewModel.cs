@@ -5,6 +5,7 @@ using NdiForAndroid.Features.Settings.Repositories;
 using NdiForAndroid.Features.Settings.Services;
 using NdiForAndroid.Features.Sources.Models;
 using NdiForAndroid.Features.Sources.Repositories;
+using NdiForAndroid.Services;
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.ComponentModel;
@@ -100,7 +101,8 @@ public partial class SettingsViewModel : ObservableObject
         ISettingsRepository repository,
         ISettingsValidationService validationService,
         ISettingsPlatformService platformService,
-        ISourceRepository sourceRepository)
+        ISourceRepository sourceRepository,
+        INdiVersionInfo ndiVersionInfo)
     {
         _repository = repository;
         _validationService = validationService;
@@ -110,9 +112,15 @@ public partial class SettingsViewModel : ObservableObject
         var info = _platformService.GetAppInfo();
         AppName = info.AppName;
         AppVersionBuild = $"{info.Version} ({info.Build})";
+        NdiSdkVersion = ndiVersionInfo.IsRuntimeAvailable
+            ? ndiVersionInfo.NativeVersion ?? "NDI runtime available (version unknown)"
+            : "NDI runtime unavailable on this device";
 
         DiscoveryServers.CollectionChanged += OnDiscoveryServersCollectionChanged;
     }
+
+    /// <summary>Native NDI SDK version (or an unavailability message on non-ARM devices).</summary>
+    public string NdiSdkVersion { get; }
 
     [RelayCommand]
     private async Task LoadAsync()
