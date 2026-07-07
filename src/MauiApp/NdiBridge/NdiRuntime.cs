@@ -69,8 +69,22 @@ public sealed class NdiRuntime
                 _bootstrap.EnsureReady();
                 WriteConfigFileLocked(_pendingDiscoveryServers);
 
-                if (!NdiNativeMethods.NDIlib_initialize())
+                try
+                {
+                    if (!NdiNativeMethods.NDIlib_initialize())
+                        return false;
+                }
+                catch (DllNotFoundException)
+                {
+                    // libndi.so ships arm64-v8a/armeabi-v7a only — on x86/x86_64
+                    // (emulators, some Chromebooks) the app must run with NDI
+                    // features disabled instead of crashing.
                     return false;
+                }
+                catch (EntryPointNotFoundException)
+                {
+                    return false;
+                }
 
                 _appliedDiscoveryServers = _pendingDiscoveryServers;
                 _nativeVersion = Marshal.PtrToStringAnsi(NdiNativeMethods.NDIlib_version());

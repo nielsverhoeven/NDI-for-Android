@@ -70,6 +70,9 @@ public static class MauiProgram
         builder.Services.AddSingleton<IDeepLinkService, DeepLinkService>();
         builder.Services.AddSingleton<ITelemetryService, TelemetryService>();
         builder.Services.AddSingleton<INavigationService, ShellNavigationService>();
+        // Window width size classes (#279): fed by AppShell.OnSizeAllocated; consumed by
+        // the navigation policy (rail on Expanded) and the two-pane SourceListPage.
+        builder.Services.AddSingleton<IWindowSizeClassService, WindowSizeClassService>();
         builder.Services.AddSingleton<INavigationPolicyService, NavigationPolicyService>();
         builder.Services.AddSingleton<INavigationHandoffService, NdiNavigationHandoffService>();
         builder.Services.AddSingleton<IAndroidOrientationBridge, AndroidOrientationBridge>();
@@ -114,6 +117,9 @@ public static class MauiProgram
         builder.Services.AddSingleton<SourceListViewModel>();  // Singleton: subscribes to singleton IDiscoveryRefreshService
         builder.Services.AddTransient<HomeViewModel>();
         builder.Services.AddTransient<ViewerViewModel>();
+        // Factory seam for the Singleton SourceListViewModel to lazily resolve a Transient
+        // ViewerViewModel for its embedded pane (MS.DI does not provide Func<T> automatically).
+        builder.Services.AddSingleton<Func<ViewerViewModel>>(sp => () => sp.GetRequiredService<ViewerViewModel>());
         builder.Services.AddTransient<OutputViewModel>();
         builder.Services.AddTransient<SettingsViewModel>();
 
