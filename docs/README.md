@@ -147,6 +147,7 @@ powershell -ExecutionPolicy Bypass -File .\testing\e2e\scripts\run-dual-emulator
 
 - Feature implementation details: `docs/ndi-feature.md`
 - Architecture and flow diagrams: `docs/architecture.md`
+- NDI SDK capability coverage (what is implemented, partial, or out of scope): `docs/ndi-sdk-coverage.md`
 - Testing guide: `docs/testing.md`
 - 006 release and operator notes: `docs/006-settings-menu-release-notes.md`
 - 032 redesign evidence index: `test-results/032-fluent-electron-validation-index.md`

@@ -50,6 +50,7 @@ public static class MauiProgram
 
         // NDI Bridge
         builder.Services.AddSingleton<NdiRuntime>();
+        builder.Services.AddSingleton<NdiForAndroid.Services.INdiVersionInfo, NdiVersionInfo>();
         builder.Services.AddSingleton<INdiDiscoveryBridge, NdiDiscoveryBridge>();
         builder.Services.AddSingleton<INdiViewerBridge, NdiViewerBridge>();
         builder.Services.AddSingleton<INdiOutputBridge, NdiOutputBridge>();

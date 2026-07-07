@@ -93,6 +93,12 @@ internal static partial class NdiNativeMethods
     [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
     public static extern void NDIlib_recv_set_tally(IntPtr instance, ref NdiTallyNative tally);
 
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    public static extern void NDIlib_recv_add_connection_metadata(IntPtr instance, ref NdiMetadataFrameNative metadata);
+
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    public static extern void NDIlib_send_add_connection_metadata(IntPtr instance, ref NdiMetadataFrameNative metadata);
+
     // ── PTZ (receiver-side control of a remote camera) ───────────────────────
 
     [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
