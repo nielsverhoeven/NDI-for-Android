@@ -286,7 +286,6 @@ public sealed class NdiOutputBridge : INdiOutputBridge, IDisposable
     private readonly object _reStreamLock = new();
     private NdiSourceEntry? _reStreamSource;
     private QualityProfile _reStreamQuality;
-    private string? _reStreamSenderName;
     private bool _reStreamActive;
 
     public bool IsReStreamActive => _reStreamActive;

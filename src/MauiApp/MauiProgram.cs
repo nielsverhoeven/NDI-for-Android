@@ -58,7 +58,6 @@ public static class MauiProgram
         builder.Services.AddSingleton<IAppearanceService, MauiAppearanceService>();
 
         // Services
-        builder.Services.AddSingleton<NdiForAndroid.Features.Home.ViewModels.HomeDashboardService>();
         var ndiDbPath = Path.Combine(FileSystem.AppDataDirectory, "ndi.db3");
         builder.Services.AddSingleton<IAppStateRepository>(sp =>
             new AppStateRepository(ndiDbPath));
@@ -79,6 +78,13 @@ public static class MauiProgram
 #endif
         );
         builder.Services.AddSingleton<TimeProvider>(TimeProvider.System);
+
+        // Developer-mode diagnostics (#241): overlay service + log page. The FPS/discovery
+        // producers hook in with the real NDI bridge stats (#277).
+        builder.Services.AddSingleton<Features.DiagOverlay.Services.IDiagnosticOverlayService,
+            Features.DiagOverlay.DiagnosticOverlayService>();
+        builder.Services.AddTransient<Features.DiagOverlay.ViewModels.DiagnosticLogViewModel>();
+        builder.Services.AddTransient<Features.DiagOverlay.Views.DiagnosticLogPage>();
 
 #if ANDROID
         builder.Services.AddSingleton<IMulticastLockService, AndroidMulticastLockService>();

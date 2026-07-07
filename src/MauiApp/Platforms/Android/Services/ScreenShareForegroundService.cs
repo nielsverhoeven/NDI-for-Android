@@ -46,12 +46,15 @@ public sealed class ScreenShareForegroundService : Service
             manager?.CreateNotificationChannel(channel);
         }
 
+        // The AndroidX bindings annotate the fluent Set* returns as nullable even though
+        // they always return 'this'; call them statement-style to avoid null-chaining.
+        var builder = new NotificationCompat.Builder(this, ChannelId);
+        builder.SetContentTitle("NDI Output Active");
+        builder.SetContentText($"Streaming: {streamName ?? "NDI-Android"}");
+        builder.SetSmallIcon(global::Android.Resource.Drawable.StatSysWarning);
+        builder.SetOngoing(true);
+
         // NotificationCompat.Builder.Build() is non-null in practice for a well-formed builder.
-        return new NotificationCompat.Builder(this, ChannelId)
-            .SetContentTitle("NDI Output Active")
-            .SetContentText($"Streaming: {streamName ?? "NDI-Android"}")
-            .SetSmallIcon(global::Android.Resource.Drawable.StatSysWarning)
-            .SetOngoing(true)
-            .Build()!;
+        return builder.Build()!;
     }
 }

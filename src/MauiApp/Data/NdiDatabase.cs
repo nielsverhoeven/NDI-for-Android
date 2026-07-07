@@ -1,5 +1,4 @@
 using SQLite;
-using NdiForAndroid.Features.AppState.Models;
 using NdiForAndroid.Features.Sources.Models;
 using NdiForAndroid.Features.Settings.Models;
 using NdiForAndroid.NdiBridge;
@@ -7,15 +6,8 @@ using System.Text.Json;
 
 namespace NdiForAndroid.Data;
 
-/// <summary>
-/// Key-value entity used for persisting application state.
-/// </summary>
-[Table("app_state")]
-internal sealed class KeyValueEntity
-{
-    [PrimaryKey] public string Key { get; set; } = string.Empty;
-    public string Value { get; set; } = string.Empty;
-}
+// NOTE: application state (the "app_state" key-value table in this same ndi.db3 file)
+// is owned by AppStateRepository (src/Core/Features/AppState) — not duplicated here.
 
 [Table("sources")]
 public class SourceEntity
@@ -46,7 +38,12 @@ public class SettingsEntity
 }
 
 // ---------------------------------------------------------------------------
-// Issue #240: missing SQLite tables
+// Issue #240: tables ported from the legacy Kotlin app's schema.
+// Forward-declared: several of these (viewer_session, last_viewed_context,
+// output_configuration, output_session, discovery_run_result,
+// discovery_server_check_status, cached_source_crossref) have CRUD methods but
+// no consumers yet — their consumers arrive with the real NDI receive (#277)
+// and send (#278) implementations. Do not remove without checking those issues.
 // ---------------------------------------------------------------------------
 
 [Table("viewer_session")]
@@ -145,7 +142,6 @@ public sealed class NdiDatabase
 
     public async Task InitAsync()
     {
-        await _connection.CreateTableAsync<KeyValueEntity>();
         await _connection.CreateTableAsync<SourceEntity>();
         await _connection.CreateTableAsync<SettingsEntity>();
         await _connection.CreateTableAsync<ViewerSessionEntity>();
@@ -156,70 +152,11 @@ public sealed class NdiDatabase
         await _connection.CreateTableAsync<DiscoveryServerCheckStatusEntity>();
         await _connection.CreateTableAsync<CachedSourceCrossrefEntity>();
         await _connection.CreateTableAsync<ConnectionHistoryEntity>();
-        await EnsureAppStateColumnsAsync();
         await EnsureSettingsColumnsAsync();
         await EnsureSourceColumnsAsync();
     }
 
     private Task EnsureInitializedAsync() => _initTask;
-
-    /// <summary>
-    /// Persists an application state snapshot as key-value entries in the shared database.
-    /// </summary>
-    public async Task SaveAppStateAsync(AppStateSnapshot snapshot)
-    {
-        await EnsureInitializedAsync();
-        await _connection.InsertOrReplaceAsync(new KeyValueEntity { Key = "lastViewerSourceId", Value = snapshot.LastViewerSourceId ?? string.Empty });
-        await _connection.InsertOrReplaceAsync(new KeyValueEntity { Key = "streamName", Value = snapshot.StreamName ?? string.Empty });
-        await _connection.InsertOrReplaceAsync(new KeyValueEntity { Key = "isOutputActive", Value = snapshot.IsOutputActive ? "true" : "false" });
-        await _connection.InsertOrReplaceAsync(new KeyValueEntity { Key = "lastSelectedSourceId", Value = snapshot.LastSelectedSourceId ?? string.Empty });
-    }
-
-    /// <summary>
-    /// Restores an application state snapshot from key-value entries in the shared database.
-    /// </summary>
-    public async Task<AppStateSnapshot> GetAppStateAsync()
-    {
-        await EnsureInitializedAsync();
-
-        var lastViewer = await GetKeyValueAsync("lastViewerSourceId");
-        var streamName = await GetKeyValueAsync("streamName");
-        var isOutputActive = await GetKeyValueAsync("isOutputActive");
-        var lastSelected = await GetKeyValueAsync("lastSelectedSourceId");
-
-        return new AppStateSnapshot(
-            string.IsNullOrEmpty(lastViewer) ? null : lastViewer,
-            string.IsNullOrEmpty(streamName) ? null : streamName,
-            isOutputActive == "true",
-            string.IsNullOrEmpty(lastSelected) ? null : lastSelected);
-    }
-
-    private async Task<string?> GetKeyValueAsync(string key)
-    {
-        try
-        {
-            var entity = await _connection.FindAsync<KeyValueEntity>(key);
-            return entity?.Value;
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
-    private async Task EnsureAppStateColumnsAsync()
-    {
-        // The app_state table is used for key-value entries with string primary keys.
-        // CreateTableAsync is idempotent — safe to call on every init.
-        try
-        {
-            await _connection.Table<KeyValueEntity>().ToListAsync();
-        }
-        catch
-        {
-            // Table does not exist yet; InitAsync already called CreateTableAsync above.
-        }
-    }
 
     public async Task UpsertSourceAsync(NdiSource source)
     {

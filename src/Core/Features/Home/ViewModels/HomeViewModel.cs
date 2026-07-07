@@ -14,7 +14,6 @@ public partial class HomeViewModel : ObservableObject, IDisposable
     private readonly ISourceRepository _sourceRepository;
     private readonly IAppStateRepository _appStateRepo;
     private readonly INavigationService _navigationService;
-    private readonly HomeDashboardService _dashboard;
     private readonly IMainThreadDispatcher _dispatcher;
 
     [ObservableProperty]
@@ -37,14 +36,12 @@ public partial class HomeViewModel : ObservableObject, IDisposable
         ISourceRepository sourceRepository,
         IAppStateRepository appStateRepo,
         INavigationService navigationService,
-        HomeDashboardService dashboard,
         IMainThreadDispatcher dispatcher)
     {
         _discoveryService = discoveryService;
         _sourceRepository = sourceRepository;
         _appStateRepo = appStateRepo;
         _navigationService = navigationService;
-        _dashboard = dashboard;
         _dispatcher = dispatcher;
 
         DiscoveryStatus = "Waiting for discovery...";
@@ -77,8 +74,8 @@ public partial class HomeViewModel : ObservableObject, IDisposable
 
     private void OnDiscoverySnapshot(object? sender, DiscoverySnapshot snapshot)
     {
-        _dashboard.UpdateDiscovery(snapshot);
-        
+        var refreshTime = DateTimeOffset.FromUnixTimeMilliseconds(snapshot.CompletedAtEpochMillis).LocalDateTime;
+
         _dispatcher.BeginInvokeOnMainThread(() =>
         {
             var status = snapshot.Status;
@@ -91,7 +88,7 @@ public partial class HomeViewModel : ObservableObject, IDisposable
             };
 
             SourceCount = snapshot.Sources.Count;
-            LastRefreshDisplay = $"Last refresh: {_dashboard.LastRefreshTime?.ToString("HH:mm:ss")}";
+            LastRefreshDisplay = $"Last refresh: {refreshTime:HH:mm:ss}";
         });
     }
 

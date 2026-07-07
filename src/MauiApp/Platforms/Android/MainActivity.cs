@@ -34,9 +34,11 @@ public class MainActivity : MauiAppCompatActivity
 
         // Check if launched from a deep link on startup
         var launchIntent = Intent?.Data;
-        if (launchIntent != null && string.Equals(launchIntent.Scheme, "ndi", StringComparison.OrdinalIgnoreCase))
+        if (launchIntent != null
+            && string.Equals(launchIntent.Scheme, "ndi", StringComparison.OrdinalIgnoreCase)
+            && launchIntent.ToString() is { } launchUri)
         {
-            HandleDeepLinkAsync(launchIntent.ToString()).ConfigureAwait(continueOnCapturedContext: false);
+            HandleDeepLinkAsync(launchUri).FireAndForget();
         }
 
         // Allow the app to draw behind the status bar so Shell chrome and
@@ -52,15 +54,17 @@ public class MainActivity : MauiAppCompatActivity
         SyncNavigationOrientation();
     }
 
-    protected override void OnNewIntent(Intent intent)
+    protected override void OnNewIntent(Intent? intent)
     {
         base.OnNewIntent(intent);
 
         // Process ndi:// deep links from external apps or shortcuts
         var data = intent?.Data;
-        if (data != null && string.Equals(data.Scheme, "ndi", StringComparison.OrdinalIgnoreCase))
+        if (data != null
+            && string.Equals(data.Scheme, "ndi", StringComparison.OrdinalIgnoreCase)
+            && data.ToString() is { } uri)
         {
-            HandleDeepLinkAsync(data.ToString()).ConfigureAwait(continueOnCapturedContext: false);
+            HandleDeepLinkAsync(uri).FireAndForget();
         }
     }
 
@@ -71,25 +75,26 @@ public class MainActivity : MauiAppCompatActivity
             var deepLinkService = IPlatformApplication.Current?.Services.GetService<IDeepLinkService>();
             if (deepLinkService == null)
             {
-                await MainThread.InvokeOnMainThreadAsync(() =>
-                    Microsoft.Maui.ApplicationModel.Platform.CurrentActivity?.RunOnUiThread(() =>
-                        Android.Widget.Toast.MakeText(Microsoft.Maui.ApplicationModel.Platform.CurrentActivity, "Deep link service unavailable.", Android.Widget.ToastLength.Long).Show()));
+                ShowToast("Deep link service unavailable.");
                 return;
             }
 
             var success = await deepLinkService.ProcessDeepLinkAsync(uriString);
             if (success) return;
 
-            // Show error message
-            var msg = deepLinkService.LastErrorMessage ?? "Unknown deep link error.";
-            await MainThread.InvokeOnMainThreadAsync(() =>
-                Android.Widget.Toast.MakeText(Microsoft.Maui.ApplicationModel.Platform.CurrentActivity, msg, Android.Widget.ToastLength.Long).Show());
+            ShowToast(deepLinkService.LastErrorMessage ?? "Unknown deep link error.");
         }
         catch (Exception ex)
         {
-            await MainThread.InvokeOnMainThreadAsync(() =>
-                Android.Widget.Toast.MakeText(Microsoft.Maui.ApplicationModel.Platform.CurrentActivity, $"Deep link error: {ex.Message}", Android.Widget.ToastLength.Long).Show());
+            ShowToast($"Deep link error: {ex.Message}");
         }
+    }
+
+    private static void ShowToast(string message)
+    {
+        var activity = Microsoft.Maui.ApplicationModel.Platform.CurrentActivity;
+        activity?.RunOnUiThread(() =>
+            Android.Widget.Toast.MakeText(activity, message, Android.Widget.ToastLength.Long)?.Show());
     }
 
     protected override void OnResume()
@@ -116,8 +121,11 @@ public class MainActivity : MauiAppCompatActivity
 
     private void SyncNavigationOrientation()
     {
+        if (Resources?.Configuration?.Orientation is not { } orientation)
+            return;
+
         var bridge = IPlatformApplication.Current?.Services.GetService<IAndroidOrientationBridge>();
-        bridge?.UpdateFromConfiguration(Resources.Configuration.Orientation);
+        bridge?.UpdateFromConfiguration(orientation);
     }
 
     private static IAppLifecycleService? ResolveLifecycleService() =>

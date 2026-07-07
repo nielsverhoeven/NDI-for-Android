@@ -135,7 +135,8 @@ public sealed class MauiAppearanceService : IAppearanceService
 
     private static void UpdateShell(Palette p)
     {
-        if (Application.Current?.MainPage is not Shell shell)
+        // Single-window app: the Shell is the first (only) window's page.
+        if (Application.Current?.Windows.FirstOrDefault()?.Page is not Shell shell)
             return;
 
         shell.SetValue(Shell.BackgroundColorProperty,       p.ShellBackground);
@@ -161,14 +162,19 @@ public sealed class MauiAppearanceService : IAppearanceService
             return;
 
         // Paint the status bar the same color as the Shell chrome so it
-        // appears seamless across the full screen width.
-        var c = p.ShellBackground;
-        var androidColor = new Android.Graphics.Color(
-            (byte)(c.Red   * 255),
-            (byte)(c.Green * 255),
-            (byte)(c.Blue  * 255),
-            (byte)(c.Alpha * 255));
-        activity.Window.SetStatusBarColor(androidColor);
+        // appears seamless across the full screen width. SetStatusBarColor is
+        // obsolete (a no-op) from API 35: edge-to-edge is enforced there and the
+        // seamless look already comes from SetDecorFitsSystemWindows(false).
+        if (!OperatingSystem.IsAndroidVersionAtLeast(35))
+        {
+            var c = p.ShellBackground;
+            var androidColor = new Android.Graphics.Color(
+                (byte)(c.Red   * 255),
+                (byte)(c.Green * 255),
+                (byte)(c.Blue  * 255),
+                (byte)(c.Alpha * 255));
+            activity.Window.SetStatusBarColor(androidColor);
+        }
 
         // Switch status bar icon/text tint so they remain readable.
         // Light background → dark icons; dark background → light icons.
@@ -176,7 +182,8 @@ public sealed class MauiAppearanceService : IAppearanceService
         {
             var controller = WindowCompat.GetInsetsController(
                 activity.Window, activity.Window.DecorView);
-            controller.AppearanceLightStatusBars = isLight;
+            if (controller is not null)
+                controller.AppearanceLightStatusBars = isLight;
         }
 #endif
     }
