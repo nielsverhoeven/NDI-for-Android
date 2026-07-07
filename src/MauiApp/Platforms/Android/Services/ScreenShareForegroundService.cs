@@ -1,11 +1,15 @@
 using Android.App;
 using Android.Content;
+using Android.Content.PM;
 using Android.OS;
 using AndroidX.Core.App;
 
 namespace NdiForAndroid.Platforms.Android.Services;
 
-[Service(Exported = false, Name = "com.ndi.android.ScreenShareForegroundService", ForegroundServiceType = global::Android.Content.PM.ForegroundService.TypeMediaProjection)]
+[Service(
+    Exported = false,
+    Name = "com.ndi.android.ScreenShareForegroundService",
+    ForegroundServiceType = ForegroundService.TypeMediaProjection | ForegroundService.TypeCamera | ForegroundService.TypeMicrophone)]
 public sealed class ScreenShareForegroundService : Service
 {
     internal const string ActionStart = "com.ndi.android.action.START_SCREEN_SHARE";
@@ -27,8 +31,41 @@ public sealed class ScreenShareForegroundService : Service
         }
 
         var streamName = intent?.GetStringExtra(ExtraStreamName);
-        StartForeground(NotificationId, BuildNotification(streamName));
+        var notification = BuildNotification(streamName);
+
+        if (OperatingSystem.IsAndroidVersionAtLeast(29))
+        {
+            // API 29+: declare the active service types explicitly. Passing a type
+            // whose runtime permission is not granted throws SecurityException on
+            // API 34+, so camera/microphone are only included when currently granted.
+            StartForeground(NotificationId, notification, GetGrantedServiceTypes());
+        }
+        else
+        {
+            StartForeground(NotificationId, notification);
+        }
+
         return StartCommandResult.Sticky;
+    }
+
+    [System.Runtime.Versioning.SupportedOSPlatform("android29.0")]
+    private ForegroundService GetGrantedServiceTypes()
+    {
+        // MediaProjection is gated by the consent dialog (not a runtime permission)
+        // and the caller only starts this service after consent, so it is always safe.
+        var types = ForegroundService.TypeMediaProjection;
+
+        // Camera/microphone service types exist from API 30.
+        if (OperatingSystem.IsAndroidVersionAtLeast(30))
+        {
+            if (CheckSelfPermission(global::Android.Manifest.Permission.Camera) == Permission.Granted)
+                types |= ForegroundService.TypeCamera;
+
+            if (CheckSelfPermission(global::Android.Manifest.Permission.RecordAudio) == Permission.Granted)
+                types |= ForegroundService.TypeMicrophone;
+        }
+
+        return types;
     }
 
     private Notification BuildNotification(string? streamName)
@@ -46,12 +83,15 @@ public sealed class ScreenShareForegroundService : Service
             manager?.CreateNotificationChannel(channel);
         }
 
+        // The AndroidX bindings annotate the fluent Set* returns as nullable even though
+        // they always return 'this'; call them statement-style to avoid null-chaining.
+        var builder = new NotificationCompat.Builder(this, ChannelId);
+        builder.SetContentTitle("NDI Output Active");
+        builder.SetContentText($"Streaming: {streamName ?? "NDI-Android"}");
+        builder.SetSmallIcon(global::Android.Resource.Drawable.StatSysWarning);
+        builder.SetOngoing(true);
+
         // NotificationCompat.Builder.Build() is non-null in practice for a well-formed builder.
-        return new NotificationCompat.Builder(this, ChannelId)
-            .SetContentTitle("NDI Output Active")
-            .SetContentText($"Streaming: {streamName ?? "NDI-Android"}")
-            .SetSmallIcon(global::Android.Resource.Drawable.StatSysWarning)
-            .SetOngoing(true)
-            .Build()!;
+        return builder.Build()!;
     }
 }

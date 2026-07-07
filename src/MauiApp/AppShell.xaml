@@ -78,7 +78,7 @@
                       Icon="nav_view.svg" />
         <ShellContent Title="Settings"
                       ContentTemplate="{DataTemplate settings:SettingsPage}"
-                      Route="settings"
+                      Route="settings-tab"
                       Icon="nav_settings.svg" />
     </TabBar>
 

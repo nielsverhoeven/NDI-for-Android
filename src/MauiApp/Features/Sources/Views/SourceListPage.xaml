@@ -3,37 +3,55 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              xmlns:vm="clr-namespace:NdiForAndroid.Features.Sources.ViewModels;assembly=NdiForAndroid.Core"
              xmlns:models="clr-namespace:NdiForAndroid.Features.Sources.Models;assembly=NdiForAndroid.Core"
+             xmlns:viewer="clr-namespace:NdiForAndroid.Features.Viewer.Views"
              x:Class="NdiForAndroid.Features.Sources.Views.SourceListPage"
              x:DataType="vm:SourceListViewModel"
              Title="NDI Sources">
 
-    <RefreshView IsRefreshing="{Binding IsRefreshing}"
-                 Command="{Binding RefreshCommand}">
-        <CollectionView ItemsSource="{Binding Sources}"
-                        EmptyView="No NDI sources found. Pull to refresh.">
-            <CollectionView.ItemTemplate>
-                <DataTemplate x:DataType="models:NdiSource">
-                    <Grid Padding="16,8" ColumnDefinitions="*,Auto">
-                        <VerticalStackLayout>
-                            <Label Text="{Binding DisplayName}"
-                                   FontAttributes="Bold"
-                                   FontSize="16" />
-                            <Label Text="{Binding EndpointAddress}"
-                                   FontSize="12"
-                                   TextColor="Gray" />
-                        </VerticalStackLayout>
-                        <HorizontalStackLayout Grid.Column="1" Spacing="8">
-                            <Button Text="Watch"
-                                    Command="{Binding Source={RelativeSource AncestorType={x:Type vm:SourceListViewModel}}, Path=NavigateToViewerCommand}"
-                                    CommandParameter="{Binding .}" />
-                            <Button Text="Output"
-                                    Command="{Binding Source={RelativeSource AncestorType={x:Type vm:SourceListViewModel}}, Path=NavigateToOutputCommand}"
-                                    CommandParameter="{Binding .}" />
-                        </HorizontalStackLayout>
-                    </Grid>
-                </DataTemplate>
-            </CollectionView.ItemTemplate>
-        </CollectionView>
-    </RefreshView>
+    <!-- Compact/Medium: single column (pane column collapsed to 0).
+         Expanded (>840dp): code-behind widens the pane column to a 2*/3* split. -->
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition x:Name="ListColumn" Width="*" />
+            <ColumnDefinition x:Name="PaneColumn" Width="0" />
+        </Grid.ColumnDefinitions>
+
+        <RefreshView Grid.Column="0"
+                     IsRefreshing="{Binding IsRefreshing}"
+                     Command="{Binding RefreshCommand}">
+            <CollectionView ItemsSource="{Binding Sources}"
+                            EmptyView="No NDI sources found. Pull to refresh.">
+                <CollectionView.ItemTemplate>
+                    <DataTemplate x:DataType="models:NdiSource">
+                        <Grid Padding="16,8" ColumnDefinitions="*,Auto">
+                            <VerticalStackLayout>
+                                <Label Text="{Binding DisplayName}"
+                                       FontAttributes="Bold"
+                                       FontSize="16" />
+                                <Label Text="{Binding EndpointAddress}"
+                                       FontSize="12"
+                                       TextColor="Gray" />
+                            </VerticalStackLayout>
+                            <HorizontalStackLayout Grid.Column="1" Spacing="8">
+                                <Button Text="Watch"
+                                        Command="{Binding Source={RelativeSource AncestorType={x:Type vm:SourceListViewModel}}, Path=NavigateToViewerCommand}"
+                                        CommandParameter="{Binding .}" />
+                                <Button Text="Output"
+                                        Command="{Binding Source={RelativeSource AncestorType={x:Type vm:SourceListViewModel}}, Path=NavigateToOutputCommand}"
+                                        CommandParameter="{Binding .}" />
+                            </HorizontalStackLayout>
+                        </Grid>
+                    </DataTemplate>
+                </CollectionView.ItemTemplate>
+            </CollectionView>
+        </RefreshView>
+
+        <!-- Embedded viewer pane (Expanded windows only). Its BindingContext is the
+             lazily-created PaneViewer ViewerViewModel; null until first Expanded tap. -->
+        <viewer:ViewerView Grid.Column="1"
+                           x:Name="ViewerPane"
+                           IsVisible="False"
+                           BindingContext="{Binding PaneViewer}" />
+    </Grid>
 
 </ContentPage>

@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentView xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:skia="clr-namespace:SkiaSharp.Views.Maui.Controls;assembly=SkiaSharp.Views.Maui.Controls"
+             xmlns:vm="clr-namespace:NdiForAndroid.Features.Viewer.ViewModels;assembly=NdiForAndroid.Core"
+             x:Class="NdiForAndroid.Features.Viewer.Views.ViewerView"
+             x:DataType="vm:ViewerViewModel">
+    <Grid RowDefinitions="Auto,*" Padding="16" RowSpacing="16">
+
+        <!-- Video surface. Border turns red while the source echoes program tally. -->
+        <Border Grid.Row="0"
+                StrokeThickness="3"
+                StrokeShape="RoundRectangle 8"
+                BackgroundColor="{DynamicResource Black}">
+            <Border.Style>
+                <Style TargetType="Border">
+                    <Setter Property="Stroke" Value="{DynamicResource BorderColor}" />
+                    <Style.Triggers>
+                        <DataTrigger TargetType="Border" Binding="{Binding IsTallyProgram}" Value="True">
+                            <Setter Property="Stroke" Value="{DynamicResource ErrorRed}" />
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </Border.Style>
+            <!-- ~16:9 video area; frames are letterboxed by the paint handler. -->
+            <skia:SKCanvasView x:Name="VideoCanvas" HeightRequest="240" />
+        </Border>
+
+        <ScrollView Grid.Row="1">
+            <VerticalStackLayout Spacing="16">
+                <Label Text="{Binding StatusMessage}" HorizontalOptions="Center" />
+
+                <!-- Quality profile selector (shown when IsPlaying) -->
+                <HorizontalStackLayout HorizontalOptions="Center" Spacing="8" IsVisible="{Binding IsPlaying}">
+                    <Button Text="Smooth" Command="{Binding ChangeQualityProfileCommand}"
+                            CommandParameter="Smooth" HorizontalOptions="Center" />
+                    <Button Text="Balanced" Command="{Binding ChangeQualityProfileCommand}"
+                            CommandParameter="Balanced" HorizontalOptions="Center" />
+                    <Button Text="High" Command="{Binding ChangeQualityProfileCommand}"
+                            CommandParameter="High" HorizontalOptions="Center" />
+                </HorizontalStackLayout>
+
+                <!-- Audio playback toggle (shown when IsPlaying) -->
+                <HorizontalStackLayout HorizontalOptions="Center" Spacing="8" IsVisible="{Binding IsPlaying}">
+                    <Label Text="Audio" VerticalOptions="Center" TextColor="{DynamicResource TextSecondary}" />
+                    <Switch IsToggled="{Binding IsAudioEnabled}" />
+                </HorizontalStackLayout>
+
+                <!-- PTZ controls (shown when the connected source supports PTZ) -->
+                <VerticalStackLayout HorizontalOptions="Center" Spacing="8" IsVisible="{Binding IsPtzSupported}">
+                    <Label Text="PTZ" HorizontalOptions="Center" TextColor="{DynamicResource TextSecondary}" />
+                    <Grid RowDefinitions="Auto,Auto,Auto" ColumnDefinitions="Auto,Auto,Auto"
+                          RowSpacing="8" ColumnSpacing="8" HorizontalOptions="Center">
+                        <Button Grid.Row="0" Grid.Column="1" Text="▲"
+                                Command="{Binding PtzNudgeCommand}" CommandParameter="up" />
+                        <Button Grid.Row="1" Grid.Column="0" Text="◄"
+                                Command="{Binding PtzNudgeCommand}" CommandParameter="left" />
+                        <Button Grid.Row="1" Grid.Column="1" Text="AF"
+                                Command="{Binding PtzAutoFocusCommand}" />
+                        <Button Grid.Row="1" Grid.Column="2" Text="►"
+                                Command="{Binding PtzNudgeCommand}" CommandParameter="right" />
+                        <Button Grid.Row="2" Grid.Column="1" Text="▼"
+                                Command="{Binding PtzNudgeCommand}" CommandParameter="down" />
+                    </Grid>
+                    <HorizontalStackLayout HorizontalOptions="Center" Spacing="8">
+                        <Button Text="Zoom −" Command="{Binding PtzZoomNudgeCommand}" CommandParameter="out" />
+                        <Button Text="Zoom +" Command="{Binding PtzZoomNudgeCommand}" CommandParameter="in" />
+                    </HorizontalStackLayout>
+                </VerticalStackLayout>
+
+                <!-- Retry indicator + countdown (shown during reconnect window) -->
+                <HorizontalStackLayout HorizontalOptions="Center" Spacing="8" IsVisible="{Binding IsReconnecting}">
+                    <ActivityIndicator IsRunning="{Binding IsReconnecting}" Color="{DynamicResource TextPrimary}" />
+                    <Label Text="{Binding RetryStatusMessage}" HorizontalOptions="Center" />
+                </HorizontalStackLayout>
+
+                <!-- Cancel an in-progress reconnect window (FR6) -->
+                <Button Text="Cancel Retry" Command="{Binding CancelRetryCommand}"
+                        IsVisible="{Binding IsReconnecting}" HorizontalOptions="Center" />
+
+                <!-- Post-expiry manual recovery (FR7) -->
+                <Button Text="Reconnect" Command="{Binding ReconnectCommand}"
+                        IsVisible="{Binding CanReconnect}" HorizontalOptions="Center" />
+
+                <Button Text="Stop" Command="{Binding StopCommand}"
+                        IsVisible="{Binding IsPlaying}" HorizontalOptions="Center" />
+            </VerticalStackLayout>
+        </ScrollView>
+    </Grid>
+</ContentView>

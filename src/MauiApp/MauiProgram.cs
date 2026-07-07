@@ -8,6 +8,7 @@ using NdiForAndroid.Features.DeepLinking.Services;
 using NdiForAndroid.Features.Home.ViewModels;
 using NdiForAndroid.Features.Navigation.Services;
 using NdiForAndroid.Features.Navigation.ViewModels;
+using NdiForAndroid.Features.Output.Repositories;
 using NdiForAndroid.Features.Output.ViewModels;
 using NdiForAndroid.Features.Settings.Repositories;
 using NdiForAndroid.Features.Settings.Services;
@@ -17,6 +18,7 @@ using NdiForAndroid.Features.Sources.ViewModels;
 using NdiForAndroid.Features.Viewer.ViewModels;
 using NdiForAndroid.NdiBridge;
 using NdiForAndroid.Services;
+using SkiaSharp.Views.Maui.Controls.Hosting;
 
 #if ANDROID
 using NdiForAndroid.Platforms.Android.Services;
@@ -32,6 +34,7 @@ public static class MauiProgram
 
         builder
             .UseMauiApp<App>()
+            .UseSkiaSharp()
             .ConfigureFonts(fonts =>
             {
                 fonts.AddFont("OpenSans-Regular.ttf", "OpenSansRegular");
@@ -46,19 +49,21 @@ public static class MauiProgram
         builder.Services.AddSingleton<NdiDatabase>();
 
         // NDI Bridge
+        builder.Services.AddSingleton<NdiRuntime>();
+        builder.Services.AddSingleton<NdiForAndroid.Services.INdiVersionInfo, NdiVersionInfo>();
         builder.Services.AddSingleton<INdiDiscoveryBridge, NdiDiscoveryBridge>();
         builder.Services.AddSingleton<INdiViewerBridge, NdiViewerBridge>();
         builder.Services.AddSingleton<INdiOutputBridge, NdiOutputBridge>();
 
         // Repositories
         builder.Services.AddSingleton<ISourceRepository, SourceRepository>();
+        builder.Services.AddSingleton<IOutputConfigurationRepository, OutputConfigurationRepository>();
         builder.Services.AddSingleton<ISettingsRepository, SettingsRepository>();
         builder.Services.AddSingleton<ISettingsValidationService, SettingsValidationService>();
         builder.Services.AddSingleton<IDiscoverySettingsOrchestrator, DiscoverySettingsOrchestrator>();
         builder.Services.AddSingleton<IAppearanceService, MauiAppearanceService>();
 
         // Services
-        builder.Services.AddSingleton<NdiForAndroid.Features.Home.ViewModels.HomeDashboardService>();
         var ndiDbPath = Path.Combine(FileSystem.AppDataDirectory, "ndi.db3");
         builder.Services.AddSingleton<IAppStateRepository>(sp =>
             new AppStateRepository(ndiDbPath));
@@ -66,6 +71,9 @@ public static class MauiProgram
         builder.Services.AddSingleton<IDeepLinkService, DeepLinkService>();
         builder.Services.AddSingleton<ITelemetryService, TelemetryService>();
         builder.Services.AddSingleton<INavigationService, ShellNavigationService>();
+        // Window width size classes (#279): fed by AppShell.OnSizeAllocated; consumed by
+        // the navigation policy (rail on Expanded) and the two-pane SourceListPage.
+        builder.Services.AddSingleton<IWindowSizeClassService, WindowSizeClassService>();
         builder.Services.AddSingleton<INavigationPolicyService, NavigationPolicyService>();
         builder.Services.AddSingleton<INavigationHandoffService, NdiNavigationHandoffService>();
         builder.Services.AddSingleton<IAndroidOrientationBridge, AndroidOrientationBridge>();
@@ -80,14 +88,29 @@ public static class MauiProgram
         );
         builder.Services.AddSingleton<TimeProvider>(TimeProvider.System);
 
+        // Developer-mode diagnostics (#241): overlay service + log page. The FPS/discovery
+        // producers hook in with the real NDI bridge stats (#277).
+        builder.Services.AddSingleton<Features.DiagOverlay.Services.IDiagnosticOverlayService,
+            Features.DiagOverlay.DiagnosticOverlayService>();
+        builder.Services.AddTransient<Features.DiagOverlay.ViewModels.DiagnosticLogViewModel>();
+        builder.Services.AddTransient<Features.DiagOverlay.Views.DiagnosticLogPage>();
+
 #if ANDROID
         builder.Services.AddSingleton<IMulticastLockService, AndroidMulticastLockService>();
         builder.Services.AddSingleton<IScreenSharePlatformService, AndroidScreenSharePlatformService>();
         builder.Services.AddSingleton<ISettingsPlatformService, AndroidSettingsPlatformService>();
+        builder.Services.AddSingleton<INdiPlatformBootstrap, AndroidNsdBootstrap>();
+        builder.Services.AddSingleton<IAudioPlaybackSink, AndroidAudioPlaybackSink>();
+        builder.Services.AddSingleton<IVideoCaptureSource, AndroidVideoCaptureSource>();
+        builder.Services.AddSingleton<IAudioCaptureSource, AndroidMicrophoneCaptureSource>();
 #else
         builder.Services.AddSingleton<IMulticastLockService, NoopMulticastLockService>();
         builder.Services.AddSingleton<IScreenSharePlatformService, NoopScreenSharePlatformService>();
         builder.Services.AddSingleton<ISettingsPlatformService, DefaultSettingsPlatformService>();
+        builder.Services.AddSingleton<INdiPlatformBootstrap, DefaultNdiPlatformBootstrap>();
+        builder.Services.AddSingleton<IAudioPlaybackSink, NoopAudioPlaybackSink>();
+        builder.Services.AddSingleton<IVideoCaptureSource, NoopVideoCaptureSource>();
+        builder.Services.AddSingleton<IAudioCaptureSource, NoopAudioCaptureSource>();
 #endif
 
         // ViewModels
@@ -95,6 +118,9 @@ public static class MauiProgram
         builder.Services.AddSingleton<SourceListViewModel>();  // Singleton: subscribes to singleton IDiscoveryRefreshService
         builder.Services.AddTransient<HomeViewModel>();
         builder.Services.AddTransient<ViewerViewModel>();
+        // Factory seam for the Singleton SourceListViewModel to lazily resolve a Transient
+        // ViewerViewModel for its embedded pane (MS.DI does not provide Func<T> automatically).
+        builder.Services.AddSingleton<Func<ViewerViewModel>>(sp => () => sp.GetRequiredService<ViewerViewModel>());
         builder.Services.AddTransient<OutputViewModel>();
         builder.Services.AddTransient<SettingsViewModel>();
 

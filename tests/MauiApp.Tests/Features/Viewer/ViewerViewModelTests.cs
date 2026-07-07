@@ -150,4 +150,85 @@ public class ViewerViewModelTests
 
         Assert.False(sut.IsReconnecting);
     }
+
+    // ── Phase 2 (#277): tally, PTZ, audio wiring ────────────────────────────
+
+    [Fact]
+    public void TallyEcho_ProgramOn_SetsIsTallyProgram()
+    {
+        var sut = CreateSut();
+
+        _bridgeMock.Raise(b => b.TallyEchoChanged += null, _bridgeMock.Object, new NdiTallyEcho(OnProgram: true, OnPreview: false));
+
+        Assert.True(sut.IsTallyProgram);
+    }
+
+    [Fact]
+    public void ConnectionStateChanged_Connected_RefreshesIsPtzSupported()
+    {
+        _bridgeMock.SetupGet(b => b.IsPtzSupported).Returns(true);
+        var sut = CreateSut();
+
+        _bridgeMock.Raise(b => b.ConnectionStateChanged += null, _bridgeMock.Object, ConnectionState.Connected);
+
+        Assert.True(sut.IsPtzSupported);
+    }
+
+    [Fact]
+    public void StartCommand_ReportsProgramTallyUpstream()
+    {
+        var sut = CreateSut();
+        sut.SourceId = "192.168.1.10:5961";
+
+        _bridgeMock.Verify(b => b.SetTally(true, false), Times.AtLeastOnce);
+    }
+
+    [Fact]
+    public void StopCommand_ClearsTallyAndPtzState()
+    {
+        var sut = CreateSut();
+        sut.SourceId = "192.168.1.10:5961";
+
+        sut.StopCommand.Execute(null);
+
+        _bridgeMock.Verify(b => b.SetTally(false, false), Times.AtLeastOnce);
+        Assert.False(sut.IsTallyProgram);
+        Assert.False(sut.IsPtzSupported);
+    }
+
+    [Fact]
+    public void IsAudioEnabled_Set_ForwardsToBridge()
+    {
+        var sut = CreateSut();
+
+        sut.IsAudioEnabled = true;
+
+        _bridgeMock.VerifySet(b => b.IsAudioEnabled = true, Times.Once);
+    }
+
+    [Theory]
+    [InlineData("left", -0.5f, 0f)]
+    [InlineData("right", 0.5f, 0f)]
+    [InlineData("up", 0f, 0.5f)]
+    [InlineData("down", 0f, -0.5f)]
+    public async Task PtzNudge_BurstsThenStops(string direction, float expectedPan, float expectedTilt)
+    {
+        var sut = CreateSut();
+
+        await sut.PtzNudgeCommand.ExecuteAsync(direction);
+
+        _bridgeMock.Verify(b => b.PtzPanTiltSpeed(expectedPan, expectedTilt), Times.Once);
+        _bridgeMock.Verify(b => b.PtzPanTiltSpeed(0f, 0f), Times.Once);
+    }
+
+    [Fact]
+    public async Task PtzZoomNudge_In_BurstsThenStops()
+    {
+        var sut = CreateSut();
+
+        await sut.PtzZoomNudgeCommand.ExecuteAsync("in");
+
+        _bridgeMock.Verify(b => b.PtzZoomSpeed(0.5f), Times.Once);
+        _bridgeMock.Verify(b => b.PtzZoomSpeed(0f), Times.Once);
+    }
 }

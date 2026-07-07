@@ -27,6 +27,8 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
     private const int AttemptIntervalSeconds = 2;
     private const int MonitorIntervalSeconds = 1;
     private const string TerminalMessage = "Connection lost. Reconnection failed.";
+    private const int PtzNudgeDurationMs = 250;
+    private const float PtzNudgeSpeed = 0.5f;
 
     private readonly INdiViewerBridge _bridge;
     private readonly TimeProvider _timeProvider;
@@ -44,6 +46,22 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
 
     [ObservableProperty]
     private string? _statusMessage;
+
+    // Tally / PTZ / audio state surfaced from the bridge
+    [ObservableProperty]
+    private bool _isTallyProgram;
+
+    [ObservableProperty]
+    private bool _isPtzSupported;
+
+    [ObservableProperty]
+    private bool _isAudioEnabled;
+
+    /// <summary>
+    /// Latest decoded frame from the bridge; polled by the View's render loop
+    /// (~30 fps). No change notification — the frame's timestamp is the dedupe key.
+    /// </summary>
+    public NdiVideoFrame? CurrentFrame => _bridge.GetLatestFrame();
 
     // Reconnect state
     [ObservableProperty]
@@ -69,7 +87,6 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
     private QualityProfile _qualityProfile = QualityProfile.Balanced;
 
     private QualityProfile? _previousQualityProfile;
-    private float? _lastMeasuredFps;
     private int _sustainedDropCount;
     private static readonly int AutoDegradationThreshold = 3;
     private const float DegradationThresholdFps = 15f;
@@ -101,11 +118,40 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
         _connectionHistory = connectionHistory;
         RetryRemainingSeconds = ReconnectConstants.RetryWindowSeconds;
         StatusMessage = "Select a source on Home to start viewing.";
+        _isAudioEnabled = bridge.IsAudioEnabled; // backing field: don't push the default back to the bridge
 
         _lifecycle.AppResumed += OnAppResumed;
+        _bridge.ConnectionStateChanged += OnBridgeConnectionStateChanged;
+        _bridge.TallyEchoChanged += OnBridgeTallyEchoChanged;
     }
 
-    private void OnAppResumed()
+    /// <summary>Forwards the user's audio toggle to the active bridge connection.</summary>
+    partial void OnIsAudioEnabledChanged(bool value)
+    {
+        _bridge.IsAudioEnabled = value;
+    }
+
+    private void OnBridgeConnectionStateChanged(object? sender, ConnectionState state)
+    {
+        _dispatcher.BeginInvokeOnMainThread(() =>
+        {
+            // PTZ support is only known once connection metadata has arrived.
+            IsPtzSupported = _bridge.IsPtzSupported;
+
+            // Minimal status refresh; drop handling stays with the reconnect state machine.
+            if (IsPlaying && !IsReconnecting && state == ConnectionState.Connected)
+                StatusMessage = $"Connected. (QProfile: {QualityProfile})";
+        });
+    }
+
+    private void OnBridgeTallyEchoChanged(object? sender, NdiTallyEcho echo)
+    {
+        _dispatcher.BeginInvokeOnMainThread(() => IsTallyProgram = echo.OnProgram);
+    }
+
+    // async void is intentional: MAUI lifecycle event handler. All awaits are guarded so
+    // no exception can escape and tear down the process.
+    private async void OnAppResumed()
     {
         // If we were playing when the app went background, try to restore
         if (_wasPlayingBeforeResume && !string.IsNullOrEmpty(SourceId) && !IsPlaying)
@@ -113,11 +159,11 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
             _wasPlayingBeforeResume = false;
             RetryStatusMessage = "Restoring viewer...";
             IsReconnecting = true;
-            
+
             // Restore quality profile for this source from cached sources
             try
             {
-                var sources = Task.Run(async () => await _sourceRepository.GetCachedSourcesAsync()).Result;
+                var sources = await _sourceRepository.GetCachedSourcesAsync();
                 var source = sources.FirstOrDefault(s => s.SourceId == SourceId);
                 if (source != null)
                 {
@@ -152,7 +198,7 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
     // ----- Commands -------------------------------------------------------
 
     [RelayCommand]
-    private async void Start()
+    private async Task Start()
     {
         if (string.IsNullOrEmpty(SourceId))
         {
@@ -175,8 +221,8 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
         }
         catch { /* Silent fail – will default to Balanced */ }
 
-        // Persist last active viewer source for resume recovery
-        _appStateRepo.SaveAsync(new AppStateSnapshot(SourceId, null, false, null)).ConfigureAwait(continueOnCapturedContext: true);
+        // Persist last active viewer source for resume recovery (non-critical housekeeping)
+        _appStateRepo.SaveAsync(new AppStateSnapshot(SourceId, null, false, null)).FireAndForget();
 
         // Record connection event for history tracking (try to resolve display name from cache)
         string displayName = SourceId;
@@ -189,10 +235,10 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
         }
         catch { /* Silent fail – will fall back to sourceId */ }
 
-        _ = _connectionHistory.RecordConnectedAsync(SourceId, displayName, QualityProfile)
-            .ConfigureAwait(continueOnCapturedContext: true);
+        _connectionHistory.RecordConnectedAsync(SourceId, displayName, QualityProfile).FireAndForget();
 
         _bridge.StartReceiver(SourceId, QualityProfile);
+        _bridge.SetTally(onProgram: true, onPreview: false);
         IsPlaying = true;
         StatusMessage = $"Connecting... (QProfile: {QualityProfile})";
     }
@@ -202,15 +248,17 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
     {
         _userInitiatedStop = true;
         DisposeTimers();
+        _bridge.SetTally(onProgram: false, onPreview: false);
         _bridge.StopReceiver();
 
         // Record disconnection for history tracking
-        _ = _connectionHistory.RecordDisconnectedAsync()
-            .ConfigureAwait(continueOnCapturedContext: true);
+        _connectionHistory.RecordDisconnectedAsync().FireAndForget();
 
         IsPlaying = false;
         IsReconnecting = false;
         CanReconnect = false;
+        IsTallyProgram = false;
+        IsPtzSupported = false;
         RetryStatusMessage = null;
         StatusMessage = null;
         RetryRemainingSeconds = ReconnectConstants.RetryWindowSeconds;
@@ -222,6 +270,8 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
         DisposeTimers();
         _userInitiatedStop = true;
         _lifecycle.AppResumed -= OnAppResumed;
+        _bridge.ConnectionStateChanged -= OnBridgeConnectionStateChanged;
+        _bridge.TallyEchoChanged -= OnBridgeTallyEchoChanged;
     }
 
     private void DisposeTimers()
@@ -393,6 +443,49 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
         BeginReconnectWindow();
     }
 
+    // --- PTZ (only offered when IsPtzSupported) ---
+
+    /// <summary>Short pan/tilt burst: run at ±<see cref="PtzNudgeSpeed"/> for 250 ms, then stop.</summary>
+    [RelayCommand]
+    private async Task PtzNudge(string? direction)
+    {
+        var (pan, tilt) = direction switch
+        {
+            "left" => (-PtzNudgeSpeed, 0f),
+            "right" => (PtzNudgeSpeed, 0f),
+            "up" => (0f, PtzNudgeSpeed),
+            "down" => (0f, -PtzNudgeSpeed),
+            _ => (0f, 0f),
+        };
+        if (pan == 0f && tilt == 0f)
+            return;
+
+        _bridge.PtzPanTiltSpeed(pan, tilt);
+        await Task.Delay(PtzNudgeDurationMs);
+        _bridge.PtzPanTiltSpeed(0f, 0f);
+    }
+
+    /// <summary>Short zoom burst: run at ±<see cref="PtzNudgeSpeed"/> for 250 ms, then stop.</summary>
+    [RelayCommand]
+    private async Task PtzZoomNudge(string? direction)
+    {
+        var speed = direction switch
+        {
+            "in" => PtzNudgeSpeed,
+            "out" => -PtzNudgeSpeed,
+            _ => 0f,
+        };
+        if (speed == 0f)
+            return;
+
+        _bridge.PtzZoomSpeed(speed);
+        await Task.Delay(PtzNudgeDurationMs);
+        _bridge.PtzZoomSpeed(0f);
+    }
+
+    [RelayCommand]
+    private void PtzAutoFocus() => _bridge.PtzAutoFocus();
+
     // --- Quality Profile ---
 
     [RelayCommand]
@@ -424,70 +517,71 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
     }
 
     /// <summary>
-/// Monitor for quality degradation and auto-degrade if sustained drops detected.
-/// Call from a frame update loop or watchdog timer (e.g., every ~5 seconds).
-/// </summary>
-    public async void CheckAutoDegradation(float currentFps, float dropPercent)
-{
-    // Only degrade if playing and not already in reconnect window
-    if (!IsPlaying || IsReconnecting) return;
-
-    // Already degraded — only auto-recover
-    if (_previousQualityProfile != null)
+    /// Monitor for quality degradation and auto-degrade if sustained drops detected.
+    /// Called from the frame stats watchdog (~every 5 seconds) once the real frame
+    /// pump lands (#277); returns a Task so the caller can observe failures.
+    /// </summary>
+    public async Task CheckAutoDegradation(float currentFps, float dropPercent)
     {
-        if (currentFps > DegradationThresholdFps && dropPercent < 10f)
+        // Only degrade if playing and not already in reconnect window
+        if (!IsPlaying || IsReconnecting) return;
+
+        // Already degraded — only auto-recover
+        if (_previousQualityProfile != null)
         {
-            // Recover to previous profile
+            if (currentFps > DegradationThresholdFps && dropPercent < 10f)
+            {
+                // Recover to previous profile
                 QualityProfile = _previousQualityProfile.Value;
                 _bridge.SetQualityProfile(QualityProfile);
-            _previousQualityProfile = null;
-            _sustainedDropCount = 0;
-            StatusMessage = "Connection stabilized — quality restored.";
+                _previousQualityProfile = null;
+                _sustainedDropCount = 0;
+                StatusMessage = "Connection stabilized — quality restored.";
+            }
+
+            // Don't keep degrading if already at lowest
+            return;
         }
 
-        // Don't keep degrading if already at lowest
-        return;
-    }
-
-    // Check for degradation: sustained low FPS or high drop rate
-    if (currentFps < DegradationThresholdFps || dropPercent > 30f)
-    {
-        _sustainedDropCount++;
-        if (_sustainedDropCount >= AutoDegradationThreshold && QualityProfile != QualityProfile.Smooth)
+        // Check for degradation: sustained low FPS or high drop rate
+        if (currentFps < DegradationThresholdFps || dropPercent > 30f)
         {
-            // Degrade one step
-                var next = QualityProfile switch
+            _sustainedDropCount++;
+            if (_sustainedDropCount >= AutoDegradationThreshold && QualityProfile != QualityProfile.Smooth)
             {
-                QualityProfile.High => QualityProfile.Balanced,
-                QualityProfile.Balanced => QualityProfile.Smooth,
-                _ => QualityProfile.Smooth
-            };
+                // Degrade one step
+                var next = QualityProfile switch
+                {
+                    QualityProfile.High => QualityProfile.Balanced,
+                    QualityProfile.Balanced => QualityProfile.Smooth,
+                    _ => QualityProfile.Smooth
+                };
 
                 _previousQualityProfile = QualityProfile;
                 QualityProfile = next;
-            _bridge.SetQualityProfile(next);
+                _bridge.SetQualityProfile(next);
 
-            // Persist
-            if (!string.IsNullOrEmpty(SourceId))
-            {
-                var sources = await _sourceRepository.GetCachedSourcesAsync();
-                var source = sources.FirstOrDefault(s => s.SourceId == SourceId);
-                if (source != null)
+                // Persist
+                if (!string.IsNullOrEmpty(SourceId))
                 {
-                    var updatedSource = source with { QualityProfile = next };
-                    await _sourceRepository.SaveSourceAsync(updatedSource);
+                    var sources = await _sourceRepository.GetCachedSourcesAsync();
+                    var source = sources.FirstOrDefault(s => s.SourceId == SourceId);
+                    if (source != null)
+                    {
+                        var updatedSource = source with { QualityProfile = next };
+                        await _sourceRepository.SaveSourceAsync(updatedSource);
+                    }
                 }
-            }
 
-            StatusMessage = $"Auto-degraded quality to {next} due to poor connection.";
+                StatusMessage = $"Auto-degraded quality to {next} due to poor connection.";
+            }
+        }
+        else
+        {
+            // Good connection — reset drop counter but don't auto-recover yet
+            _sustainedDropCount = Math.Max(0, _sustainedDropCount - 1);
         }
     }
-    else
-    {
-        // Good connection — reset drop counter but don't auto-recover yet
-        _sustainedDropCount = Math.Max(0, _sustainedDropCount - 1);
-    }
-}
 
     public void ResumeQualityProfile()
     {

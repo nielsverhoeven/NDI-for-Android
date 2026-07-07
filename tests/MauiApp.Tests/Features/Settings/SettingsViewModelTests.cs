@@ -1,3 +1,4 @@
+using NdiForAndroid.Services;
 using Moq;
 using NdiForAndroid.Features.Settings.Models;
 using NdiForAndroid.Features.Settings.Repositories;
@@ -23,7 +24,7 @@ public class SettingsViewModelTests
         _sourceRepositoryMock.Setup(repository => repository.GetCachedSourcesAsync())
             .ReturnsAsync(Array.Empty<NdiForAndroid.Features.Sources.Models.NdiSource>());
 
-        return new SettingsViewModel(_repositoryMock.Object, _validationService, _platformServiceMock.Object, _sourceRepositoryMock.Object);
+        return new SettingsViewModel(_repositoryMock.Object, _validationService, _platformServiceMock.Object, _sourceRepositoryMock.Object, new Mock<INdiVersionInfo>().Object);
     }
 
     [Fact]
@@ -161,5 +162,34 @@ public class SettingsViewModelTests
 
         Assert.True(sut.HasPendingChanges);
         Assert.True(sut.ApplyCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public void NdiSdkVersion_RuntimeUnavailable_ShowsFallbackMessage()
+    {
+        _platformServiceMock.Setup(service => service.GetAppInfo())
+            .Returns(new SettingsAppInfo("NDI for Android", "1.0.0", "100"));
+
+        var versionInfo = new Mock<INdiVersionInfo>();
+        versionInfo.SetupGet(v => v.IsRuntimeAvailable).Returns(false);
+
+        var sut = new SettingsViewModel(_repositoryMock.Object, _validationService, _platformServiceMock.Object, _sourceRepositoryMock.Object, versionInfo.Object);
+
+        Assert.Equal("NDI runtime unavailable on this device", sut.NdiSdkVersion);
+    }
+
+    [Fact]
+    public void NdiSdkVersion_RuntimeAvailable_ShowsNativeVersion()
+    {
+        _platformServiceMock.Setup(service => service.GetAppInfo())
+            .Returns(new SettingsAppInfo("NDI for Android", "1.0.0", "100"));
+
+        var versionInfo = new Mock<INdiVersionInfo>();
+        versionInfo.SetupGet(v => v.IsRuntimeAvailable).Returns(true);
+        versionInfo.SetupGet(v => v.NativeVersion).Returns("NDI SDK ANDROID 6.3.1.0");
+
+        var sut = new SettingsViewModel(_repositoryMock.Object, _validationService, _platformServiceMock.Object, _sourceRepositoryMock.Object, versionInfo.Object);
+
+        Assert.Equal("NDI SDK ANDROID 6.3.1.0", sut.NdiSdkVersion);
     }
 }

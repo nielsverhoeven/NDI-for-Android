@@ -5,12 +5,14 @@
              x:Class="NdiForAndroid.Features.Output.Views.OutputPage"
              x:DataType="vm:OutputViewModel"
              Title="Output">
+    <!-- ScrollView keeps the full form reachable in landscape / small windows (#280). -->
+    <ScrollView>
     <VerticalStackLayout Padding="16" Spacing="16">
 
         <!-- Mode toggle -->
         <Frame>
             <HorizontalStackLayout Spacing="8" HorizontalOptions="Center">
-                <Label Text="Screen-share:" VerticalOptions="Center" />
+                <Label Text="Capture:" VerticalOptions="Center" />
                 <Switch IsToggled="{Binding IsReStreamMode, Converter={StaticResource InverseBoolConverter}}" />
                 <Label Text="Re-stream:" VerticalOptions="Center" />
             </HorizontalStackLayout>
@@ -22,6 +24,24 @@
                Placeholder="NDI-Android"
                IsEnabled="{Binding IsOutputActive, Converter={StaticResource InverseBoolConverter}}" />
 
+        <!-- Video input selection (capture mode only) -->
+        <Label Text="Video Input"
+               FontAttributes="Bold"
+               IsVisible="{Binding IsReStreamMode, Converter={StaticResource InverseBoolConverter}}" />
+        <Picker ItemsSource="{Binding AvailableInputKinds}"
+                SelectedItem="{Binding SelectedInputKind}"
+                ItemDisplayBinding="{Binding ., Converter={StaticResource VideoInputKindDisplayConverter}}"
+                IsVisible="{Binding IsReStreamMode, Converter={StaticResource InverseBoolConverter}}"
+                IsEnabled="{Binding IsOutputActive, Converter={StaticResource InverseBoolConverter}}" />
+
+        <!-- Microphone audio (capture mode only) -->
+        <HorizontalStackLayout Spacing="8"
+                               IsVisible="{Binding IsReStreamMode, Converter={StaticResource InverseBoolConverter}}">
+            <Switch IsToggled="{Binding CaptureMicrophone}"
+                    IsEnabled="{Binding IsOutputActive, Converter={StaticResource InverseBoolConverter}}" />
+            <Label Text="Send microphone audio" VerticalOptions="Center" />
+        </HorizontalStackLayout>
+
         <!-- Re-stream source selector (only visible in re-stream mode) -->
         <Label Text="Re-stream Source ID"
                FontAttributes="Bold"
@@ -31,6 +51,20 @@
                IsVisible="{Binding IsReStreamMode}"
                IsEnabled="{Binding IsOutputActive, Converter={StaticResource InverseBoolConverter}}" />
 
+        <!-- Live status: connection count + program tally -->
+        <HorizontalStackLayout Spacing="12"
+                               HorizontalOptions="Center"
+                               IsVisible="{Binding IsOutputActive}">
+            <Label Text="{Binding ConnectionCount, StringFormat='Connections: {0}'}"
+                   TextColor="{DynamicResource TextSecondary}"
+                   VerticalOptions="Center" />
+            <Label Text="ON AIR"
+                   FontAttributes="Bold"
+                   TextColor="{DynamicResource ErrorRed}"
+                   IsVisible="{Binding IsOnProgramTally}"
+                   VerticalOptions="Center" />
+        </HorizontalStackLayout>
+
         <!-- Status -->
         <Label Text="{Binding StatusMessage}" HorizontalOptions="Center" />
         <Button Text="Start Output" Command="{Binding StartOutputCommand}"
@@ -39,4 +73,5 @@
         <Button Text="Stop Output" Command="{Binding StopOutputCommand}"
                 IsVisible="{Binding IsOutputActive}" HorizontalOptions="Center" />
     </VerticalStackLayout>
+    </ScrollView>
 </ContentPage>

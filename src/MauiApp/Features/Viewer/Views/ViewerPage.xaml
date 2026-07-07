@@ -1,54 +1,12 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:views="clr-namespace:NdiForAndroid.Features.Viewer.Views"
              xmlns:vm="clr-namespace:NdiForAndroid.Features.Viewer.ViewModels;assembly=NdiForAndroid.Core"
              x:Class="NdiForAndroid.Features.Viewer.Views.ViewerPage"
              x:DataType="vm:ViewerViewModel"
              Title="Viewer">
-    <VerticalStackLayout Padding="16" Spacing="16">
-        <Label Text="{Binding StatusMessage}" HorizontalOptions="Center" />
-
-        <!-- Quality profile selector (shown when IsPlaying) -->
-        <HorizontalStackLayout HorizontalOptions="Center" Spacing="8" IsVisible="{Binding IsPlaying}">
-            <Button Text="Smooth" Command="{Binding ChangeQualityProfileCommand}" 
-                    CommandParameter="Smooth" HorizontalOptions="Center" />
-            <Button Text="Balanced" Command="{Binding ChangeQualityProfileCommand}" 
-                    CommandParameter="Balanced" HorizontalOptions="Center" />
-            <Button Text="High" Command="{Binding ChangeQualityProfileCommand}" 
-                    CommandParameter="High" HorizontalOptions="Center" />
-        </HorizontalStackLayout>
-
-        <!-- Retry indicator (shown during reconnect window) -->
-        <HorizontalStackLayout HorizontalOptions="Center" Spacing="8" IsVisible="{Binding IsReconnecting}">
-            <ActivityIndicator IsRunning="{Binding IsReconnecting}" Color="{AppThemeBinding Dark=White, Light=Black}" />
-            <Label Text="{Binding RetryStatusMessage}" HorizontalOptions="Center" />
-        </HorizontalStackLayout>
-
-        <!-- Cancel retry button -->
-        <Button Text="Cancel Retry" Command="{Binding CancelRetryCommand}"
-                IsVisible="{Binding IsReconnecting}" HorizontalOptions="Center" />
-
-        <!-- Reconnect button (shown after reconnection failure) -->
-        <Button Text="Reconnect" Command="{Binding ReconnectCommand}"
-                IsVisible="{Binding CanReconnect}" HorizontalOptions="Center" />
-        <!-- Retry countdown indicator (FR4) -->
-        <Label Text="{Binding RetryStatusMessage}"
-               IsVisible="{Binding IsReconnecting}"
-               HorizontalOptions="Center" />
-
-        <Button Text="Stop" Command="{Binding StopCommand}"
-                IsVisible="{Binding IsPlaying}" HorizontalOptions="Center" />
-
-        <!-- Cancel an in-progress reconnect window (FR6) -->
-        <Button Text="Cancel"
-                Command="{Binding CancelRetryCommand}"
-                IsVisible="{Binding IsReconnecting}"
-                HorizontalOptions="Center" />
-
-        <!-- Post-expiry manual recovery (FR7) -->
-        <Button Text="Reconnect"
-                Command="{Binding ReconnectCommand}"
-                IsVisible="{Binding CanReconnect}"
-                HorizontalOptions="Center" />
-    </VerticalStackLayout>
+    <!-- Thin host: all viewer UI + render plumbing live in the reusable ViewerView.
+         The ViewerViewModel BindingContext is inherited from this page. -->
+    <views:ViewerView x:Name="Viewer" />
 </ContentPage>

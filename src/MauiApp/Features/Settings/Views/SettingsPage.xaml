@@ -139,6 +139,7 @@
                                    <Label Text="About" FontAttributes="Bold" FontSize="20" />
                                    <Label Text="{Binding AppName}" FontAttributes="Bold" />
                                    <Label Text="{Binding AppVersionBuild}" />
+                                   <Label Text="{Binding NdiSdkVersion}" TextColor="{DynamicResource TextSecondary}" />
                             </VerticalStackLayout>
 
                             <Label Text="{Binding ValidationError}" TextColor="Red" />

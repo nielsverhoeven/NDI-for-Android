@@ -8,8 +8,8 @@ namespace NdiForAndroid.Features.DiagOverlay;
 /// </summary>
 public sealed class DiagnosticOverlayService : IDiagnosticOverlayService
 {
-    private ViewerDiagnosticSnapshot _viewerDiagnostics;
-    private DiscoveryDiagnosticSnapshot _discoveryDiagnostics;
+    private ViewerDiagnosticSnapshot _viewerDiagnostics = new(0f, 0f, 0, 0, string.Empty);
+    private DiscoveryDiagnosticSnapshot _discoveryDiagnostics = new("No discovery run yet", 0, null);
     private bool _isDeveloperMode;
     public DiagnosticLogBuffer LogBuffer { get; } = new();
 

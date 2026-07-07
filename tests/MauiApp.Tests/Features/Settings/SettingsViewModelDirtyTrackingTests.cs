@@ -1,3 +1,4 @@
+using NdiForAndroid.Services;
 using Moq;
 using NdiForAndroid.Features.Settings.Models;
 using NdiForAndroid.Features.Settings.Repositories;
@@ -33,7 +34,8 @@ public sealed class SettingsViewModelDirtyTrackingTests
             _repositoryMock.Object,
             _validationService,
             _platformServiceMock.Object,
-            _sourceRepositoryMock.Object);
+            _sourceRepositoryMock.Object,
+            new Mock<INdiVersionInfo>().Object);
     }
 
     private void SetupDefaultRepository() =>

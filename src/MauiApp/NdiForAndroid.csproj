@@ -15,6 +15,10 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">26.0</SupportedOSPlatformVersion>
     <UseMaui>true</UseMaui>
+    <!-- Without this the manifest at Platforms/Android is silently ignored (this project
+         does not enable MAUI SingleProject, which normally supplies the default) and the
+         APK ships with no permissions beyond INTERNET. -->
+    <AndroidManifest>Platforms\Android\AndroidManifest.xml</AndroidManifest>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(TargetFramework)' == 'net10.0-android' and '$(Configuration)' == 'Debug'">
@@ -28,15 +32,9 @@
     <MauiImage Include="Resources\Images\*" />
   </ItemGroup>
 
-  <!-- NDI native libraries for Android -->
-  <ItemGroup>
-    <AndroidNativeLibrary Include="Platforms\Android\libs\arm64-v8a\libndi.so">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </AndroidNativeLibrary>
-    <AndroidNativeLibrary Include="Platforms\Android\libs\armeabi-v7a\libndi.so">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </AndroidNativeLibrary>
-  </ItemGroup>
+  <!-- NDI native libraries (Platforms\Android\libs\<abi>\libndi.so) are packaged by the
+       .NET for Android default AndroidNativeLibrary globs; an explicit Include here would
+       double-add them (XA4301). Verified present in the APK for both ABIs. -->
 
   <ItemGroup>
     <AndroidResource Include="Platforms\Android\Resources\drawable\ndi_logo.png" />
@@ -44,9 +42,11 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Maui.Controls" Version="10.*" />
-    <PackageReference Include="sqlite-net-pcl" Version="1.*" />
-    <PackageReference Include="SQLitePCLRaw.bundle_green" Version="2.*" />
+    <!-- 1.11.x: moves to SQLitePCLRaw 3.x chain, fixing NU1903 (GHSA-2m69-gcr7-jv3q) in the retired bundle_green 2.1.11 line. -->
+    <PackageReference Include="sqlite-net-pcl" Version="1.11.284-beta" />
     <PackageReference Include="Microsoft.Extensions.Logging.Debug" Version="9.*" />
+    <!-- Video rendering surface for received NDI frames (#277). -->
+    <PackageReference Include="SkiaSharp.Views.Maui.Controls" Version="3.*" />
   </ItemGroup>
 
   <ItemGroup>
