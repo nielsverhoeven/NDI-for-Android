@@ -116,29 +116,42 @@ public sealed class DiscoveryServerCheckStatusEntity
 [Table("cached_sources_discovery_server_crossref")]
 public sealed class CachedSourceCrossrefEntity
 {
-    [PrimaryKey, Column("source_id")] public string SourceId { get; set; } = string.Empty;
-    [PrimaryKey, Column("server_id")] public string ServerId { get; set; } = string.Empty;
+    // sqlite-net-pcl does not support composite primary keys (multiple [PrimaryKey]
+    // attributes make CreateTableAsync throw "more than one primary key"). Use a single
+    // surrogate key derived from (source_id, server_id) so a given pair stays unique and
+    // InsertOrReplace remains idempotent. Populated by SaveSourceServerCrossrefAsync via BuildKey.
+    [PrimaryKey, Column("id")] public string Id { get; set; } = string.Empty;
+    [Indexed, Column("source_id")] public string SourceId { get; set; } = string.Empty;
+    [Column("server_id")] public string ServerId { get; set; } = string.Empty;
     public long FirstSeenViaServerAtEpochMillis { get; set; }
+
+    public static string BuildKey(string sourceId, string serverId) => $"{sourceId}|{serverId}";
 }
 
-public sealed class NdiDatabase
+public sealed class NdiDatabase : IDisposable
 {
     private readonly SQLiteAsyncConnection _connection;
     private readonly Task _initTask;
 
-    public NdiDatabase()
-        : this(Path.Combine(FileSystem.AppDataDirectory, "ndi.db3"))
-    {
-    }
-
     /// <summary>
-    /// Creates an NdiDatabase instance pointing to a specific file path.
-    /// Internal constructor used by tests for isolation.
+    /// Creates an NdiDatabase pointing to a specific database file path.
+    /// The caller supplies the path (e.g. FileSystem.AppDataDirectory/ndi.db3 from the MAUI
+    /// composition root) so this type stays MAUI-free and unit-testable against a temp file.
     /// </summary>
-    internal NdiDatabase(string dbPath)
+    public NdiDatabase(string dbPath)
     {
         _connection = new SQLiteAsyncConnection(dbPath);
         _initTask = InitAsync();
+    }
+
+    /// <summary>
+    /// Closes the underlying SQLite connection, releasing the database file handle.
+    /// Mirrors AppStateRepository so the shared ndi.db3 file can be released (matters for
+    /// tests that delete a temp file; harmless for the app-lifetime DI singleton).
+    /// </summary>
+    public void Dispose()
+    {
+        try { _connection.CloseAsync().GetAwaiter().GetResult(); } catch { }
     }
 
     public async Task InitAsync()
@@ -457,13 +470,15 @@ public sealed class NdiDatabase
     public async Task SaveSourceServerCrossrefAsync(CachedSourceCrossrefEntity crossref)
     {
         await EnsureInitializedAsync();
+        crossref.Id = CachedSourceCrossrefEntity.BuildKey(crossref.SourceId, crossref.ServerId);
         await _connection.InsertOrReplaceAsync(crossref);
     }
 
     public async Task DeleteSourceServerCrossrefAsync(string sourceId, string serverId)
     {
         await EnsureInitializedAsync();
-        await _connection.DeleteAsync<CachedSourceCrossrefEntity>(new { sourceId, serverId });
+        await _connection.DeleteAsync<CachedSourceCrossrefEntity>(
+            CachedSourceCrossrefEntity.BuildKey(sourceId, serverId));
     }
 
     public async Task<IReadOnlyList<CachedSourceCrossrefEntity>> GetSourceServerCrossrefsAsync(string sourceId)
@@ -549,7 +564,9 @@ public sealed class NdiDatabase
 
     /// <summary>
     /// Simple entity for tracking NDI source connection events.
-    /// Uses SourceId + ConnectedAtEpochMillis as a composite key via [PrimaryKey].
+    /// Each event is a distinct row keyed by an auto-incrementing surrogate Id
+    /// (sqlite-net-pcl does not support composite primary keys). SourceId is a
+    /// plain indexed column used for per-source history queries.
     /// </summary>
     [Table("connection_history")]
     public class ConnectionHistoryEntity
@@ -557,7 +574,7 @@ public sealed class NdiDatabase
         [PrimaryKey, AutoIncrement]
         public int Id { get; set; }
 
-        [PrimaryKey]
+        [Indexed]
         public string SourceId { get; set; } = string.Empty;
 
         public string DisplayName { get; set; } = string.Empty;

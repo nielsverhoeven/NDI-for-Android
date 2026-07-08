@@ -36,7 +36,11 @@ public sealed class ConnectionHistoryService : IConnectionHistoryService
             DurationSeconds = 0,
         };
 
-        await _db.InsertOrReplaceAsync(entry);
+        // Insert (not InsertOrReplace): each connect is a distinct history row.
+        // AutoIncrement Id is 0 here; InsertAsync omits it so SQLite assigns a fresh
+        // rowid and writes it back onto entry.Id for the later UpdateAsync in
+        // RecordDisconnectedAsync. InsertOrReplace would instead pin every row to Id=0.
+        await _db.InsertAsync(entry);
         _activeEntry = entry;
     }
 

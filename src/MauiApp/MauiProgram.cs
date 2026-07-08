@@ -45,8 +45,10 @@ public static class MauiProgram
         builder.Logging.AddDebug();
 #endif
 
-        // Data
-        builder.Services.AddSingleton<NdiDatabase>();
+        // Data — NdiDatabase lives in Core (MAUI-free); the composition root supplies the
+        // Android app-data path so the same ndi.db3 file backs both it and AppStateRepository.
+        var ndiDbPath = Path.Combine(FileSystem.AppDataDirectory, "ndi.db3");
+        builder.Services.AddSingleton<NdiDatabase>(sp => new NdiDatabase(ndiDbPath));
 
         // NDI Bridge
         builder.Services.AddSingleton<NdiRuntime>();
@@ -64,7 +66,6 @@ public static class MauiProgram
         builder.Services.AddSingleton<IAppearanceService, MauiAppearanceService>();
 
         // Services
-        var ndiDbPath = Path.Combine(FileSystem.AppDataDirectory, "ndi.db3");
         builder.Services.AddSingleton<IAppStateRepository>(sp =>
             new AppStateRepository(ndiDbPath));
         builder.Services.AddSingleton<IConnectionHistoryService, ConnectionHistoryService>();
