@@ -145,6 +145,14 @@ public sealed class NdiDatabase : IDisposable
     }
 
     /// <summary>
+    /// The single underlying async connection. Exposed so connection-history features
+    /// (e.g. <c>ConnectionHistoryService</c>) can share this one connection rather than
+    /// opening a second handle to the same file. The <c>connection_history</c> table is
+    /// created by <see cref="InitAsync"/>, which runs at construction.
+    /// </summary>
+    public SQLiteAsyncConnection Connection => _connection;
+
+    /// <summary>
     /// Closes the underlying SQLite connection, releasing the database file handle.
     /// Mirrors AppStateRepository so the shared ndi.db3 file can be released (matters for
     /// tests that delete a temp file; harmless for the app-lifetime DI singleton).

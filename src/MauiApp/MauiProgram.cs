@@ -49,6 +49,10 @@ public static class MauiProgram
         // Android app-data path so the same ndi.db3 file backs both it and AppStateRepository.
         var ndiDbPath = Path.Combine(FileSystem.AppDataDirectory, "ndi.db3");
         builder.Services.AddSingleton<NdiDatabase>(sp => new NdiDatabase(ndiDbPath));
+        // ConnectionHistoryService depends on the raw SQLiteAsyncConnection — share the one
+        // NdiDatabase owns (so the connection_history table it creates in InitAsync is present)
+        // rather than opening a second handle to the same file.
+        builder.Services.AddSingleton<SQLite.SQLiteAsyncConnection>(sp => sp.GetRequiredService<NdiDatabase>().Connection);
 
         // NDI Bridge
         builder.Services.AddSingleton<NdiRuntime>();
