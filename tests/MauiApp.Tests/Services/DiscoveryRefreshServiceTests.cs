@@ -1,5 +1,7 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
+using NdiForAndroid.Features.Settings.Models;
+using NdiForAndroid.Features.Settings.Repositories;
 using NdiForAndroid.Features.Sources.Models;
 using NdiForAndroid.Features.Sources.Repositories;
 using NdiForAndroid.Services;
@@ -10,6 +12,7 @@ namespace NdiForAndroid.Tests.Services;
 public class DiscoveryRefreshServiceTests
 {
     private readonly Mock<ISourceRepository> _repositoryMock = new();
+    private readonly Mock<ISettingsRepository> _settingsRepositoryMock = new();
     private readonly Mock<IAppLifecycleService> _lifecycleMock = new();
     private readonly FakeTimeProvider _clock = new();
 
@@ -17,13 +20,17 @@ public class DiscoveryRefreshServiceTests
         TimeSpan? pollingInterval = null,
         TimeSpan? debounceWindow = null)
     {
+        _settingsRepositoryMock.Setup(r => r.GetSettingsAsync())
+            .ReturnsAsync(NdiSettingsSnapshot.CreateDefault());
+
         return new DiscoveryRefreshService(
-            repository:      _repositoryMock.Object,
-            lifecycle:       _lifecycleMock.Object,
-            logger:          NullLogger<DiscoveryRefreshService>.Instance,
-            timeProvider:    _clock,
-            pollingInterval: pollingInterval ?? TimeSpan.FromMilliseconds(50),
-            debounceWindow:  debounceWindow  ?? TimeSpan.FromMilliseconds(10));
+            repository:         _repositoryMock.Object,
+            settingsRepository: _settingsRepositoryMock.Object,
+            lifecycle:          _lifecycleMock.Object,
+            logger:             NullLogger<DiscoveryRefreshService>.Instance,
+            timeProvider:       _clock,
+            pollingInterval:    pollingInterval ?? TimeSpan.FromMilliseconds(50),
+            debounceWindow:     debounceWindow  ?? TimeSpan.FromMilliseconds(10));
     }
 
     private DiscoverySnapshot OkSnapshot() => new(
