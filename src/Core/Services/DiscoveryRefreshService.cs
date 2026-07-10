@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using NdiForAndroid.Features.Settings.Repositories;
 using NdiForAndroid.Features.Sources.Models;
 using NdiForAndroid.Features.Sources.Repositories;
 
@@ -14,6 +15,7 @@ public sealed class DiscoveryRefreshService : IDiscoveryRefreshService
     private static readonly TimeSpan DefaultDebounceWindow  = TimeSpan.FromSeconds(1);
 
     private readonly ISourceRepository _repository;
+    private readonly ISettingsRepository _settingsRepository;
     private readonly ILogger<DiscoveryRefreshService> _logger;
     private readonly TimeProvider _timeProvider;
     private readonly TimeSpan _pollingInterval;
@@ -23,6 +25,8 @@ public sealed class DiscoveryRefreshService : IDiscoveryRefreshService
     private int _isRunning;
     // 0 = idle, 1 = in-flight
     private int _isInFlight;
+    // 0 = discovery settings not yet applied this process, 1 = applied
+    private int _settingsApplied;
 
     private CancellationTokenSource? _cts;
     private DateTimeOffset _lastCompletedAt = DateTimeOffset.MinValue;
@@ -31,6 +35,7 @@ public sealed class DiscoveryRefreshService : IDiscoveryRefreshService
 
     public DiscoveryRefreshService(
         ISourceRepository repository,
+        ISettingsRepository settingsRepository,
         IAppLifecycleService lifecycle,
         ILogger<DiscoveryRefreshService> logger,
         TimeProvider? timeProvider = null,
@@ -38,6 +43,7 @@ public sealed class DiscoveryRefreshService : IDiscoveryRefreshService
         TimeSpan? debounceWindow = null)
     {
         _repository      = repository;
+        _settingsRepository = settingsRepository;
         _logger          = logger;
         _timeProvider    = timeProvider ?? TimeProvider.System;
         _pollingInterval = pollingInterval ?? DefaultPollingInterval;
@@ -82,6 +88,30 @@ public sealed class DiscoveryRefreshService : IDiscoveryRefreshService
         _ = Task.Run(() => ExecuteSinglePollAsync(CancellationToken.None));
     }
 
+    /// <summary>
+    /// Applies the persisted discovery settings (mDNS vs Discovery Server) to the NDI runtime
+    /// exactly once per process, before the first discovery poll. Without this the runtime is
+    /// only ever configured when the Settings page happens to load, so a configured discovery
+    /// server is ignored on a normal launch and discovery silently falls back to mDNS.
+    /// GetSettingsAsync applies the discovery orchestrator (and appearance) as a side effect.
+    /// </summary>
+    private async Task EnsureDiscoverySettingsAppliedAsync()
+    {
+        if (Interlocked.CompareExchange(ref _settingsApplied, 1, 0) != 0)
+            return;
+
+        try
+        {
+            await _settingsRepository.GetSettingsAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            // Non-fatal: discovery proceeds with whatever mode the runtime already has.
+            _logger.LogWarning(ex, "Applying persisted discovery settings before first poll failed");
+            Interlocked.Exchange(ref _settingsApplied, 0); // allow a later retry
+        }
+    }
+
     private async Task PollLoopAsync(CancellationToken ct)
     {
         while (!ct.IsCancellationRequested)
@@ -107,6 +137,7 @@ public sealed class DiscoveryRefreshService : IDiscoveryRefreshService
 
         try
         {
+            await EnsureDiscoverySettingsAppliedAsync().ConfigureAwait(false);
             var snapshot = await _repository.DiscoverAsync(ct).ConfigureAwait(false);
             _lastCompletedAt = _timeProvider.GetUtcNow();
 
