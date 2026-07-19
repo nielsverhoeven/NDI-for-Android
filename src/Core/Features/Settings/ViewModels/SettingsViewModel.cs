@@ -42,6 +42,12 @@ public partial class SettingsViewModel : ObservableObject
     private DiscoveryServerItem? _editingDiscoveryServer;
     private bool _suppressAutoSave;
 
+    // Last valid theme/accent selection. MAUI RadioButton groups reset SelectedValue to
+    // null/empty when the page is torn down (navigation away, activity destroy); persisting
+    // from those transient values would overwrite the user's stored choice with defaults.
+    private ThemeMode _committedTheme = ThemeMode.System;
+    private AccentColorOption _committedAccent = AccentColorOption.Blue;
+
     private CancellationTokenSource? _statusMonitorCts;
     private volatile IReadOnlyList<DiscoveryServerItem> _statusTargets = Array.Empty<DiscoveryServerItem>();
     private int _statusCheckInFlight;
@@ -156,6 +162,8 @@ public partial class SettingsViewModel : ObservableObject
         _suppressAutoSave = true;
 
         DeveloperModeEnabled = settings.DeveloperModeEnabled;
+        _committedTheme = settings.ThemeMode;
+        _committedAccent = settings.AccentColor;
         SelectedThemeOption = ToThemeOption(settings.ThemeMode);
         SelectedAccentColor = settings.AccentColor.ToString();
 
@@ -442,13 +450,20 @@ public partial class SettingsViewModel : ObservableObject
 
     partial void OnSelectedThemeOptionChanged(string value)
     {
-        _ = value;
+        // Radio-group teardown pushes null/empty through the binding — never commit that.
+        if (string.IsNullOrWhiteSpace(value))
+            return;
+
+        _committedTheme = ParseThemeOption(value);
         _ = PersistAsync();
     }
 
     partial void OnSelectedAccentColorChanged(string value)
     {
-        _ = value;
+        if (string.IsNullOrWhiteSpace(value))
+            return;
+
+        _committedAccent = ParseAccentColorOption(value);
         _ = PersistAsync();
     }
 
@@ -493,11 +508,13 @@ public partial class SettingsViewModel : ObservableObject
         for (var index = 0; index < DiscoveryServers.Count; index++)
             discoveryServers.Add(DiscoveryServers[index].ToPreference(index));
 
+        // _committedTheme/_committedAccent (not the bound strings): the radio bindings can
+        // transiently hold null/empty during page teardown, which would parse as defaults.
         var snapshot = _validationService.Sanitize(new NdiSettingsSnapshot(
             DeveloperModeEnabled,
             _timeProvider.GetUtcNow().ToUnixTimeMilliseconds(),
-            ParseThemeOption(SelectedThemeOption),
-            ParseAccentColorOption(SelectedAccentColor),
+            _committedTheme,
+            _committedAccent,
             discoveryServers));
 
         if (!_validationService.TryValidateForSave(snapshot, out var error))
