@@ -45,7 +45,7 @@ public sealed class MauiAppearanceService : IAppearanceService
         var accent  = ResolveAccent(accentColor);
 
         UpdateResources(palette, accent);
-        UpdateShell(palette);
+        UpdateShell(palette, isLight);
         UpdateAndroidStatusBar(palette, isLight);
     }
 
@@ -133,7 +133,7 @@ public sealed class MauiAppearanceService : IAppearanceService
 
     // ── Shell chrome ────────────────────────────────────────────────
 
-    private static void UpdateShell(Palette p)
+    private static void UpdateShell(Palette p, bool isLight)
     {
         // Single-window app: the Shell is the first (only) window's page.
         if (Application.Current?.Windows.FirstOrDefault()?.Page is not Shell shell)
@@ -150,6 +150,10 @@ public sealed class MauiAppearanceService : IAppearanceService
 
         if (shell.FlyoutContent is Grid flyoutGrid)
             flyoutGrid.BackgroundColor = p.ShellBackground;
+
+        // Rail icons/labels don't react to resource changes — retint them explicitly (#294).
+        if (shell is AppShell appShell)
+            appShell.ApplyThemePalette(isLight);
     }
 
     // ── Android status bar ──────────────────────────────────────────

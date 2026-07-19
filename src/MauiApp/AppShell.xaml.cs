@@ -148,6 +148,30 @@ public partial class AppShell : Shell
         }
     }
 
+    /// <summary>
+    /// Re-themes the custom rail after a light/dark switch (#294). The rail icons are
+    /// plain Images whose SVG fill is baked in at build time (no runtime tint), so a
+    /// light theme needs the dark icon variants; labels re-resolve the current palette.
+    /// Called by MauiAppearanceService.UpdateShell on every theme/accent apply.
+    /// </summary>
+    public void ApplyThemePalette(bool isLight)
+    {
+        foreach (var item in PrimaryNavigationMetadata.Items)
+        {
+            if (!_railButtons.TryGetValue(item.Destination, out var entry))
+                continue;
+
+            entry.Icon.Source = isLight ? ToDarkIconKey(item.IconKey) : item.IconKey;
+        }
+
+        UpdateRailHighlight(_currentPrimaryDestination);
+    }
+
+    private static string ToDarkIconKey(string iconKey) =>
+        iconKey.EndsWith(".svg", StringComparison.OrdinalIgnoreCase)
+            ? iconKey[..^4] + "_dark.svg"
+            : iconKey + "_dark";
+
     // ── Orientation / placement ───────────────────────────────────────────────
 
     private void OnStatePropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
