@@ -115,6 +115,7 @@
     <!-- Utility converters -->
     <converters:IsNotNullConverter x:Key="IsNotNullConverter" />
     <converters:InverseBoolConverter x:Key="InverseBoolConverter" />
+    <converters:DiscoveryServerStateColorConverter x:Key="DiscoveryServerStateColorConverter" />
     <converters:VideoInputKindDisplayConverter x:Key="VideoInputKindDisplayConverter" />
 
     <!-- Static booleans -->

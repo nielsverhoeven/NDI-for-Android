@@ -92,8 +92,8 @@ Left navigation rail placement: same pages on `//home-rail`, `//stream-rail`, `/
 - **ViewModel**: `SettingsViewModel` — 5 sections: General, Appearance, Discovery, DeveloperTools, About
 - **Model**: `NdiSettingsSnapshot` — holds all persisted settings as immutable record
 - **Sections**: `SettingsSection` enum drives `IsXxxSectionSelected` properties
-- **Apply flow**: user stages changes → clicks Apply → `ApplyAsync()` validates → saves via `ISettingsRepository`
-- **Pending state**: `HasPendingChanges` tracked by comparing current state to `_baselineSnapshot`
+- **Auto-save (#292)**: no Apply button — every change (theme/accent/dev-mode, discovery-server add/edit/delete/toggle/reorder) persists immediately via `PersistAsync()` → `ISettingsRepository.SaveSettingsAsync`
+- **Discovery servers (#292)**: three add fields (optional display name, hostname, port); rows show display name (hostname fallback), endpoint, and live connection state (`DiscoveryServerConnectionState`, 10 s TCP probe via `INdiDiscoveryBridge.IsDiscoveryServerReachableAsync`, started/stopped from page `OnAppearing`/`OnDisappearing`); editing opens an in-page modal overlay (scrim + dialog) driven by `IsEditServerDialogOpen`. Legacy single `DiscoveryHost`/`DiscoveryPort` fields removed (columns remain unmapped in SQLite).
 - **Platform info**: `ISettingsPlatformService.GetAppInfo()` → `SettingsAppInfo(AppName, Version, Build)`
 - **Cached sources**: loaded from `ISourceRepository.GetCachedSourcesAsync()`
 - **Appearance service**: `IAppearanceService` / `MauiAppearanceService` — central runtime color application

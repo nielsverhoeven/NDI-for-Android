@@ -5,6 +5,7 @@ using NdiForAndroid.Features.Settings.Repositories;
 using NdiForAndroid.Features.Settings.Services;
 using NdiForAndroid.Features.Settings.ViewModels;
 using NdiForAndroid.Features.Sources.Repositories;
+using NdiForAndroid.NdiBridge;
 using Xunit;
 
 namespace NdiForAndroid.Tests.Features.Settings;
@@ -15,8 +16,9 @@ public class SettingsViewModelTests
     private readonly ISettingsValidationService _validationService = new SettingsValidationService();
     private readonly Mock<ISettingsPlatformService> _platformServiceMock = new();
     private readonly Mock<ISourceRepository> _sourceRepositoryMock = new();
+    private readonly Mock<INdiDiscoveryBridge> _discoveryBridgeMock = new();
 
-    private SettingsViewModel CreateSut()
+    private SettingsViewModel CreateSut(Mock<INdiVersionInfo>? versionInfo = null)
     {
         _platformServiceMock.Setup(service => service.GetAppInfo())
             .Returns(new SettingsAppInfo("NDI for Android", "1.0.0", "100"));
@@ -24,7 +26,17 @@ public class SettingsViewModelTests
         _sourceRepositoryMock.Setup(repository => repository.GetCachedSourcesAsync())
             .ReturnsAsync(Array.Empty<NdiForAndroid.Features.Sources.Models.NdiSource>());
 
-        return new SettingsViewModel(_repositoryMock.Object, _validationService, _platformServiceMock.Object, _sourceRepositoryMock.Object, new Mock<INdiVersionInfo>().Object);
+        _repositoryMock.Setup(r => r.SaveSettingsAsync(It.IsAny<NdiSettingsSnapshot>()))
+            .Returns(Task.CompletedTask);
+
+        return new SettingsViewModel(
+            _repositoryMock.Object,
+            _validationService,
+            _platformServiceMock.Object,
+            _sourceRepositoryMock.Object,
+            (versionInfo ?? new Mock<INdiVersionInfo>()).Object,
+            _discoveryBridgeMock.Object,
+            new FakeMainThreadDispatcher());
     }
 
     [Fact]
@@ -32,148 +44,162 @@ public class SettingsViewModelTests
     {
         _repositoryMock.Setup(r => r.GetSettingsAsync())
             .ReturnsAsync(new NdiSettingsSnapshot(
-                "192.168.1.5",
-                5960,
                 true,
                 100,
                 ThemeMode.Dark,
                 AccentColorOption.Teal,
                 new[]
                 {
-                    new DiscoveryServerPreference("192.168.1.10", 5961, true, 0),
+                    new DiscoveryServerPreference("192.168.1.10", 5961, true, 0, "Studio rack"),
                 }));
 
         var sut = CreateSut();
         await sut.LoadCommand.ExecuteAsync(null);
 
-        Assert.Equal("192.168.1.5", sut.DiscoveryHost);
-        Assert.Equal("5960", sut.DiscoveryPort);
         Assert.True(sut.DeveloperModeEnabled);
         Assert.Equal("Dark", sut.SelectedThemeOption);
         Assert.Equal("Teal", sut.SelectedAccentColor);
-        Assert.Single(sut.DiscoveryServers);
-        Assert.Equal("192.168.1.10", sut.DiscoveryServers[0].Host);
+        var server = Assert.Single(sut.DiscoveryServers);
+        Assert.Equal("192.168.1.10", server.Host);
+        Assert.Equal("Studio rack", server.DisplayName);
+        Assert.Equal("Studio rack", server.NameDisplay);
     }
 
     [Fact]
-    public async Task ApplyCommand_ValidInput_CallsRepository()
+    public async Task LoadCommand_DoesNotTriggerSave()
     {
+        _repositoryMock.Setup(r => r.GetSettingsAsync())
+            .ReturnsAsync(NdiSettingsSnapshot.CreateDefault());
+
+        var sut = CreateSut();
+        await sut.LoadCommand.ExecuteAsync(null);
+
+        _repositoryMock.Verify(r => r.SaveSettingsAsync(It.IsAny<NdiSettingsSnapshot>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task AddDiscoveryServerCommand_ValidInput_AddsAndPersistsImmediately()
+    {
+        var sut = CreateSut();
+
+        // Override AFTER CreateSut() so this setup wins over the default in CreateSut.
         NdiSettingsSnapshot? saved = null;
         _repositoryMock.Setup(r => r.SaveSettingsAsync(It.IsAny<NdiSettingsSnapshot>()))
             .Callback<NdiSettingsSnapshot>(s => saved = s)
             .Returns(Task.CompletedTask);
 
-        var sut = CreateSut();
-        sut.DiscoveryHost = "10.0.0.1";
-        sut.DiscoveryPort = "5960";
-        sut.SelectedThemeOption = "Light";
-        sut.SelectedAccentColor = "Red";
-        sut.DiscoveryServerEndpointInput = "10.0.0.10:5961";
-        sut.AddOrUpdateDiscoveryServerCommand.Execute(null);
-        await sut.ApplyCommand.ExecuteAsync(null);
+        sut.NewServerDisplayName = "Control room";
+        sut.NewServerHost = "10.0.0.10";
+        sut.NewServerPort = "5961";
+        await sut.AddDiscoveryServerCommand.ExecuteAsync(null);
 
-        Assert.Null(sut.ValidationError);
-        Assert.True(sut.IsApplied);
         Assert.NotNull(saved);
-        Assert.Equal("10.0.0.1", saved!.DiscoveryHost);
-        Assert.Equal(5960, saved.DiscoveryPort);
-        Assert.Equal(ThemeMode.Light, saved.ThemeMode);
-        Assert.Equal(AccentColorOption.Red, saved.AccentColor);
-        Assert.Single(saved.DiscoveryServers);
+        var server = Assert.Single(saved!.DiscoveryServers);
+        Assert.Equal("10.0.0.10", server.Host);
+        Assert.Equal(5961, server.Port);
+        Assert.Equal("Control room", server.DisplayName);
+        Assert.True(server.Enabled);
+
+        // Input fields reset after a successful add.
+        Assert.Equal(string.Empty, sut.NewServerDisplayName);
+        Assert.Equal(string.Empty, sut.NewServerHost);
+        Assert.Equal(string.Empty, sut.NewServerPort);
     }
 
     [Fact]
-    public async Task ApplyCommand_InvalidPort_SetsValidationError()
+    public async Task AddDiscoveryServerCommand_EmptyPort_DefaultsTo5959()
     {
         var sut = CreateSut();
-        sut.DiscoveryPort = "not-a-number";
-        await sut.ApplyCommand.ExecuteAsync(null);
+        sut.NewServerHost = "10.0.0.10";
+        await sut.AddDiscoveryServerCommand.ExecuteAsync(null);
 
-        Assert.NotNull(sut.ValidationError);
-        Assert.False(sut.IsApplied);
+        var item = Assert.Single(sut.DiscoveryServers);
+        Assert.Equal("5959", item.Port);
+    }
+
+    [Fact]
+    public async Task AddDiscoveryServerCommand_NoDisplayName_FallsBackToHostname()
+    {
+        var sut = CreateSut();
+        sut.NewServerHost = "ndi-server.local";
+        await sut.AddDiscoveryServerCommand.ExecuteAsync(null);
+
+        var item = Assert.Single(sut.DiscoveryServers);
+        Assert.Null(item.DisplayName);
+        Assert.Equal("ndi-server.local", item.NameDisplay);
+    }
+
+    [Fact]
+    public async Task AddDiscoveryServerCommand_InvalidHost_SetsValidationErrorAndDoesNotSave()
+    {
+        var sut = CreateSut();
+        sut.NewServerHost = "invalid host with spaces!";
+        await sut.AddDiscoveryServerCommand.ExecuteAsync(null);
+
+        Assert.Empty(sut.DiscoveryServers);
+        Assert.NotEqual(string.Empty, sut.DiscoveryServersValidationMessage);
         _repositoryMock.Verify(r => r.SaveSettingsAsync(It.IsAny<NdiSettingsSnapshot>()), Times.Never);
     }
 
     [Fact]
-    public async Task ApplyCommand_PortOutOfRange_SetsValidationError()
+    public async Task AddDiscoveryServerCommand_InvalidPort_SetsValidationErrorAndDoesNotSave()
     {
         var sut = CreateSut();
-        sut.DiscoveryPort = "99999";
-        await sut.ApplyCommand.ExecuteAsync(null);
+        sut.NewServerHost = "10.0.0.10";
+        sut.NewServerPort = "99999";
+        await sut.AddDiscoveryServerCommand.ExecuteAsync(null);
 
-        Assert.NotNull(sut.ValidationError);
-        Assert.False(sut.IsApplied);
+        Assert.Empty(sut.DiscoveryServers);
+        Assert.Contains("port", sut.DiscoveryServersValidationMessage, StringComparison.OrdinalIgnoreCase);
+        _repositoryMock.Verify(r => r.SaveSettingsAsync(It.IsAny<NdiSettingsSnapshot>()), Times.Never);
     }
 
     [Fact]
-    public void AddOrUpdateDiscoveryServerCommand_DuplicateHostAndPort_SetsValidationError()
+    public async Task AddDiscoveryServerCommand_DuplicateHostAndPort_SetsValidationError()
     {
         var sut = CreateSut();
-        sut.DiscoveryServerEndpointInput = "10.1.0.7:5960";
-        sut.AddOrUpdateDiscoveryServerCommand.Execute(null);
+        sut.NewServerHost = "10.1.0.7";
+        sut.NewServerPort = "5960";
+        await sut.AddDiscoveryServerCommand.ExecuteAsync(null);
 
-        sut.DiscoveryServerEndpointInput = "10.1.0.7:5960";
-        sut.AddOrUpdateDiscoveryServerCommand.Execute(null);
+        sut.NewServerHost = "10.1.0.7";
+        sut.NewServerPort = "5960";
+        await sut.AddDiscoveryServerCommand.ExecuteAsync(null);
 
         Assert.Single(sut.DiscoveryServers);
-        Assert.NotNull(sut.ValidationError);
+        Assert.Contains("duplicate", sut.DiscoveryServersValidationMessage, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
-    public void MoveDiscoveryServerDownCommand_ReordersList()
+    public async Task MoveDiscoveryServerDownCommand_ReordersListAndPersists()
     {
         var sut = CreateSut();
 
-        sut.DiscoveryServerEndpointInput = "10.1.0.10:5960";
-        sut.AddOrUpdateDiscoveryServerCommand.Execute(null);
+        sut.NewServerHost = "10.1.0.10";
+        sut.NewServerPort = "5960";
+        await sut.AddDiscoveryServerCommand.ExecuteAsync(null);
 
-        sut.DiscoveryServerEndpointInput = "10.1.0.11:5961";
-        sut.AddOrUpdateDiscoveryServerCommand.Execute(null);
+        sut.NewServerHost = "10.1.0.11";
+        sut.NewServerPort = "5961";
+        await sut.AddDiscoveryServerCommand.ExecuteAsync(null);
+
+        _repositoryMock.Invocations.Clear();
 
         var first = sut.DiscoveryServers[0];
-        sut.MoveDiscoveryServerDownCommand.Execute(first);
+        await sut.MoveDiscoveryServerDownCommand.ExecuteAsync(first);
 
         Assert.Equal("10.1.0.11", sut.DiscoveryServers[0].Host);
         Assert.Equal("10.1.0.10", sut.DiscoveryServers[1].Host);
-    }
-
-    [Fact]
-    public async Task ApplyCommand_LoadThenNoChanges_RemainsDisabled()
-    {
-        _repositoryMock.Setup(r => r.GetSettingsAsync())
-            .ReturnsAsync(NdiSettingsSnapshot.CreateDefault());
-
-        var sut = CreateSut();
-        await sut.LoadCommand.ExecuteAsync(null);
-
-        Assert.False(sut.HasPendingChanges);
-        Assert.False(sut.ApplyCommand.CanExecute(null));
-    }
-
-    [Fact]
-    public async Task ApplyCommand_ChangeAfterLoad_EnablesApply()
-    {
-        _repositoryMock.Setup(r => r.GetSettingsAsync())
-            .ReturnsAsync(NdiSettingsSnapshot.CreateDefault());
-
-        var sut = CreateSut();
-        await sut.LoadCommand.ExecuteAsync(null);
-        sut.DeveloperModeEnabled = true;
-
-        Assert.True(sut.HasPendingChanges);
-        Assert.True(sut.ApplyCommand.CanExecute(null));
+        _repositoryMock.Verify(r => r.SaveSettingsAsync(It.IsAny<NdiSettingsSnapshot>()), Times.Once);
     }
 
     [Fact]
     public void NdiSdkVersion_RuntimeUnavailable_ShowsFallbackMessage()
     {
-        _platformServiceMock.Setup(service => service.GetAppInfo())
-            .Returns(new SettingsAppInfo("NDI for Android", "1.0.0", "100"));
-
         var versionInfo = new Mock<INdiVersionInfo>();
         versionInfo.SetupGet(v => v.IsRuntimeAvailable).Returns(false);
 
-        var sut = new SettingsViewModel(_repositoryMock.Object, _validationService, _platformServiceMock.Object, _sourceRepositoryMock.Object, versionInfo.Object);
+        var sut = CreateSut(versionInfo);
 
         Assert.Equal("NDI runtime unavailable on this device", sut.NdiSdkVersion);
     }
@@ -181,14 +207,11 @@ public class SettingsViewModelTests
     [Fact]
     public void NdiSdkVersion_RuntimeAvailable_ShowsNativeVersion()
     {
-        _platformServiceMock.Setup(service => service.GetAppInfo())
-            .Returns(new SettingsAppInfo("NDI for Android", "1.0.0", "100"));
-
         var versionInfo = new Mock<INdiVersionInfo>();
         versionInfo.SetupGet(v => v.IsRuntimeAvailable).Returns(true);
         versionInfo.SetupGet(v => v.NativeVersion).Returns("NDI SDK ANDROID 6.3.1.0");
 
-        var sut = new SettingsViewModel(_repositoryMock.Object, _validationService, _platformServiceMock.Object, _sourceRepositoryMock.Object, versionInfo.Object);
+        var sut = CreateSut(versionInfo);
 
         Assert.Equal("NDI SDK ANDROID 6.3.1.0", sut.NdiSdkVersion);
     }

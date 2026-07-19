@@ -140,11 +140,38 @@ public sealed class NdiRuntime
             });
 
             File.WriteAllText(configPath, json);
-            Environment.SetEnvironmentVariable("NDI_CONFIG_DIR", configDir);
+            SetNdiConfigDir(configDir);
         }
         catch
         {
             // Non-fatal: without config the library falls back to pure mDNS discovery.
+        }
+    }
+
+    /// <summary>
+    /// Points libndi.so at <paramref name="configDir"/> so it reads our ndi-config.v1.json
+    /// (with the discovery-server list) at <c>NDIlib_initialize</c>.
+    /// <para>
+    /// Managed <see cref="Environment.SetEnvironmentVariable(string, string?)"/> only updates the
+    /// CLR's environment cache; the native <c>getenv("NDI_CONFIG_DIR")</c> that libndi calls does
+    /// not observe it (and a libc <c>setenv</c> P/Invoke does not resolve on the Android
+    /// MonoVM). Android's <c>Os.setenv</c> is a JNI call that mutates this process's real
+    /// (native) environment, so libndi sees it. Without this the discovery-server config is
+    /// silently ignored and the library falls back to mDNS-only discovery.
+    /// </para>
+    /// </summary>
+    internal static void SetNdiConfigDir(string configDir)
+    {
+        Environment.SetEnvironmentVariable("NDI_CONFIG_DIR", configDir);
+        try
+        {
+            Android.Systems.Os.Setenv("NDI_CONFIG_DIR", configDir, true);
+        }
+        catch (Exception ex)
+        {
+            // If the native setenv is unavailable, only the managed variable is set (which
+            // libndi does not read) and discovery falls back to mDNS. Surface it for diagnosis.
+            Android.Util.Log.Warn("NDI", "Native Os.Setenv NDI_CONFIG_DIR failed: " + ex);
         }
     }
 }

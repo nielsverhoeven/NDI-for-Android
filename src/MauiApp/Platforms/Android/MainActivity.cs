@@ -34,6 +34,13 @@ public class MainActivity : MauiAppCompatActivity
     {
         base.OnCreate(savedInstanceState);
 
+        // Point libndi.so at our writable config directory before any NDI P/Invoke can load
+        // the native library. NdiRuntime writes ndi-config.v1.json (with the discovery-server
+        // list) here before NDIlib_initialize; doing the env-set this early guards against the
+        // library reading NDI_CONFIG_DIR at load time. Uses the native Os.setenv (managed
+        // SetEnvironmentVariable does not reach libndi's getenv). See NdiRuntime.SetNdiConfigDir.
+        NdiForAndroid.NdiBridge.NdiRuntime.SetNdiConfigDir(FileSystem.AppDataDirectory);
+
         // Check if launched from a deep link on startup
         var launchIntent = Intent?.Data;
         if (launchIntent != null

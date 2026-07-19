@@ -28,8 +28,8 @@ public class SettingsEntity
 {
     [PrimaryKey]
     public int Id { get; set; } = 1;
-    public string? DiscoveryHost { get; set; }
-    public int? DiscoveryPort { get; set; }
+    // The legacy DiscoveryHost/DiscoveryPort columns still exist in shipped databases but are
+    // no longer mapped: discovery only ever used the DiscoveryServersJson list (#292).
     public bool DeveloperModeEnabled { get; set; }
     public string? ThemeMode { get; set; }
     public string? AccentColor { get; set; }
@@ -145,6 +145,14 @@ public sealed class NdiDatabase : IDisposable
     }
 
     /// <summary>
+    /// The single underlying async connection. Exposed so connection-history features
+    /// (e.g. <c>ConnectionHistoryService</c>) can share this one connection rather than
+    /// opening a second handle to the same file. The <c>connection_history</c> table is
+    /// created by <see cref="InitAsync"/>, which runs at construction.
+    /// </summary>
+    public SQLiteAsyncConnection Connection => _connection;
+
+    /// <summary>
     /// Closes the underlying SQLite connection, releasing the database file handle.
     /// Mirrors AppStateRepository so the shared ndi.db3 file can be released (matters for
     /// tests that delete a temp file; harmless for the app-lifetime DI singleton).
@@ -217,8 +225,6 @@ public sealed class NdiDatabase : IDisposable
                 return NdiSettingsSnapshot.CreateDefault();
 
             return new NdiSettingsSnapshot(
-                string.IsNullOrWhiteSpace(entity.DiscoveryHost) ? null : entity.DiscoveryHost.Trim(),
-                entity.DiscoveryPort,
                 entity.DeveloperModeEnabled,
                 entity.UpdatedAtEpochMillis,
                 ParseThemeMode(entity.ThemeMode),
@@ -237,8 +243,6 @@ public sealed class NdiDatabase : IDisposable
         var entity = new SettingsEntity
         {
             Id = 1,
-            DiscoveryHost = settings.DiscoveryHost,
-            DiscoveryPort = settings.DiscoveryPort,
             DeveloperModeEnabled = settings.DeveloperModeEnabled,
             ThemeMode = settings.ThemeMode.ToString(),
             AccentColor = settings.AccentColor.ToString(),

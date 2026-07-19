@@ -1,6 +1,7 @@
 using NdiForAndroid.Features.Navigation.Models;
 using NdiForAndroid.Features.Navigation.Services;
 using NdiForAndroid.Features.Navigation.ViewModels;
+using NdiForAndroid.Features.Settings.Services;
 using NdiForAndroid.Features.Viewer.Views;
 using NdiForAndroid.Services;
 
@@ -30,6 +31,7 @@ public partial class AppShell : Shell
     private readonly IAndroidOrientationBridge _orientationBridge;
     private readonly INavigationHandoffService _handoffService;
     private readonly IWindowSizeClassService _windowSizeClassService;
+    private readonly IAppearanceService _appearanceService;
 
     private PrimaryNavDestination _currentPrimaryDestination = PrimaryNavDestination.Home;
 
@@ -49,7 +51,8 @@ public partial class AppShell : Shell
         AdaptiveShellStateViewModel stateViewModel,
         IAndroidOrientationBridge orientationBridge,
         INavigationHandoffService handoffService,
-        IWindowSizeClassService windowSizeClassService)
+        IWindowSizeClassService windowSizeClassService,
+        IAppearanceService appearanceService)
     {
         InitializeComponent();
 
@@ -57,6 +60,7 @@ public partial class AppShell : Shell
         _orientationBridge = orientationBridge;
         _handoffService   = handoffService;
         _windowSizeClassService = windowSizeClassService;
+        _appearanceService = appearanceService;
 
         Routing.RegisterRoute("viewer", typeof(ViewerPage));
         Routing.RegisterRoute("diagnostic-log", typeof(Features.DiagOverlay.Views.DiagnosticLogPage));
@@ -148,6 +152,43 @@ public partial class AppShell : Shell
         }
     }
 
+    /// <summary>
+    /// Re-themes the custom rail after a light/dark switch (#294). The rail icons are
+    /// plain Images whose SVG fill is baked in at build time (no runtime tint), so a
+    /// light theme needs the dark icon variants; labels re-resolve the current palette.
+    /// Called by MauiAppearanceService.UpdateShell on every theme/accent apply.
+    /// </summary>
+    public void ApplyThemePalette(bool isLight)
+    {
+        foreach (var item in PrimaryNavigationMetadata.Items)
+        {
+            if (!_railButtons.TryGetValue(item.Destination, out var entry))
+                continue;
+
+            entry.Icon.Source = isLight ? ToDarkIconKey(item.IconKey) : item.IconKey;
+        }
+
+        UpdateRailHighlight(_currentPrimaryDestination);
+    }
+
+    private static string ToDarkIconKey(string iconKey) =>
+        iconKey.EndsWith(".svg", StringComparison.OrdinalIgnoreCase)
+            ? iconKey[..^4] + "_dark.svg"
+            : iconKey + "_dark";
+
+    /// <summary>Base top padding of the rail item stack (matches the XAML initial value).</summary>
+    private const double RailBaseTopPadding = 24;
+
+    /// <summary>
+    /// Pushes the rail items below the status-bar inset (#296). With edge-to-edge enforced
+    /// (API 35+) the flyout drawer is drawn from y=0, so without this the first rail item
+    /// interleaves with the system clock. Idempotent; called on every theme apply.
+    /// </summary>
+    public void SetRailTopInset(double insetDp)
+    {
+        RailItems.Padding = new Thickness(0, RailBaseTopPadding + Math.Max(0, insetDp), 0, 0);
+    }
+
     // ── Orientation / placement ───────────────────────────────────────────────
 
     private void OnStatePropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
@@ -192,6 +233,10 @@ public partial class AppShell : Shell
 
         _stateViewModel.SelectedDestination = to;
         UpdateRailHighlight(to);
+
+        // MAUI re-applies per-page toolbar appearance on navigation, resetting the
+        // AppBarLayout background to template defaults — restore the themed chrome (#296).
+        _appearanceService.ReapplyChrome();
     }
 
     private static PrimaryNavDestination? ParseDestination(string? location)

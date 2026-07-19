@@ -7,7 +7,8 @@
              x:Name="SettingsRoot"
              x:DataType="vm:SettingsViewModel"
              Title="Settings">
-    <ScrollView>
+    <Grid>
+        <ScrollView>
               <Grid Padding="16" ColumnDefinitions="220,*" ColumnSpacing="16">
                      <VerticalStackLayout Grid.Column="0" Spacing="10">
                             <Button Text="General"
@@ -64,44 +65,59 @@
                             <VerticalStackLayout IsVisible="{Binding IsDiscoverySectionSelected}" Spacing="10">
                                    <Label Text="Discovery Settings" FontAttributes="Bold" FontSize="20" />
 
-                                   <Entry Placeholder="Host or IP"
-                                             Text="{Binding DiscoveryHost}"
+                                   <Label Text="Add discovery server" FontAttributes="Bold" />
+                                   <Entry Placeholder="Display name (optional)"
+                                             Text="{Binding NewServerDisplayName}" />
+                                   <Entry Placeholder="Hostname or IP"
+                                             Text="{Binding NewServerHost}"
                                              Keyboard="Url" />
-                                   <Entry Placeholder="Port (default 5959)"
-                                             Text="{Binding DiscoveryPort}"
-                                             Keyboard="Numeric" />
-
                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
                                           <Entry Grid.Column="0"
-                                                    Placeholder="Host or IP:port (default 5959)"
-                                                    Keyboard="Text"
-                                                    Text="{Binding DiscoveryServerEndpointInput}" />
+                                                    Placeholder="Port (default 5959)"
+                                                    Text="{Binding NewServerPort}"
+                                                    Keyboard="Numeric" />
                                           <Button Grid.Column="1"
-                                                        Text="{Binding DiscoveryServerActionText}"
-                                                        Command="{Binding AddOrUpdateDiscoveryServerCommand}" />
+                                                        Text="Add Server"
+                                                        Command="{Binding AddDiscoveryServerCommand}" />
                                    </Grid>
 
-                                   <Label Text="{Binding DiscoveryServersValidationMessage}" TextColor="Red" />
+                                   <Label Text="{Binding DiscoveryServersValidationMessage}"
+                                             TextColor="{DynamicResource ErrorRed}" />
 
                                    <CollectionView ItemsSource="{Binding DiscoveryServers}">
                                           <CollectionView.ItemTemplate>
                                                  <DataTemplate x:DataType="vm:DiscoveryServerItem">
-                                                        <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto,Auto" RowDefinitions="Auto" ColumnSpacing="8" Padding="0,4">
-                                                               <Label Grid.Column="0" Text="{Binding EndpointDisplay}" VerticalOptions="Center" />
-                                                               <Switch Grid.Column="1" IsToggled="{Binding Enabled}" />
-                                                               <Button Grid.Column="2"
+                                                        <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto,Auto" RowDefinitions="Auto" ColumnSpacing="8" Padding="0,4">
+                                                               <Label Grid.Column="0"
+                                                                          Text="●"
+                                                                          FontSize="18"
+                                                                          VerticalOptions="Center"
+                                                                          TextColor="{Binding ConnectionState, Converter={StaticResource DiscoveryServerStateColorConverter}}" />
+                                                               <VerticalStackLayout Grid.Column="1" Spacing="2" VerticalOptions="Center">
+                                                                      <Label Text="{Binding NameDisplay}" FontAttributes="Bold" />
+                                                                      <HorizontalStackLayout Spacing="8">
+                                                                             <Label Text="{Binding EndpointDisplay}"
+                                                                                       FontSize="12"
+                                                                                       TextColor="{DynamicResource TextSecondary}" />
+                                                                             <Label Text="{Binding ConnectionStateDisplay}"
+                                                                                       FontSize="12"
+                                                                                       TextColor="{DynamicResource TextSecondary}" />
+                                                                      </HorizontalStackLayout>
+                                                               </VerticalStackLayout>
+                                                               <Switch Grid.Column="2" IsToggled="{Binding Enabled}" VerticalOptions="Center" />
+                                                               <Button Grid.Column="3"
                                                                              Text="Up"
                                                                              Command="{Binding Source={x:Reference SettingsRoot}, Path=BindingContext.MoveDiscoveryServerUpCommand}"
                                                                              CommandParameter="{Binding .}" />
-                                                               <Button Grid.Column="3"
+                                                               <Button Grid.Column="4"
                                                                              Text="Down"
                                                                              Command="{Binding Source={x:Reference SettingsRoot}, Path=BindingContext.MoveDiscoveryServerDownCommand}"
                                                                              CommandParameter="{Binding .}" />
-                                                               <Button Grid.Column="4"
+                                                               <Button Grid.Column="5"
                                                                              Text="Edit"
                                                                              Command="{Binding Source={x:Reference SettingsRoot}, Path=BindingContext.EditDiscoveryServerCommand}"
                                                                              CommandParameter="{Binding .}" />
-                                                               <Button Grid.Column="5"
+                                                               <Button Grid.Column="6"
                                                                              Text="Delete"
                                                                              Command="{Binding Source={x:Reference SettingsRoot}, Path=BindingContext.RemoveDiscoveryServerCommand}"
                                                                              CommandParameter="{Binding .}" />
@@ -141,17 +157,38 @@
                                    <Label Text="{Binding AppVersionBuild}" />
                                    <Label Text="{Binding NdiSdkVersion}" TextColor="{DynamicResource TextSecondary}" />
                             </VerticalStackLayout>
-
-                            <Label Text="{Binding ValidationError}" TextColor="Red" />
-
-                            <Button Text="Apply"
-                                          Command="{Binding ApplyCommand}"
-                                          HorizontalOptions="Center" />
-
-                            <Label Text="Settings applied."
-                                      TextColor="Green"
-                                      IsVisible="{Binding IsApplied}" />
                      </VerticalStackLayout>
               </Grid>
-    </ScrollView>
+        </ScrollView>
+
+        <!-- Edit-server modal overlay (#292): dialog over a dimmed scrim; state lives in the ViewModel. -->
+        <Grid IsVisible="{Binding IsEditServerDialogOpen}"
+                 BackgroundColor="{DynamicResource ScrimBackground}">
+               <Border BackgroundColor="{DynamicResource CardBackground}"
+                          Stroke="{DynamicResource BorderColor}"
+                          StrokeShape="RoundRectangle 12"
+                          Padding="20"
+                          WidthRequest="420"
+                          HorizontalOptions="Center"
+                          VerticalOptions="Center">
+                      <VerticalStackLayout Spacing="10">
+                             <Label Text="Edit discovery server" FontAttributes="Bold" FontSize="18" />
+                             <Entry Placeholder="Display name (optional)"
+                                       Text="{Binding EditServerDisplayName}" />
+                             <Entry Placeholder="Hostname or IP"
+                                       Text="{Binding EditServerHost}"
+                                       Keyboard="Url" />
+                             <Entry Placeholder="Port (default 5959)"
+                                       Text="{Binding EditServerPort}"
+                                       Keyboard="Numeric" />
+                             <Label Text="{Binding EditServerValidationMessage}"
+                                       TextColor="{DynamicResource ErrorRed}" />
+                             <HorizontalStackLayout Spacing="8" HorizontalOptions="End">
+                                    <Button Text="Cancel" Command="{Binding CancelEditDiscoveryServerCommand}" />
+                                    <Button Text="Save" Command="{Binding SaveEditedDiscoveryServerCommand}" />
+                             </HorizontalStackLayout>
+                      </VerticalStackLayout>
+               </Border>
+        </Grid>
+    </Grid>
 </ContentPage>

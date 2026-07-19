@@ -100,28 +100,19 @@ public sealed class NdiDiscoveryBridge : INdiDiscoveryBridge, IDisposable
         if (!_runtime.EnsureInitialized())
             return false; // Unsupported CPU / init failure — degrade to empty results.
 
-        // p_extra_ips takes hosts only (no ports), comma-separated.
-        var extraIps = _activeMode == DiscoveryMode.DiscoveryServer && _serverEndpoints.Count > 0
-            ? string.Join(',', _serverEndpoints.Select(e => e.Host).Distinct(StringComparer.OrdinalIgnoreCase))
-            : null;
-
-        var extraIpsPtr = extraIps is null ? IntPtr.Zero : Marshal.StringToHGlobalAnsi(extraIps);
-        try
+        // Discovery servers are configured via ndi-config.v1.json (networks.discovery) that
+        // NdiRuntime.SetDiscoveryServers writes and libndi reads at init — NOT via p_extra_ips.
+        // p_extra_ips is for direct NDI *source-host* IPs (machines running senders); pointing
+        // it at a discovery-server IP would just probe that host for senders (finding none) and
+        // can mask a broken discovery-server config. The app's list is discovery servers, so
+        // leave p_extra_ips empty.
+        var create = new NdiFindCreateNative
         {
-            var create = new NdiFindCreateNative
-            {
-                show_local_sources = true,
-                p_groups = IntPtr.Zero,
-                p_extra_ips = extraIpsPtr,
-            };
-            _finder = NdiNativeMethods.NDIlib_find_create_v2(ref create);
-        }
-        finally
-        {
-            // The SDK copies the create strings during find_create — safe to free now.
-            if (extraIpsPtr != IntPtr.Zero)
-                Marshal.FreeHGlobal(extraIpsPtr);
-        }
+            show_local_sources = true,
+            p_groups = IntPtr.Zero,
+            p_extra_ips = IntPtr.Zero,
+        };
+        _finder = NdiNativeMethods.NDIlib_find_create_v2(ref create);
 
         if (_finder == IntPtr.Zero)
         {

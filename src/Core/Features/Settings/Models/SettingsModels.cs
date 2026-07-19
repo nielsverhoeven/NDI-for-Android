@@ -21,7 +21,8 @@ public sealed record DiscoveryServerPreference(
     string Host,
     int Port,
     bool Enabled,
-    int Order);
+    int Order,
+    string? DisplayName = null);
 
 public sealed record SettingsAppInfo(
     string AppName,
@@ -36,8 +37,6 @@ public sealed record CachedSourceRegistryEntry(
     string LastSeenDisplay);
 
 public sealed record NdiSettingsSnapshot(
-    string? DiscoveryHost,
-    int? DiscoveryPort,
     bool DeveloperModeEnabled,
     long UpdatedAtEpochMillis,
     ThemeMode ThemeMode,
@@ -45,5 +44,15 @@ public sealed record NdiSettingsSnapshot(
     IReadOnlyList<DiscoveryServerPreference> DiscoveryServers)
 {
     public static NdiSettingsSnapshot CreateDefault() =>
-        new(null, null, false, 0, ThemeMode.System, AccentColorOption.Blue, Array.Empty<DiscoveryServerPreference>());
+        new(false, 0, ThemeMode.System, AccentColorOption.Blue, Array.Empty<DiscoveryServerPreference>());
+}
+
+/// <summary>Live reachability state of a configured discovery server (TCP probe result).</summary>
+public enum DiscoveryServerConnectionState
+{
+    Unknown,
+    Disabled,
+    Checking,
+    Connected,
+    Unreachable,
 }
