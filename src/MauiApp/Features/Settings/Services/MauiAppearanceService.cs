@@ -189,6 +189,55 @@ public sealed class MauiAppearanceService : IAppearanceService
             if (controller is not null)
                 controller.AppearanceLightStatusBars = isLight;
         }
+
+        // From API 35 nothing paints a themed status bar anymore; the strip shows whatever
+        // the app draws underneath it. Two views own that region and both default to MAUI
+        // template colors (#2C3E50): the Shell DrawerLayout's statusBarBackground and the
+        // AppBarLayout background (its Toolbar child is inset below the status bar, but its
+        // own background extends to y=0). Recolor both to the theme chrome, and push the
+        // rail below the inset so it no longer interleaves with the system clock (#296).
+        var decor = activity.Window.DecorView;
+        var chrome = new Android.Graphics.Color(
+            (byte)(p.ShellBackground.Red   * 255),
+            (byte)(p.ShellBackground.Green * 255),
+            (byte)(p.ShellBackground.Blue  * 255),
+            (byte)(p.ShellBackground.Alpha * 255));
+
+        FindView<AndroidX.DrawerLayout.Widget.DrawerLayout>(decor)?.SetStatusBarBackgroundColor(chrome);
+        FindView<Google.Android.Material.AppBar.AppBarLayout>(decor)?.SetBackgroundColor(chrome);
+
+        var topPx = ViewCompat.GetRootWindowInsets(decor)?
+            .GetInsets(WindowInsetsCompat.Type.StatusBars()).Top ?? GetStatusBarHeightPx(activity);
+        var density = activity.Resources?.DisplayMetrics?.Density ?? 1f;
+
+        if (Application.Current?.Windows.FirstOrDefault()?.Page is AppShell appShell)
+            appShell.SetRailTopInset(topPx / density);
 #endif
     }
+
+#if ANDROID
+    private static T? FindView<T>(Android.Views.View? view) where T : Android.Views.View
+    {
+        if (view is T match)
+            return match;
+
+        if (view is not Android.Views.ViewGroup group)
+            return null;
+
+        for (var i = 0; i < group.ChildCount; i++)
+        {
+            if (FindView<T>(group.GetChildAt(i)) is { } found)
+                return found;
+        }
+
+        return null;
+    }
+
+    private static int GetStatusBarHeightPx(Android.App.Activity activity)
+    {
+        var resources = activity.Resources;
+        var id = resources?.GetIdentifier("status_bar_height", "dimen", "android") ?? 0;
+        return id > 0 ? resources!.GetDimensionPixelSize(id) : 0;
+    }
+#endif
 }

@@ -172,6 +172,19 @@ public partial class AppShell : Shell
             ? iconKey[..^4] + "_dark.svg"
             : iconKey + "_dark";
 
+    /// <summary>Base top padding of the rail item stack (matches the XAML initial value).</summary>
+    private const double RailBaseTopPadding = 24;
+
+    /// <summary>
+    /// Pushes the rail items below the status-bar inset (#296). With edge-to-edge enforced
+    /// (API 35+) the flyout drawer is drawn from y=0, so without this the first rail item
+    /// interleaves with the system clock. Idempotent; called on every theme apply.
+    /// </summary>
+    public void SetRailTopInset(double insetDp)
+    {
+        RailItems.Padding = new Thickness(0, RailBaseTopPadding + Math.Max(0, insetDp), 0, 0);
+    }
+
     // ── Orientation / placement ───────────────────────────────────────────────
 
     private void OnStatePropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
