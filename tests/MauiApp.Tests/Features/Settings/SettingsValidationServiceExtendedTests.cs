@@ -222,25 +222,13 @@ public sealed class SettingsValidationServiceExtendedTests
     // ─── TryValidateForSave – failure branches ─────────────────────────────────
 
     [Fact]
-    public void TryValidateForSave_InvalidNonEmptyDiscoveryHost_ReturnsFalse()
-    {
-        var input = MakeSnapshot(host: "invalid host!!");
-
-        var valid = _sut.TryValidateForSave(input, out var error);
-
-        Assert.False(valid);
-        Assert.NotNull(error);
-        Assert.Contains("host", error, StringComparison.OrdinalIgnoreCase);
-    }
-
-    [Fact]
     public void TryValidateForSave_DiscoveryServerWithInvalidNonEmptyHost_ReturnsFalse()
     {
         // An invalid hostname that is NOT blank/whitespace survives Sanitize's server filter
         // (Sanitize only strips null/whitespace hosts, not syntactically invalid ones).
         // TryValidateForSave then rejects it via IsValidHostOrEmpty.
         var input = new NdiSettingsSnapshot(
-            null, null, false, 10,
+            false, 10,
             ThemeMode.System, AccentColorOption.Blue,
             new[] { new DiscoveryServerPreference("bad host with spaces!", 5960, true, 0) });
 
@@ -259,7 +247,7 @@ public sealed class SettingsValidationServiceExtendedTests
         // bad-port servers rather than returning a hard error — consistent with the
         // SettingsRepository GetSettingsAsync fallback behaviour.
         var input = new NdiSettingsSnapshot(
-            null, null, false, 10,
+            false, 10,
             ThemeMode.System, AccentColorOption.Blue,
             new[] { new DiscoveryServerPreference("good-host", 99999, true, 0) });
 
@@ -288,8 +276,6 @@ public sealed class SettingsValidationServiceExtendedTests
         // Simulate what SettingsRepository does when it receives corrupt DB data:
         // Sanitize produces a clean snapshot; TryValidateForSave confirms it is safe to use.
         var malformed = new NdiSettingsSnapshot(
-            "   ",           // DiscoveryHost: whitespace-only → null after sanitize
-            99999,           // DiscoveryPort: out of range → null
             false,           // DeveloperModeEnabled
             -999L,           // UpdatedAtEpochMillis: negative → 0
             (ThemeMode)(-1),         // ThemeMode: invalid enum → System
@@ -304,7 +290,6 @@ public sealed class SettingsValidationServiceExtendedTests
         var valid = _sut.TryValidateForSave(sanitized, out var error);
 
         Assert.True(valid, $"Expected sanitized malformed snapshot to be valid but got: {error}");
-        Assert.Null(sanitized.DiscoveryPort);
         Assert.Equal(ThemeMode.System, sanitized.ThemeMode);
         Assert.Equal(AccentColorOption.Blue, sanitized.AccentColor);
         Assert.Equal(0L, sanitized.UpdatedAtEpochMillis);
@@ -327,13 +312,11 @@ public sealed class SettingsValidationServiceExtendedTests
     // ─── Helpers ───────────────────────────────────────────────────────────────
 
     private static NdiSettingsSnapshot MakeSnapshot(
-        string? host = null,
-        int? port = null,
         bool developerMode = false,
         long updatedAt = 0L,
         ThemeMode themeMode = ThemeMode.System,
         AccentColorOption accentColor = AccentColorOption.Blue,
         IReadOnlyList<DiscoveryServerPreference>? servers = null)
-        => new(host, port, developerMode, updatedAt, themeMode, accentColor,
+        => new(developerMode, updatedAt, themeMode, accentColor,
                servers ?? Array.Empty<DiscoveryServerPreference>());
 }

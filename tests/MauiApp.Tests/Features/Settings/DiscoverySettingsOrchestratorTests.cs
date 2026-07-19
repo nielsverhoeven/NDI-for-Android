@@ -17,11 +17,11 @@ public class DiscoverySettingsOrchestratorTests
         new(_bridgeMock.Object);
 
     private static NdiSettingsSnapshot SnapshotWithNoServers() =>
-        new(null, null, false, 0, ThemeMode.System, AccentColorOption.Blue,
+        new(false, 0, ThemeMode.System, AccentColorOption.Blue,
             Array.Empty<DiscoveryServerPreference>());
 
     private static NdiSettingsSnapshot SnapshotWithServers(params DiscoveryServerPreference[] servers) =>
-        new(null, null, false, 0, ThemeMode.System, AccentColorOption.Blue, servers);
+        new(false, 0, ThemeMode.System, AccentColorOption.Blue, servers);
 
     [Fact]
     public async Task ApplyAsync_WithNoServers_CallsSetDiscoveryModeMdns()

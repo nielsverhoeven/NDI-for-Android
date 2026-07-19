@@ -28,8 +28,8 @@ public class SettingsEntity
 {
     [PrimaryKey]
     public int Id { get; set; } = 1;
-    public string? DiscoveryHost { get; set; }
-    public int? DiscoveryPort { get; set; }
+    // The legacy DiscoveryHost/DiscoveryPort columns still exist in shipped databases but are
+    // no longer mapped: discovery only ever used the DiscoveryServersJson list (#292).
     public bool DeveloperModeEnabled { get; set; }
     public string? ThemeMode { get; set; }
     public string? AccentColor { get; set; }
@@ -225,8 +225,6 @@ public sealed class NdiDatabase : IDisposable
                 return NdiSettingsSnapshot.CreateDefault();
 
             return new NdiSettingsSnapshot(
-                string.IsNullOrWhiteSpace(entity.DiscoveryHost) ? null : entity.DiscoveryHost.Trim(),
-                entity.DiscoveryPort,
                 entity.DeveloperModeEnabled,
                 entity.UpdatedAtEpochMillis,
                 ParseThemeMode(entity.ThemeMode),
@@ -245,8 +243,6 @@ public sealed class NdiDatabase : IDisposable
         var entity = new SettingsEntity
         {
             Id = 1,
-            DiscoveryHost = settings.DiscoveryHost,
-            DiscoveryPort = settings.DiscoveryPort,
             DeveloperModeEnabled = settings.DeveloperModeEnabled,
             ThemeMode = settings.ThemeMode.ToString(),
             AccentColor = settings.AccentColor.ToString(),

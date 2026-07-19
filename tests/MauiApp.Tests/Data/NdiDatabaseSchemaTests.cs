@@ -44,17 +44,21 @@ public class NdiDatabaseSchemaTests
             db = new NdiDatabase(dbPath);
             var settings = NdiSettingsSnapshot.CreateDefault() with
             {
-                DiscoveryHost = "192.168.1.50",
-                DiscoveryPort = 5959,
                 UpdatedAtEpochMillis = 1234,
+                DiscoveryServers = new[]
+                {
+                    new DiscoveryServerPreference("192.168.1.50", 5959, true, 0, "Studio server"),
+                },
             };
 
-            // Exact path that crashed the app: Settings → Apply → SaveSettingsAsync.
+            // Exact path that crashed the app: Settings → save → SaveSettingsAsync.
             await db.SaveSettingsAsync(settings);
 
             var restored = await db.GetSettingsAsync();
-            Assert.Equal("192.168.1.50", restored.DiscoveryHost);
-            Assert.Equal(5959, restored.DiscoveryPort);
+            var server = Assert.Single(restored.DiscoveryServers);
+            Assert.Equal("192.168.1.50", server.Host);
+            Assert.Equal(5959, server.Port);
+            Assert.Equal("Studio server", server.DisplayName);
         }
         finally
         {

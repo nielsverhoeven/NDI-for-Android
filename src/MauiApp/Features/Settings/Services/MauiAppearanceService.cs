@@ -11,7 +11,7 @@ namespace NdiForAndroid.Features.Settings.Services;
 /// <summary>
 /// Single source of truth for all runtime color values.
 /// Updates the application resource dictionary, Shell chrome, and the
-/// Android status bar immediately when Apply is tapped — no navigation required.
+/// Android status bar immediately when a theme/accent setting changes — no navigation required.
 /// All XAML must reference the semantic keys via DynamicResource.
 /// </summary>
 public sealed class MauiAppearanceService : IAppearanceService
@@ -55,6 +55,7 @@ public sealed class MauiAppearanceService : IAppearanceService
         Color PageBackground,
         Color CardBackground,
         Color InputBackground,
+        Color ScrimBackground,
         Color ShellBackground,
         Color ShellForeground,
         Color ShellTitleColor,
@@ -70,6 +71,7 @@ public sealed class MauiAppearanceService : IAppearanceService
         PageBackground:     Color.FromArgb("#1E1E2E"),
         CardBackground:     Color.FromArgb("#2A2A3E"),
         InputBackground:    Color.FromArgb("#33334A"),
+        ScrimBackground:    Color.FromArgb("#99000000"),
         ShellBackground:    Color.FromArgb("#1C1C1E"),
         ShellForeground:    Color.FromArgb("#FFFFFF"),
         ShellTitleColor:    Color.FromArgb("#FFFFFF"),
@@ -85,6 +87,7 @@ public sealed class MauiAppearanceService : IAppearanceService
         PageBackground:     Color.FromArgb("#F2F2F7"),
         CardBackground:     Color.FromArgb("#FFFFFF"),
         InputBackground:    Color.FromArgb("#E8E8ED"),
+        ScrimBackground:    Color.FromArgb("#66000000"),
         ShellBackground:    Color.FromArgb("#E5E5EA"),
         ShellForeground:    Color.FromArgb("#1C1C1E"),
         ShellTitleColor:    Color.FromArgb("#1C1C1E"),
@@ -118,6 +121,7 @@ public sealed class MauiAppearanceService : IAppearanceService
         res["CardBackground"]     = p.CardBackground;
         res["InputBackground"]    = p.InputBackground;
         res["ControlBackground"]  = Colors.Transparent;
+        res["ScrimBackground"]    = p.ScrimBackground;
         res["ShellBackground"]    = p.ShellBackground;
         res["ShellForeground"]    = p.ShellForeground;
         res["ShellTitleColor"]    = p.ShellTitleColor;
