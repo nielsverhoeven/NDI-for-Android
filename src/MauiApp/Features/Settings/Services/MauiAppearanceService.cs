@@ -16,12 +16,37 @@ namespace NdiForAndroid.Features.Settings.Services;
 /// </summary>
 public sealed class MauiAppearanceService : IAppearanceService
 {
+    // Last applied chrome state, so ReapplyChrome can restore it after Shell navigation
+    // re-applies per-page toolbar appearance (resets the AppBarLayout background, #296).
+    private static Palette? _lastPalette;
+    private static bool _lastIsLight;
+
     public void Apply(ThemeMode theme, AccentColorOption accentColor)
     {
         if (MainThread.IsMainThread)
             ApplyCore(theme, accentColor);
         else
             MainThread.BeginInvokeOnMainThread(() => ApplyCore(theme, accentColor));
+    }
+
+    public void ReapplyChrome()
+    {
+        if (_lastPalette is null)
+            return;
+
+        var palette = _lastPalette;
+        var isLight = _lastIsLight;
+
+        // Always queue (never run inline): the toolbar appearance tracker that resets the
+        // AppBarLayout background runs synchronously during navigation, and freshly created
+        // pages apply theirs once more after the Navigated event — a second, delayed pass
+        // wins that race without visible flicker.
+        MainThread.BeginInvokeOnMainThread(() => UpdateAndroidStatusBar(palette, isLight));
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(250).ConfigureAwait(false);
+            MainThread.BeginInvokeOnMainThread(() => UpdateAndroidStatusBar(palette, isLight));
+        });
     }
 
     private static void ApplyCore(ThemeMode theme, AccentColorOption accentColor)
@@ -47,6 +72,9 @@ public sealed class MauiAppearanceService : IAppearanceService
         UpdateResources(palette, accent);
         UpdateShell(palette, isLight);
         UpdateAndroidStatusBar(palette, isLight);
+
+        _lastPalette = palette;
+        _lastIsLight = isLight;
     }
 
     // ── Color palettes ──────────────────────────────────────────────

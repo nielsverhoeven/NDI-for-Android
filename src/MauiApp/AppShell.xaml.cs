@@ -1,6 +1,7 @@
 using NdiForAndroid.Features.Navigation.Models;
 using NdiForAndroid.Features.Navigation.Services;
 using NdiForAndroid.Features.Navigation.ViewModels;
+using NdiForAndroid.Features.Settings.Services;
 using NdiForAndroid.Features.Viewer.Views;
 using NdiForAndroid.Services;
 
@@ -30,6 +31,7 @@ public partial class AppShell : Shell
     private readonly IAndroidOrientationBridge _orientationBridge;
     private readonly INavigationHandoffService _handoffService;
     private readonly IWindowSizeClassService _windowSizeClassService;
+    private readonly IAppearanceService _appearanceService;
 
     private PrimaryNavDestination _currentPrimaryDestination = PrimaryNavDestination.Home;
 
@@ -49,7 +51,8 @@ public partial class AppShell : Shell
         AdaptiveShellStateViewModel stateViewModel,
         IAndroidOrientationBridge orientationBridge,
         INavigationHandoffService handoffService,
-        IWindowSizeClassService windowSizeClassService)
+        IWindowSizeClassService windowSizeClassService,
+        IAppearanceService appearanceService)
     {
         InitializeComponent();
 
@@ -57,6 +60,7 @@ public partial class AppShell : Shell
         _orientationBridge = orientationBridge;
         _handoffService   = handoffService;
         _windowSizeClassService = windowSizeClassService;
+        _appearanceService = appearanceService;
 
         Routing.RegisterRoute("viewer", typeof(ViewerPage));
         Routing.RegisterRoute("diagnostic-log", typeof(Features.DiagOverlay.Views.DiagnosticLogPage));
@@ -229,6 +233,10 @@ public partial class AppShell : Shell
 
         _stateViewModel.SelectedDestination = to;
         UpdateRailHighlight(to);
+
+        // MAUI re-applies per-page toolbar appearance on navigation, resetting the
+        // AppBarLayout background to template defaults — restore the themed chrome (#296).
+        _appearanceService.ReapplyChrome();
     }
 
     private static PrimaryNavDestination? ParseDestination(string? location)

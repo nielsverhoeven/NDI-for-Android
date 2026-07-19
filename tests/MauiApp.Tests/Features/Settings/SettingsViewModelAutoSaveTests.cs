@@ -104,6 +104,47 @@ public sealed class SettingsViewModelAutoSaveTests
     }
 
     [Fact]
+    public async Task SelectedThemeOption_ResetToNullOnTeardown_DoesNotPersist()
+    {
+        var sut = await CreateLoadedSutAsync();
+        sut.SelectedThemeOption = "Dark";
+        _repositoryMock.Invocations.Clear();
+
+        // MAUI radio groups push null/empty through the binding when the page unloads.
+        sut.SelectedThemeOption = null!;
+
+        _repositoryMock.Verify(r => r.SaveSettingsAsync(It.IsAny<NdiSettingsSnapshot>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task PersistAfterThemeReset_KeepsLastCommittedTheme()
+    {
+        var sut = await CreateLoadedSutAsync();
+        sut.SelectedThemeOption = "Dark";
+        sut.SelectedThemeOption = string.Empty; // teardown reset
+        _repositoryMock.Invocations.Clear();
+
+        // Any later save (e.g. a server toggle) must still carry the committed theme.
+        sut.NewServerHost = "10.0.0.9";
+        await sut.AddDiscoveryServerCommand.ExecuteAsync(null);
+
+        _repositoryMock.Verify(r => r.SaveSettingsAsync(
+            It.Is<NdiSettingsSnapshot>(s => s.ThemeMode == ThemeMode.Dark)), Times.Once);
+    }
+
+    [Fact]
+    public async Task SelectedAccentColor_ResetToEmptyOnTeardown_DoesNotPersist()
+    {
+        var sut = await CreateLoadedSutAsync();
+        sut.SelectedAccentColor = "Red";
+        _repositoryMock.Invocations.Clear();
+
+        sut.SelectedAccentColor = string.Empty;
+
+        _repositoryMock.Verify(r => r.SaveSettingsAsync(It.IsAny<NdiSettingsSnapshot>()), Times.Never);
+    }
+
+    [Fact]
     public async Task DeveloperModeEnabled_Changed_PersistsImmediately()
     {
         var sut = await CreateLoadedSutAsync();
