@@ -14,16 +14,12 @@ public sealed class SettingsValidationService : ISettingsValidationService
 {
     public NdiSettingsSnapshot Sanitize(NdiSettingsSnapshot settings)
     {
-        var sanitizedHost = NormalizeNullableHost(settings.DiscoveryHost);
-        var sanitizedPort = NormalizeNullablePort(settings.DiscoveryPort);
         var sanitizedThemeMode = Enum.IsDefined(settings.ThemeMode) ? settings.ThemeMode : ThemeMode.System;
         var sanitizedAccentColor = Enum.IsDefined(settings.AccentColor) ? settings.AccentColor : AccentColorOption.Blue;
         var sanitizedServers = SanitizeServers(settings.DiscoveryServers);
         var updatedAt = settings.UpdatedAtEpochMillis < 0 ? 0 : settings.UpdatedAtEpochMillis;
 
         return new NdiSettingsSnapshot(
-            sanitizedHost,
-            sanitizedPort,
             settings.DeveloperModeEnabled,
             updatedAt,
             sanitizedThemeMode,
@@ -34,18 +30,6 @@ public sealed class SettingsValidationService : ISettingsValidationService
     public bool TryValidateForSave(NdiSettingsSnapshot settings, out string? errorMessage)
     {
         var sanitized = Sanitize(settings);
-
-        if (!IsValidHostOrEmpty(sanitized.DiscoveryHost))
-        {
-            errorMessage = "Discovery host must be empty or a valid hostname or IP address.";
-            return false;
-        }
-
-        if (sanitized.DiscoveryPort.HasValue && sanitized.DiscoveryPort.Value is < 1 or > 65535)
-        {
-            errorMessage = "Discovery port must be empty or a value between 1 and 65535.";
-            return false;
-        }
 
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var server in sanitized.DiscoveryServers)
@@ -103,7 +87,8 @@ public sealed class SettingsValidationService : ISettingsValidationService
             if (server.Port is < 1 or > 65535)
                 continue;
 
-            normalized.Add(new DiscoveryServerPreference(host, server.Port, server.Enabled, server.Order));
+            var displayName = string.IsNullOrWhiteSpace(server.DisplayName) ? null : server.DisplayName.Trim();
+            normalized.Add(new DiscoveryServerPreference(host, server.Port, server.Enabled, server.Order, displayName));
         }
 
         var ordered = normalized
@@ -127,14 +112,6 @@ public sealed class SettingsValidationService : ISettingsValidationService
             return null;
 
         return host.Trim();
-    }
-
-    private static int? NormalizeNullablePort(int? port)
-    {
-        if (!port.HasValue)
-            return null;
-
-        return port.Value is < 1 or > 65535 ? null : port.Value;
     }
 
     private static string BuildServerDedupKey(string host, int port)

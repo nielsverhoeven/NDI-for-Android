@@ -13,7 +13,19 @@ public partial class SettingsPage : ContentPage
     protected override void OnAppearing()
     {
         base.OnAppearing();
-        if (BindingContext is SettingsViewModel vm && vm.LoadCommand.CanExecute(null))
+        if (BindingContext is not SettingsViewModel vm)
+            return;
+
+        if (vm.LoadCommand.CanExecute(null))
             vm.LoadCommand.Execute(null);
+
+        vm.StartConnectionMonitoring();
+    }
+
+    protected override void OnDisappearing()
+    {
+        base.OnDisappearing();
+        if (BindingContext is SettingsViewModel vm)
+            vm.StopConnectionMonitoring();
     }
 }
