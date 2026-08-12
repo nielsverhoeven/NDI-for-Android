@@ -52,11 +52,17 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty]
     private bool _developerModeEnabled;
 
+    // Nullable because the view can write null back: RadioButtonGroup.SelectedValue pushes null
+    // through its two-way binding while the Settings page's visual tree is being torn down.
+    // The change handlers below reject those writes — see _lastValid* .
     [ObservableProperty]
-    private string _selectedThemeOption = ThemeSystemLabel;
+    private string? _selectedThemeOption = ThemeSystemLabel;
 
     [ObservableProperty]
-    private string _selectedAccentColor = AccentColorOption.Blue.ToString();
+    private string? _selectedAccentColor = AccentColorOption.Blue.ToString();
+
+    private string _lastValidThemeOption = ThemeSystemLabel;
+    private string _lastValidAccentColor = AccentColorOption.Blue.ToString();
 
     [ObservableProperty]
     private string _discoveryServerEndpointInput = string.Empty;
@@ -354,19 +360,40 @@ public partial class SettingsViewModel : ObservableObject
         RefreshPendingState();
     }
 
-    partial void OnSelectedThemeOptionChanged(string value)
+    partial void OnSelectedThemeOptionChanged(string? value)
     {
-        _ = value;
+        // Tearing the page down must not read as the user picking a theme. Without this, the
+        // null that RadioButtonGroup writes on teardown parses to the default (System) and
+        // gets staged as a real edit — so any save then persists the default over the user's
+        // actual choice (#300). Restore the last real selection and stay clean.
+        if (!IsKnownOption(ThemeOptions, value))
+        {
+            SelectedThemeOption = _lastValidThemeOption;
+            return;
+        }
+
+        _lastValidThemeOption = value!;
         IsApplied = false;
         RefreshPendingState();
     }
 
-    partial void OnSelectedAccentColorChanged(string value)
+    partial void OnSelectedAccentColorChanged(string? value)
     {
-        _ = value;
+        // Same teardown guard as the theme selection above.
+        if (!IsKnownOption(AccentColorOptions, value))
+        {
+            SelectedAccentColor = _lastValidAccentColor;
+            return;
+        }
+
+        _lastValidAccentColor = value!;
         IsApplied = false;
         RefreshPendingState();
     }
+
+    private static bool IsKnownOption(IReadOnlyList<string> options, string? value)
+        => !string.IsNullOrWhiteSpace(value)
+           && options.Contains(value, StringComparer.OrdinalIgnoreCase);
 
     private bool CanApply()
     {

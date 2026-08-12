@@ -1,8 +1,15 @@
 using NdiForAndroid.Features.Navigation.Models;
 using NdiForAndroid.Features.Navigation.Services;
 using NdiForAndroid.Features.Navigation.ViewModels;
+using NdiForAndroid.Features.Settings.Services;
 using NdiForAndroid.Features.Viewer.Views;
 using NdiForAndroid.Services;
+
+// Aliased rather than importing Microsoft.Maui.Controls.Shapes wholesale: its Path would
+// collide with System.IO.Path, which the SDK's implicit usings already bring in.
+using Geometry = Microsoft.Maui.Controls.Shapes.Geometry;
+using Path = Microsoft.Maui.Controls.Shapes.Path;
+using PathGeometryConverter = Microsoft.Maui.Controls.Shapes.PathGeometryConverter;
 
 namespace NdiForAndroid;
 
@@ -30,10 +37,15 @@ public partial class AppShell : Shell
     private readonly IAndroidOrientationBridge _orientationBridge;
     private readonly INavigationHandoffService _handoffService;
     private readonly IWindowSizeClassService _windowSizeClassService;
+    private readonly IWindowInsetsService _windowInsetsService;
+    private readonly IAppearanceService _appearanceService;
 
     private PrimaryNavDestination _currentPrimaryDestination = PrimaryNavDestination.Home;
 
-    private readonly Dictionary<PrimaryNavDestination, (Border Container, Label Label, Image Icon)> _railButtons = [];
+    private readonly Dictionary<PrimaryNavDestination, (Border Container, Label Label, Path Icon)> _railButtons = [];
+
+    /// <summary>Rendered edge length of a rail icon, in device-independent units.</summary>
+    private const double RailIconSize = 28d;
 
     // Rail text colors come from the shared theme palette (Colors.xaml) so the rail
     // matches the tab bar; resolved per-use so appearance/theme changes are honored.
@@ -49,7 +61,9 @@ public partial class AppShell : Shell
         AdaptiveShellStateViewModel stateViewModel,
         IAndroidOrientationBridge orientationBridge,
         INavigationHandoffService handoffService,
-        IWindowSizeClassService windowSizeClassService)
+        IWindowSizeClassService windowSizeClassService,
+        IWindowInsetsService windowInsetsService,
+        IAppearanceService appearanceService)
     {
         InitializeComponent();
 
@@ -57,6 +71,8 @@ public partial class AppShell : Shell
         _orientationBridge = orientationBridge;
         _handoffService   = handoffService;
         _windowSizeClassService = windowSizeClassService;
+        _windowInsetsService = windowInsetsService;
+        _appearanceService = appearanceService;
 
         Routing.RegisterRoute("viewer", typeof(ViewerPage));
         Routing.RegisterRoute("diagnostic-log", typeof(Features.DiagOverlay.Views.DiagnosticLogPage));
@@ -67,6 +83,10 @@ public partial class AppShell : Shell
         _stateViewModel.PropertyChanged += OnStatePropertyChanged;
         _stateViewModel.RailItemSelected += OnRailItemSelected;
         Navigated += OnShellNavigated;
+
+        // The rail is built in code, so DynamicResource cannot reach it — re-tint on every
+        // palette change instead, otherwise the icons keep the previous theme's color (#294).
+        _appearanceService.AppearanceChanged += OnAppearanceChanged;
 
         _orientationBridge.SyncFromDisplayInfo();
         ApplyPlacement();
@@ -82,6 +102,32 @@ public partial class AppShell : Shell
 
         if (width > 0)
             _windowSizeClassService.UpdateFromWidth(width);
+
+        // Insets resolve only once the window is laid out, and change on rotation or when a
+        // cutout enters/leaves the top edge — so re-read them here rather than at construction.
+        ApplyRailInset();
+    }
+
+    private void OnAppearanceChanged(object? sender, EventArgs e)
+    {
+        _ = sender;
+        _ = e;
+        UpdateRailHighlight(_currentPrimaryDestination);
+    }
+
+    /// <summary>
+    /// Pushes the rail's first item below the status bar. The window is drawn edge-to-edge, so
+    /// without this the rail's background — and its topmost item — sit under the clock (#296).
+    /// </summary>
+    private void ApplyRailInset()
+    {
+        var topInset = _windowInsetsService.GetStatusBarInset();
+        if (topInset < 0)
+            topInset = 0;
+
+        var padding = new Thickness(0, topInset, 0, 0);
+        if (RailItems.Padding != padding)
+            RailItems.Padding = padding;
     }
 
     // ── Rail construction ────────────────────────────────────────────────────
@@ -90,12 +136,16 @@ public partial class AppShell : Shell
     {
         foreach (var item in PrimaryNavigationMetadata.Items)
         {
-            var icon = new Image
+            // A vector Path rather than an Image: the bundled SVGs bake in a white fill, and
+            // MAUI's Image has no tint, so an icon built from one cannot follow the theme (#294).
+            var icon = new Path
             {
-                Source = item.IconKey,
-                HeightRequest = 28,
-                WidthRequest  = 28,
+                Data = (Geometry)new PathGeometryConverter().ConvertFromInvariantString(item.IconGeometry)!,
+                Aspect = Microsoft.Maui.Controls.Stretch.Uniform,
+                HeightRequest = RailIconSize,
+                WidthRequest  = RailIconSize,
                 HorizontalOptions = LayoutOptions.Center,
+                Fill = new SolidColorBrush(InactiveText),
             };
 
             var label = new Label
@@ -139,12 +189,18 @@ public partial class AppShell : Shell
 
     private void UpdateRailHighlight(PrimaryNavDestination active)
     {
+        // Resolved once per pass so a theme change picks up the new palette.
+        var activeText   = ActiveText;
+        var inactiveText = InactiveText;
+
         foreach (var kvp in _railButtons)
         {
             bool isActive = kvp.Key == active;
+            var foreground = isActive ? activeText : inactiveText;
+
             kvp.Value.Container.BackgroundColor = Colors.Transparent;
-            kvp.Value.Label.TextColor = isActive ? ActiveText : InactiveText;
-            kvp.Value.Icon.Opacity    = isActive ? 1.0 : 0.62;
+            kvp.Value.Label.TextColor = foreground;
+            kvp.Value.Icon.Fill       = new SolidColorBrush(foreground);
         }
     }
 

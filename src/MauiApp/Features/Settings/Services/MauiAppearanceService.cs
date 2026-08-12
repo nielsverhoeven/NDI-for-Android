@@ -16,6 +16,8 @@ namespace NdiForAndroid.Features.Settings.Services;
 /// </summary>
 public sealed class MauiAppearanceService : IAppearanceService
 {
+    public event EventHandler? AppearanceChanged;
+
     public void Apply(ThemeMode theme, AccentColorOption accentColor)
     {
         if (MainThread.IsMainThread)
@@ -24,7 +26,7 @@ public sealed class MauiAppearanceService : IAppearanceService
             MainThread.BeginInvokeOnMainThread(() => ApplyCore(theme, accentColor));
     }
 
-    private static void ApplyCore(ThemeMode theme, AccentColorOption accentColor)
+    private void ApplyCore(ThemeMode theme, AccentColorOption accentColor)
     {
         if (Application.Current is null)
             return;
@@ -47,6 +49,9 @@ public sealed class MauiAppearanceService : IAppearanceService
         UpdateResources(palette, accent);
         UpdateShell(palette);
         UpdateAndroidStatusBar(palette, isLight);
+
+        // Fires last: subscribers re-read the resource dictionary this call just rewrote.
+        AppearanceChanged?.Invoke(this, EventArgs.Empty);
     }
 
     // ── Color palettes ──────────────────────────────────────────────
