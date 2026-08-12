@@ -50,6 +50,24 @@ public sealed class PrimaryNavigationMetadataTests
         Assert.Equal(items.Count, items.Select(i => i.Route).Distinct().Count());
         Assert.All(items, item => Assert.StartsWith("//", item.Route));
     }
+
+    /// <summary>
+    /// The rail renders <see cref="PrimaryNavItem.IconGeometry"/> as a themeable vector (#294);
+    /// a missing or malformed value would throw while the rail is being built.
+    /// </summary>
+    [Fact]
+    public void Items_HaveDistinctIconGeometry_StartingWithAMoveCommand()
+    {
+        var items = PrimaryNavigationMetadata.Items;
+
+        Assert.All(items, item =>
+        {
+            Assert.False(string.IsNullOrWhiteSpace(item.IconGeometry));
+            Assert.StartsWith("M", item.IconGeometry, StringComparison.OrdinalIgnoreCase);
+        });
+
+        Assert.Equal(items.Count, items.Select(i => i.IconGeometry).Distinct().Count());
+    }
 }
 
 public sealed class NavigationPolicyServiceTests

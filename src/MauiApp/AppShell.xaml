@@ -9,20 +9,21 @@
        x:Class="NdiForAndroid.AppShell"
        Shell.FlyoutBehavior="Disabled"
        Shell.FlyoutWidth="72"
-       Shell.FlyoutBackgroundColor="#1C1C1E"
-       Shell.TabBarBackgroundColor="#1C1C1E"
-       Shell.TabBarForegroundColor="#FFFFFF"
-       Shell.TabBarTitleColor="#FFFFFF"
-       Shell.TabBarUnselectedColor="#8E8E93"
+       Shell.FlyoutBackgroundColor="{DynamicResource ShellBackground}"
+       Shell.TabBarBackgroundColor="{DynamicResource ShellBackground}"
+       Shell.TabBarForegroundColor="{DynamicResource ShellTabSelected}"
+       Shell.TabBarTitleColor="{DynamicResource ShellTabSelected}"
+       Shell.TabBarUnselectedColor="{DynamicResource ShellTabUnselected}"
        Title="NDI for Android">
 
     <!-- Custom left navigation rail. FlyoutHeaderTemplate intentionally omitted:
-         setting it alongside FlyoutContent triggers a MAUI compat renderer NRE. -->
+         setting it alongside FlyoutContent triggers a MAUI compat renderer NRE.
+         RailItems.Padding is set in code-behind from the real status-bar inset (#296) —
+         the window is drawn edge-to-edge, so a literal top padding would sit under the clock. -->
     <Shell.FlyoutContent>
-        <Grid BackgroundColor="#1C1C1E" WidthRequest="64">
+        <Grid BackgroundColor="{DynamicResource ShellBackground}" WidthRequest="64">
             <VerticalStackLayout x:Name="RailItems"
                                  VerticalOptions="Start"
-                                 Padding="0,24,0,0"
                                  Spacing="0" />
         </Grid>
     </Shell.FlyoutContent>
