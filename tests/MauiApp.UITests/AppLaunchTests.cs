@@ -16,29 +16,49 @@ public sealed class AppLaunchTests
         _fixture = fixture;
     }
 
+    // ── Page anchors ─────────────────────────────────────────────────────────
+    //
+    // Text each page genuinely renders, traceable to the XAML. Keep these in sync with the
+    // views; an anchor that matches nothing turns into a timeout that looks like a navigation
+    // failure, which is exactly how the previous "Sources" anchors misled.
+    //
+    // A page's Shell Title is a legitimate anchor here — it is a true indicator of the current
+    // page. It is only unusable in WaitForNavElement, where it collides with the nav item.
+
+    /// <summary>HomePage: "Discovery Status" / "Quick Actions" section headers.</summary>
+    private const string HomeAnchor =
+        "//*[@text='Discovery Status' or @text='Quick Actions' or @text='Viewer Status']";
+
+    /// <summary>OutputPage (Stream tab): "Stream Name" label, "Start Output" button.</summary>
+    private const string StreamAnchor =
+        "//*[@text='Stream Name' or @text='Start Output' or @text='Stop Output' or @text='Capture:']";
+
+    /// <summary>
+    /// SourceListPage (View tab): Title="NDI Sources", plus the EmptyView text, which is what
+    /// actually shows in CI — the emulator has no NDI sources on its network, so the list is
+    /// empty and the row templates ("Watch"/"Output") never render.
+    /// </summary>
+    private const string ViewAnchor =
+        "//*[@text='NDI Sources' or contains(@text,'No NDI sources found')]";
+
+    /// <summary>SettingsPage: sidebar section buttons, which Android may render upper-cased.</summary>
+    private const string SettingsAnchor =
+        "//*[@text='General' or @text='GENERAL' or @text='Appearance' or @text='APPEARANCE']";
+
     [SkippableFact]
     public void AppLaunches_ShowsSourceListPage()
     {
         Skip.If(_fixture.SkipReason is not null, _fixture.SkipReason ?? string.Empty);
 
         var driver = _fixture.Driver!;
-        var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(10));
 
         // Home is the shell entry point after the adaptive navigation parity update.
-        var homeElement = wait.Until(d =>
-        {
-            try
-            {
-                return d.FindElement(By.XPath(
-                    "//*[@content-desc='Home' or @text='Home' or @text='NDI Sources']"));
-            }
-            catch (NoSuchElementException)
-            {
-                return null;
-            }
-        });
-
-        Assert.NotNull(homeElement);
+        //
+        // Asserts on HomePage's own content rather than on the label "Home". The previous
+        // locator matched the Shell top app bar title, so it passed as long as any title was
+        // rendered — it would have passed with the page body completely broken.
+        ResetToHome(driver);
+        AssertPageVisible(driver, HomeAnchor, 20);
     }
 
     [SkippableFact]
@@ -47,73 +67,18 @@ public sealed class AppLaunchTests
         Skip.If(_fixture.SkipReason is not null, _fixture.SkipReason ?? string.Empty);
 
         var driver = _fixture.Driver!;
-        var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(10));
 
-        // Tap the Settings tab/button
-        var settingsTab = wait.Until(d =>
-        {
-            try
-            {
-                return d.FindElement(By.XPath(
-                    "//*[@content-desc='Settings' or @text='Settings']"));
-            }
-            catch (NoSuchElementException)
-            {
-                return null;
-            }
-        });
+        // Starts from a known page: "Settings" would otherwise match the top app bar title
+        // when the suite happens to leave the app already on Settings, and the tap would be a
+        // no-op on a label rather than a navigation.
+        ResetToHome(driver);
 
-        Assert.NotNull(settingsTab);
-        settingsTab!.Click();
+        ClickNav(driver, "Settings");
+        AssertPageVisible(driver, SettingsAnchor, 20);
 
-        // Wait for Settings page content — look for a label unique to that page
-        var settingsPageWait = new WebDriverWait(driver, TimeSpan.FromSeconds(20));
-        var settingsPage = settingsPageWait.Until(d =>
-        {
-            try
-            {
-                return d.FindElement(By.XPath(
-                    "//*[@text='General' or @text='Appearance' or @text='Discovery' or @text='Apply']"));
-            }
-            catch (NoSuchElementException)
-            {
-                return null;
-            }
-        });
-
-        Assert.NotNull(settingsPage);
-
-        // Navigate back to Home by tapping the Home tab/entry (Back press closes the Shell app)
-        var homeTab = wait.Until(d =>
-        {
-            try
-            {
-                return d.FindElement(By.XPath(
-                    "//*[@content-desc='Home' or @text='Home']"));
-            }
-            catch (NoSuchElementException)
-            {
-                return null;
-            }
-        });
-
-        Assert.NotNull(homeTab);
-        homeTab!.Click();
-
-        var homeElement = wait.Until(d =>
-        {
-            try
-            {
-                return d.FindElement(By.XPath(
-                    "//*[@content-desc='Home' or @text='Home' or @text='NDI Sources']"));
-            }
-            catch (NoSuchElementException)
-            {
-                return null;
-            }
-        });
-
-        Assert.NotNull(homeElement);
+        // Navigate back to Home by tapping the Home nav item (Back press closes the Shell app)
+        ClickNav(driver, "Home");
+        AssertPageVisible(driver, HomeAnchor, 20);
     }
 
     [SkippableFact]
@@ -122,41 +87,20 @@ public sealed class AppLaunchTests
         Skip.If(_fixture.SkipReason is not null, _fixture.SkipReason ?? string.Empty);
 
         var driver = _fixture.Driver!;
-        var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(20));
 
-        // Ensure we are on Home tab before trying to locate a source-row action.
-        var homeTab = wait.Until(d =>
-        {
-            try
-            {
-                return d.FindElement(By.XPath("//*[@content-desc='Home' or @text='Home']"));
-            }
-            catch (NoSuchElementException)
-            {
-                return null;
-            }
-        });
+        // Ensure we are on the Home tab before trying to locate a source-row action.
+        ResetToHome(driver);
 
-        Assert.NotNull(homeTab);
-        homeTab!.Click();
-
-        // Only run this check when a source row exists.
+        // Only run this check when a source row exists. In CI this skips: the emulator has no
+        // NDI sources on its network, so the list renders its EmptyView and no row templates.
+        // That is a genuine unmet precondition rather than a masked failure — the suite-level
+        // guard in run-emulator-tests.sh still requires that other tests actually passed.
         var watchButtons = driver.FindElements(By.XPath("//*[@text='Watch']"));
         Skip.If(watchButtons.Count == 0, "No discovered NDI source rows available; skipping Home->Viewer smoke path.");
 
         watchButtons[0].Click();
 
-        var viewerHeader = wait.Until(d =>
-        {
-            try
-            {
-                return d.FindElement(By.XPath("//*[@content-desc='Viewer' or @text='Viewer']"));
-            }
-            catch (NoSuchElementException)
-            {
-                return null;
-            }
-        });
+        var viewerHeader = FindElement(driver, "//*[@content-desc='Viewer' or @text='Viewer']", 20);
 
         Assert.NotNull(viewerHeader);
     }
@@ -203,18 +147,21 @@ public sealed class AppLaunchTests
         var driver = _fixture.Driver!;
         SetOrientation(driver, ScreenOrientation.Portrait);
 
+        // Each destination is confirmed by text the page actually renders. The previous
+        // anchors were written against an older UI: HomePage has no literal "Sources" — it
+        // shows "Discovery Status" and "Sources found: {n}" — so that assertion could never
+        // pass regardless of whether navigation worked.
         ClickNav(driver, "Home");
-        AssertPageVisible(driver, "//*[@content-desc='Sources' or @text='NDI Sources' or @text='Sources']");
+        AssertPageVisible(driver, HomeAnchor, 20);
 
         ClickNav(driver, "Stream");
-        AssertPageVisible(driver, "//*[@text='Start Output' or @text='Stop Output' or contains(@content-desc,'Output')]", 15);
+        AssertPageVisible(driver, StreamAnchor, 20);
 
         ClickNav(driver, "View");
-        // View tab now hosts SourceListPage (NDI source discovery), not ViewerPage directly
-        AssertPageVisible(driver, "//*[@text='NDI Sources' or @text='Sources' or contains(@content-desc,'Sources') or contains(@content-desc,'mDNS') or contains(@content-desc,'Discovery')]", 15);
+        AssertPageVisible(driver, ViewAnchor, 20);
 
         ClickNav(driver, "Settings");
-        AssertPageVisible(driver, "//*[@text='General' or @text='Appearance' or @text='Discovery' or @text='Apply']", 15);
+        AssertPageVisible(driver, SettingsAnchor, 20);
     }
 
     [SkippableFact]
@@ -240,12 +187,21 @@ public sealed class AppLaunchTests
         Skip.If(_fixture.SkipReason is not null, _fixture.SkipReason ?? string.Empty);
 
         var driver = _fixture.Driver!;
+
+        // Establish a known starting point: the session is shared, and this test previously
+        // failed at the Discovery button because it inherited whatever page and orientation
+        // the preceding test left behind.
+        SetOrientation(driver, ScreenOrientation.Portrait);
         ClickNav(driver, "Settings");
+        AssertPageVisible(driver, SettingsAnchor, 20);
 
         // The settings page has a left sidebar with section buttons. Discovery host/port
         // inputs live inside the Discovery section panel which is hidden by default.
         // Click the Discovery sidebar button first to reveal the EditText fields.
-        var discoveryNavButton = FindElement(driver, "//*[@text='Discovery' or @text='DISCOVERY']", 10);
+        // 20s, not 10s: the repo's floor for a cold emulator is 30s, and 10s was below what
+        // the Settings page needs to render — the sibling test asserting the same text with a
+        // 15s budget passes.
+        var discoveryNavButton = FindElement(driver, "//*[@text='Discovery' or @text='DISCOVERY']", 20);
         Assert.NotNull(discoveryNavButton);
         discoveryNavButton!.Click();
 
@@ -273,8 +229,9 @@ public sealed class AppLaunchTests
         }
 
         ClickNav(driver, "Settings");
+        AssertPageVisible(driver, SettingsAnchor, 20);
         // Navigate to Discovery section again after restart to reveal EditText fields
-        var discoveryNavButtonAfterRestart = FindElement(driver, "//*[@text='Discovery' or @text='DISCOVERY']", 10);
+        var discoveryNavButtonAfterRestart = FindElement(driver, "//*[@text='Discovery' or @text='DISCOVERY']", 20);
         Assert.NotNull(discoveryNavButtonAfterRestart);
         discoveryNavButtonAfterRestart!.Click();
 
@@ -291,6 +248,26 @@ public sealed class AppLaunchTests
         Thread.Sleep(1200);
     }
 
+    /// <summary>
+    /// Finds the navigation item carrying <paramref name="label"/> — the bottom tab in
+    /// portrait, or the left rail item in landscape.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The obvious XPath is ambiguous. MAUI Shell renders the current page's <c>Title</c> in the
+    /// top app bar, so while Home is showing, the text "Home" also appears there — earlier in
+    /// document order than the tab. <c>FindElement</c> returns the first match, so a naive
+    /// locator measures and clicks the title instead of the navigation item. That is why
+    /// <see cref="AdaptiveNavigation_Portrait_ShowsBottomPlacement"/> reported the Home element
+    /// at y=135 on a 2560px screen.
+    /// </para>
+    /// <para>
+    /// The tie is broken on <b>interactivity</b>: navigation items are clickable, the title is
+    /// not. It must not be broken on position — these locators feed the placement assertions,
+    /// and picking "the candidate nearest the bottom" would make "assert it is near the bottom"
+    /// prove nothing. That is the same vacuous-assertion trap this suite already fell into.
+    /// </para>
+    /// </remarks>
     private static IWebElement? WaitForNavElement(AndroidDriver driver, string label, int timeoutSeconds)
     {
         var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(timeoutSeconds));
@@ -300,13 +277,60 @@ public sealed class AppLaunchTests
         {
             try
             {
-                return d.FindElement(By.XPath(xpath));
+                foreach (var candidate in d.FindElements(By.XPath(xpath)))
+                {
+                    if (candidate.Displayed && IsInteractive(candidate))
+                        return candidate;
+                }
             }
-            catch (NoSuchElementException)
+            catch (StaleElementReferenceException)
             {
-                return null;
+                // The tree changed mid-scan (common during a navigation transition) — retry.
             }
+
+            return null;
         });
+    }
+
+    /// <summary>
+    /// True when the element, or a near ancestor, is clickable.
+    /// </summary>
+    /// <remarks>
+    /// The bottom tab marks the item itself clickable. The left rail puts the label inside a
+    /// clickable container (a <c>Border</c> with a tap gesture), so a short walk upward is
+    /// needed. The top app bar title has no clickable ancestor, which is what excludes it.
+    /// </remarks>
+    private static bool IsInteractive(IWebElement element)
+    {
+        var node = element;
+
+        for (var depth = 0; depth < 4; depth++)
+        {
+            if (string.Equals(node.GetAttribute("clickable"), "true", StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            try
+            {
+                node = node.FindElement(By.XPath("./.."));
+            }
+            catch (WebDriverException)
+            {
+                return false;   // reached the root, or the node went stale
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Returns the suite to a known state: portrait, on Home. The session is shared across the
+    /// whole collection and tests mutate orientation and the current page, so anything that
+    /// depends on a starting state must establish it rather than inherit whatever ran last.
+    /// </summary>
+    private static void ResetToHome(AndroidDriver driver)
+    {
+        SetOrientation(driver, ScreenOrientation.Portrait);
+        ClickNav(driver, "Home");
     }
 
     private static void ClickNav(AndroidDriver driver, string label)
@@ -318,7 +342,6 @@ public sealed class AppLaunchTests
 
     private static void AssertPageVisible(AndroidDriver driver, string xpath, int timeoutSeconds = 12)
     {
-        var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(timeoutSeconds));
         var found = FindElement(driver, xpath, timeoutSeconds);
 
         Assert.NotNull(found);

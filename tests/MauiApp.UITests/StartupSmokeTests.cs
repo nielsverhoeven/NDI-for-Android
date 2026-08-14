@@ -51,41 +51,30 @@ public sealed class StartupSmokeTests
         var driver = _fixture.Driver!;
         var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(30));
 
-        // Any visible, non-loading element proves the UI rendered.
-        // Try the Sources tab first (MAUI Shell home), then known Settings elements,
-        // then fall back to any visible text to handle app being on any page.
+        // Any displayed element carrying text proves the UI rendered, whichever page the
+        // shared session happens to be on.
+        //
+        // Uses FindElements and scans for the first *displayed* match. The previous version
+        // called FindElement and tested .Displayed on that single result: if the first match
+        // in document order happened to be off-screen — easily the case once the app has more
+        // than one page in the hierarchy — the lambda returned null on every poll and the wait
+        // ran to timeout even though the UI had rendered perfectly well.
         var element = wait.Until(d =>
         {
             try
             {
-                // Primary: Sources shell tab visible
-                var el = d.FindElement(By.XPath(
-                    "//*[@content-desc='Sources' or @text='NDI Sources' or @text='Sources']"));
-                return el.Displayed ? el : null;
+                foreach (var candidate in d.FindElements(By.XPath("//*[@text and string-length(@text) > 0]")))
+                {
+                    if (candidate.Displayed)
+                        return candidate;
+                }
             }
-            catch (NoSuchElementException)
+            catch (StaleElementReferenceException)
             {
-                try
-                {
-                    // Secondary: Settings sidebar buttons are always visible on Settings page
-                    var settingsEl = d.FindElement(By.XPath(
-                        "//*[@text='General' or @text='GENERAL' or @text='Appearance' or @text='APPEARANCE']"));
-                    return settingsEl.Displayed ? settingsEl : null;
-                }
-                catch (NoSuchElementException)
-                {
-                    try
-                    {
-                        // Fallback: any non-empty text element proves UI rendered
-                        var anyText = d.FindElement(By.XPath("//*[@text and string-length(@text) > 0]"));
-                        return anyText.Displayed ? anyText : null;
-                    }
-                    catch (NoSuchElementException)
-                    {
-                        return null;
-                    }
-                }
+                // Tree changed mid-scan — retry on the next poll.
             }
+
+            return null;
         });
 
         Assert.NotNull(element);
