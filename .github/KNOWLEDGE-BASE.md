@@ -7,7 +7,8 @@
 - **DI**: `Microsoft.Extensions.DependencyInjection` via `MauiProgram.cs` — no service locator
 - **Persistence**: SQLite-net-pcl (async API only) | **NDI**: **real P/Invoke** against bundled `libndi.so` (NDI SDK 6.3.1, arm64-v8a + armeabi-v7a; soft-disabled on x86/x86_64 — no native lib there)
 - **Tests**: xUnit 2.x + Moq | **Build**: `dotnet CLI`
-- **CI**: GitHub Actions — `.github/workflows/emulator-tests.yml`, `.github/workflows/release.yml`
+- **CI**: GitHub Actions — `ndi-for-android-cicd.yml` (unit tests → version → build → e2e → release),
+  `codeql.yml`, `emulator-tests.yml` (manual). See the **CI Pipeline** section below.
 
 ## Build & Test Commands
 ```powershell
@@ -315,7 +316,74 @@ Invoke-RestMethod http://localhost:11434/api/tags   # lists available models
 Get-Process ollama -ErrorAction SilentlyContinue
 ```
 
-## CI / Emulator Test Patterns
+## CI Pipeline (rebuilt — see the CI audit, PR for issue-less chore)
+
+Workflows: `ndi-for-android-cicd.yml`, `codeql.yml`, `emulator-tests.yml` (manual only).
+`copilot-setup-steps.yml` was **deleted** — it was an unmodified Node/Playwright template
+(`npm ci`, `npx run build`) in a repo with no `package.json`.
+
+Job graph in `ndi-for-android-cicd.yml`:
+
+```
+unit-tests   (lean, no MAUI workload)     ─┐
+version      (patch from highest git tag) ─┼─> build-android ─> e2e-tests ─> publish-release
+                                                                   (PRs to main + main)  (main only)
+```
+
+- **`unit-tests` needs no MAUI workload or Android SDK.** `tests/MauiApp.Tests` references only
+  `src/Core`, and both are plain `net10.0`. Restore the **test project**, never the solution —
+  restoring `NdiForAndroid.sln` drags in the android head and forces the workload.
+- **All jobs run on `ubuntu-latest`.** The MAUI workload installs in ~16s there versus **~4m50s**
+  on `windows-latest` (measured, run 31649953564). There is no Windows head; do not move
+  build jobs back to Windows.
+- **Every job that restores needs a NuGet cache.** The old `build-and-test` was the only job
+  without one and paid 1m53s per run against 9s for the cached jobs.
+- **The APK is built once** in `build-android` and passed downstream as an artifact. Do not add
+  a second publish step.
+- **`concurrency` with `cancel-in-progress` on PRs only.** Never cancel `main` — each run publishes.
+
+### E2E must be able to fail (the vacuous-gate trap)
+
+Every UI test is a `[SkippableFact]` gated on `AppiumDriverFixture.SkipReason`. The fixture
+originally set that reason on *every* environmental failure, so a broken emulator turned all 10
+tests into skips and `dotnet test` still exited 0 — **the gate reported success while executing
+nothing** (`Passed: 0, Skipped: 10` on a green main run).
+
+Two mechanisms keep it honest; do not remove either:
+
+- **`E2E_REQUIRE_DEVICE=true`** makes `AppiumDriverFixture` **throw** instead of setting
+  `SkipReason`. Set in CI; unset locally so developers without an emulator still get skips.
+- **`run-emulator-tests.sh` asserts `passed > 0`** by reading the TRX `<Counters>` back. A zero
+  exit code from `dotnet test` is not sufficient evidence that anything ran.
+
+### Versioning
+
+- `version.properties` supplies **major.minor** and the `versionCode` floor. The patch
+  auto-increments from the highest `v<major>.<minor>.*` git tag — nothing writes back to the
+  protected `main` branch. See `.github/scripts/compute-version.sh`.
+- `versionCode = fileVersionCode + (nextPatch - filePatch)`, so it stays monotonic without
+  external state. (Commit count is **not** usable: it is 246 against a floor of 394.)
+- The computed version is stamped into the APK via `/p:ApplicationDisplayVersion` and
+  `/p:ApplicationVersion`. Before this, the csproj defaults (`1` / `1.0.0`) shipped in every
+  release regardless of its tag.
+- `publish-release` **fails** if the tag already exists. Previously it re-published the same tag
+  on every merge and `softprops/action-gh-release` silently updated the existing release.
+
+### Helper scripts (`.github/scripts/`)
+
+| Script | Purpose |
+|---|---|
+| `compute-version.sh` | Next version/tag from `version.properties` + git tags |
+| `report-test-results.sh` | TRX counts + Cobertura coverage to the run summary; optional coverage gate |
+| `codeql-severity-gate.sh` | Fails on open high/critical alerts — `analyze@v4` has no threshold of its own |
+
+- **Coverage is report-only** until a real number is known. `COVERAGE_MIN: '0'` in the workflow;
+  raise it to `70` once a run has printed the actual figure. Gating blind would block every PR.
+- **CodeQL must build `src/MauiApp`, not just `src/Core`.** Building Core alone left the entire
+  P/Invoke interop layer unanalyzed. `wait-for-processing: true` is required — the severity gate
+  reads alerts that do not exist until SARIF processing finishes.
+
+## Emulator Test Patterns
 
 - **Node.js version**: `22` (upgraded from 20 — EOL June 2026). Do NOT revert to 20.
 - **Emulator cold-start**: always poll `sys.boot_completed=1` before `adb install` — see `testing/e2e/scripts/run-emulator-tests.sh`
@@ -323,6 +391,8 @@ Get-Process ollama -ErrorAction SilentlyContinue
 - **APK to install**: always use `com.ndi.android-Signed.apk` (not the unsigned variant) — path: `src/MauiApp/bin/Debug/net10.0-android/com.ndi.android-Signed.apk`
 - **`DELETE_FAILED_INTERNAL_ERROR`** on `adb uninstall` is harmless — package was not installed; `adb install` will succeed.
 - **`INSTALL_PARSE_FAILED_NO_CERTIFICATES`** means unsigned APK was used — switch to `-Signed.apk`.
+- **The emulator job must install the .NET SDK.** `MauiApp.UITests` targets `net10.0`; without an
+  explicit `actions/setup-dotnet` the job silently depends on the runner image's preinstalled SDK.
 
 ## MAUI Theming Rules (lessons from #142)
 

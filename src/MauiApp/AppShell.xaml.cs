@@ -175,6 +175,13 @@ public partial class AppShell : Shell
                 HeightRequest   = 64,
             };
 
+            // The rail item is a plain Border with a tap gesture, so nothing describes it to
+            // accessibility services — a screen reader reaches it as an unlabelled container,
+            // and it surfaces in the Android view tree as a bare TextView with no
+            // contentDescription. The bottom tab bar gets this for free from Shell; the rail
+            // has to say it itself.
+            SemanticProperties.SetDescription(container, item.Label);
+
             var destination = item.Destination;
             var tap = new TapGestureRecognizer();
             tap.Tapped += (_, _) => _stateViewModel.SelectDestination(destination);

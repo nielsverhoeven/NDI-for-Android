@@ -65,8 +65,16 @@ if [[ "$APP_READY" -ne 1 ]]; then
   exit 1
 fi
 
+# A device is guaranteed here, so AppiumDriverFixture must treat an unavailable session as a
+# failure rather than a skip. Without this the suite reports success while executing nothing.
+E2E_REQUIRE_DEVICE="${E2E_REQUIRE_DEVICE:-true}"
+
+TRX="test-results/emulator-test-results.trx"
+rm -f "$TRX"
+
 set +e
-timeout 20m env ANDROID_APK_PATH="$APK_PATH" dotnet test tests/MauiApp.UITests/NdiForAndroid.UITests.csproj -c Release \
+timeout 20m env ANDROID_APK_PATH="$APK_PATH" E2E_REQUIRE_DEVICE="$E2E_REQUIRE_DEVICE" \
+  dotnet test tests/MauiApp.UITests/NdiForAndroid.UITests.csproj -c Release \
   --logger "trx;LogFileName=emulator-test-results.trx" \
   --results-directory test-results
 TEST_EXIT=$?
@@ -77,4 +85,64 @@ if [[ "$TEST_EXIT" -eq 124 ]]; then
 fi
 
 echo "dotnet test exit code: $TEST_EXIT"
+
+# Capture device-side state while the emulator is still alive — the workflow step that
+# reports the failure runs after the emulator-runner action has torn it down, so anything
+# not collected here is gone. Distinguishes "app crashed on launch" from "app was merely
+# slow to reach the foreground", which look identical from Appium's side.
+if [[ "$TEST_EXIT" -ne 0 ]]; then
+  echo "Collecting device diagnostics..."
+  adb logcat -b crash -d > test-results/logcat-crash.txt 2>&1 || true
+  adb logcat -d -v time | tail -400 > test-results/logcat-tail.txt 2>&1 || true
+  adb shell dumpsys package com.ndi.android 2>/dev/null | head -60 > test-results/package-info.txt || true
+
+  if [[ -s test-results/logcat-crash.txt ]]; then
+    echo "===== crash buffer ====="
+    head -60 test-results/logcat-crash.txt
+    echo "======================="
+  else
+    echo "Crash buffer empty — the app did not abort, so the activity wait timed out instead."
+  fi
+fi
+
+# ── Result assertion ─────────────────────────────────────────────────────────
+# A zero exit code is not sufficient evidence that the suite ran: xunit.skippablefact
+# reports an all-skipped run as success. Read the counters back out of the TRX and
+# require that something actually executed and passed.
+if [[ "$E2E_REQUIRE_DEVICE" != "true" ]]; then
+  exit "$TEST_EXIT"
+fi
+
+if [[ ! -f "$TRX" ]]; then
+  echo "FAIL: no TRX produced at $TRX — the suite did not run."
+  exit 1
+fi
+
+# grep -m1 rather than `grep | head -1`: under `set -euo pipefail`, head closing the pipe first
+# sends SIGPIPE to grep and fails the script.
+COUNTERS=$(grep -o -m1 '<Counters[^/]*/>' "$TRX" || true)
+read_counter() {
+  local match
+  match=$(printf '%s' "$COUNTERS" | grep -o "$1=\"[0-9]*\"" || true)
+  match="${match#*\"}"
+  printf '%s' "${match%\"}"
+}
+
+TOTAL=$(read_counter total);   TOTAL=${TOTAL:-0}
+PASSED=$(read_counter passed); PASSED=${PASSED:-0}
+FAILED=$(read_counter failed); FAILED=${FAILED:-0}
+SKIPPED=$(( TOTAL - PASSED - FAILED ))
+
+echo "Counters — total=$TOTAL passed=$PASSED failed=$FAILED skipped=$SKIPPED"
+
+if [[ "$PASSED" -eq 0 ]]; then
+  echo "FAIL: no UI test passed. An all-skipped or empty run is not a green e2e gate."
+  exit 1
+fi
+
+if [[ "$SKIPPED" -gt 0 ]]; then
+  echo "WARNING: $SKIPPED test(s) skipped. Conditional skips inside a test body are allowed,"
+  echo "         but a skip caused by a missing device would have failed the fixture already."
+fi
+
 exit "$TEST_EXIT"
