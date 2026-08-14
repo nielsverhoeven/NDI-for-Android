@@ -31,8 +31,17 @@ jobs:
   # net10.0, so this needs no MAUI workload and no Android SDK. Restoring the test project
   # alone (never the solution, which would drag in the android head) keeps it under a minute.
   # ════════════════════════════════════════════════════════════════════════════
+  # ── A note on job display names ──────────────────────────────────────────
+  # The `name:` values below are load-bearing. Branch protection requires status checks by
+  # display name, so renaming a job silently removes the check it was matching and the PR
+  # sits at "Expected — waiting for status to be reported" forever, with every visible check
+  # green. That happened on this branch: the names were changed to describe the new split,
+  # which dropped `build-and-test`, `Build Release APK` and `Run Emulator UI Tests`.
+  #
+  # They are kept as they were. If you prefer clearer names, change these AND update the
+  # required checks under Settings → Branches in the same go.
   unit-tests:
-    name: Unit tests & coverage
+    name: build-and-test
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -110,7 +119,7 @@ jobs:
   # Windows head to justify the runner.
   # ════════════════════════════════════════════════════════════════════════════
   build-android:
-    name: Build Android APK
+    name: Build Release APK   # display name preserved for branch protection — see note above
     needs: version
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -175,7 +184,7 @@ jobs:
   # count. Before that, an all-skipped run exited 0 and the gate reported success.
   # ════════════════════════════════════════════════════════════════════════════
   e2e-tests:
-    name: E2E emulator tests
+    name: Run Emulator UI Tests   # display name preserved for branch protection — see note above
     needs: build-android
     runs-on: ubuntu-latest
     timeout-minutes: 45
