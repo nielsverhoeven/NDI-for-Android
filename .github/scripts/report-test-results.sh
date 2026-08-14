@@ -73,19 +73,52 @@ if [[ -n "$TRX" ]]; then
   if (( FAILED > 0 )); then
     summary "**Failing tests**"
     summary ""
-    # Collected into a variable first so no producer is left writing into a closed pipe.
-    FAILING=$(grep -o 'outcome="Failed"[^>]*testName="[^"]*"\|testName="[^"]*"[^>]*outcome="Failed"' "$TRX" 2>/dev/null || true)
-    if [[ -z "$FAILING" ]]; then
-      FAILING=$(grep -o 'testName="[^"]*"' "$TRX" 2>/dev/null || true)
+    # Parsed as XML rather than grepped: the error message is the thing worth reading, and a
+    # name-only list forces whoever is debugging to download the TRX to learn anything.
+    # Distinct messages are grouped — a fixture failure fails every test with the same text.
+    python3 - "$TRX" <<'PY' > /tmp/failing-tests.txt 2>/dev/null || true
+import sys, xml.etree.ElementTree as ET
+from collections import OrderedDict
+
+ns = {'t': 'http://microsoft.com/schemas/VisualStudio/TeamTest/2010'}
+try:
+    root = ET.parse(sys.argv[1]).getroot()
+except Exception:
+    sys.exit(0)
+
+groups = OrderedDict()
+for r in root.iter('{http://microsoft.com/schemas/VisualStudio/TeamTest/2010}UnitTestResult'):
+    if r.get('outcome') != 'Failed':
+        continue
+    name = (r.get('testName') or '').strip()
+    msg = ''
+    for m in r.iter('{http://microsoft.com/schemas/VisualStudio/TeamTest/2010}Message'):
+        if m.text:
+            msg = ' '.join(m.text.split())
+            break
+    groups.setdefault(msg, []).append(name)
+
+for msg, names in list(groups.items())[:10]:
+    if msg:
+        print(f"MSG\t{msg[:500]}")
+    for n in names[:20]:
+        print(f"TEST\t{n}")
+    if len(names) > 20:
+        print(f"MORE\t… and {len(names) - 20} more with the same failure")
+PY
+    if [[ -s /tmp/failing-tests.txt ]]; then
+      while IFS=$'\t' read -r kind text; do
+        case "$kind" in
+          MSG)  summary ""; summary "  > $text" ;;
+          TEST) summary "- \`$text\`" ;;
+          MORE) summary "- _${text}_" ;;
+        esac
+      done < /tmp/failing-tests.txt
+    else
+      # Fallback if the TRX schema ever changes under us.
+      grep -o 'testName="[^"]*"' "$TRX" 2>/dev/null | sed 's/testName="//;s/"$//' | sort -u > /tmp/names.txt || true
+      while read -r n; do [[ -n "$n" ]] && summary "- \`$n\`"; done < /tmp/names.txt
     fi
-    printf '%s\n' "$FAILING" \
-      | grep -o 'testName="[^"]*"' \
-      | sed 's/testName="//;s/"$//' \
-      | sort -u \
-      | head -20 > /tmp/failing-tests.txt || true
-    while read -r name; do
-      [[ -n "$name" ]] && summary "- \`$name\`"
-    done < /tmp/failing-tests.txt
     summary ""
   fi
 else
