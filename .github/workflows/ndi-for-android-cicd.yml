@@ -183,7 +183,10 @@ jobs:
 
     env:
       APPIUM_SERVER_URL: http://127.0.0.1:4723/
-      E2E_REQUIRE_DEVICE: 'true'
+      # Set to 'false' to make the suite report without blocking. Intended only as a temporary
+      # escape hatch while a known driver-side defect is being fixed — leaving it off restores
+      # the vacuous gate this pipeline exists to prevent, so put it back to 'true' after.
+      E2E_REQUIRE_DEVICE: ${{ vars.E2E_REQUIRE_DEVICE || 'true' }}
 
     steps:
       - uses: actions/checkout@v4
@@ -311,6 +314,46 @@ jobs:
             test-results/*.txt
           retention-days: 7
           if-no-files-found: warn
+
+      # Deliberately the last step: the artifact-upload steps emit hundreds of lines, so a
+      # failure message printed before them is buried. Keeping it at the tail means the reason
+      # for the failure is the last thing in the log.
+      - name: Failure summary
+        if: failure()
+        run: |
+          TRX=$(find test-results -name '*.trx' -type f -print -quit 2>/dev/null || true)
+          echo "=================== E2E FAILURE SUMMARY ==================="
+          if [ -z "$TRX" ]; then
+            echo "No TRX produced — the suite did not run to completion."
+            exit 0
+          fi
+          python3 - "$TRX" <<'PY'
+          import sys, xml.etree.ElementTree as ET
+          from collections import OrderedDict
+          NS = '{http://microsoft.com/schemas/VisualStudio/TeamTest/2010}'
+          try:
+              root = ET.parse(sys.argv[1]).getroot()
+          except Exception as e:
+              print(f"Could not parse TRX: {e}"); sys.exit(0)
+          groups = OrderedDict()
+          for r in root.iter(f'{NS}UnitTestResult'):
+              if r.get('outcome') != 'Failed':
+                  continue
+              msg = st = ''
+              for m in r.iter(f'{NS}Message'):
+                  if m.text: msg = m.text.strip(); break
+              for s in r.iter(f'{NS}StackTrace'):
+                  if s.text: st = s.text.strip(); break
+              groups.setdefault((msg, st), []).append(r.get('testName') or '')
+          for (msg, st), names in groups.items():
+              print(f"\n--- {len(names)} test(s) failed with: ---")
+              print(msg or "(no message)")
+              if st:
+                  print("\nStack trace (first 15 frames):")
+                  print('\n'.join(st.splitlines()[:15]))
+              print(f"\nAffected: {', '.join(n.split('.')[-1] for n in names[:12])}")
+          PY
+          echo "==========================================================="
 
   # ════════════════════════════════════════════════════════════════════════════
   # Publish — tag and release, main only.
