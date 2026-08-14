@@ -277,6 +277,21 @@ jobs:
         if: always()
         run: bash .github/scripts/report-test-results.sh test-results
 
+      # When the suite fails, the reason is almost always a session-creation error in the
+      # Appium log. Print it inline so diagnosis does not require downloading an artifact.
+      - name: Show Appium log on failure
+        if: failure()
+        run: |
+          LOG=test-results/appium.log
+          if [ ! -f "$LOG" ]; then
+            echo "No $LOG produced — Appium never started."
+            exit 0
+          fi
+          echo "===== appium.log (errors) ====="
+          grep -iE "error|failed|refused|could not|unable|exception" "$LOG" | head -40 || echo "(no error lines matched)"
+          echo "===== appium.log (last 60 lines) ====="
+          tail -60 "$LOG"
+
       - name: Upload emulator test results
         if: always()
         uses: actions/upload-artifact@v4

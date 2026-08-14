@@ -1,25 +1,24 @@
 #!/usr/bin/env bash
 #
-# Fails the build when CodeQL has open high-or-worse findings on the given ref.
+# Fails the build when CodeQL found high-or-worse issues.
 #
-#   codeql-severity-gate.sh <ref>
+#   codeql-severity-gate.sh <sarif-dir>
 #
-# github/codeql-action/analyze has no severity threshold of its own — it uploads results and
-# succeeds regardless of what it found. This reads the alerts back and applies the gate.
+# Reads SARIF produced locally by `github/codeql-action/analyze` with `upload: never`.
 #
-# Security severities blocked: critical, high. Alerts already dismissed or fixed are ignored,
-# so an accepted risk stays accepted.
+# Why local SARIF rather than the code-scanning alerts API: this repository has code scanning
+# **default setup** enabled, and GitHub rejects SARIF from an advanced configuration while it
+# is on ("CodeQL analyses from advanced configurations cannot be processed when the default
+# setup is enabled"). No alert from this workflow ever reaches the API, so there is nothing to
+# query. The SARIF on disk is the real result of the analysis and is authoritative here.
+#
+# Severity comes from the `security-severity` property CodeQL attaches to each rule, on the
+# CVSS 0–10 scale: 9.0+ critical, 7.0–8.9 high. The gate blocks at >= 7.0.
 #
 set -euo pipefail
 
-REF="${1:-}"
-if [[ -z "$REF" ]]; then
-  echo "Usage: codeql-severity-gate.sh <ref>" >&2
-  exit 2
-fi
-
-REPO="${GITHUB_REPOSITORY:?GITHUB_REPOSITORY not set}"
-BLOCKING='critical high'
+SARIF_DIR="${1:-sarif-results}"
+THRESHOLD="${SECURITY_SEVERITY_THRESHOLD:-7.0}"
 
 summary() {
   if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
@@ -28,44 +27,54 @@ summary() {
   echo "$1"
 }
 
-echo "Querying code scanning alerts for $REPO @ $REF"
+SARIF=$(find "$SARIF_DIR" -name '*.sarif' -type f -print -quit 2>/dev/null || true)
 
-# A repository with code scanning disabled, or a first run with nothing uploaded yet, returns
-# 403/404. That is not a finding — do not fail the build on it.
-if ! ALERTS=$(gh api \
-      -H "Accept: application/vnd.github+json" \
-      "/repos/$REPO/code-scanning/alerts?ref=$REF&state=open&per_page=100" 2>/dev/null); then
-  summary "Code scanning alerts are not readable for this ref (analysis may be new, or the"
-  summary "feature disabled). Skipping the severity gate rather than failing on it."
-  exit 0
+if [[ -z "$SARIF" ]]; then
+  summary "### CodeQL severity gate"
+  summary ""
+  summary "No SARIF found under \`$SARIF_DIR\` — the analysis produced no output."
+  exit 1
 fi
 
-# security_severity_level is the meaningful field for security queries; rule.severity covers
-# the quality queries that have no security rating.
-COUNT_BLOCKING=0
-FINDINGS=""
+# Rules live on tool.driver and, for query packs, on tool.extensions. Join results to their
+# rule by id across both so nothing is missed.
+JQ_FINDINGS='
+  [ .runs[]
+    | (   ( .tool.driver.rules // [] )
+        + ( [ (.tool.extensions // [])[] | (.rules // [])[] ] )
+      ) as $rules
+    | .results[]?
+    | . as $r
+    | ( $rules[] | select(.id == $r.ruleId) ) as $rule
+    | {
+        sev:  (($rule.properties["security-severity"] // "0") | tonumber),
+        rule: $r.ruleId,
+        msg:  ($r.message.text // ""),
+        loc:  ( $r.locations[0].physicalLocation.artifactLocation.uri // "unknown" ),
+        line: ( $r.locations[0].physicalLocation.region.startLine // 0 )
+      }
+  ]'
 
-while IFS=$'\t' read -r sev rule url; do
-  [[ -z "$sev" ]] && continue
-  for b in $BLOCKING; do
-    if [[ "$sev" == "$b" ]]; then
-      COUNT_BLOCKING=$(( COUNT_BLOCKING + 1 ))
-      FINDINGS+="- **${sev}** \`${rule}\` — ${url}"$'\n'
-    fi
-  done
-done < <(echo "$ALERTS" | jq -r '.[] | [(.rule.security_severity_level // "none"), .rule.id, .html_url] | @tsv')
-
-TOTAL_OPEN=$(echo "$ALERTS" | jq 'length')
+TOTAL=$(jq "[ .runs[].results[]? ] | length" "$SARIF")
+BLOCKING=$(jq --argjson t "$THRESHOLD" "$JQ_FINDINGS | map(select(.sev >= \$t)) | length" "$SARIF")
 
 summary "### CodeQL severity gate"
 summary ""
-summary "Open alerts on \`$REF\`: **$TOTAL_OPEN** · blocking (high or critical): **$COUNT_BLOCKING**"
+summary "Analysed \`$(basename "$SARIF")\` · total results: **$TOTAL** · at or above severity $THRESHOLD: **$BLOCKING**"
 summary ""
 
-if (( COUNT_BLOCKING > 0 )); then
-  summary "$FINDINGS"
+if [[ "$BLOCKING" -gt 0 ]]; then
+  while IFS=$'\t' read -r sev rule loc line msg; do
+    [[ -z "$sev" ]] && continue
+    summary "- **[$sev]** \`$rule\` — $loc:$line"
+    summary "  <br>$msg"
+  done < <(jq -r --argjson t "$THRESHOLD" \
+    "$JQ_FINDINGS | map(select(.sev >= \$t)) | sort_by(-.sev) | .[] | [(.sev|tostring), .rule, .loc, (.line|tostring), .msg] | @tsv" \
+    "$SARIF")
+
+  summary ""
   summary "Build failed: resolve or dismiss these before merging."
   exit 1
 fi
 
-summary "No high or critical findings."
+summary "No findings at or above severity $THRESHOLD."

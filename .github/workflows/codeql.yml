@@ -68,19 +68,35 @@ jobs:
           dotnet build src/MauiApp/NdiForAndroid.csproj -f net10.0-android -c Release --no-restore \
             /p:AndroidUseToolchain=True
 
+      # upload: never is deliberate and load-bearing.
+      #
+      # This repository has code scanning **default setup** enabled, and GitHub refuses SARIF
+      # from an advanced configuration while it is on:
+      #   "CodeQL analyses from advanced configurations cannot be processed when the default
+      #    setup is enabled"
+      # Every upload from this workflow was therefore rejected. It went unnoticed because the
+      # step used wait-for-processing: false — it uploaded, never waited for the verdict, and
+      # exited 0. The workflow has never contributed a single alert.
+      #
+      # Rather than fight that, the analysis now stays local: default setup keeps populating
+      # the Security tab, and this workflow provides the PR gate over a real build — which is
+      # the part default setup cannot do, since only an explicit build reaches src/MauiApp and
+      # the NdiBridge P/Invoke layer.
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v4
         with:
           category: /language:csharp
-          # Must be true: the severity gate below reads alerts, which do not exist until
-          # GitHub has finished processing the uploaded SARIF.
-          wait-for-processing: true
+          output: sarif-results
+          upload: never
 
-      # analyze@v4 has no built-in severity threshold — it uploads results and succeeds. The
-      # gate is applied here by reading the alerts back for this ref.
       - name: Gate on high-severity findings
-        if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REF: ${{ github.event_name == 'pull_request' && format('refs/pull/{0}/merge', github.event.pull_request.number) || github.ref }}
-        run: bash .github/scripts/codeql-severity-gate.sh "$REF"
+        run: bash .github/scripts/codeql-severity-gate.sh sarif-results
+
+      - name: Upload SARIF artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: codeql-sarif
+          path: sarif-results/*.sarif
+          retention-days: 7
+          if-no-files-found: warn
