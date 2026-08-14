@@ -269,6 +269,7 @@ public sealed class AppLaunchTests
     /// prove nothing. That is the same vacuous-assertion trap this suite already fell into.
     /// </para>
     /// </remarks>
+    /// <summary>Loose match used only for diagnostics — see <see cref="DescribeNavCandidates"/>.</summary>
     private static string LabelMatch(string label) =>
         $"@content-desc='{label}' or contains(@content-desc,'{label}') or @text='{label}'";
 
@@ -276,11 +277,19 @@ public sealed class AppLaunchTests
     {
         var match = LabelMatch(label);
 
-        // Interactivity is resolved inside a single server-side XPath. Walking ancestors from
-        // C# instead costs one round trip per node, and UiAutomator2 round trips are slow
-        // enough that several candidates × several levels exhausted the whole wait before it
-        // could poll twice — every call timed out without ever evaluating a real candidate.
-        var navXpath = $"//*[({match}) and ancestor-or-self::*[@clickable='true']]";
+        // Navigation items are identified by their accessibility label, and nothing else.
+        //
+        // The device tree makes this unambiguous. Searching portrait for "Home" returns three
+        // nodes: the top app bar title (TextView, text='Home', no content-desc), the bottom tab
+        // container (FrameLayout, content-desc='Home'), and the tab's own caption (TextView,
+        // text='Home', no content-desc). Only the real navigation item carries content-desc, so
+        // matching on @text is what made the old locator pick the title.
+        //
+        // Interactivity was tried as the discriminator first and is wrong here: every one of
+        // those nodes reports clickable=false, because Shell handles the touch above them.
+        // The rail previously had no content-desc either; AppShell now sets one via
+        // SemanticProperties, which fixes the same gap for screen readers.
+        var navXpath = $"//*[@content-desc='{label}']";
 
         var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(timeoutSeconds));
 
