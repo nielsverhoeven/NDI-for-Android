@@ -1,3 +1,4 @@
+using System.Text;
 using OpenQA.Selenium;
 using OpenQA.Selenium.Appium.Android;
 using OpenQA.Selenium.Support.UI;
@@ -268,58 +269,91 @@ public sealed class AppLaunchTests
     /// prove nothing. That is the same vacuous-assertion trap this suite already fell into.
     /// </para>
     /// </remarks>
+    private static string LabelMatch(string label) =>
+        $"@content-desc='{label}' or contains(@content-desc,'{label}') or @text='{label}'";
+
     private static IWebElement? WaitForNavElement(AndroidDriver driver, string label, int timeoutSeconds)
     {
+        var match = LabelMatch(label);
+
+        // Interactivity is resolved inside a single server-side XPath. Walking ancestors from
+        // C# instead costs one round trip per node, and UiAutomator2 round trips are slow
+        // enough that several candidates × several levels exhausted the whole wait before it
+        // could poll twice — every call timed out without ever evaluating a real candidate.
+        var navXpath = $"//*[({match}) and ancestor-or-self::*[@clickable='true']]";
+
         var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(timeoutSeconds));
-        var xpath = $"//*[@content-desc='{label}' or contains(@content-desc,'{label}') or @text='{label}']";
 
-        return wait.Until(d =>
+        try
         {
-            try
+            return wait.Until(d =>
             {
-                foreach (var candidate in d.FindElements(By.XPath(xpath)))
+                try
                 {
-                    if (candidate.Displayed && IsInteractive(candidate))
-                        return candidate;
+                    foreach (var candidate in d.FindElements(By.XPath(navXpath)))
+                    {
+                        if (candidate.Displayed)
+                            return candidate;
+                    }
                 }
-            }
-            catch (StaleElementReferenceException)
-            {
-                // The tree changed mid-scan (common during a navigation transition) — retry.
-            }
+                catch (StaleElementReferenceException)
+                {
+                    // The tree changed mid-scan (common during a navigation transition) — retry.
+                }
 
-            return null;
-        });
+                return null;
+            });
+        }
+        catch (WebDriverTimeoutException)
+        {
+            // A bare "timed out" says nothing about why. Dump what the label actually matched
+            // and how each candidate is classified, so one run identifies the tree shape
+            // rather than costing another round of guesses.
+            throw new WebDriverTimeoutException(DescribeNavCandidates(driver, label, match));
+        }
     }
 
     /// <summary>
-    /// True when the element, or a near ancestor, is clickable.
+    /// Builds a diagnostic listing every element carrying the label and why it was or was not
+    /// treated as a navigation item.
     /// </summary>
-    /// <remarks>
-    /// The bottom tab marks the item itself clickable. The left rail puts the label inside a
-    /// clickable container (a <c>Border</c> with a tap gesture), so a short walk upward is
-    /// needed. The top app bar title has no clickable ancestor, which is what excludes it.
-    /// </remarks>
-    private static bool IsInteractive(IWebElement element)
+    private static string DescribeNavCandidates(AndroidDriver driver, string label, string match)
     {
-        var node = element;
+        var report = new StringBuilder()
+            .AppendLine($"No interactive navigation item found for '{label}'.")
+            .AppendLine("Elements matching the label:");
 
-        for (var depth = 0; depth < 4; depth++)
+        try
         {
-            if (string.Equals(node.GetAttribute("clickable"), "true", StringComparison.OrdinalIgnoreCase))
-                return true;
+            var candidates = driver.FindElements(By.XPath($"//*[{match}]"));
 
-            try
+            if (candidates.Count == 0)
             {
-                node = node.FindElement(By.XPath("./.."));
+                report.AppendLine("  (none — the label is not present in the tree at all)");
             }
-            catch (WebDriverException)
+
+            foreach (var candidate in candidates)
             {
-                return false;   // reached the root, or the node went stale
+                report.AppendLine(
+                    $"  class={candidate.GetAttribute("class")} " +
+                    $"text='{candidate.Text}' " +
+                    $"desc='{candidate.GetAttribute("content-desc")}' " +
+                    $"clickable={candidate.GetAttribute("clickable")} " +
+                    $"displayed={candidate.Displayed} " +
+                    $"at={candidate.Location.X},{candidate.Location.Y} " +
+                    $"size={candidate.Size.Width}x{candidate.Size.Height}");
             }
+
+            var clickableAncestors = driver.FindElements(
+                By.XPath($"//*[({match}) and ancestor-or-self::*[@clickable='true']]")).Count;
+            report.AppendLine($"Candidates with a clickable ancestor-or-self: {clickableAncestors}");
+        }
+        catch (Exception ex)
+        {
+            report.AppendLine($"  (could not enumerate candidates: {ex.GetType().Name}: {ex.Message})");
         }
 
-        return false;
+        return report.ToString();
     }
 
     /// <summary>
