@@ -179,6 +179,52 @@ indistinguishable from an empty one, and it manufactures confidence.
 
 ---
 
+## Failure Class 5 — Appium: "'crc64<hash>.MainActivity' never started"
+
+### Signature
+```
+WebDriverException: Cannot start the 'com.ndi.android' application.
+Original error: 'crc643c67d503e9d44ae5.MainActivity' or
+'com.ndi.android.crc643c67d503e9d44ae5.MainActivity' never started.
+```
+Session creation fails. The app may in fact be running perfectly well.
+
+### Root Cause
+Appium reads the launcher activity from the APK manifest, launches it, then waits for *that
+exact activity* to become the foreground activity. Two things in this app break the match:
+
+1. **MAUI generates the activity name as a `crc64…` hash**, regenerated per build. Never pin
+   `appium:appActivity` to it.
+2. **`MainActivity.OnCreate` requests `POST_NOTIFICATIONS` on API 33+.** On API 33+ emulators
+   the permission dialog is the foreground activity at exactly the moment Appium checks.
+
+The default `appWaitDuration` is 20s, and MAUI cold start on a software-rendered emulator
+routinely exceeds that — this repo's own floor for a cold emulator is 30s.
+
+### Fix
+Set these capabilities in `AppiumDriverFixture` (all three are already there — do not remove):
+```csharp
+options.AddAdditionalAppiumOption("appium:appWaitActivity", "*");        // accept any foreground activity
+options.AddAdditionalAppiumOption("appium:appWaitDuration", 60000);      // MAUI cold start > 20s default
+options.AddAdditionalAppiumOption("appium:autoGrantPermissions", true);  // dismiss the permission dialog
+```
+
+### Distinguishing "crashed" from "slow"
+Both look identical from Appium's side. `run-emulator-tests.sh` collects device state on
+failure **while the emulator is still alive** — after the emulator-runner action returns, it
+is gone. Check the `emulator-diagnostics` artifact:
+
+| File | Tells you |
+|---|---|
+| `logcat-crash.txt` | Non-empty ⇒ the app aborted. Cross-reference Failure Classes 1–3. |
+| `logcat-tail.txt` | Last 400 lines of the full log — startup exceptions, native loader errors |
+| `package-info.txt` | Whether the APK actually installed, and its resolved activities |
+
+An empty crash buffer means the app did not abort and the activity wait timed out instead —
+that is this failure class, not a crash.
+
+---
+
 ## Quick Reference Table
 
 | Error in logs | Class | Fix |
@@ -189,3 +235,5 @@ indistinguishable from an empty one, and it manufactures confidence.
 | `INSTALL_FAILED_VERSION_DOWNGRADE` | Version downgrade | Increment `ApplicationVersion` |
 | App exits silently, `adb shell pidof com.ndi.android` returns nothing | Check crash buffer | `adb logcat -b crash -d -v time` |
 | `Passed: 0, Skipped: N` with a green job | Vacuous Green | Set `E2E_REQUIRE_DEVICE=true`; assert `passed > 0` |
+| `'crc64<hash>.MainActivity' never started` | Activity wait mismatch | `appWaitActivity: "*"`, longer `appWaitDuration`, `autoGrantPermissions` |
+| `APK at 'apk/…' does not exist` in the fixture | Relative APK path | Pass `ANDROID_APK_PATH` absolute — the test host's cwd is the project output dir |

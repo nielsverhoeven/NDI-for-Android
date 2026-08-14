@@ -86,6 +86,25 @@ fi
 
 echo "dotnet test exit code: $TEST_EXIT"
 
+# Capture device-side state while the emulator is still alive — the workflow step that
+# reports the failure runs after the emulator-runner action has torn it down, so anything
+# not collected here is gone. Distinguishes "app crashed on launch" from "app was merely
+# slow to reach the foreground", which look identical from Appium's side.
+if [[ "$TEST_EXIT" -ne 0 ]]; then
+  echo "Collecting device diagnostics..."
+  adb logcat -b crash -d > test-results/logcat-crash.txt 2>&1 || true
+  adb logcat -d -v time | tail -400 > test-results/logcat-tail.txt 2>&1 || true
+  adb shell dumpsys package com.ndi.android 2>/dev/null | head -60 > test-results/package-info.txt || true
+
+  if [[ -s test-results/logcat-crash.txt ]]; then
+    echo "===== crash buffer ====="
+    head -60 test-results/logcat-crash.txt
+    echo "======================="
+  else
+    echo "Crash buffer empty — the app did not abort, so the activity wait timed out instead."
+  fi
+fi
+
 # ── Result assertion ─────────────────────────────────────────────────────────
 # A zero exit code is not sufficient evidence that the suite ran: xunit.skippablefact
 # reports an all-skipped run as success. Read the counters back out of the TRX and

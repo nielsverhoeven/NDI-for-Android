@@ -104,6 +104,22 @@ public sealed class AppiumDriverFixture : IAsyncLifetime
         options.AddAdditionalAppiumOption("appium:appPackage", "com.ndi.android");
         // appActivity intentionally omitted — Appium auto-detects the launcher activity from the APK manifest.
         // The MAUI-generated activity class name (crc64... hash) changes between builds.
+
+        // appWaitActivity "*" accepts whatever activity reaches the foreground instead of
+        // waiting for the specific generated one. Without it the session fails with:
+        //   'crc64<hash>.MainActivity' ... never started
+        // even when the app is running fine. Two things make that mismatch likely here:
+        // MainActivity requests POST_NOTIFICATIONS on API 33+, so the permission dialog is
+        // briefly the foreground activity, and the crc64 name is regenerated per build.
+        options.AddAdditionalAppiumOption("appium:appWaitActivity", "*");
+
+        // MAUI cold start on a software-rendered emulator runs well past Appium's 20s default;
+        // this repo's own guidance puts the cold-emulator floor at 30s.
+        options.AddAdditionalAppiumOption("appium:appWaitDuration", 60000);
+
+        // Answer the runtime permission dialog up front so it cannot sit in front of the app.
+        options.AddAdditionalAppiumOption("appium:autoGrantPermissions", true);
+
         options.AddAdditionalAppiumOption("appium:noReset", false);
         options.AddAdditionalAppiumOption("appium:newCommandTimeout", 60);
 
