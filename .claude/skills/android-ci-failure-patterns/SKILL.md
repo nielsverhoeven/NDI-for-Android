@@ -129,6 +129,56 @@ Before any `adb install` step in a test or CI script, verify:
 
 ---
 
+## Failure Class 4 — Vacuous Green: the e2e suite passes without running
+
+This is the inverse of the classes above. Nothing looks broken; the job is **green**. That is
+the failure.
+
+### Signature
+```
+Skipped! - Failed: 0, Passed: 0, Skipped: 10, Total: 10, Duration: 31 ms
+dotnet test exit code: 0
+```
+Any run where `passed = 0` and the job still succeeded. A suspiciously fast emulator step
+(~1 min for boot + install + Appium + tests) is the other tell.
+
+### Root Cause
+Every test in `MauiApp.UITests` is a `[SkippableFact]` guarded by
+`Skip.If(_fixture.SkipReason is not null)`. `AppiumDriverFixture` sets `SkipReason` — rather
+than throwing — whenever it cannot produce a driver: missing `ANDROID_APK_PATH`, unreachable
+Appium, non-success HTTP from `/status`, or a failed `AndroidDriver` construction.
+
+So **any** infrastructure problem converts the whole suite into skips, and `dotnet test` exits
+0. The gate cannot fail for environmental reasons; it can only fail on an assertion inside a
+test that got far enough to run. When the driver never connects, none do.
+
+### Fix
+Two independent mechanisms, both already in the repo. Do not remove either:
+
+1. **`E2E_REQUIRE_DEVICE=true`** (set in the `e2e-tests` job) makes `AppiumDriverFixture` throw
+   on an unavailable session instead of recording a skip. Leave it unset locally so developers
+   without an emulator still get skips rather than failures.
+2. **`run-emulator-tests.sh` reads the TRX `<Counters>` back** and exits 1 when `passed = 0`.
+   A zero exit from `dotnet test` is not evidence that anything executed.
+
+### Diagnosing the underlying connection failure
+Once the gate is honest it will surface whatever was hidden. The real error is in the Appium
+log, which the workflow uploads as the `emulator-diagnostics` artifact:
+```bash
+# in test-results/appium.log — look for the session-creation failure
+grep -iE "error|failed|could not|refused" test-results/appium.log | head -30
+```
+Common causes: UIAutomator2 driver not installed, the APK's launcher activity not resolvable
+(the MAUI `crc64…` activity name changes per build — do not pin `appium:appActivity`), or the
+emulator reporting `boot_completed` before system services are actually ready.
+
+### Prevention
+Treat `passed = 0` as a failure everywhere, not just here. Any gate built on a test runner that
+can skip needs an explicit assertion that work was done — otherwise a green check is
+indistinguishable from an empty one, and it manufactures confidence.
+
+---
+
 ## Quick Reference Table
 
 | Error in logs | Class | Fix |
@@ -138,3 +188,4 @@ Before any `adb install` step in a test or CI script, verify:
 | `XAGNM7009 missing native code generation state` | Stale Release Build | `dotnet clean` then rebuild |
 | `INSTALL_FAILED_VERSION_DOWNGRADE` | Version downgrade | Increment `ApplicationVersion` |
 | App exits silently, `adb shell pidof com.ndi.android` returns nothing | Check crash buffer | `adb logcat -b crash -d -v time` |
+| `Passed: 0, Skipped: N` with a green job | Vacuous Green | Set `E2E_REQUIRE_DEVICE=true`; assert `passed > 0` |

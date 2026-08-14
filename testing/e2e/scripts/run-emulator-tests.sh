@@ -65,8 +65,16 @@ if [[ "$APP_READY" -ne 1 ]]; then
   exit 1
 fi
 
+# A device is guaranteed here, so AppiumDriverFixture must treat an unavailable session as a
+# failure rather than a skip. Without this the suite reports success while executing nothing.
+E2E_REQUIRE_DEVICE="${E2E_REQUIRE_DEVICE:-true}"
+
+TRX="test-results/emulator-test-results.trx"
+rm -f "$TRX"
+
 set +e
-timeout 20m env ANDROID_APK_PATH="$APK_PATH" dotnet test tests/MauiApp.UITests/NdiForAndroid.UITests.csproj -c Release \
+timeout 20m env ANDROID_APK_PATH="$APK_PATH" E2E_REQUIRE_DEVICE="$E2E_REQUIRE_DEVICE" \
+  dotnet test tests/MauiApp.UITests/NdiForAndroid.UITests.csproj -c Release \
   --logger "trx;LogFileName=emulator-test-results.trx" \
   --results-directory test-results
 TEST_EXIT=$?
@@ -77,4 +85,38 @@ if [[ "$TEST_EXIT" -eq 124 ]]; then
 fi
 
 echo "dotnet test exit code: $TEST_EXIT"
+
+# ── Result assertion ─────────────────────────────────────────────────────────
+# A zero exit code is not sufficient evidence that the suite ran: xunit.skippablefact
+# reports an all-skipped run as success. Read the counters back out of the TRX and
+# require that something actually executed and passed.
+if [[ "$E2E_REQUIRE_DEVICE" != "true" ]]; then
+  exit "$TEST_EXIT"
+fi
+
+if [[ ! -f "$TRX" ]]; then
+  echo "FAIL: no TRX produced at $TRX — the suite did not run."
+  exit 1
+fi
+
+COUNTERS=$(grep -o '<Counters[^/]*/>' "$TRX" | head -1)
+read_counter() { echo "$COUNTERS" | grep -o "$1=\"[0-9]*\"" | grep -o '[0-9]*' | head -1; }
+
+TOTAL=$(read_counter total);   TOTAL=${TOTAL:-0}
+PASSED=$(read_counter passed); PASSED=${PASSED:-0}
+FAILED=$(read_counter failed); FAILED=${FAILED:-0}
+SKIPPED=$(( TOTAL - PASSED - FAILED ))
+
+echo "Counters — total=$TOTAL passed=$PASSED failed=$FAILED skipped=$SKIPPED"
+
+if [[ "$PASSED" -eq 0 ]]; then
+  echo "FAIL: no UI test passed. An all-skipped or empty run is not a green e2e gate."
+  exit 1
+fi
+
+if [[ "$SKIPPED" -gt 0 ]]; then
+  echo "WARNING: $SKIPPED test(s) skipped. Conditional skips inside a test body are allowed,"
+  echo "         but a skip caused by a missing device would have failed the fixture already."
+fi
+
 exit "$TEST_EXIT"
