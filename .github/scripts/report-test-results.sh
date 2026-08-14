@@ -25,13 +25,29 @@ if [[ ! -d "$RESULTS_DIR" ]]; then
   exit 0
 fi
 
+# ── Extraction helpers ───────────────────────────────────────────────────────
+#
+# No `grep … | head` anywhere below. Under `set -euo pipefail`, head closing the pipe early
+# sends SIGPIPE to grep, whose non-zero status fails the whole script — which is exactly what
+# happened on the first run of this file against a real Cobertura report (a line-rate attribute
+# appears on every package and class, so grep was still writing when head exited).
+# `grep -m1` stops on its own; `find -print -quit` likewise.
+
+# Prints the value of attr="value" from a single-element string, or nothing.
+attr_value() {
+  local haystack="$1" attr="$2" match
+  match=$(printf '%s' "$haystack" | grep -o "$attr=\"[^\"]*\"" || true)
+  match="${match#*\"}"
+  printf '%s' "${match%\"}"
+}
+
 # ── Test counts (TRX) ────────────────────────────────────────────────────────
 
-TRX=$(find "$RESULTS_DIR" -name '*.trx' -type f 2>/dev/null | head -1)
+TRX=$(find "$RESULTS_DIR" -name '*.trx' -type f -print -quit 2>/dev/null || true)
 
 if [[ -n "$TRX" ]]; then
-  COUNTERS=$(grep -o '<Counters[^/]*/>' "$TRX" | head -1)
-  read_counter() { echo "$COUNTERS" | grep -o "$1=\"[0-9]*\"" | grep -o '[0-9]*' | head -1; }
+  COUNTERS=$(grep -o -m1 '<Counters[^/]*/>' "$TRX" || true)
+  read_counter() { attr_value "$COUNTERS" "$1"; }
 
   TOTAL=$(read_counter total);   TOTAL=${TOTAL:-0}
   PASSED=$(read_counter passed); PASSED=${PASSED:-0}
@@ -57,8 +73,19 @@ if [[ -n "$TRX" ]]; then
   if (( FAILED > 0 )); then
     summary "**Failing tests**"
     summary ""
-    grep -o 'testName="[^"]*"' "$TRX" 2>/dev/null | sed 's/testName="//;s/"$//' | head -20 \
-      | while read -r name; do summary "- \`$name\`"; done
+    # Collected into a variable first so no producer is left writing into a closed pipe.
+    FAILING=$(grep -o 'outcome="Failed"[^>]*testName="[^"]*"\|testName="[^"]*"[^>]*outcome="Failed"' "$TRX" 2>/dev/null || true)
+    if [[ -z "$FAILING" ]]; then
+      FAILING=$(grep -o 'testName="[^"]*"' "$TRX" 2>/dev/null || true)
+    fi
+    printf '%s\n' "$FAILING" \
+      | grep -o 'testName="[^"]*"' \
+      | sed 's/testName="//;s/"$//' \
+      | sort -u \
+      | head -20 > /tmp/failing-tests.txt || true
+    while read -r name; do
+      [[ -n "$name" ]] && summary "- \`$name\`"
+    done < /tmp/failing-tests.txt
     summary ""
   fi
 else
@@ -68,15 +95,17 @@ fi
 
 # ── Coverage (Cobertura) ─────────────────────────────────────────────────────
 
-COVERAGE_FILE=$(find "$RESULTS_DIR" -name 'coverage.cobertura.xml' -type f 2>/dev/null | head -1)
+COVERAGE_FILE=$(find "$RESULTS_DIR" -name 'coverage.cobertura.xml' -type f -print -quit 2>/dev/null || true)
 
 if [[ -z "$COVERAGE_FILE" ]]; then
   exit 0
 fi
 
-# Cobertura reports rates as 0..1 on the root <coverage> element.
-LINE_RATE=$(grep -o 'line-rate="[0-9.]*"' "$COVERAGE_FILE" | head -1 | grep -o '[0-9.]*')
-BRANCH_RATE=$(grep -o 'branch-rate="[0-9.]*"' "$COVERAGE_FILE" | head -1 | grep -o '[0-9.]*')
+# Cobertura reports rates as 0..1. Every package and class carries its own line-rate, so take
+# the first match only — that is the root <coverage> element, the overall figure.
+ROOT_ELEMENT=$(grep -o -m1 '<coverage[^>]*>' "$COVERAGE_FILE" || true)
+LINE_RATE=$(attr_value "$ROOT_ELEMENT" 'line-rate')
+BRANCH_RATE=$(attr_value "$ROOT_ELEMENT" 'branch-rate')
 
 if [[ -z "$LINE_RATE" ]]; then
   summary "Coverage file found but no line-rate could be read."

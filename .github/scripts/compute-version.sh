@@ -21,8 +21,11 @@ if [[ ! -f "$PROPS" ]]; then
   exit 1
 fi
 
+# grep -m1 rather than `grep | head -1`, which can SIGPIPE grep and trip `set -euo pipefail`.
 read_prop() {
-  grep -E "^$1=" "$PROPS" | head -1 | cut -d= -f2 | tr -d '[:space:]'
+  local line
+  line=$(grep -E -m1 "^$1=" "$PROPS" || true)
+  printf '%s' "${line#*=}" | tr -d '[:space:]'
 }
 
 FILE_NAME=$(read_prop versionName)

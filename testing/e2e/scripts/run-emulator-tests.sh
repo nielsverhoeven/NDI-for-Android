@@ -99,8 +99,15 @@ if [[ ! -f "$TRX" ]]; then
   exit 1
 fi
 
-COUNTERS=$(grep -o '<Counters[^/]*/>' "$TRX" | head -1)
-read_counter() { echo "$COUNTERS" | grep -o "$1=\"[0-9]*\"" | grep -o '[0-9]*' | head -1; }
+# grep -m1 rather than `grep | head -1`: under `set -euo pipefail`, head closing the pipe first
+# sends SIGPIPE to grep and fails the script.
+COUNTERS=$(grep -o -m1 '<Counters[^/]*/>' "$TRX" || true)
+read_counter() {
+  local match
+  match=$(printf '%s' "$COUNTERS" | grep -o "$1=\"[0-9]*\"" || true)
+  match="${match#*\"}"
+  printf '%s' "${match%\"}"
+}
 
 TOTAL=$(read_counter total);   TOTAL=${TOTAL:-0}
 PASSED=$(read_counter passed); PASSED=${PASSED:-0}
