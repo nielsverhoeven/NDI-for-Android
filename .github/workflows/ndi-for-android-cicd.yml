@@ -220,9 +220,12 @@ jobs:
           name: release-apk
           path: apk
 
+      # Absolute, deliberately. dotnet test runs the test host from the project's output
+      # directory, not the workspace root, so a workspace-relative path does not resolve
+      # inside the fixture — and Appium's `app` capability needs an absolute path too.
       - name: Locate downloaded APK
         run: |
-          APK_PATH=$(find apk -name "*.apk" | head -1)
+          APK_PATH=$(find "$PWD/apk" -name '*.apk' -type f -print -quit)
           if [ -z "$APK_PATH" ]; then echo "No APK in artifact"; exit 1; fi
           echo "APK_PATH=$APK_PATH" >> "$GITHUB_ENV"
           echo "Using APK: $APK_PATH"

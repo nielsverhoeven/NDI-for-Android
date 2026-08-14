@@ -57,9 +57,18 @@ public sealed class AppiumDriverFixture : IAsyncLifetime
             return;
         }
 
-        if (RequireDevice && !File.Exists(apkPath))
-            throw new InvalidOperationException(
-                $"E2E_REQUIRE_DEVICE is set but the APK at '{apkPath}' does not exist.");
+        // Resolved against the test host's working directory, which is the project's output
+        // directory rather than the repo root — a workspace-relative path from CI does not
+        // resolve here. Appium also requires an absolute path for the `app` capability, so
+        // normalise once and use the result for both.
+        apkPath = Path.GetFullPath(apkPath);
+
+        if (!File.Exists(apkPath))
+        {
+            Unavailable(
+                $"No APK at '{apkPath}' (ANDROID_APK_PATH resolved against '{Directory.GetCurrentDirectory()}').");
+            return;
+        }
 
         var serverUrlRaw = Environment.GetEnvironmentVariable("APPIUM_SERVER_URL")
                            ?? "http://127.0.0.1:4723/";
