@@ -461,7 +461,13 @@ Two traps this exposed, both worth remembering:
 
 - **"Any element with text" is not proof the app is running.** The Android launcher satisfies it.
   A startup smoke test written that way reported success while the app was not running at all —
-  vacuous green, one layer down from where it was last removed. Check `CurrentPackage`.
+  vacuous green, one layer down from where it was last removed.
+- **`CurrentPackage` is not proof either.** After the `am force-stop` that `TerminateApp` issues,
+  ActivityManager logs `Force removing ActivityRecord … app died, no saved state` while
+  `CurrentPackage` still returns `com.ndi.android` — so a package-only foreground check declares a
+  dead app healthy and skips the relaunch. Assert a node exists under `com.ndi.android:id/`
+  instead: Android namespaces `resource-id` by package, so one is present only if our process is
+  really rendering.
 - **A skip travels as an exception.** Wrapping a test body in a `try`/`catch` to capture failure
   evidence will treat every conditional skip as a failure and file a screenshot for it, which
   reads as a failure to anyone scanning the artifact list. Filter it out.

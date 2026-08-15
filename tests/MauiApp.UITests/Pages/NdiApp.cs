@@ -153,8 +153,41 @@ public sealed class NdiApp
     }
 
     /// <summary>True when our app — not the launcher, not a system dialog — is in front.</summary>
-    public bool IsInForeground =>
-        string.Equals(ForegroundPackage, PackageName, StringComparison.Ordinal);
+    /// <remarks>
+    /// <para>
+    /// Asks the view tree, not just <c>CurrentPackage</c>. After an <c>am force-stop</c> —
+    /// which is exactly what <see cref="TryRestart"/> issues — ActivityManager logs
+    /// <c>Force removing ActivityRecord … app died, no saved state</c>, yet <c>CurrentPackage</c>
+    /// kept reporting <c>com.ndi.android</c> while the device was plainly showing the launcher.
+    /// A package-only check therefore declared the app healthy and skipped the relaunch, and every
+    /// later test failed against the launcher with a message blaming a page.
+    /// </para>
+    /// <para>
+    /// The presence of a view owned by our package cannot be wrong in that way: Android namespaces
+    /// <c>resource-id</c> by package, so a node under <c>com.ndi.android:id/</c> exists only if our
+    /// process is actually rendering.
+    /// </para>
+    /// </remarks>
+    public bool IsInForeground
+    {
+        get
+        {
+            if (!string.Equals(ForegroundPackage, PackageName, StringComparison.Ordinal))
+                return false;
+
+            try
+            {
+                return _driver
+                    .FindElements(By.XPath($"//*[starts-with(@resource-id, '{PackageName}:')]"))
+                    .Count > 0;
+            }
+            catch (Exception)
+            {
+                // A tree that cannot be read is not evidence the app is up.
+                return false;
+            }
+        }
+    }
 
     /// <summary>
     /// The app is in front and has drawn something.
@@ -219,6 +252,8 @@ public sealed class NdiApp
 
         try
         {
+            // ActivateApp resolves and starts the launcher intent, which is what brings the app
+            // back after a force-stop. Calling it when the process is already gone is safe.
             _driver.ActivateApp(PackageName);
         }
         catch (Exception ex)
