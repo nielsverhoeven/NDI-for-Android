@@ -374,6 +374,20 @@ jobs:
             echo "artifact from this run's summary page:"
             ls -1 "$EVIDENCE" | sed 's/^/  /'
           fi
+          # Repeated here on purpose. The crash buffer is collected inside the emulator step,
+          # which is followed by several hundred lines of artifact-upload output, so by the time
+          # it matters it has scrolled well out of view. This step is deliberately last, so an
+          # app that died during the run says so where a reader will actually see it.
+          echo ""
+          if [ -s test-results/logcat-crash.txt ]; then
+            echo "----- logcat crash buffer (first 60 lines) -----"
+            head -60 test-results/logcat-crash.txt
+            echo "-----------------------------------------------"
+          else
+            echo "Crash buffer empty: the app did not abort with a Java/native crash."
+            echo "If tests still reported the launcher on screen, it was killed or backgrounded"
+            echo "rather than crashed."
+          fi
           echo "==========================================================="
 
   # ════════════════════════════════════════════════════════════════════════════

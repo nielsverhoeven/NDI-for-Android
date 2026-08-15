@@ -67,10 +67,32 @@ public sealed class SettingsPage : PageObject
 
     // ── Appearance section ───────────────────────────────────────────────────
 
-    public void SelectTheme(ThemeOption theme) => Tap(ThemeId(theme));
+    /// <summary>
+    /// Selects a theme and confirms the selection actually took.
+    /// </summary>
+    /// <remarks>
+    /// The confirmation is not ceremony. These radio buttons use a MAUI <c>ControlTemplate</c>
+    /// rather than the native Android control, so the automation id sits on a container and a tap
+    /// on it does not necessarily toggle anything. Without this check, a tap that silently does
+    /// nothing surfaces two calls later as "Settings applied never appeared" — which reads as a
+    /// broken Apply button rather than a selection that never happened.
+    /// </remarks>
+    public void SelectTheme(ThemeOption theme)
+    {
+        Tap(ThemeId(theme));
+
+        if (!IsThemeSelected(theme))
+            throw new InvalidOperationException(
+                $"Tapping the {theme} theme option did not select it — it still reports " +
+                $"checked='{CheckedState(theme)}'. The tap landed on a node that does not toggle " +
+                "the radio button, or the control is not responding to synthetic taps.");
+    }
 
     public bool IsThemeSelected(ThemeOption theme) =>
-        string.Equals(WaitFor(ThemeId(theme)).GetAttribute("checked"), "true", StringComparison.OrdinalIgnoreCase);
+        string.Equals(CheckedState(theme), "true", StringComparison.OrdinalIgnoreCase);
+
+    private string CheckedState(ThemeOption theme) =>
+        WaitFor(ThemeId(theme)).GetAttribute("checked") ?? "(no checked attribute)";
 
     // ── Apply ────────────────────────────────────────────────────────────────
 

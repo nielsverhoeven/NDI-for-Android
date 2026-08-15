@@ -74,6 +74,17 @@ public sealed class NdiApp
     {
         _driver.Orientation = orientation;
         Thread.Sleep(Timeouts.OrientationSettle);
+
+        // A configuration change is one of the few things that can take the whole process down —
+        // it tears down and rebuilds the Shell, and this app swaps its entire navigation
+        // implementation at that point (bottom tab bar to left rail). If that kills the app, the
+        // next call reports "page did not become visible" against a device showing the launcher,
+        // which points investigation at the page rather than at the rotation that caused it.
+        if (!IsInForeground)
+            throw new InvalidOperationException(
+                $"The app stopped running while rotating to {orientation} — the foreground " +
+                $"package is now '{ForegroundPackage}'. The rotation itself brought the app down; " +
+                "see the logcat crash buffer in the emulator diagnostics.");
     }
 
     /// <summary>
