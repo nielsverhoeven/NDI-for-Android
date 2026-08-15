@@ -1,3 +1,5 @@
+using NdiForAndroid.Testing;
+
 namespace NdiForAndroid.Features.Navigation.Models;
 
 public enum PrimaryNavDestination
@@ -29,12 +31,17 @@ public enum DeviceOrientation
 /// this as a vector shape it can fill with the current theme color — the bundled SVGs carry a
 /// baked-in white fill and cannot be re-tinted at runtime (#294).
 /// </param>
+/// <param name="TestId">
+/// Automation id shared by both placements of this destination — the bottom tab and the left
+/// rail item are one destination wearing two coats, and only one is in the view tree at a time.
+/// </param>
 public sealed record PrimaryNavItem(
     PrimaryNavDestination Destination,
     string Label,
     string Route,
     string IconKey,
-    string IconGeometry);
+    string IconGeometry,
+    string TestId);
 
 public static class PrimaryNavigationMetadata
 {
@@ -59,9 +66,9 @@ public static class PrimaryNavigationMetadata
 
     public static readonly IReadOnlyList<PrimaryNavItem> Items =
     [
-        new(PrimaryNavDestination.Home, "Home", "//home", "nav_home.svg", HomeGeometry),
-        new(PrimaryNavDestination.Stream, "Stream", "//stream", "nav_stream.svg", StreamGeometry),
-        new(PrimaryNavDestination.View, "View", "//view", "nav_view.svg", ViewGeometry),
-        new(PrimaryNavDestination.Settings, "Settings", "//settings", "nav_settings.svg", SettingsGeometry),
+        new(PrimaryNavDestination.Home, "Home", "//home", "nav_home.svg", HomeGeometry, TestIds.NavHome),
+        new(PrimaryNavDestination.Stream, "Stream", "//stream", "nav_stream.svg", StreamGeometry, TestIds.NavStream),
+        new(PrimaryNavDestination.View, "View", "//view", "nav_view.svg", ViewGeometry, TestIds.NavView),
+        new(PrimaryNavDestination.Settings, "Settings", "//settings", "nav_settings.svg", SettingsGeometry, TestIds.NavSettings),
     ];
 }
