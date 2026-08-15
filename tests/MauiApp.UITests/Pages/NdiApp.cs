@@ -104,17 +104,61 @@ public sealed class NdiApp
         {
             _driver.TerminateApp(PackageName);
             _driver.ActivateApp(PackageName);
-            return true;
         }
         catch
         {
             return false;
         }
+
+        // ActivateApp returns as soon as the launch intent is dispatched, not when the app is
+        // actually drawing. Returning here without waiting hands the caller a device still showing
+        // the launcher, and its next assertion fails against that instead of against the app.
+        var deadline = DateTime.UtcNow + Timeouts.AppStart;
+        while (DateTime.UtcNow < deadline)
+        {
+            if (IsInForeground)
+                return true;
+
+            Thread.Sleep(250);
+        }
+
+        return false;
     }
 
-    /// <summary>Any element on screen carrying non-empty text — proof the UI rendered at all.</summary>
+    /// <summary>The package currently in the foreground, or empty if it cannot be read.</summary>
+    public string ForegroundPackage
+    {
+        get
+        {
+            try
+            {
+                return _driver.CurrentPackage ?? string.Empty;
+            }
+            catch
+            {
+                return string.Empty;
+            }
+        }
+    }
+
+    /// <summary>True when our app — not the launcher, not a system dialog — is in front.</summary>
+    public bool IsInForeground =>
+        string.Equals(ForegroundPackage, PackageName, StringComparison.Ordinal);
+
+    /// <summary>
+    /// The app is in front and has drawn something.
+    /// </summary>
+    /// <remarks>
+    /// The package check is the load-bearing half. An earlier version asked only "is any element
+    /// with text on screen", which the Android launcher satisfies trivially — so the startup smoke
+    /// test reported success while the app was not running at all. That is the same vacuous-green
+    /// shape this suite was rebuilt to eliminate, reintroduced one layer down.
+    /// </remarks>
     public bool HasRenderedContent()
     {
+        if (!IsInForeground)
+            return false;
+
         try
         {
             return _driver
@@ -135,5 +179,57 @@ public sealed class NdiApp
         {
             return false;
         }
+    }
+
+    /// <summary>
+    /// Guarantees the app is running and in front, relaunching it if it is not.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// One Appium session is shared by the whole collection, so whatever the previous test left
+    /// behind is what the next one starts from. When a test terminates the app — two of them
+    /// restart it deliberately — or the system kills it, every subsequent test fails on a device
+    /// showing the launcher, reporting a confusing "page did not become visible" instead of the
+    /// truth. Making each test establish the app itself is what turns those cascades back into a
+    /// single honest failure.
+    /// </para>
+    /// <para>
+    /// Deliberately does <b>not</b> swallow an app that will not start: if the relaunch does not
+    /// bring the app to the foreground, this throws naming the package that is actually in front,
+    /// so "the app is not running" is what the report says.
+    /// </para>
+    /// </remarks>
+    public void EnsureInForeground()
+    {
+        if (IsInForeground)
+            return;
+
+        var before = ForegroundPackage;
+
+        try
+        {
+            _driver.ActivateApp(PackageName);
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException(
+                $"The app was not running (foreground package '{before}') and could not be " +
+                $"relaunched: {ex.GetType().Name}: {ex.Message}", ex);
+        }
+
+        var deadline = DateTime.UtcNow + Timeouts.AppStart;
+        while (DateTime.UtcNow < deadline)
+        {
+            if (IsInForeground)
+                return;
+
+            Thread.Sleep(250);
+        }
+
+        throw new InvalidOperationException(
+            $"The app was not running (foreground package '{before}') and did not return to the " +
+            $"foreground within {Timeouts.AppStart.TotalSeconds:0}s of being relaunched — the " +
+            $"foreground package is now '{ForegroundPackage}'. It most likely crashed; check the " +
+            "logcat crash buffer in the emulator diagnostics.");
     }
 }

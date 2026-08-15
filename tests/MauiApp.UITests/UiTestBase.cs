@@ -45,6 +45,16 @@ public abstract class UiTestBase
         var driver = _fixture.Driver!;
         App = new NdiApp(driver);
 
-        FailureEvidence.Capture(driver, testName, () => body(App));
+        FailureEvidence.Capture(driver, testName, () =>
+        {
+            // Establish the app rather than inherit it. The session is shared across the whole
+            // collection, so a test that terminates the app — or an app the system kills — leaves
+            // every later test running against the launcher. Without this the first casualty
+            // reports "page did not become visible" and every test after it repeats the same
+            // misleading message, turning one real problem into a wall of noise.
+            App.EnsureInForeground();
+
+            body(App);
+        });
     }
 }

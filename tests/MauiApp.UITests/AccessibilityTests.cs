@@ -66,11 +66,16 @@ public sealed class AccessibilityTests : UiTestBase
             violations.AddRange(app.Accessibility.Run(screen, TestIds.All));
         }
 
-        // Straight to stdout so a regression is readable in the job log without downloading an
-        // artifact — #314 asks for exactly this.
         var summary = AccessibilityAudit.Summarise(violations, Budget);
+
+        // Three destinations, because each answers a different need. xUnit output attaches it to
+        // the test; stdout puts it in the job log; the file lets run-emulator-tests.sh echo it at
+        // the very end of the run, which is the only place a reader reliably looks — a summary
+        // buried mid-log among hundreds of lines of dotnet output may as well not exist, and the
+        // count is what tells us where to set the budget next.
         _output.WriteLine(summary);
         Console.WriteLine(summary);
+        WriteSummaryArtifact(summary);
 
         Assert.True(violations.Count <= Budget,
             $"{violations.Count} accessibility violations, above the budget of {Budget}. " +
@@ -150,6 +155,22 @@ public sealed class AccessibilityTests : UiTestBase
             string.Join($"{Environment.NewLine}  ", offenders.Take(20)) +
             $"{Environment.NewLine}Give them a SemanticProperties.Description in human language.");
     });
+
+    /// <summary>Best-effort: a summary that cannot be written must not fail the audit.</summary>
+    private static void WriteSummaryArtifact(string summary)
+    {
+        try
+        {
+            Directory.CreateDirectory(FailureEvidence.ArtifactDirectory);
+            File.WriteAllText(
+                Path.Combine(FailureEvidence.ArtifactDirectory, "accessibility-summary.txt"),
+                summary);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[a11y] could not write the summary artifact: {ex.Message}");
+        }
+    }
 
     private static readonly (NavDestination Destination, string Screen)[] PrimaryScreens =
     [

@@ -163,6 +163,16 @@ SKIPPED=$(( TOTAL - PASSED - FAILED ))
 
 echo "Counters — total=$TOTAL passed=$PASSED failed=$FAILED skipped=$SKIPPED"
 
+# The accessibility audit's own summary, echoed here rather than left where it was printed. It
+# lands in the middle of several hundred lines of dotnet output, and the violation count is what
+# decides where A11Y_MAX_VIOLATIONS should sit — so it belongs somewhere a reader actually looks.
+A11Y_SUMMARY="$E2E_ARTIFACT_DIR/accessibility-summary.txt"
+if [[ -s "$A11Y_SUMMARY" ]]; then
+  echo
+  cat "$A11Y_SUMMARY"
+  echo
+fi
+
 # ── Regression-proof mode ────────────────────────────────────────────────────
 # Used to demonstrate that a regression test actually catches the bug it was written for, by
 # running it against a build of the app from before the fix. Here a FAILING test is the success

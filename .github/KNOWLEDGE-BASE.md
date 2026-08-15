@@ -448,6 +448,24 @@ Two mechanisms keep it honest; do not remove either:
   TalkBack reads aloud. `Accessibility_AutomationIds_AreNotUsedAsScreenReaderLabels` asserts the
   two never collide — a guard against the 99 ids added in #311 leaking into announcements.
 
+### Every test establishes the app; none inherits it
+
+One Appium session is shared by the whole collection, so a test that terminates the app — two of
+them restart it deliberately — leaves every later test running against the **launcher**. The first
+casualty reports "page did not become visible" and every test after it repeats the same misleading
+message, turning one real problem into a wall of noise. `UiTestBase.Run` calls
+`NdiApp.EnsureInForeground()` before each body; when the app cannot be brought back it says so,
+naming the package that *is* in front, instead of blaming the page.
+
+Two traps this exposed, both worth remembering:
+
+- **"Any element with text" is not proof the app is running.** The Android launcher satisfies it.
+  A startup smoke test written that way reported success while the app was not running at all —
+  vacuous green, one layer down from where it was last removed. Check `CurrentPackage`.
+- **A skip travels as an exception.** Wrapping a test body in a `try`/`catch` to capture failure
+  evidence will treat every conditional skip as a failure and file a screenshot for it, which
+  reads as a failure to anyone scanning the artifact list. Filter it out.
+
 ### Proving a regression test actually catches its bug
 
 `emulator-tests.yml` takes `app_ref`, `test_filter` and `expect_failure`. It builds the **APK from
