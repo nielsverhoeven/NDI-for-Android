@@ -78,10 +78,20 @@ rm -f "$TRX"
 E2E_ARTIFACT_DIR="${E2E_ARTIFACT_DIR:-$PWD/test-results/failure-evidence}"
 mkdir -p "$E2E_ARTIFACT_DIR"
 
+# Optional xUnit filter, used by the regression-proof harness to run a single test against an
+# old build of the app. Empty by default, so a normal run executes everything.
+FILTER_ARGS=()
+if [[ -n "${E2E_TEST_FILTER:-}" ]]; then
+  FILTER_ARGS=(--filter "$E2E_TEST_FILTER")
+  echo "Test filter: $E2E_TEST_FILTER"
+fi
+
 set +e
 timeout 20m env ANDROID_APK_PATH="$APK_PATH" E2E_REQUIRE_DEVICE="$E2E_REQUIRE_DEVICE" \
   E2E_ARTIFACT_DIR="$E2E_ARTIFACT_DIR" \
+  A11Y_MAX_VIOLATIONS="${A11Y_MAX_VIOLATIONS:-}" \
   dotnet test tests/MauiApp.UITests/NdiForAndroid.UITests.csproj -c Release \
+  "${FILTER_ARGS[@]}" \
   --logger "trx;LogFileName=emulator-test-results.trx" \
   --results-directory test-results
 TEST_EXIT=$?
@@ -152,6 +162,24 @@ FAILED=$(read_counter failed); FAILED=${FAILED:-0}
 SKIPPED=$(( TOTAL - PASSED - FAILED ))
 
 echo "Counters — total=$TOTAL passed=$PASSED failed=$FAILED skipped=$SKIPPED"
+
+# ── Regression-proof mode ────────────────────────────────────────────────────
+# Used to demonstrate that a regression test actually catches the bug it was written for, by
+# running it against a build of the app from before the fix. Here a FAILING test is the success
+# condition, so the normal assertions are inverted: a pass means the test cannot detect the
+# defect and proves nothing.
+if [[ "${E2E_EXPECT_FAILURE:-false}" == "true" ]]; then
+  if [[ "$FAILED" -gt 0 ]]; then
+    echo "PROVEN: $FAILED test(s) failed against this build, which is the expected outcome."
+    echo "        The regression test detects the defect."
+    exit 0
+  fi
+
+  echo "NOT PROVEN: expected at least one failure against this build, but none failed"
+  echo "            (total=$TOTAL passed=$PASSED skipped=$SKIPPED)."
+  echo "            A regression test that passes on the original bug proves nothing."
+  exit 1
+fi
 
 if [[ "$PASSED" -eq 0 ]]; then
   echo "FAIL: no UI test passed. An all-skipped or empty run is not a green e2e gate."

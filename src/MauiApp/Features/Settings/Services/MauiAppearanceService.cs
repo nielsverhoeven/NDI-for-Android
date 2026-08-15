@@ -94,7 +94,12 @@ public sealed class MauiAppearanceService : IAppearanceService
         ShellForeground:    Color.FromArgb("#1C1C1E"),
         ShellTitleColor:    Color.FromArgb("#1C1C1E"),
         ShellTabSelected:   Color.FromArgb("#1C1C1E"),
-        ShellTabUnselected: Color.FromArgb("#8E8E93"),
+        // #6E6E73, not the #8E8E93 the dark palette uses. That grey was inherited unchanged from
+        // dark, where it sits on #1C1C1E at a comfortable 5.2:1 — but against this palette's
+        // #E5E5EA shell it is only 2.59:1, under the 3:1 WCAG AA bar for graphical objects, so
+        // unselected navigation items were genuinely hard to read in the light theme. #6E6E73
+        // restores 4.0:1 while staying visibly secondary next to the selected item.
+        ShellTabUnselected: Color.FromArgb("#6E6E73"),
         TextPrimary:        Color.FromArgb("#1C1C1E"),
         TextSecondary:      Color.FromArgb("#3C3C43"),
         TextPlaceholder:    Color.FromArgb("#8E8E93"),

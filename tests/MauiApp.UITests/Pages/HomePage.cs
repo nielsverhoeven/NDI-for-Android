@@ -32,6 +32,19 @@ public sealed class HomePage : PageObject
     }
 
     public bool HasDiscoveryCard => IsPresent(TestIds.HomeDiscoveryStatusCard);
+
+    /// <summary>
+    /// Screen bounds of the first content card, for layout and inset assertions.
+    /// </summary>
+    public System.Drawing.Rectangle DiscoveryCardBounds
+    {
+        get
+        {
+            var element = WaitFor(TestIds.HomeDiscoveryStatusCard);
+            var (location, size) = (element.Location, element.Size);
+            return new System.Drawing.Rectangle(location.X, location.Y, size.Width, size.Height);
+        }
+    }
     public bool HasViewerCard    => IsPresent(TestIds.HomeViewerStatusCard);
     public bool HasOutputCard    => IsPresent(TestIds.HomeOutputStatusCard);
 

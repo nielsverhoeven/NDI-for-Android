@@ -42,6 +42,23 @@ public sealed class NdiApp
     /// <summary>Current screen orientation.</summary>
     public ScreenOrientation Orientation => _driver.Orientation;
 
+    /// <summary>Device geometry: system-bar insets and display density.</summary>
+    public DeviceMetrics Metrics => new(_driver);
+
+    /// <summary>
+    /// Takes a screenshot for pixel sampling.
+    /// </summary>
+    /// <remarks>
+    /// The one capability that cannot be expressed as a page object. Colour is absent from the
+    /// accessibility tree — a MAUI <c>Path</c>'s <c>Fill</c> is simply not there — so questions
+    /// like "is this icon visible against its background" have to be answered from pixels. Caller
+    /// disposes.
+    /// </remarks>
+    public ScreenSampler CaptureScreen() => ScreenSampler.Capture(_driver);
+
+    /// <summary>Audits the live accessibility tree.</summary>
+    public AccessibilityAudit Accessibility => new(_driver, Metrics);
+
     /// <summary>Window size in pixels — the reference frame for placement assertions.</summary>
     public System.Drawing.Size WindowSize => _driver.Manage().Window.Size;
 

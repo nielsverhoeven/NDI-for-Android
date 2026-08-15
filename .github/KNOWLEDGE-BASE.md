@@ -424,6 +424,38 @@ Two mechanisms keep it honest; do not remove either:
   inline the ids that *were* on screen, which distinguishes wrong-page from not-yet-rendered from
   genuinely-missing without another 8-minute run.
 
+### Theme, layout and accessibility coverage (#313, #314)
+
+- **Colour is asserted as contrast, never as hex.** Pinning literal colours fails on every
+  intentional palette change, which is how colour assertions end up deleted. Contrast is also the
+  property that actually broke in #294 — the icon was not "wrong", it was *invisible against what
+  was behind it*. `ScreenSampler` reads real pixels, because a MAUI `Path`'s `Fill` is not in the
+  accessibility tree at all and Appium therefore cannot see it.
+- **Themes are switched through the app's own Settings UI**, never by forcing `UserAppTheme` —
+  forcing it skips the persistence path, which is where #300 lived.
+- **`DeviceMetrics` throws rather than defaulting.** A status-bar height that fell back to `0`
+  would turn "the rail sits below the status bar" into "y >= 0", which passes against #296. Any
+  measurement that cannot be read is an infrastructure failure and must look like one.
+- **Watch for vacuous colour assertions.** A contrast ratio stays healthy if the theme never
+  changes at all, so `Theme_SwitchingLightToDark_ActuallyChangesWhatIsOnScreen` compares the two
+  themes' real background pixels. Without it every other assertion in that file could pass on an
+  app whose theme switch was completely broken.
+- **The accessibility gate is a ratchet**, `A11Y_MAX_VIOLATIONS` (same pattern as `COVERAGE_MIN`).
+  Lower it as violations are fixed; never raise it to turn a red run green. Two checks sit
+  *outside* the ratchet and may not regress at all: navigation items must announce a destination,
+  and no element may announce an automation id as its label.
+- **`AutomationId` ≠ `SemanticProperties.Description`.** One is a machine hook, the other is what
+  TalkBack reads aloud. `Accessibility_AutomationIds_AreNotUsedAsScreenReaderLabels` asserts the
+  two never collide — a guard against the 99 ids added in #311 leaking into announcements.
+
+### Proving a regression test actually catches its bug
+
+`emulator-tests.yml` takes `app_ref`, `test_filter` and `expect_failure`. It builds the **APK from
+any commit** while the **tests come from the current branch**, so today's suite can be pointed at a
+pre-fix build. With `expect_failure: true` the run is green only when the test *fails* — which is
+the thing being proven. A regression test written after its fix has never seen the defect, so
+without this nothing establishes that it would have caught it.
+
 > **Local limitation**: `dotnet build NdiForAndroid.sln` cannot build `src/MauiApp` in a web
 > session — the Ubuntu-packaged SDK does not expose workloads to MSBuild, so `maui-android` never
 > resolves even after `dotnet workload install` reports success and `dotnet workload list` shows it.
