@@ -77,16 +77,19 @@ public sealed class SettingsPage : PageObject
     /// nothing surfaces two calls later as "Settings applied never appeared" — which reads as a
     /// broken Apply button rather than a selection that never happened.
     /// </remarks>
-    public void SelectTheme(ThemeOption theme)
-    {
-        Tap(ThemeId(theme));
+    public void SelectTheme(ThemeOption theme) =>
+        LastThemeTapStrategy = TapUntilSet(ThemeId(theme), () => IsThemeSelected(theme));
 
-        if (!IsThemeSelected(theme))
-            throw new InvalidOperationException(
-                $"Tapping the {theme} theme option did not select it — it still reports " +
-                $"checked='{CheckedState(theme)}'. The tap landed on a node that does not toggle " +
-                "the radio button, or the control is not responding to synthetic taps.");
-    }
+    /// <summary>
+    /// How the last theme selection actually landed.
+    /// </summary>
+    /// <remarks>
+    /// Surfaced so a run records which input path these templated radio buttons respond to. If it
+    /// ever reads "direct tap" the template has changed and the fallbacks can go; if it changes
+    /// between runs, the control is timing-sensitive and that is worth knowing before it becomes
+    /// an intermittent failure.
+    /// </remarks>
+    public string LastThemeTapStrategy { get; private set; } = "(none)";
 
     public bool IsThemeSelected(ThemeOption theme) =>
         string.Equals(CheckedState(theme), "true", StringComparison.OrdinalIgnoreCase);
