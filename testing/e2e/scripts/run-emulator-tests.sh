@@ -111,6 +111,14 @@ if [[ "$TEST_EXIT" -ne 0 ]]; then
   echo "Collecting device diagnostics..."
   adb logcat -b crash -d > test-results/logcat-crash.txt 2>&1 || true
   adb logcat -d -v time | tail -400 > test-results/logcat-tail.txt 2>&1 || true
+
+  # A blind tail is the wrong tool for finding out what removed the app: the run is long, the
+  # buffer wraps, and the kill that matters happened minutes before the last test finished — so
+  # it has already scrolled away by the time this executes. Filter the whole buffer instead, and
+  # keep only the lines that name our package or the system deciding to end it.
+  adb logcat -d -v time 2>/dev/null \
+    | grep -E 'com\.ndi\.android|ActivityManager|lowmemorykiller|ANR' \
+    > test-results/logcat-app.txt || true
   adb shell dumpsys package com.ndi.android 2>/dev/null | head -60 > test-results/package-info.txt || true
 
   if [[ -s test-results/logcat-crash.txt ]]; then
