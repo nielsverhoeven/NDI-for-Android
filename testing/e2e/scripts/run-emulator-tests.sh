@@ -120,8 +120,13 @@ if [[ "$TEST_EXIT" -ne 0 ]]; then
   # name our package: the failure being chased (#321) finishes the activity with no crash, no kill
   # and no ANR, so the lines that explain it are lifecycle transitions and whatever the app's own
   # runtime logged — none of which mention 'com.ndi.android' on every line.
+  # The second grep is not optional. UiAutomator2 logs the full accessibility node — package name
+  # included — for every selector it matches, which is thousands of lines per run, all of them
+  # containing 'com.ndi.android'. Without the exclusion the filtered log is ~99% Appium selector
+  # dumps and the lifecycle lines that explain a failure are impossible to find in it.
   adb logcat -d -v time 2>/dev/null \
-    | grep -E 'com\.ndi\.android|ActivityManager|ActivityTaskManager|lowmemorykiller|ANR|AndroidRuntime|mono|DOTNET' \
+    | grep -E 'com\.ndi\.android|ActivityManager|ActivityTaskManager|lowmemorykiller|ANR|AndroidRuntime|monodroid|DOTNET' \
+    | grep -vE 'QueryController|UiObject\(|UiSelector|I/appium|InteractionController' \
     > test-results/logcat-app.txt || true
   adb shell dumpsys package com.ndi.android 2>/dev/null | head -60 > test-results/package-info.txt || true
 

@@ -77,8 +77,17 @@ public sealed class PhaseTwoDiagnostics : UiTestBase
     /// </remarks>
     private void DiagnoseReselectingCurrentDestination(NdiApp app, StringBuilder report)
     {
+        // Record the geometry either side of the rotation. A stray observation in the last run's
+        // Appium output showed a Settings page laid out ~1384px wide during a phase whose first
+        // action was a rotation to portrait, which would mean a requested rotation is not always
+        // landing. If that is true, every test reasoning about placement is reasoning about the
+        // wrong one, and this is two lines to find out.
+        report.AppendLine($"    before rotating: orientation={Describe(app)}");
+
         app.Rotate(ScreenOrientation.Landscape);
-        report.AppendLine($"    after rotating to landscape: app in foreground = {app.IsInForeground}");
+
+        report.AppendLine($"    after rotating to landscape: orientation={Describe(app)}")
+              .AppendLine($"    app in foreground = {app.IsInForeground}");
 
         if (!app.IsInForeground)
         {
@@ -124,6 +133,28 @@ public sealed class PhaseTwoDiagnostics : UiTestBase
         report.AppendLine("  VERDICT: nothing removed the app — neither a fresh tap nor a "
                           + "re-selection, on Stream or Home. The two failing tests must be losing "
                           + "the app to something outside NavigationBar.GoTo.");
+    }
+
+    /// <summary>
+    /// Orientation as the driver reports it, next to the window it actually produced.
+    /// </summary>
+    /// <remarks>
+    /// Both, because they can disagree. The driver's <c>Orientation</c> is what it was last told,
+    /// while the window size is what the app is really laid out in — and a rotation that was
+    /// accepted but never applied shows up only as the second contradicting the first.
+    /// </remarks>
+    private static string Describe(NdiApp app)
+    {
+        try
+        {
+            var size = app.WindowSize;
+            var shape = size.Width > size.Height ? "landscape-shaped" : "portrait-shaped";
+            return $"{app.Orientation}, window {size.Width}x{size.Height} ({shape})";
+        }
+        catch (Exception ex)
+        {
+            return $"could not read — {ex.GetType().Name}: {ex.Message}";
+        }
     }
 
     /// <summary>

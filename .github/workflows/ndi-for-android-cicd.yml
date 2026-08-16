@@ -406,7 +406,10 @@ jobs:
             # back, and neither shows up in a grep for kills.
             echo ""
             echo "----- activity lifecycle + app output (last 120 lines) -----"
-            grep -E 'ActivityTaskManager|ActivityManager|com\.ndi\.android|mono|DOTNET|AndroidRuntime' \
+            # Tags only — deliberately not 'com.ndi.android'. Matching on the package name pulls in
+            # UiAutomator2's per-selector node dumps, which carry it on every line and bury the
+            # lifecycle transitions this exists to surface.
+            grep -E 'ActivityTaskManager|ActivityManager|AndroidRuntime|monodroid|DOTNET' \
               test-results/logcat-app.txt | tail -120 || echo "  (nothing matched)"
             echo "------------------------------------------------------------"
           else
