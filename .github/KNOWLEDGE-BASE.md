@@ -423,6 +423,21 @@ Two mechanisms keep it honest; do not remove either:
   `test-results/failure-evidence/`, uploaded in `emulator-diagnostics`). Locator timeouts also
   inline the ids that *were* on screen, which distinguishes wrong-page from not-yet-rendered from
   genuinely-missing without another 8-minute run.
+- **Every test establishes the app; none inherits it.** One Appium session serves the whole
+  collection, so a test that restarts the app leaves every later test running against the
+  **launcher** — and the first casualty then reports "page did not become visible", which points
+  investigation at the page rather than at what removed the app. `UiTestBase.Run` calls
+  `NdiApp.EnsureInForeground()` before each body, and says so explicitly when the app cannot be
+  brought back. Two traps this exposed, both worth remembering:
+  - **"Any element with text" is not proof the app is running** — the launcher satisfies it, and a
+    startup smoke test written that way reported success while the app was not running at all.
+  - **`CurrentPackage` is not proof either.** After the `am force-stop` that `TerminateApp` issues,
+    ActivityManager logs `Force removing ActivityRecord … app died, no saved state` while
+    `CurrentPackage` still returns `com.ndi.android`. Assert a node exists under
+    `com.ndi.android:id/` instead: Android namespaces `resource-id` by package, so one is present
+    only if our process is really rendering.
+  - **A skip travels as an exception**, so a `try`/`catch` that captures failure evidence will file
+    a screenshot for every conditional skip unless it filters them out.
 
 ### Theme, layout and accessibility coverage (#313, #314)
 
