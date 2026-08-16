@@ -139,16 +139,41 @@ public sealed class PhaseTwoDiagnostics : UiTestBase
                           + "the app to something outside NavigationBar.GoTo.");
     }
 
+    /// <summary>
+    /// Where the system bars are, so a tap rectangle can be checked against them.
+    /// </summary>
+    /// <remarks>
+    /// The navigation bar is the interesting one. In landscape it leaves the bottom edge and
+    /// takes a side — the same side the rail is on — and the app draws edge-to-edge underneath it.
+    /// If a rail item's tap point falls inside that rectangle, the press never reaches the app,
+    /// which would explain a launcher appearing with no finishActivity, no moveTaskToBack and no
+    /// launcher start anywhere in the log.
+    /// </remarks>
     private static string DescribeStatusBar(NdiApp app)
     {
+        var parts = new List<string>();
+
         try
         {
-            return $"{app.Metrics.StatusBarHeight}px";
+            parts.Add($"status bar {app.Metrics.StatusBarHeight}px");
         }
         catch (Exception ex)
         {
-            return $"could not read — {ex.GetType().Name}: {ex.Message}";
+            parts.Add($"status bar unreadable ({ex.GetType().Name})");
         }
+
+        try
+        {
+            var nav = app.Metrics.NavigationBar;
+            parts.Add($"nav bar {nav.Width}x{nav.Height} at ({nav.X},{nav.Y}), visible={nav.Visible} " +
+                      $"— occupies x {nav.X}..{nav.X + nav.Width}, y {nav.Y}..{nav.Y + nav.Height}");
+        }
+        catch (Exception ex)
+        {
+            parts.Add($"nav bar unreadable ({ex.GetType().Name}: {ex.Message})");
+        }
+
+        return string.Join("; ", parts);
     }
 
     /// <summary>
