@@ -139,6 +139,18 @@ public sealed class PhaseTwoDiagnostics : UiTestBase
                           + "the app to something outside NavigationBar.GoTo.");
     }
 
+    private static string DescribeStatusBar(NdiApp app)
+    {
+        try
+        {
+            return $"{app.Metrics.StatusBarHeight}px";
+        }
+        catch (Exception ex)
+        {
+            return $"could not read — {ex.GetType().Name}: {ex.Message}";
+        }
+    }
+
     /// <summary>
     /// Orientation as the driver reports it, next to the window it actually produced.
     /// </summary>
@@ -173,7 +185,9 @@ public sealed class PhaseTwoDiagnostics : UiTestBase
         try
         {
             var item = app.Navigation.Item(destination);
-            report.AppendLine($"    tapping {destination} in the rail ({role}), resolved via {app.Navigation.LastResolution}");
+            report.AppendLine($"    tapping {destination} in the rail ({role}), resolved via {app.Navigation.LastResolution}")
+                  .AppendLine($"      target: {app.Navigation.DescribeTarget(item)}")
+                  .AppendLine($"      status bar inset: {DescribeStatusBar(app)}");
             item.Click();
         }
         catch (Exception ex)

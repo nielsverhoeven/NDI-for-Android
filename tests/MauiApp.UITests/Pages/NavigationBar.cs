@@ -76,7 +76,17 @@ public sealed class NavigationBar
     {
         var placement = IsRailPlacement() ? "left rail" : "bottom tab bar";
 
-        Item(destination, Timeouts.Navigation).Click();
+        var item = Item(destination, Timeouts.Navigation);
+
+        // Where the tap is about to land, recorded before it lands. The launcher turning up
+        // fully drawn — 22 of its nodes plus the search box — with no finishActivity, no
+        // moveTaskToBack and no launcher start in the log is hard to explain from inside the app,
+        // and much easier to explain if the tap never reached the app: a press inside the system
+        // gesture or navigation-bar region brings the launcher forward and leaves no app-side
+        // trace at all. That is checkable from the tap rectangle against the window, so record it.
+        var target = DescribeTarget(item);
+
+        item.Click();
 
         // Give the transition a moment before judging: navigation is asynchronous, and sampling
         // the tree mid-swap would produce a false accusation.
@@ -107,8 +117,38 @@ public sealed class NavigationBar
             $"Tapping the {destination} item in the {placement} left nothing owned by " +
             $"'{NdiApp.PackageName}' in the view tree, and it had still not returned " +
             $"{Timeouts.Element.TotalSeconds:0}s later.{Environment.NewLine}" +
+            $"Tap target: {target}{Environment.NewLine}" +
             $"Packages owning nodes on screen: {DescribeOwners()}.{Environment.NewLine}" +
             FailureEvidence.DescribeVisibleIds(_driver));
+    }
+
+    /// <summary>
+    /// The rectangle a tap is about to hit, against the window it sits in.
+    /// </summary>
+    /// <remarks>
+    /// Reported as edge distances rather than raw coordinates because that is the question being
+    /// asked: a target flush against an edge is a candidate for overlapping the system gesture
+    /// area, where a press goes to the system rather than to the app.
+    /// </remarks>
+    public string DescribeTarget(IWebElement element)
+    {
+        try
+        {
+            var location = element.Location;
+            var size = element.Size;
+            var window = _driver.Manage().Window.Size;
+
+            var right  = window.Width  - (location.X + size.Width);
+            var bottom = window.Height - (location.Y + size.Height);
+
+            return $"{size.Width}x{size.Height} at ({location.X},{location.Y}) in a " +
+                   $"{window.Width}x{window.Height} window — gaps: left={location.X}, " +
+                   $"top={location.Y}, right={right}, bottom={bottom}";
+        }
+        catch (Exception ex)
+        {
+            return $"(could not measure: {ex.GetType().Name}: {ex.Message})";
+        }
     }
 
     /// <summary>
