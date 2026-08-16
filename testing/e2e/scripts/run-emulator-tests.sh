@@ -116,8 +116,12 @@ if [[ "$TEST_EXIT" -ne 0 ]]; then
   # buffer wraps, and the kill that matters happened minutes before the last test finished — so
   # it has already scrolled away by the time this executes. Filter the whole buffer instead, and
   # keep only the lines that name our package or the system deciding to end it.
+  # ActivityTaskManager, mono/DOTNET and AndroidRuntime are in the filter even though they do not
+  # name our package: the failure being chased (#321) finishes the activity with no crash, no kill
+  # and no ANR, so the lines that explain it are lifecycle transitions and whatever the app's own
+  # runtime logged — none of which mention 'com.ndi.android' on every line.
   adb logcat -d -v time 2>/dev/null \
-    | grep -E 'com\.ndi\.android|ActivityManager|lowmemorykiller|ANR' \
+    | grep -E 'com\.ndi\.android|ActivityManager|ActivityTaskManager|lowmemorykiller|ANR|AndroidRuntime|mono|DOTNET' \
     > test-results/logcat-app.txt || true
   adb shell dumpsys package com.ndi.android 2>/dev/null | head -60 > test-results/package-info.txt || true
 

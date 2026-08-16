@@ -223,49 +223,20 @@ public partial class AppShell : Shell
             ApplyPlacement();
     }
 
-    /// <summary>
-    /// Switches the primary navigation between the bottom tab bar and the left rail.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// <b>The order here is load-bearing (#321).</b> The two placements are separate
-    /// <c>ShellItem</c>s — the <c>*-tab</c> routes live inside <c>PrimaryTabBar</c>, the
-    /// <c>*-rail</c> routes in four <c>FlyoutItem</c>s — so changing placement is a move between
-    /// Shell items, not a tab change.
-    /// </para>
-    /// <para>
-    /// This used to hide <c>PrimaryTabBar</c> immediately and defer the move onto the matching
-    /// rail route to a later dispatcher turn. Between those two points Shell had no visible
-    /// current item, and a tap landing in that window took the whole activity down. It presented
-    /// as the app intermittently vanishing to the launcher in landscape, with an empty crash
-    /// buffer and no kill, ANR or OOM anywhere in logcat — because nothing external was killing
-    /// it; Shell was finishing its own activity.
-    /// </para>
-    /// <para>
-    /// So each direction retires the outgoing placement only once the incoming one is live.
-    /// Going to the rail, navigate onto the <c>*-rail</c> route first and hide the tab bar after.
-    /// Coming back, show the tab bar first, so the <c>*-tab</c> route has somewhere to land.
-    /// </para>
-    /// </remarks>
     private void ApplyPlacement()
     {
-        var toRail = _stateViewModel.IsLeftRailNavigationVisible;
-
-        Dispatcher.Dispatch(async () =>
+        if (_stateViewModel.IsLeftRailNavigationVisible)
         {
-            if (toRail)
-            {
-                FlyoutBehavior = FlyoutBehavior.Locked;
-                await EnsurePrimaryDestinationVisibleAsync();
-                PrimaryTabBar.IsVisible = false;
-            }
-            else
-            {
-                PrimaryTabBar.IsVisible = true;
-                FlyoutBehavior = FlyoutBehavior.Disabled;
-                await EnsurePrimaryDestinationVisibleAsync();
-            }
-        });
+            FlyoutBehavior         = FlyoutBehavior.Locked;
+            PrimaryTabBar.IsVisible = false;
+        }
+        else
+        {
+            FlyoutBehavior         = FlyoutBehavior.Disabled;
+            PrimaryTabBar.IsVisible = true;
+        }
+
+        Dispatcher.Dispatch(async () => await EnsurePrimaryDestinationVisibleAsync());
     }
 
     // ── Navigation ───────────────────────────────────────────────────────────

@@ -397,6 +397,18 @@ jobs:
             grep -E 'am_kill|lowmemorykiller|Killing|ANR in|force-stop|died|OutOfMemory' \
               test-results/logcat-app.txt | tail -25 || echo "  (no kill, ANR or OOM lines found)"
             echo "-------------------------------------------------------------------"
+
+            # When those patterns find nothing — which is the case for #321, where the activity
+            # finishes with no crash, no kill and no ANR — the kill-line grep above answers
+            # "nobody killed it" and then stops being useful. This is the wider view: activity
+            # lifecycle transitions, task moves, and anything the app itself logged. It is what
+            # distinguishes Shell finishing its own activity from the task being moved to the
+            # back, and neither shows up in a grep for kills.
+            echo ""
+            echo "----- activity lifecycle + app output (last 120 lines) -----"
+            grep -E 'ActivityTaskManager|ActivityManager|com\.ndi\.android|mono|DOTNET|AndroidRuntime' \
+              test-results/logcat-app.txt | tail -120 || echo "  (nothing matched)"
+            echo "------------------------------------------------------------"
           else
             echo "No filtered logcat captured."
           fi
