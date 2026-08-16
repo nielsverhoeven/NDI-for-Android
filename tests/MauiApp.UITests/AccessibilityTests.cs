@@ -36,15 +36,24 @@ public sealed class AccessibilityTests : UiTestBase
     /// Maximum tolerated violations across the audited screens.
     /// </summary>
     /// <remarks>
-    /// Provisional. The real figure has never been measured — the app had no accessibility
-    /// coverage at all — so this starts permissive and is tightened to the measured count on the
-    /// first run, exactly as <c>COVERAGE_MIN</c> was. A number invented before the first
-    /// measurement would either block every PR or assert nothing.
+    /// <para>
+    /// Now measured rather than guessed. This started at a deliberately permissive 200 because the
+    /// app had no accessibility coverage at all and a number invented before the first measurement
+    /// would either block every PR or assert nothing. Two emulator runs have since reported the
+    /// same 21 — 11 touch targets under the 48dp minimum and 10 interactive elements a screen
+    /// reader announces as nothing — with an identical breakdown, so the real figure is known and
+    /// the placeholder has served its purpose.
+    /// </para>
+    /// <para>
+    /// At 200 this gate was close to vacuous: the app would have had to grow nearly ten times its
+    /// current violations before it went red. At 21 the very next one does. Lower it as violations
+    /// are fixed — never raise it to make a red run green.
+    /// </para>
     /// </remarks>
     private static int Budget =>
         int.TryParse(Environment.GetEnvironmentVariable("A11Y_MAX_VIOLATIONS"), out var configured)
             ? configured
-            : 200;
+            : 21;
 
     private readonly ITestOutputHelper _output;
 
