@@ -19,9 +19,10 @@ env:
   DOTNET_CLI_TELEMETRY_OPTOUT: 1
   DOTNET_NOLOGO: 1
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
-  # Minimum line coverage, percent. Currently report-only: the real number has never been
-  # measured, so gating blind would block every PR. Read it off a run, then raise this to 70.
-  COVERAGE_MIN: '0'
+  # Minimum line coverage, percent — a ratchet, not the target. Measured line coverage is
+  # 63.3%, so 60 holds the current level without blocking work; the goal remains 70. Raise
+  # this as coverage climbs, and never lower it to make a red run green.
+  COVERAGE_MIN: '60'
 
 jobs:
   # ════════════════════════════════════════════════════════════════════════════
@@ -324,6 +325,7 @@ jobs:
           path: |
             test-results/*.log
             test-results/*.txt
+            test-results/failure-evidence/**
           retention-days: 7
           if-no-files-found: warn
 
@@ -365,6 +367,13 @@ jobs:
                   print('\n'.join(st.splitlines()[:15]))
               print(f"\nAffected: {', '.join(n.split('.')[-1] for n in names[:12])}")
           PY
+          EVIDENCE=test-results/failure-evidence
+          if [ -d "$EVIDENCE" ] && [ -n "$(ls -A "$EVIDENCE" 2>/dev/null)" ]; then
+            echo ""
+            echo "Screenshot + view hierarchy per failure — download the emulator-diagnostics"
+            echo "artifact from this run's summary page:"
+            ls -1 "$EVIDENCE" | sed 's/^/  /'
+          fi
           echo "==========================================================="
 
   # ════════════════════════════════════════════════════════════════════════════

@@ -377,8 +377,11 @@ Two mechanisms keep it honest; do not remove either:
 | `report-test-results.sh` | TRX counts + Cobertura coverage to the run summary; optional coverage gate |
 | `codeql-severity-gate.sh` | Fails on open high/critical alerts — `analyze@v4` has no threshold of its own |
 
-- **Coverage is report-only** until a real number is known. `COVERAGE_MIN: '0'` in the workflow;
-  raise it to `70` once a run has printed the actual figure. Gating blind would block every PR.
+- **Coverage gates at `COVERAGE_MIN: '60'`** — a ratchet set just under the measured 63.3% line
+  coverage, so it holds the current level without blocking work. The target is still 70: raise the
+  floor as coverage climbs, and never lower it to turn a red run green. (`'0'` disables the gate
+  and switches the script to report-only, which is where this started before a run printed a real
+  number — gating blind would have blocked every PR.)
 - **CodeQL must build `src/MauiApp`, not just `src/Core`.** Building Core alone left the entire
   P/Invoke interop layer unanalyzed. `wait-for-processing: true` is required — the severity gate
   reads alerts that do not exist until SARIF processing finishes.
@@ -387,12 +390,60 @@ Two mechanisms keep it honest; do not remove either:
 
 - **Node.js version**: `22` (upgraded from 20 — EOL June 2026). Do NOT revert to 20.
 - **Emulator cold-start**: always poll `sys.boot_completed=1` before `adb install` — see `testing/e2e/scripts/run-emulator-tests.sh`
-- **UI test timeouts**: `ClickNav` base wait = **30s**, `AssertPageVisible` = **30s** for cold emulator. Do not reduce below 30s.
+- **UI test timeouts** come from `tests/MauiApp.UITests/Infrastructure/Timeouts.cs` and nowhere
+  else — `Element` 10s, `Navigation` 20s, `AppStart` 45s, `Network` 30s. Widen the named budget,
+  never a single call site; per-call numbers are what produced 10/12/15/20/30s scattered through
+  one file with a 10s wait failing where its 15s sibling passed on the same screen.
 - **APK to install**: always use `com.ndi.android-Signed.apk` (not the unsigned variant) — path: `src/MauiApp/bin/Debug/net10.0-android/com.ndi.android-Signed.apk`
 - **`DELETE_FAILED_INTERNAL_ERROR`** on `adb uninstall` is harmless — package was not installed; `adb install` will succeed.
 - **`INSTALL_PARSE_FAILED_NO_CERTIFICATES`** means unsigned APK was used — switch to `-Signed.apk`.
 - **The emulator job must install the .NET SDK.** `MauiApp.UITests` targets `net10.0`; without an
   explicit `actions/setup-dotnet` the job silently depends on the runner image's preinstalled SDK.
+
+### UI test structure (#311, #312)
+
+- **Locators live in page objects, never in test methods.** `tests/MauiApp.UITests/Pages/` — one
+  class per screen, all extending `PageObject`, which is the only place that calls `FindElement`.
+  A test that needs a new element gets a new property on the page object, not an XPath.
+- **Elements are found by automation id**, declared once in `src/Core/Testing/TestIds.cs` and
+  referenced from both the XAML (`{x:Static t:TestIds.X}`) and the page objects — so renaming one
+  is a compile error rather than a locator that quietly stops matching. MAUI maps `AutomationId`
+  to Android's `resource-id`. **Never match on visible text**: Shell renders the current page's
+  `Title` in the top app bar, so while Home is showing the string "Home" is in the tree three
+  times, and a text locator picks the title.
+  - `TestIds` members are deliberately **flat, not nested classes** — `{x:Static t:TestIds+Home.Page}`
+    needs nested-type resolution that XAML compilers do not reliably support, and the Android head
+    cannot be built outside CI to catch it.
+- **Navigation is the one exception** and resolves id-first, falling back to the accessibility
+  label. The rail is our own `Border` so its id sticks; the bottom bar is Shell's native
+  `BottomNavigationView`, which does not reliably carry `AutomationId` through from `ShellContent`.
+  `NavigationBar.LastResolution` records which path was used.
+- **Failures capture themselves.** `UiTestBase.Run` wraps every test body, writing a screenshot,
+  the full view hierarchy, and device state to `E2E_ARTIFACT_DIR` (CI:
+  `test-results/failure-evidence/`, uploaded in `emulator-diagnostics`). Locator timeouts also
+  inline the ids that *were* on screen, which distinguishes wrong-page from not-yet-rendered from
+  genuinely-missing without another 8-minute run.
+- **Every test establishes the app; none inherits it.** One Appium session serves the whole
+  collection, so a test that restarts the app leaves every later test running against the
+  **launcher** — and the first casualty then reports "page did not become visible", which points
+  investigation at the page rather than at what removed the app. `UiTestBase.Run` calls
+  `NdiApp.EnsureInForeground()` before each body, and says so explicitly when the app cannot be
+  brought back. Two traps this exposed, both worth remembering:
+  - **"Any element with text" is not proof the app is running** — the launcher satisfies it, and a
+    startup smoke test written that way reported success while the app was not running at all.
+  - **`CurrentPackage` is not proof either.** After the `am force-stop` that `TerminateApp` issues,
+    ActivityManager logs `Force removing ActivityRecord … app died, no saved state` while
+    `CurrentPackage` still returns `com.ndi.android`. Assert a node exists under
+    `com.ndi.android:id/` instead: Android namespaces `resource-id` by package, so one is present
+    only if our process is really rendering.
+  - **A skip travels as an exception**, so a `try`/`catch` that captures failure evidence will file
+    a screenshot for every conditional skip unless it filters them out.
+
+> **Local limitation**: `dotnet build NdiForAndroid.sln` cannot build `src/MauiApp` in a web
+> session — the Ubuntu-packaged SDK does not expose workloads to MSBuild, so `maui-android` never
+> resolves even after `dotnet workload install` reports success and `dotnet workload list` shows it.
+> Core and both test projects build and run locally; **XAML is only compiled in CI**. Treat a XAML
+> edit as unverified until the `build-and-test` / `Build Release APK` jobs are green.
 
 ## MAUI Theming Rules (lessons from #142)
 

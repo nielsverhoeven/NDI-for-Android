@@ -7,6 +7,13 @@
     <IsTestProject>true</IsTestProject>
   </PropertyGroup>
   <ItemGroup>
+    <!-- Shares TestIds with the app, so renaming an automation id is a compile error here
+         rather than a locator that quietly stops matching. Core is plain net10.0 and pulls in
+         no MAUI dependency, so this does not require the workload to build the tests. -->
+    <ProjectReference Include="..\..\src\Core\NdiForAndroid.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.*" />
     <PackageReference Include="xunit" Version="2.*" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.*">

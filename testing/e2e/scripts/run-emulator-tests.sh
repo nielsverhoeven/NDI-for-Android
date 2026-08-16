@@ -72,8 +72,15 @@ E2E_REQUIRE_DEVICE="${E2E_REQUIRE_DEVICE:-true}"
 TRX="test-results/emulator-test-results.trx"
 rm -f "$TRX"
 
+# Where the tests drop a screenshot, view hierarchy and device state for each failure (#312).
+# Absolute: the test host's working directory is the project output directory, not the repo
+# root, so a relative path would scatter artifacts somewhere the upload step never looks.
+E2E_ARTIFACT_DIR="${E2E_ARTIFACT_DIR:-$PWD/test-results/failure-evidence}"
+mkdir -p "$E2E_ARTIFACT_DIR"
+
 set +e
 timeout 20m env ANDROID_APK_PATH="$APK_PATH" E2E_REQUIRE_DEVICE="$E2E_REQUIRE_DEVICE" \
+  E2E_ARTIFACT_DIR="$E2E_ARTIFACT_DIR" \
   dotnet test tests/MauiApp.UITests/NdiForAndroid.UITests.csproj -c Release \
   --logger "trx;LogFileName=emulator-test-results.trx" \
   --results-directory test-results
@@ -102,6 +109,17 @@ if [[ "$TEST_EXIT" -ne 0 ]]; then
     echo "======================="
   else
     echo "Crash buffer empty — the app did not abort, so the activity wait timed out instead."
+  fi
+
+  # Name the evidence in the log so a reader knows to go and download it, and so a run where
+  # capture itself failed is distinguishable from one where it was never attempted.
+  EVIDENCE_COUNT=$(find "$E2E_ARTIFACT_DIR" -type f 2>/dev/null | wc -l | tr -d ' ')
+  if [[ "$EVIDENCE_COUNT" -gt 0 ]]; then
+    echo "Per-failure evidence ($EVIDENCE_COUNT file(s)) in the emulator-diagnostics artifact:"
+    find "$E2E_ARTIFACT_DIR" -type f -printf '  %f\n' 2>/dev/null || ls -1 "$E2E_ARTIFACT_DIR"
+  else
+    echo "No per-failure evidence captured — the failure happened outside a test body"
+    echo "(fixture setup, or the run timed out before any test threw)."
   fi
 fi
 

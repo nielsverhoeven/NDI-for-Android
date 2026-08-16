@@ -6,6 +6,7 @@
        xmlns:viewer="clr-namespace:NdiForAndroid.Features.Viewer.Views"
        xmlns:output="clr-namespace:NdiForAndroid.Features.Output.Views"
        xmlns:settings="clr-namespace:NdiForAndroid.Features.Settings.Views"
+       xmlns:t="clr-namespace:NdiForAndroid.Testing;assembly=NdiForAndroid.Core"
        x:Class="NdiForAndroid.AppShell"
        Shell.FlyoutBehavior="Disabled"
        Shell.FlyoutWidth="72"
@@ -64,20 +65,29 @@
                       Icon="nav_settings.svg" />
     </FlyoutItem>
 
+    <!-- AutomationId on ShellContent is best-effort: Shell renders the bottom bar with a native
+         BottomNavigationView, which does not reliably carry the id through to the tab's
+         resource-id. The rail sets the same id on its own Border, where it does stick. Tests
+         locate navigation by id and fall back to the accessibility label for exactly this
+         reason — see NavigationBar in the page objects. -->
     <TabBar x:Name="PrimaryTabBar">
         <ShellContent Title="Home"
+                      AutomationId="{x:Static t:TestIds.NavHome}"
                       ContentTemplate="{DataTemplate home:HomePage}"
                       Route="home-tab"
                       Icon="nav_home.svg" />
         <ShellContent Title="Stream"
+                      AutomationId="{x:Static t:TestIds.NavStream}"
                       ContentTemplate="{DataTemplate output:OutputPage}"
                       Route="stream-tab"
                       Icon="nav_stream.svg" />
         <ShellContent Title="View"
+                      AutomationId="{x:Static t:TestIds.NavView}"
                       ContentTemplate="{DataTemplate sources:SourceListPage}"
                       Route="view-tab"
                       Icon="nav_view.svg" />
         <ShellContent Title="Settings"
+                      AutomationId="{x:Static t:TestIds.NavSettings}"
                       ContentTemplate="{DataTemplate settings:SettingsPage}"
                       Route="settings-tab"
                       Icon="nav_settings.svg" />

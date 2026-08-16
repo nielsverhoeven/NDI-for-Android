@@ -182,6 +182,10 @@ public partial class AppShell : Shell
             // has to say it itself.
             SemanticProperties.SetDescription(container, item.Label);
 
+            // Same destination, same id as the matching bottom tab — the two placements are
+            // never in the tree at once, so a test asking for the id gets whichever is live.
+            container.AutomationId = item.TestId;
+
             var destination = item.Destination;
             var tap = new TapGestureRecognizer();
             tap.Tapped += (_, _) => _stateViewModel.SelectDestination(destination);
