@@ -50,12 +50,25 @@ public static class FailureEvidence
         {
             action();
         }
-        catch (Exception ex)
+        catch (Exception ex) when (!IsSkip(ex))
         {
             Write(driver, testName, ex);
             throw;
         }
     }
+
+    /// <summary>
+    /// True for the exception <c>Skip.If</c> throws to abandon a test.
+    /// </summary>
+    /// <remarks>
+    /// A skip travels as an exception, so without this every conditional skip produced a
+    /// screenshot and a hierarchy dump and appeared in the run's "per-failure evidence" list —
+    /// which reads as a failure to anyone scanning it. Matched by name rather than by type so the
+    /// filter does not break if xunit.skippablefact moves the type; the cost of a miss is noise,
+    /// not a wrong result.
+    /// </remarks>
+    private static bool IsSkip(Exception ex) =>
+        ex.GetType().Name.Contains("Skip", StringComparison.Ordinal);
 
     /// <summary>Writes the evidence set for a named test. Never throws.</summary>
     public static void Write(AndroidDriver? driver, string testName, Exception? failure)
