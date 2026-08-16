@@ -82,12 +82,68 @@ public sealed class NavigationBar
         // the tree mid-swap would produce a false accusation.
         Thread.Sleep(750);
 
-        if (!AppOwnsAnythingOnScreen())
-            throw new InvalidOperationException(
-                $"Tapping the {destination} item in the {placement} removed the app from the " +
-                "screen. Nothing under 'com.ndi.android:id/' remains in the view tree, and the " +
-                "crash buffer is empty, so the activity finished rather than crashed. " +
-                "Navigation must never exit the app.");
+        if (AppOwnsAnythingOnScreen())
+            return;
+
+        // One blank reading is not proof the app is gone, and this guard used to treat it as
+        // exactly that. The logcat for a failing run tells against it: every foreground event is
+        // a start of our own package, the launcher is never started, and there is no
+        // moveTaskToBack, finishActivity or removeTask anywhere. Nothing handed the screen to
+        // anyone, so "the app was removed" was an inference from a single sample rather than an
+        // observation — and 750ms is not obviously longer than a Shell page swap.
+        var deadline = DateTime.UtcNow + Timeouts.Element;
+        while (DateTime.UtcNow < deadline)
+        {
+            Thread.Sleep(250);
+
+            if (AppOwnsAnythingOnScreen())
+            {
+                BlankTreeRecoveries++;
+                return;
+            }
+        }
+
+        throw new InvalidOperationException(
+            $"Tapping the {destination} item in the {placement} left nothing owned by " +
+            $"'{NdiApp.PackageName}' in the view tree, and it had still not returned " +
+            $"{Timeouts.Element.TotalSeconds:0}s later.{Environment.NewLine}" +
+            $"Packages owning nodes on screen: {DescribeOwners()}.{Environment.NewLine}" +
+            FailureEvidence.DescribeVisibleIds(_driver));
+    }
+
+    /// <summary>
+    /// How often the view tree went briefly blank and came back during this session.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately counted rather than ignored. If this stays zero, blank readings really are
+    /// permanent and the app genuinely leaves. If it climbs, the suite has been reporting a
+    /// transient mid-navigation tree as "the app exited" — which is a very different bug, and one
+    /// living in the tests rather than the app.
+    /// </remarks>
+    public static int BlankTreeRecoveries { get; private set; }
+
+    /// <summary>Which packages own nodes on screen right now, with node counts.</summary>
+    private string DescribeOwners()
+    {
+        try
+        {
+            var owners = _driver
+                .FindElements(By.XPath("//*[@package]"))
+                .Select(e =>
+                {
+                    try { return e.GetAttribute("package") ?? "(none)"; }
+                    catch (StaleElementReferenceException) { return "(stale)"; }
+                })
+                .GroupBy(p => p, StringComparer.Ordinal)
+                .Select(g => $"{g.Key} x{g.Count()}")
+                .ToList();
+
+            return owners.Count == 0 ? "(the tree is empty)" : string.Join(", ", owners);
+        }
+        catch (Exception ex)
+        {
+            return $"(could not enumerate: {ex.GetType().Name}: {ex.Message})";
+        }
     }
 
     /// <summary>True when the landscape left rail is the live placement.</summary>

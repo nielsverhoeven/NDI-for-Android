@@ -49,7 +49,11 @@ public sealed class PhaseTwoDiagnostics : UiTestBase
         SafeSection(report, "Q4 — does re-tapping the destination already showing remove the app?",
             () => DiagnoseReselectingCurrentDestination(app, report));
 
-        report.AppendLine("═══════════════════════════════════════════════════════");
+        report.AppendLine()
+              .AppendLine($"  Blank-tree recoveries so far this session: {NavigationBar.BlankTreeRecoveries}")
+              .AppendLine("  (a non-zero count means the view tree goes briefly empty mid-navigation "
+                          + "and comes back, so a single blank sample never proved the app had gone)")
+              .AppendLine("═══════════════════════════════════════════════════════");
 
         var text = report.ToString();
         _output.WriteLine(text);
