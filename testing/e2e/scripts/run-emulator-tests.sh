@@ -181,6 +181,15 @@ if [[ -s "$A11Y_SUMMARY" ]]; then
   echo
 fi
 
+# The Phase 2 diagnostics, for the same reason: they are the whole point of the run that carries
+# them, and burying their verdicts in the middle of dotnet's output wastes the cycle.
+PHASE2_DIAG="$E2E_ARTIFACT_DIR/phase2-diagnostics.txt"
+if [[ -s "$PHASE2_DIAG" ]]; then
+  echo
+  cat "$PHASE2_DIAG"
+  echo
+fi
+
 # ── Regression-proof mode ────────────────────────────────────────────────────
 # Used to demonstrate that a regression test actually catches the bug it was written for, by
 # running it against a build of the app from before the fix. Here a FAILING test is the success

@@ -97,6 +97,43 @@ public sealed class SettingsPage : PageObject
     private string CheckedState(ThemeOption theme) =>
         WaitFor(ThemeId(theme)).GetAttribute("checked") ?? "(no checked attribute)";
 
+    /// <summary>
+    /// Describes each theme option node as the accessibility tree sees it.
+    /// </summary>
+    /// <remarks>
+    /// Diagnostic, not an assertion. The app always has a theme, so exactly one of these three
+    /// should report <c>checked='true'</c> at any moment — if none does, the attribute is not
+    /// carried on the node holding the automation id, and any test verifying selection through it
+    /// is measuring the wrong thing. Establishing that needs no tap, so nothing about tapping can
+    /// confound the answer.
+    /// </remarks>
+    public IReadOnlyList<string> DescribeThemeOptionNodes()
+    {
+        var lines = new List<string>();
+
+        foreach (var theme in Enum.GetValues<ThemeOption>())
+        {
+            try
+            {
+                var element = WaitFor(ThemeId(theme));
+                lines.Add(
+                    $"{ThemeId(theme)}: checked='{element.GetAttribute("checked") ?? "(absent)"}' " +
+                    $"class={element.GetAttribute("class")} " +
+                    $"clickable={element.GetAttribute("clickable")} " +
+                    $"focusable={element.GetAttribute("focusable")} " +
+                    $"text='{element.Text}' " +
+                    $"desc='{element.GetAttribute("content-desc")}' " +
+                    $"size={element.Size.Width}x{element.Size.Height}");
+            }
+            catch (Exception ex)
+            {
+                lines.Add($"{ThemeId(theme)}: could not read — {ex.GetType().Name}: {ex.Message}");
+            }
+        }
+
+        return lines;
+    }
+
     // ── Apply ────────────────────────────────────────────────────────────────
 
     public void Apply() => Tap(TestIds.SettingsApply);
