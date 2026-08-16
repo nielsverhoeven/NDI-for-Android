@@ -1,3 +1,5 @@
+using System.Reflection;
+
 namespace NdiForAndroid.Testing;
 
 /// <summary>
@@ -34,6 +36,21 @@ namespace NdiForAndroid.Testing;
 /// </remarks>
 public static class TestIds
 {
+    /// <summary>Every declared id value.</summary>
+    /// <remarks>
+    /// Read by reflection so it cannot drift from the declarations below — a hand-maintained list
+    /// would be one more thing to forget when adding an id. Used by the accessibility audit to
+    /// catch an element announcing its automation id as its screen-reader label, which is
+    /// non-empty and therefore passes a naive "has a description" check while telling a user
+    /// nothing.
+    /// </remarks>
+    public static IReadOnlySet<string> All { get; } =
+        typeof(TestIds)
+            .GetFields(BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy)
+            .Where(f => f is { IsLiteral: true, IsInitOnly: false } && f.FieldType == typeof(string))
+            .Select(f => (string)f.GetRawConstantValue()!)
+            .ToHashSet(StringComparer.Ordinal);
+
     // ── Shell chrome: the four primary navigation destinations ───────────────
     //
     // The bottom tab bar and the landscape left rail are different visual treatments of the same

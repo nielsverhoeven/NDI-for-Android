@@ -66,7 +66,56 @@ public sealed class NavigationBar
     public Resolution LastResolution { get; private set; } = Resolution.None;
 
     /// <summary>Taps a destination and waits for the tap target to exist first.</summary>
-    public void GoTo(NavDestination destination) => Item(destination, Timeouts.Navigation).Click();
+    /// <remarks>
+    /// Confirms the app is still on screen afterwards. Tapping a navigation item is not supposed
+    /// to be able to remove the app, so if it does, that is the single most important fact about
+    /// the run — and without this check it surfaces one call later as "the page did not appear",
+    /// which points at the destination rather than at the tap that left.
+    /// </remarks>
+    public void GoTo(NavDestination destination)
+    {
+        var placement = IsRailPlacement() ? "left rail" : "bottom tab bar";
+
+        Item(destination, Timeouts.Navigation).Click();
+
+        // Give the transition a moment before judging: navigation is asynchronous, and sampling
+        // the tree mid-swap would produce a false accusation.
+        Thread.Sleep(750);
+
+        if (!AppOwnsAnythingOnScreen())
+            throw new InvalidOperationException(
+                $"Tapping the {destination} item in the {placement} removed the app from the " +
+                "screen. Nothing under 'com.ndi.android:id/' remains in the view tree, and the " +
+                "crash buffer is empty, so the activity finished rather than crashed. " +
+                "Navigation must never exit the app.");
+    }
+
+    /// <summary>True when the landscape left rail is the live placement.</summary>
+    private bool IsRailPlacement()
+    {
+        try
+        {
+            return _driver.Orientation == ScreenOrientation.Landscape;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private bool AppOwnsAnythingOnScreen()
+    {
+        try
+        {
+            return _driver
+                .FindElements(By.XPath($"//*[starts-with(@resource-id, '{NdiApp.PackageName}:')]"))
+                .Count > 0;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
 
     /// <summary>
     /// The live navigation element for <paramref name="destination"/> — bottom tab or rail item,

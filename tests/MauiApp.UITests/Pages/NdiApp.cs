@@ -42,6 +42,23 @@ public sealed class NdiApp
     /// <summary>Current screen orientation.</summary>
     public ScreenOrientation Orientation => _driver.Orientation;
 
+    /// <summary>Device geometry: system-bar insets and display density.</summary>
+    public DeviceMetrics Metrics => new(_driver);
+
+    /// <summary>
+    /// Takes a screenshot for pixel sampling.
+    /// </summary>
+    /// <remarks>
+    /// The one capability that cannot be expressed as a page object. Colour is absent from the
+    /// accessibility tree — a MAUI <c>Path</c>'s <c>Fill</c> is simply not there — so questions
+    /// like "is this icon visible against its background" have to be answered from pixels. Caller
+    /// disposes.
+    /// </remarks>
+    public ScreenSampler CaptureScreen() => ScreenSampler.Capture(_driver);
+
+    /// <summary>Audits the live accessibility tree.</summary>
+    public AccessibilityAudit Accessibility => new(_driver, Metrics);
+
     /// <summary>Window size in pixels — the reference frame for placement assertions.</summary>
     public System.Drawing.Size WindowSize => _driver.Manage().Window.Size;
 
@@ -57,6 +74,17 @@ public sealed class NdiApp
     {
         _driver.Orientation = orientation;
         Thread.Sleep(Timeouts.OrientationSettle);
+
+        // A configuration change is one of the few things that can take the whole process down —
+        // it tears down and rebuilds the Shell, and this app swaps its entire navigation
+        // implementation at that point (bottom tab bar to left rail). If that kills the app, the
+        // next call reports "page did not become visible" against a device showing the launcher,
+        // which points investigation at the page rather than at the rotation that caused it.
+        if (!IsInForeground)
+            throw new InvalidOperationException(
+                $"The app stopped running while rotating to {orientation} — the foreground " +
+                $"package is now '{ForegroundPackage}'. The rotation itself brought the app down; " +
+                "see the logcat crash buffer in the emulator diagnostics.");
     }
 
     /// <summary>
@@ -127,14 +155,15 @@ public sealed class NdiApp
     /// <summary>True when our app — not the launcher, not a system dialog — is in front.</summary>
     /// <remarks>
     /// <para>
-    /// Asks the view tree, not just <c>CurrentPackage</c>. After the <c>am force-stop</c> that
-    /// <see cref="TryRestart"/> issues, ActivityManager logs <c>Force removing ActivityRecord …
-    /// app died, no saved state</c>, yet <c>CurrentPackage</c> keeps reporting
-    /// <c>com.ndi.android</c> while the device is plainly showing the launcher. A package-only
-    /// check therefore declares a dead app healthy and skips the relaunch.
+    /// Asks the view tree, not just <c>CurrentPackage</c>. After an <c>am force-stop</c> —
+    /// which is exactly what <see cref="TryRestart"/> issues — ActivityManager logs
+    /// <c>Force removing ActivityRecord … app died, no saved state</c>, yet <c>CurrentPackage</c>
+    /// kept reporting <c>com.ndi.android</c> while the device was plainly showing the launcher.
+    /// A package-only check therefore declared the app healthy and skipped the relaunch, and every
+    /// later test failed against the launcher with a message blaming a page.
     /// </para>
     /// <para>
-    /// The presence of a view owned by our package cannot be wrong that way: Android namespaces
+    /// The presence of a view owned by our package cannot be wrong in that way: Android namespaces
     /// <c>resource-id</c> by package, so a node under <c>com.ndi.android:id/</c> exists only if our
     /// process is actually rendering.
     /// </para>
@@ -161,58 +190,13 @@ public sealed class NdiApp
     }
 
     /// <summary>
-    /// Guarantees the app is running and in front, relaunching it if it is not.
-    /// </summary>
-    /// <remarks>
-    /// One Appium session is shared by the whole collection, so whatever the previous test left
-    /// behind is what the next one starts from. When a test terminates the app — the settings
-    /// persistence test restarts it deliberately — every later test would otherwise run against a
-    /// device showing the launcher and report a confusing "page did not become visible" instead of
-    /// the truth. Making each test establish the app itself turns that cascade back into a single
-    /// honest failure.
-    /// </remarks>
-    public void EnsureInForeground()
-    {
-        if (IsInForeground)
-            return;
-
-        var before = ForegroundPackage;
-
-        try
-        {
-            _driver.ActivateApp(PackageName);
-        }
-        catch (Exception ex)
-        {
-            throw new InvalidOperationException(
-                $"The app was not running (foreground package '{before}') and could not be " +
-                $"relaunched: {ex.GetType().Name}: {ex.Message}", ex);
-        }
-
-        var deadline = DateTime.UtcNow + Timeouts.AppStart;
-        while (DateTime.UtcNow < deadline)
-        {
-            if (IsInForeground)
-                return;
-
-            Thread.Sleep(250);
-        }
-
-        throw new InvalidOperationException(
-            $"The app was not running (foreground package '{before}') and did not return to the " +
-            $"foreground within {Timeouts.AppStart.TotalSeconds:0}s of being relaunched — the " +
-            $"foreground package is now '{ForegroundPackage}'. Check the logcat crash buffer and " +
-            "the ActivityManager kill lines in the emulator diagnostics.");
-    }
-
-    /// <summary>
     /// The app is in front and has drawn something.
     /// </summary>
     /// <remarks>
     /// The package check is the load-bearing half. An earlier version asked only "is any element
     /// with text on screen", which the Android launcher satisfies trivially — so the startup smoke
     /// test reported success while the app was not running at all. That is the same vacuous-green
-    /// shape this suite exists to eliminate, one layer down.
+    /// shape this suite was rebuilt to eliminate, reintroduced one layer down.
     /// </remarks>
     public bool HasRenderedContent()
     {
@@ -239,5 +223,59 @@ public sealed class NdiApp
         {
             return false;
         }
+    }
+
+    /// <summary>
+    /// Guarantees the app is running and in front, relaunching it if it is not.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// One Appium session is shared by the whole collection, so whatever the previous test left
+    /// behind is what the next one starts from. When a test terminates the app — two of them
+    /// restart it deliberately — or the system kills it, every subsequent test fails on a device
+    /// showing the launcher, reporting a confusing "page did not become visible" instead of the
+    /// truth. Making each test establish the app itself is what turns those cascades back into a
+    /// single honest failure.
+    /// </para>
+    /// <para>
+    /// Deliberately does <b>not</b> swallow an app that will not start: if the relaunch does not
+    /// bring the app to the foreground, this throws naming the package that is actually in front,
+    /// so "the app is not running" is what the report says.
+    /// </para>
+    /// </remarks>
+    public void EnsureInForeground()
+    {
+        if (IsInForeground)
+            return;
+
+        var before = ForegroundPackage;
+
+        try
+        {
+            // ActivateApp resolves and starts the launcher intent, which is what brings the app
+            // back after a force-stop. Calling it when the process is already gone is safe.
+            _driver.ActivateApp(PackageName);
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException(
+                $"The app was not running (foreground package '{before}') and could not be " +
+                $"relaunched: {ex.GetType().Name}: {ex.Message}", ex);
+        }
+
+        var deadline = DateTime.UtcNow + Timeouts.AppStart;
+        while (DateTime.UtcNow < deadline)
+        {
+            if (IsInForeground)
+                return;
+
+            Thread.Sleep(250);
+        }
+
+        throw new InvalidOperationException(
+            $"The app was not running (foreground package '{before}') and did not return to the " +
+            $"foreground within {Timeouts.AppStart.TotalSeconds:0}s of being relaunched — the " +
+            $"foreground package is now '{ForegroundPackage}'. It most likely crashed; check the " +
+            "logcat crash buffer in the emulator diagnostics.");
     }
 }
