@@ -137,11 +137,43 @@ public sealed class SettingsPage : PageObject
 
     // ── Apply ────────────────────────────────────────────────────────────────
 
-    public void Apply() => Tap(TestIds.SettingsApply);
+    /// <summary>
+    /// Presses Apply and waits for confirmation, unless there was nothing to apply.
+    /// </summary>
+    /// <returns><c>true</c> when a change was applied, <c>false</c> when none was pending.</returns>
+    /// <remarks>
+    /// <para>
+    /// The no-change case is real and correct. <c>ApplyCommand</c> is declared
+    /// <c>CanExecute = nameof(CanApply)</c>, and <c>CanApply()</c> returns false while
+    /// <c>HasPendingChanges</c> is false — so selecting the theme the app is <i>already</i> on
+    /// leaves the button disabled, <c>IsApplied</c> false and the "Settings applied." label hidden.
+    /// An unconditional wait for that label therefore failed with "Settings were not confirmed as
+    /// applied" on any test whose first theme happened to match the one already saved, which is
+    /// state left behind by whichever test ran before it.
+    /// </para>
+    /// <para>
+    /// Reading <c>Enabled</c> first is what keeps this from becoming a blanket excuse: when Apply
+    /// <i>is</i> enabled a change is genuinely pending, and then a missing confirmation is a real
+    /// failure and still throws. The reading is also self-checking — if <c>Enabled</c> ever
+    /// under-reports, the theme will not change and the callers' pixel comparison fails loudly
+    /// rather than passing quietly.
+    /// </para>
+    /// </remarks>
+    public bool Apply()
+    {
+        var apply = WaitFor(TestIds.SettingsApply);
+        var pending = apply.Enabled;
 
-    /// <summary>Waits for the "Settings applied." confirmation to appear.</summary>
-    public void WaitForApplied() =>
-        WaitFor(TestIds.SettingsAppliedNotice, Timeouts.Element, "Settings were not confirmed as applied");
+        apply.Click();
+
+        if (!pending)
+            return false;
+
+        WaitFor(TestIds.SettingsAppliedNotice, Timeouts.Element,
+            "Apply was enabled, so a change was pending, but the confirmation never appeared");
+
+        return true;
+    }
 
     public bool IsApplied => IsPresent(TestIds.SettingsAppliedNotice);
 
