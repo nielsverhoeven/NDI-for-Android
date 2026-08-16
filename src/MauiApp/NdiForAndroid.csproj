@@ -46,7 +46,7 @@
     <PackageReference Include="sqlite-net-pcl" Version="1.11.284-beta" />
     <PackageReference Include="Microsoft.Extensions.Logging.Debug" Version="9.*" />
     <!-- Video rendering surface for received NDI frames (#277). -->
-    <PackageReference Include="SkiaSharp.Views.Maui.Controls" Version="3.*" />
+    <PackageReference Include="SkiaSharp.Views.Maui.Controls" Version="4.*" />
   </ItemGroup>
 
   <ItemGroup>
