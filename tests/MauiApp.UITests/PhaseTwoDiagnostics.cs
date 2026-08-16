@@ -1,6 +1,5 @@
 using System.Text;
 using OpenQA.Selenium;
-using NdiForAndroid.Testing;
 using NdiForAndroid.UITests.Infrastructure;
 using NdiForAndroid.UITests.Pages;
 using Xunit;
@@ -9,24 +8,23 @@ using Xunit.Abstractions;
 namespace NdiForAndroid.UITests;
 
 /// <summary>
-/// Answers the two questions holding up Phase 2, without asserting anything about them.
+/// Answers the question still holding up Phase 2, without asserting anything about it.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Two Phase 2 failures each have two possible explanations, and the difference decides whether
-/// the fix belongs in the app or in the tests:
+/// Two questions have already been settled here and removed. The theme radio buttons report
+/// <c>checked='false'</c> on all three options with no tap at all, even though the app is always on
+/// some theme — so that attribute was never a valid signal, and the tests that read it have been
+/// rewritten to verify the theme by the pixels it paints. Applying Light then Dark produced
+/// <c>#E5E5EA</c> then <c>#1C1C1E</c>, so theme selection works end to end and the app was never
+/// implicated.
 /// </para>
-/// <list type="number">
-///   <item>
-///     The theme radio buttons never report <c>checked=true</c> after a tap. Either users genuinely
-///     cannot select a theme, or <c>checked</c> is simply not carried on the node holding the
-///     automation id, making the test's verification invalid.
-///   </item>
-///   <item>
-///     Tapping a navigation item in landscape loses the app to the launcher. Either rail navigation
-///     exits the app, or something else removes it around that moment.
-///   </item>
-/// </list>
+/// <para>
+/// What remains is the navigation failure. Tapping <b>Stream</b> in the landscape rail left the app
+/// on screen, which looked like an acquittal — but both failing tests tap <b>Home</b> while Home is
+/// already showing, and only their landscape halves fail. So the live candidate is re-selecting the
+/// destination already loaded, not rail navigation as such.
+/// </para>
 /// <para>
 /// <b>This class asserts nothing and cannot fail the build.</b> That is deliberate: its output is
 /// evidence, and a diagnostic that fails would be indistinguishable from the defects it is meant to
@@ -43,19 +41,13 @@ public sealed class PhaseTwoDiagnostics : UiTestBase
         : base(fixture) => _output = output;
 
     [SkippableFact]
-    public void Diagnose_ThemeSelectionAndRailNavigation() => Run(app =>
+    public void Diagnose_ReselectingTheCurrentNavigationDestination() => Run(app =>
     {
         var report = new StringBuilder()
             .AppendLine("═══ Phase 2 diagnostics ═══════════════════════════════");
 
-        SafeSection(report, "Q1 — is 'checked' even exposed on the theme radio buttons?",
-            () => DiagnoseThemeCheckedAttribute(app, report));
-
-        SafeSection(report, "Q2 — does applying a theme change what is on screen?",
-            () => DiagnoseThemeActuallyApplies(app, report));
-
-        SafeSection(report, "Q3 — does tapping a rail item in landscape remove the app?",
-            () => DiagnoseRailNavigation(app, report));
+        SafeSection(report, "Q4 — does re-tapping the destination already showing remove the app?",
+            () => DiagnoseReselectingCurrentDestination(app, report));
 
         report.AppendLine("═══════════════════════════════════════════════════════");
 
@@ -66,103 +58,24 @@ public sealed class PhaseTwoDiagnostics : UiTestBase
     });
 
     /// <summary>
-    /// The zero-tap half of Q1, and the decisive one.
+    /// Q4 — the discriminator Q3's answer demands.
     /// </summary>
     /// <remarks>
-    /// The app always has a theme, so exactly one of these three radio buttons is selected at any
-    /// moment. If the tree reports <c>checked=false</c> for <b>all three</b>, the attribute is not
-    /// carrying state on the node that holds the automation id — which means the test's
-    /// verification was reading the wrong thing and the app is not implicated at all. No tap is
-    /// needed to establish that, so nothing about the tap can confound it.
+    /// <para>
+    /// Q3 tapped <b>Stream</b> while Home was showing and the app survived, which appeared to clear
+    /// rail navigation entirely. But both failing tests tap <b>Home</b> while Home is already
+    /// showing, and both fail only in landscape — the portrait half of each passes. So the
+    /// candidate is not "rail navigation" but "re-selecting the destination already on screen",
+    /// which <c>AppShell.OnRailItemSelected</c> turns into an unconditional
+    /// <c>GoToAsync("//home-rail")</c> back to the route already loaded.
+    /// </para>
+    /// <para>
+    /// Three taps separate the two explanations. A fresh destination must survive (it did in Q3
+    /// and is the control here), re-tapping that same destination is the suspect, and doing it on
+    /// something other than Home rules out Home being special.
+    /// </para>
     /// </remarks>
-    private void DiagnoseThemeCheckedAttribute(NdiApp app, StringBuilder report)
-    {
-        app.Navigation.GoTo(NavDestination.Settings);
-        app.Settings.WaitUntilVisible();
-        app.Settings.OpenSection(SettingsSection.Appearance);
-
-        var states = app.Settings.DescribeThemeOptionNodes();
-        foreach (var line in states)
-            report.AppendLine($"    {line}");
-
-        var anyChecked = states.Any(s => s.Contains("checked='true'", StringComparison.Ordinal));
-
-        report.AppendLine()
-              .AppendLine(anyChecked
-                  ? "  VERDICT: 'checked' IS exposed — exactly one option reports true, so the "
-                    + "attribute is a valid signal and a tap that leaves it false really did not select."
-                  : "  VERDICT: 'checked' is NOT exposed — no option reports true even though the app "
-                    + "always has a theme selected. The test's verification was invalid; this is a "
-                    + "TEST defect, not a product one.");
-    }
-
-    /// <summary>
-    /// Q2 — an observable that does not depend on the <c>checked</c> attribute at all.
-    /// </summary>
-    /// <remarks>
-    /// Applies Light then Dark and compares the navigation background pixels. If the two differ,
-    /// theme selection works end to end whatever the accessibility tree says about it.
-    /// </remarks>
-    private void DiagnoseThemeActuallyApplies(NdiApp app, StringBuilder report)
-    {
-        var light = ApplyAndSampleNavBackground(app, ThemeOption.Light, report);
-        var dark  = ApplyAndSampleNavBackground(app, ThemeOption.Dark,  report);
-
-        if (light is null || dark is null)
-        {
-            report.AppendLine("  VERDICT: inconclusive — could not sample both themes (see above).");
-            return;
-        }
-
-        report.AppendLine()
-              .AppendLine($"    light nav background = {light}, dark = {dark}")
-              .AppendLine(light != dark
-                  ? "  VERDICT: the theme DOES apply — the two themes paint different pixels, so "
-                    + "selection works end to end regardless of what 'checked' reports."
-                  : "  VERDICT: the theme does NOT apply — both themes paint identical pixels. "
-                    + "Selection genuinely is not taking effect; this is a PRODUCT defect.");
-    }
-
-    private SampledColor? ApplyAndSampleNavBackground(NdiApp app, ThemeOption theme, StringBuilder report)
-    {
-        try
-        {
-            app.Navigation.GoTo(NavDestination.Settings);
-            app.Settings.WaitUntilVisible();
-            app.Settings.OpenSection(SettingsSection.Appearance);
-
-            // Best effort: the tap ladder may legitimately fail, which is itself the finding.
-            try
-            {
-                app.Settings.SelectTheme(theme);
-                report.AppendLine($"    {theme}: selected via {app.Settings.LastThemeTapStrategy}");
-            }
-            catch (Exception ex)
-            {
-                report.AppendLine($"    {theme}: SelectTheme threw — {ex.Message}");
-            }
-
-            app.Settings.Apply();
-            report.AppendLine($"    {theme}: applied notice visible = {app.Settings.IsApplied}");
-
-            app.Navigation.GoTo(NavDestination.Home);
-            app.Home.WaitUntilVisible();
-
-            var item = app.Navigation.Item(NavDestination.Home);
-            using var screen = app.CaptureScreen();
-            return screen.DominantColorOf(item, inset: 0.15);
-        }
-        catch (Exception ex)
-        {
-            report.AppendLine($"    {theme}: could not sample — {ex.GetType().Name}: {ex.Message}");
-            return null;
-        }
-    }
-
-    /// <summary>
-    /// Q3 — tap a rail item in landscape and report whether the app is still on screen.
-    /// </summary>
-    private void DiagnoseRailNavigation(NdiApp app, StringBuilder report)
+    private void DiagnoseReselectingCurrentDestination(NdiApp app, StringBuilder report)
     {
         app.Rotate(ScreenOrientation.Landscape);
         report.AppendLine($"    after rotating to landscape: app in foreground = {app.IsInForeground}");
@@ -170,27 +83,75 @@ public sealed class PhaseTwoDiagnostics : UiTestBase
         if (!app.IsInForeground)
         {
             report.AppendLine("  VERDICT: the app was already gone after rotation — the rotation, "
-                              + "not the tap, is what removes it.");
+                              + "not any tap, is what removes it.");
             return;
         }
 
-        // Deliberately not app.Navigation.GoTo: that throws its own guard exception, which would
-        // abort this section before it can report. Tap and observe instead.
-        var item = app.Navigation.Item(NavDestination.Stream);
-        report.AppendLine($"    rail item resolved via {app.Navigation.LastResolution}");
-        item.Click();
+        var freshSurvived    = TapAndReport(app, report, NavDestination.Stream, "fresh destination");
+        var reselectSurvived = freshSurvived
+            ? TapAndReport(app, report, NavDestination.Stream, "SAME destination again")
+            : (bool?)null;
+        var reselectHome     = reselectSurvived == true
+            ? TapAndReport(app, report, NavDestination.Home, "fresh destination (Home)")
+              && TapAndReport(app, report, NavDestination.Home, "SAME destination again (Home)")
+            : (bool?)null;
+
+        report.AppendLine();
+
+        if (!freshSurvived)
+        {
+            report.AppendLine("  VERDICT: even a fresh destination removes the app, contradicting Q3. "
+                              + "Rail navigation is unsafe in general, not just on re-selection.");
+            return;
+        }
+
+        if (reselectSurvived == false)
+        {
+            report.AppendLine("  VERDICT: re-tapping the destination already showing DOES remove the "
+                              + "app, while a fresh one does not. That is a PRODUCT defect in "
+                              + "AppShell.OnRailItemSelected, which navigates to the current route "
+                              + "unconditionally. A user re-tapping the tab they are on exits the app.");
+            return;
+        }
+
+        if (reselectHome == false)
+        {
+            report.AppendLine("  VERDICT: Stream survives re-selection but Home does not, so the "
+                              + "defect is specific to the Home route rather than to re-selection.");
+            return;
+        }
+
+        report.AppendLine("  VERDICT: nothing removed the app — neither a fresh tap nor a "
+                          + "re-selection, on Stream or Home. The two failing tests must be losing "
+                          + "the app to something outside NavigationBar.GoTo.");
+    }
+
+    /// <summary>
+    /// Taps a navigation item directly and reports whether the app survived.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately not <c>app.Navigation.GoTo</c>: that throws its own guard exception, which
+    /// would abort the section before it could report the rest of the sequence.
+    /// </remarks>
+    private static bool TapAndReport(NdiApp app, StringBuilder report, NavDestination destination, string role)
+    {
+        try
+        {
+            var item = app.Navigation.Item(destination);
+            report.AppendLine($"    tapping {destination} in the rail ({role}), resolved via {app.Navigation.LastResolution}");
+            item.Click();
+        }
+        catch (Exception ex)
+        {
+            report.AppendLine($"    tapping {destination} ({role}) threw — {ex.GetType().Name}: {ex.Message}");
+            return false;
+        }
+
         Thread.Sleep(1500);
 
         var stillHere = app.IsInForeground;
-        report.AppendLine($"    after tapping the Stream rail item: app in foreground = {stillHere}")
-              .AppendLine($"    foreground package = '{app.ForegroundPackage}'");
-
-        report.AppendLine()
-              .AppendLine(stillHere
-                  ? "  VERDICT: rail navigation does NOT remove the app — whatever caused the "
-                    + "earlier failures happens elsewhere."
-                  : "  VERDICT: tapping a rail item DOES remove the app. Landscape navigation exits "
-                    + "the app — a PRODUCT defect, and one a user would hit on any tablet.");
+        report.AppendLine($"      → app in foreground = {stillHere}, foreground package = '{app.ForegroundPackage}'");
+        return stillHere;
     }
 
     /// <summary>

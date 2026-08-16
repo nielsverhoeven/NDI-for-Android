@@ -68,44 +68,45 @@ public sealed class SettingsPage : PageObject
     // ── Appearance section ───────────────────────────────────────────────────
 
     /// <summary>
-    /// Selects a theme and confirms the selection actually took.
+    /// Selects a theme.
     /// </summary>
     /// <remarks>
-    /// The confirmation is not ceremony. These radio buttons use a MAUI <c>ControlTemplate</c>
-    /// rather than the native Android control, so the automation id sits on a container and a tap
-    /// on it does not necessarily toggle anything. Without this check, a tap that silently does
-    /// nothing surfaces two calls later as "Settings applied never appeared" — which reads as a
-    /// broken Apply button rather than a selection that never happened.
+    /// <para>
+    /// <b>Deliberately unverified at the point of the tap.</b> An earlier version confirmed the
+    /// selection by reading the node's <c>checked</c> attribute and retried through a ladder of tap
+    /// strategies until it turned true. A diagnostic run settled that this could never work: with
+    /// no tap at all, and the app necessarily on some theme, all three options report
+    /// <c>checked='false'</c>. The attribute is simply not carried on the
+    /// <c>android.view.ViewGroup</c> that holds the automation id — these radio buttons use a MAUI
+    /// <c>ControlTemplate</c> rather than the native control, because the repo's theming rules
+    /// require it. So the ladder was reading a constant, exhausting every strategy and throwing
+    /// even on runs where the tap had worked perfectly.
+    /// </para>
+    /// <para>
+    /// Both centre taps are issued because the container reports <c>clickable=false</c> and has no
+    /// clickable descendant, so which of the two paths reaches the handler is not knowable from the
+    /// tree. Sending both is safe: re-selecting an already-selected radio button is a no-op.
+    /// </para>
+    /// <para>
+    /// The selection is instead verified by its effect — see the pixel assertions in
+    /// <c>ThemeRegressionTests</c>. That is a stronger check than <c>checked</c> ever was: it
+    /// proves the theme reached the screen, not merely that a control changed state.
+    /// </para>
     /// </remarks>
-    public void SelectTheme(ThemeOption theme) =>
-        LastThemeTapStrategy = TapUntilSet(ThemeId(theme), () => IsThemeSelected(theme));
-
-    /// <summary>
-    /// How the last theme selection actually landed.
-    /// </summary>
-    /// <remarks>
-    /// Surfaced so a run records which input path these templated radio buttons respond to. If it
-    /// ever reads "direct tap" the template has changed and the fallbacks can go; if it changes
-    /// between runs, the control is timing-sensitive and that is worth knowing before it becomes
-    /// an intermittent failure.
-    /// </remarks>
-    public string LastThemeTapStrategy { get; private set; } = "(none)";
-
-    public bool IsThemeSelected(ThemeOption theme) =>
-        string.Equals(CheckedState(theme), "true", StringComparison.OrdinalIgnoreCase);
-
-    private string CheckedState(ThemeOption theme) =>
-        WaitFor(ThemeId(theme)).GetAttribute("checked") ?? "(no checked attribute)";
+    public void SelectTheme(ThemeOption theme)
+    {
+        var element = WaitFor(ThemeId(theme));
+        element.Click();
+        TapAtCentre(element);
+    }
 
     /// <summary>
     /// Describes each theme option node as the accessibility tree sees it.
     /// </summary>
     /// <remarks>
-    /// Diagnostic, not an assertion. The app always has a theme, so exactly one of these three
-    /// should report <c>checked='true'</c> at any moment — if none does, the attribute is not
-    /// carried on the node holding the automation id, and any test verifying selection through it
-    /// is measuring the wrong thing. Establishing that needs no tap, so nothing about tapping can
-    /// confound the answer.
+    /// Diagnostic, not an assertion. Kept because it is what established that <c>checked</c> is
+    /// never true here, and it is how a future run would notice the template gaining real
+    /// checkable semantics — at which point selection could be asserted directly again.
     /// </remarks>
     public IReadOnlyList<string> DescribeThemeOptionNodes()
     {
