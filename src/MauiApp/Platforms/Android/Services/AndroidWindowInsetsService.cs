@@ -23,6 +23,34 @@ public sealed class AndroidWindowInsetsService : IWindowInsetsService
         return insetPixels <= 0 ? 0d : insetPixels / density;
     }
 
+    public EdgeInsets GetNavigationBarInsets()
+    {
+        var activity = Platform.CurrentActivity;
+        var decorView = activity?.Window?.DecorView;
+        if (decorView is null)
+            return EdgeInsets.Zero;
+
+        var density = activity!.Resources?.DisplayMetrics?.Density ?? 0f;
+        if (density <= 0f)
+            return EdgeInsets.Zero;
+
+        // No dimen fallback here, unlike the status bar. navigation_bar_height is a single value
+        // that says nothing about which edge the bar is on, so guessing from it would be worse
+        // than reporting zero: it would inset the wrong side and move the rail away from the bar
+        // rather than out from under it.
+        var insets = ViewCompat.GetRootWindowInsets(decorView)
+            ?.GetInsets(WindowInsetsCompat.Type.NavigationBars());
+
+        if (insets is null)
+            return EdgeInsets.Zero;
+
+        return new EdgeInsets(
+            insets.Left   / density,
+            insets.Top    / density,
+            insets.Right  / density,
+            insets.Bottom / density);
+    }
+
     private static int ResolveStatusBarInsetPixels(
         global::Android.Views.View decorView,
         global::Android.App.Activity activity)

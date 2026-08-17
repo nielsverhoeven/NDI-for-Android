@@ -116,16 +116,40 @@ public partial class AppShell : Shell
     }
 
     /// <summary>
-    /// Pushes the rail's first item below the status bar. The window is drawn edge-to-edge, so
-    /// without this the rail's background — and its topmost item — sit under the clock (#296).
+    /// Keeps the rail's items clear of the system bars. The window is drawn edge-to-edge, so
+    /// anything anchored to an edge renders behind them unless it is inset by hand.
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The top inset is #296: without it the rail's first item sits under the clock.
+    /// </para>
+    /// <para>
+    /// The side inset is #321, and it was the same defect on an edge nobody thought to check.
+    /// In landscape the navigation bar leaves the bottom of the screen and takes a side — on the
+    /// CI emulator, x 0..168, which is exactly where the rail is. A rail item spanning x 28..224
+    /// therefore had three quarters of itself, including the centre a tap lands on, underneath
+    /// system UI. Presses went to the system instead of the app, so tapping a rail item went Home:
+    /// the app vanished to the launcher with no crash, no kill, and nothing in the activity log,
+    /// because the app was never involved.
+    /// </para>
+    /// <para>
+    /// Bottom is included for the case where the rail is shown in portrait — a large tablet can
+    /// reach the Expanded size class without rotating. Right is deliberately left alone: the rail
+    /// is on the left, so a bar on the opposite edge cannot cover it, and padding that side would
+    /// narrow the rail for nothing.
+    /// </para>
+    /// </remarks>
     private void ApplyRailInset()
     {
         var topInset = _windowInsetsService.GetStatusBarInset();
         if (topInset < 0)
             topInset = 0;
 
-        var padding = new Thickness(0, topInset, 0, 0);
+        var navigation = _windowInsetsService.GetNavigationBarInsets();
+        var left   = Math.Max(0, navigation.Left);
+        var bottom = Math.Max(0, navigation.Bottom);
+
+        var padding = new Thickness(left, topInset, 0, bottom);
         if (RailItems.Padding != padding)
             RailItems.Padding = padding;
     }

@@ -6,4 +6,6 @@ namespace NdiForAndroid.Services;
 public sealed class NoopWindowInsetsService : IWindowInsetsService
 {
     public double GetStatusBarInset() => 0d;
+
+    public EdgeInsets GetNavigationBarInsets() => EdgeInsets.Zero;
 }
