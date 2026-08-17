@@ -88,6 +88,12 @@ public partial class AppShell : Shell
         // palette change instead, otherwise the icons keep the previous theme's color (#294).
         _appearanceService.AppearanceChanged += OnAppearanceChanged;
 
+        // Re-inset when the window reports new insets, not merely when it reports a new size.
+        // OnSizeAllocated fires first on a rotation, and reading insets there returns the previous
+        // orientation's values — which is how the rail ended up padded for a navigation bar that
+        // had already moved to another edge (#321).
+        _windowInsetsService.InsetsChanged += OnWindowInsetsChanged;
+
         _orientationBridge.SyncFromDisplayInfo();
         ApplyPlacement();
     }
@@ -106,6 +112,17 @@ public partial class AppShell : Shell
         // Insets resolve only once the window is laid out, and change on rotation or when a
         // cutout enters/leaves the top edge — so re-read them here rather than at construction.
         ApplyRailInset();
+    }
+
+    private void OnWindowInsetsChanged(object? sender, EventArgs e)
+    {
+        _ = sender;
+        _ = e;
+
+        // The insets arrive on the platform's dispatch, which is the UI thread, but going through
+        // the dispatcher keeps the layout write off the inset callback itself — mutating padding
+        // from inside OnApplyWindowInsets re-enters layout.
+        Dispatcher.Dispatch(ApplyRailInset);
     }
 
     private void OnAppearanceChanged(object? sender, EventArgs e)

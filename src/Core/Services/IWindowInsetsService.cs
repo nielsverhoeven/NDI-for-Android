@@ -42,4 +42,22 @@ public interface IWindowInsetsService
     /// </para>
     /// </remarks>
     EdgeInsets GetNavigationBarInsets();
+
+    /// <summary>
+    /// Raised when the window's insets change, after the new values are readable.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Polling at a moment of the caller's choosing does not work, and the rail proved it. Reading
+    /// on layout gave a status-bar inset of 24dp — correct, and visible in the rendered position —
+    /// while the navigation-bar inset came back as zero in the same call, on a device whose
+    /// navigation bar occupied the leftmost 168px of the screen. Size changes before insets are
+    /// republished on a rotation, so a read taken then still describes the previous orientation,
+    /// where the bar was on the bottom and the left inset genuinely was zero.
+    /// </para>
+    /// <para>
+    /// Subscribers get told when the values are actually current, rather than guessing at a delay.
+    /// </para>
+    /// </remarks>
+    event EventHandler? InsetsChanged;
 }
