@@ -38,18 +38,43 @@ public sealed class AndroidWindowInsetsService : IWindowInsetsService
         // that says nothing about which edge the bar is on, so guessing from it would be worse
         // than reporting zero: it would inset the wrong side and move the rail away from the bar
         // rather than out from under it.
-        var insets = ViewCompat.GetRootWindowInsets(decorView)
-            ?.GetInsets(WindowInsetsCompat.Type.NavigationBars());
+        var root = ViewCompat.GetRootWindowInsets(decorView);
+        var insets = root?.GetInsets(WindowInsetsCompat.Type.NavigationBars());
 
         if (insets is null)
+        {
+            // Logged rather than silently returning zero. The first attempt at this fix changed
+            // nothing on screen — the rail stayed at x=28, which is its 8dp margin alone — and a
+            // zero inset and a never-called accessor look identical from outside the app. The tag
+            // is package-prefixed so the CI logcat filter keeps it.
+            Log("navigation-bar insets unavailable: " +
+                (root is null ? "GetRootWindowInsets returned null" : "GetInsets returned null"));
             return EdgeInsets.Zero;
+        }
 
-        return new EdgeInsets(
+        var result = new EdgeInsets(
             insets.Left   / density,
             insets.Top    / density,
             insets.Right  / density,
             insets.Bottom / density);
+
+        Log($"navigation-bar insets px L={insets.Left} T={insets.Top} R={insets.Right} " +
+            $"B={insets.Bottom}, density={density}, dp L={result.Left:0.#} T={result.Top:0.#} " +
+            $"R={result.Right:0.#} B={result.Bottom:0.#}");
+
+        return result;
     }
+
+    /// <summary>
+    /// Diagnostic trace for the inset reads, tagged so the CI logcat filter keeps it.
+    /// </summary>
+    /// <remarks>
+    /// The tag is deliberately package-prefixed: the emulator run script filters logcat on
+    /// <c>com.ndi.android</c> among other patterns, so a tag that does not contain it is captured
+    /// and then thrown away before anyone reads the log.
+    /// </remarks>
+    private static void Log(string message) =>
+        global::Android.Util.Log.Info("com.ndi.android.insets", message);
 
     private static int ResolveStatusBarInsetPixels(
         global::Android.Views.View decorView,

@@ -150,6 +150,12 @@ public partial class AppShell : Shell
         var bottom = Math.Max(0, navigation.Bottom);
 
         var padding = new Thickness(left, topInset, 0, bottom);
+
+        global::Android.Util.Log.Info(
+            "com.ndi.android.insets",
+            $"ApplyRailInset: status={topInset:0.#}dp nav(L={navigation.Left:0.#} " +
+            $"B={navigation.Bottom:0.#}) -> padding {padding}, was {RailItems.Padding}");
+
         if (RailItems.Padding != padding)
             RailItems.Padding = padding;
     }

@@ -420,8 +420,15 @@ jobs:
             # lifecycle transitions this exists to surface. The IME config echo is dropped too: it
             # duplicates every config change and was half the output.
             echo ""
+            echo ""
+            echo "----- inset reads (whole run) -----"
+            grep -E 'com\.ndi\.android\.insets' test-results/logcat-app.txt | tail -40 \
+              || echo "  (the app logged no inset reads — ApplyRailInset never ran)"
+            echo "-----------------------------------"
+
+            echo ""
             echo "----- activity lifecycle + app output (last 120 lines) -----"
-            grep -E 'ActivityTaskManager|ActivityManager|AndroidRuntime|monodroid|DOTNET' \
+            grep -E 'ActivityTaskManager|ActivityManager|AndroidRuntime|monodroid|DOTNET|ndi\.android\.insets' \
               test-results/logcat-app.txt \
               | grep -v 'Sending to IME proc' | tail -120 || echo "  (nothing matched)"
             echo "------------------------------------------------------------"
