@@ -97,62 +97,6 @@ public abstract class PageObject
     /// <summary>Taps the element with <paramref name="id"/> once it is displayed.</summary>
     protected void Tap(string id, TimeSpan? timeout = null) => WaitFor(id, timeout).Click();
 
-    /// <summary>
-    /// Toggles a checkable control, trying the ways a tap can reach it until one takes.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// A plain <c>Click()</c> on the element is not enough for this app's radio buttons. They use
-    /// a MAUI <c>ControlTemplate</c> rather than the native Android control — the repo's theming
-    /// rules require it, because <c>MaterialRadioButton</c> ignores <c>DynamicResource</c> — so
-    /// the automation id lands on a container while the node that actually responds to touch is
-    /// somewhere else in the subtree. Tapping the container reported <c>checked='false'</c>
-    /// afterwards, every time.
-    /// </para>
-    /// <para>
-    /// Rather than guess which node is the right one, this tries the plausible targets in order
-    /// and stops at the first that changes the state. The strategy that worked is returned so the
-    /// caller can report it: if the direct tap ever starts working, that tells us the template
-    /// changed, and if the list is ever exhausted the failure names everything that was tried
-    /// instead of just saying the control did not respond.
-    /// </para>
-    /// </remarks>
-    /// <param name="id">Automation id of the control.</param>
-    /// <param name="isSet">Reads the control's current state.</param>
-    /// <returns>Name of the strategy that worked.</returns>
-    protected string TapUntilSet(string id, Func<bool> isSet)
-    {
-        var element = WaitFor(id);
-
-        if (isSet())
-            return "already set";
-
-        // 1. The element itself — correct for a native control, and the cheapest.
-        element.Click();
-        if (isSet())
-            return "direct tap";
-
-        // 2. The nearest clickable node at or below the id. A templated control puts the touch
-        //    handler on an inner view, so this is the one most likely to work here.
-        foreach (var descendant in FindClickableWithin(id))
-        {
-            descendant.Click();
-            if (isSet())
-                return "tap on clickable descendant";
-        }
-
-        // 3. The element's centre as a raw pointer gesture. Bypasses the view tree entirely, so
-        //    it works when the handler is on a node the tree does not expose as clickable.
-        TapAtCentre(element);
-        if (isSet())
-            return "pointer tap at centre";
-
-        throw new InvalidOperationException(
-            $"'{id}' did not change state after a direct tap, a tap on each clickable node " +
-            $"beneath it ({FindClickableWithin(id).Count} tried), and a pointer tap at its " +
-            "centre. The control is not responding to synthetic input at all.");
-    }
-
     /// <summary>True when any view in the tree belongs to our package.</summary>
     private bool OwnsAnythingOnScreen()
     {
@@ -168,20 +112,15 @@ public abstract class PageObject
         }
     }
 
-    private IReadOnlyList<IWebElement> FindClickableWithin(string id)
-    {
-        try
-        {
-            return Driver.FindElements(
-                By.XPath($"//*[@resource-id='{NdiApp.PackageName}:id/{id}']//*[@clickable='true']"));
-        }
-        catch (Exception)
-        {
-            return [];
-        }
-    }
-
-    private void TapAtCentre(IWebElement element)
+    /// <summary>
+    /// Taps the middle of an element as a raw pointer gesture, ignoring the view tree.
+    /// </summary>
+    /// <remarks>
+    /// The escape hatch for controls whose touch handler is on a node Android does not expose as
+    /// clickable — this app's templated radio buttons report <c>clickable=false</c> on the
+    /// container carrying the automation id and have no clickable descendant at all.
+    /// </remarks>
+    protected void TapAtCentre(IWebElement element)
     {
         var location = element.Location;
         var size = element.Size;

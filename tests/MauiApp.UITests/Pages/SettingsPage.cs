@@ -68,42 +68,112 @@ public sealed class SettingsPage : PageObject
     // ── Appearance section ───────────────────────────────────────────────────
 
     /// <summary>
-    /// Selects a theme and confirms the selection actually took.
+    /// Selects a theme.
     /// </summary>
     /// <remarks>
-    /// The confirmation is not ceremony. These radio buttons use a MAUI <c>ControlTemplate</c>
-    /// rather than the native Android control, so the automation id sits on a container and a tap
-    /// on it does not necessarily toggle anything. Without this check, a tap that silently does
-    /// nothing surfaces two calls later as "Settings applied never appeared" — which reads as a
-    /// broken Apply button rather than a selection that never happened.
+    /// <para>
+    /// <b>Deliberately unverified at the point of the tap.</b> An earlier version confirmed the
+    /// selection by reading the node's <c>checked</c> attribute and retried through a ladder of tap
+    /// strategies until it turned true. A diagnostic run settled that this could never work: with
+    /// no tap at all, and the app necessarily on some theme, all three options report
+    /// <c>checked='false'</c>. The attribute is simply not carried on the
+    /// <c>android.view.ViewGroup</c> that holds the automation id — these radio buttons use a MAUI
+    /// <c>ControlTemplate</c> rather than the native control, because the repo's theming rules
+    /// require it. So the ladder was reading a constant, exhausting every strategy and throwing
+    /// even on runs where the tap had worked perfectly.
+    /// </para>
+    /// <para>
+    /// Both centre taps are issued because the container reports <c>clickable=false</c> and has no
+    /// clickable descendant, so which of the two paths reaches the handler is not knowable from the
+    /// tree. Sending both is safe: re-selecting an already-selected radio button is a no-op.
+    /// </para>
+    /// <para>
+    /// The selection is instead verified by its effect — see the pixel assertions in
+    /// <c>ThemeRegressionTests</c>. That is a stronger check than <c>checked</c> ever was: it
+    /// proves the theme reached the screen, not merely that a control changed state.
+    /// </para>
     /// </remarks>
-    public void SelectTheme(ThemeOption theme) =>
-        LastThemeTapStrategy = TapUntilSet(ThemeId(theme), () => IsThemeSelected(theme));
+    public void SelectTheme(ThemeOption theme)
+    {
+        var element = WaitFor(ThemeId(theme));
+        element.Click();
+        TapAtCentre(element);
+    }
 
     /// <summary>
-    /// How the last theme selection actually landed.
+    /// Describes each theme option node as the accessibility tree sees it.
     /// </summary>
     /// <remarks>
-    /// Surfaced so a run records which input path these templated radio buttons respond to. If it
-    /// ever reads "direct tap" the template has changed and the fallbacks can go; if it changes
-    /// between runs, the control is timing-sensitive and that is worth knowing before it becomes
-    /// an intermittent failure.
+    /// Diagnostic, not an assertion. Kept because it is what established that <c>checked</c> is
+    /// never true here, and it is how a future run would notice the template gaining real
+    /// checkable semantics — at which point selection could be asserted directly again.
     /// </remarks>
-    public string LastThemeTapStrategy { get; private set; } = "(none)";
+    public IReadOnlyList<string> DescribeThemeOptionNodes()
+    {
+        var lines = new List<string>();
 
-    public bool IsThemeSelected(ThemeOption theme) =>
-        string.Equals(CheckedState(theme), "true", StringComparison.OrdinalIgnoreCase);
+        foreach (var theme in Enum.GetValues<ThemeOption>())
+        {
+            try
+            {
+                var element = WaitFor(ThemeId(theme));
+                lines.Add(
+                    $"{ThemeId(theme)}: checked='{element.GetAttribute("checked") ?? "(absent)"}' " +
+                    $"class={element.GetAttribute("class")} " +
+                    $"clickable={element.GetAttribute("clickable")} " +
+                    $"focusable={element.GetAttribute("focusable")} " +
+                    $"text='{element.Text}' " +
+                    $"desc='{element.GetAttribute("content-desc")}' " +
+                    $"size={element.Size.Width}x{element.Size.Height}");
+            }
+            catch (Exception ex)
+            {
+                lines.Add($"{ThemeId(theme)}: could not read — {ex.GetType().Name}: {ex.Message}");
+            }
+        }
 
-    private string CheckedState(ThemeOption theme) =>
-        WaitFor(ThemeId(theme)).GetAttribute("checked") ?? "(no checked attribute)";
+        return lines;
+    }
 
     // ── Apply ────────────────────────────────────────────────────────────────
 
-    public void Apply() => Tap(TestIds.SettingsApply);
+    /// <summary>
+    /// Presses Apply and waits for confirmation, unless there was nothing to apply.
+    /// </summary>
+    /// <returns><c>true</c> when a change was applied, <c>false</c> when none was pending.</returns>
+    /// <remarks>
+    /// <para>
+    /// The no-change case is real and correct. <c>ApplyCommand</c> is declared
+    /// <c>CanExecute = nameof(CanApply)</c>, and <c>CanApply()</c> returns false while
+    /// <c>HasPendingChanges</c> is false — so selecting the theme the app is <i>already</i> on
+    /// leaves the button disabled, <c>IsApplied</c> false and the "Settings applied." label hidden.
+    /// An unconditional wait for that label therefore failed with "Settings were not confirmed as
+    /// applied" on any test whose first theme happened to match the one already saved, which is
+    /// state left behind by whichever test ran before it.
+    /// </para>
+    /// <para>
+    /// Reading <c>Enabled</c> first is what keeps this from becoming a blanket excuse: when Apply
+    /// <i>is</i> enabled a change is genuinely pending, and then a missing confirmation is a real
+    /// failure and still throws. The reading is also self-checking — if <c>Enabled</c> ever
+    /// under-reports, the theme will not change and the callers' pixel comparison fails loudly
+    /// rather than passing quietly.
+    /// </para>
+    /// </remarks>
+    public bool Apply()
+    {
+        var apply = WaitFor(TestIds.SettingsApply);
+        var pending = apply.Enabled;
 
-    /// <summary>Waits for the "Settings applied." confirmation to appear.</summary>
-    public void WaitForApplied() =>
-        WaitFor(TestIds.SettingsAppliedNotice, Timeouts.Element, "Settings were not confirmed as applied");
+        apply.Click();
+
+        if (!pending)
+            return false;
+
+        WaitFor(TestIds.SettingsAppliedNotice, Timeouts.Element,
+            "Apply was enabled, so a change was pending, but the confirmation never appeared");
+
+        return true;
+    }
 
     public bool IsApplied => IsPresent(TestIds.SettingsAppliedNotice);
 

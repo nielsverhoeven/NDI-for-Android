@@ -76,18 +76,114 @@ public sealed class NavigationBar
     {
         var placement = IsRailPlacement() ? "left rail" : "bottom tab bar";
 
-        Item(destination, Timeouts.Navigation).Click();
+        var item = Item(destination, Timeouts.Navigation);
+
+        // Where the tap is about to land, recorded before it lands. The launcher turning up
+        // fully drawn — 22 of its nodes plus the search box — with no finishActivity, no
+        // moveTaskToBack and no launcher start in the log is hard to explain from inside the app,
+        // and much easier to explain if the tap never reached the app: a press inside the system
+        // gesture or navigation-bar region brings the launcher forward and leaves no app-side
+        // trace at all. That is checkable from the tap rectangle against the window, so record it.
+        var target = DescribeTarget(item);
+
+        item.Click();
 
         // Give the transition a moment before judging: navigation is asynchronous, and sampling
         // the tree mid-swap would produce a false accusation.
         Thread.Sleep(750);
 
-        if (!AppOwnsAnythingOnScreen())
-            throw new InvalidOperationException(
-                $"Tapping the {destination} item in the {placement} removed the app from the " +
-                "screen. Nothing under 'com.ndi.android:id/' remains in the view tree, and the " +
-                "crash buffer is empty, so the activity finished rather than crashed. " +
-                "Navigation must never exit the app.");
+        if (AppOwnsAnythingOnScreen())
+            return;
+
+        // One blank reading is not proof the app is gone, and this guard used to treat it as
+        // exactly that. The logcat for a failing run tells against it: every foreground event is
+        // a start of our own package, the launcher is never started, and there is no
+        // moveTaskToBack, finishActivity or removeTask anywhere. Nothing handed the screen to
+        // anyone, so "the app was removed" was an inference from a single sample rather than an
+        // observation — and 750ms is not obviously longer than a Shell page swap.
+        var deadline = DateTime.UtcNow + Timeouts.Element;
+        while (DateTime.UtcNow < deadline)
+        {
+            Thread.Sleep(250);
+
+            if (AppOwnsAnythingOnScreen())
+            {
+                BlankTreeRecoveries++;
+                return;
+            }
+        }
+
+        throw new InvalidOperationException(
+            $"Tapping the {destination} item in the {placement} left nothing owned by " +
+            $"'{NdiApp.PackageName}' in the view tree, and it had still not returned " +
+            $"{Timeouts.Element.TotalSeconds:0}s later.{Environment.NewLine}" +
+            $"Tap target: {target}{Environment.NewLine}" +
+            $"Packages owning nodes on screen: {DescribeOwners()}.{Environment.NewLine}" +
+            FailureEvidence.DescribeVisibleIds(_driver));
+    }
+
+    /// <summary>
+    /// The rectangle a tap is about to hit, against the window it sits in.
+    /// </summary>
+    /// <remarks>
+    /// Reported as edge distances rather than raw coordinates because that is the question being
+    /// asked: a target flush against an edge is a candidate for overlapping the system gesture
+    /// area, where a press goes to the system rather than to the app.
+    /// </remarks>
+    public string DescribeTarget(IWebElement element)
+    {
+        try
+        {
+            var location = element.Location;
+            var size = element.Size;
+            var window = _driver.Manage().Window.Size;
+
+            var right  = window.Width  - (location.X + size.Width);
+            var bottom = window.Height - (location.Y + size.Height);
+
+            return $"{size.Width}x{size.Height} at ({location.X},{location.Y}) in a " +
+                   $"{window.Width}x{window.Height} window — gaps: left={location.X}, " +
+                   $"top={location.Y}, right={right}, bottom={bottom}";
+        }
+        catch (Exception ex)
+        {
+            return $"(could not measure: {ex.GetType().Name}: {ex.Message})";
+        }
+    }
+
+    /// <summary>
+    /// How often the view tree went briefly blank and came back during this session.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately counted rather than ignored. If this stays zero, blank readings really are
+    /// permanent and the app genuinely leaves. If it climbs, the suite has been reporting a
+    /// transient mid-navigation tree as "the app exited" — which is a very different bug, and one
+    /// living in the tests rather than the app.
+    /// </remarks>
+    public static int BlankTreeRecoveries { get; private set; }
+
+    /// <summary>Which packages own nodes on screen right now, with node counts.</summary>
+    private string DescribeOwners()
+    {
+        try
+        {
+            var owners = _driver
+                .FindElements(By.XPath("//*[@package]"))
+                .Select(e =>
+                {
+                    try { return e.GetAttribute("package") ?? "(none)"; }
+                    catch (StaleElementReferenceException) { return "(stale)"; }
+                })
+                .GroupBy(p => p, StringComparer.Ordinal)
+                .Select(g => $"{g.Key} x{g.Count()}")
+                .ToList();
+
+            return owners.Count == 0 ? "(the tree is empty)" : string.Join(", ", owners);
+        }
+        catch (Exception ex)
+        {
+            return $"(could not enumerate: {ex.GetType().Name}: {ex.Message})";
+        }
     }
 
     /// <summary>True when the landscape left rail is the live placement.</summary>
