@@ -46,41 +46,6 @@ public sealed class DeviceMetrics
         }
     }
 
-    /// <summary>
-    /// The navigation bar's rectangle, as the system reports it right now.
-    /// </summary>
-    /// <remarks>
-    /// The status bar has an inset accessor because #296 was about the top edge. This exists
-    /// because the same question applies to the side: the window is drawn edge-to-edge
-    /// (<c>SetDecorFitsSystemWindows(false)</c>), and in landscape the navigation bar moves off
-    /// the bottom and onto an edge the left rail also occupies. Anything the app paints there is
-    /// underneath system UI, and a tap in that region goes to the system rather than to the app.
-    /// </remarks>
-    public (int X, int Y, int Width, int Height, bool Visible) NavigationBar
-    {
-        get
-        {
-            var bars = Invoke("mobile: getSystemBars");
-
-            if (bars is not Dictionary<string, object> map || !map.TryGetValue("navigationBar", out var bar))
-                throw new InvalidOperationException(
-                    $"'mobile: getSystemBars' returned no navigationBar entry (got: {Describe(bars)}).");
-
-            if (bar is not Dictionary<string, object> nav)
-                throw new InvalidOperationException($"navigationBar entry was not a map (got: {Describe(bar)}).");
-
-            return (
-                Read(nav, "x"),
-                Read(nav, "y"),
-                Read(nav, "width"),
-                Read(nav, "height"),
-                nav.TryGetValue("visible", out var visible) && Convert.ToBoolean(visible));
-
-            static int Read(Dictionary<string, object> map, string key) =>
-                map.TryGetValue(key, out var value) ? Convert.ToInt32(value) : 0;
-        }
-    }
-
     /// <summary>Display density, i.e. physical pixels per density-independent unit.</summary>
     public double Density
     {
