@@ -138,8 +138,14 @@ public sealed class AppLaunchTests : UiTestBase
 
         app.Settings.OpenSection(SettingsSection.Discovery);
         app.Settings.DiscoveryHost = host;
-        app.Settings.Apply();
-        app.Settings.WaitForApplied();
+
+        // Asserted rather than ignored here: this test has just typed a host the app did not have,
+        // so a change genuinely is pending and Apply must be live. A disabled button would mean the
+        // text never reached the view model, and the restart assertion below would then be checking
+        // that nothing persisted nothing.
+        Assert.True(app.Settings.Apply(),
+            "Apply was disabled straight after entering a new discovery host, so the edit never " +
+            "registered as a pending change.");
 
         Skip.IfNot(app.TryRestart(), "App lifecycle commands are unavailable in this environment.");
 

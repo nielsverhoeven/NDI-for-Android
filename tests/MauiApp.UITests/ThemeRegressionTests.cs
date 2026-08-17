@@ -91,37 +91,103 @@ public sealed class ThemeRegressionTests : UiTestBase
         // #300: the theme reverted to default when SettingsPage was torn down, so the defect only
         // appeared once the user left the page. Selecting and asserting without leaving — which is
         // all a naive test would do — passes against the bug.
-        ApplyTheme(app, ThemeOption.Dark);
+        var (light, dark) = ThemeSignatures(app);
 
-        app.Navigation.GoTo(NavDestination.Home);
-        app.Home.WaitUntilVisible();
         app.Navigation.GoTo(NavDestination.Stream);
         app.Output.WaitUntilVisible();
-
         app.Navigation.GoTo(NavDestination.Settings);
         app.Settings.WaitUntilVisible();
-        app.Settings.OpenSection(SettingsSection.Appearance);
+        app.Navigation.GoTo(NavDestination.Home);
+        app.Home.WaitUntilVisible();
 
-        Assert.True(app.Settings.IsThemeSelected(ThemeOption.Dark),
-            "The Dark theme was applied, but after navigating away and back Settings no longer " +
-            "reports it as selected. This is the #300 failure mode — the selection is lost when " +
-            "the page is torn down.");
+        AssertStillThemed(app, dark, light,
+            "The Dark theme was applied, but after navigating away and back the navigation bar is " +
+            "painted in the Light palette again. This is the #300 failure mode — the selection is " +
+            "lost when the page is torn down.");
     });
 
     [SkippableFact]
     public void Theme_SelectedInSettings_SurvivesAnAppRestart() => Run(app =>
     {
-        ApplyTheme(app, ThemeOption.Dark);
+        var (light, dark) = ThemeSignatures(app);
 
         Skip.IfNot(app.TryRestart(), "App lifecycle commands are unavailable in this environment.");
 
-        app.Navigation.GoTo(NavDestination.Settings);
-        app.Settings.WaitUntilVisible();
-        app.Settings.OpenSection(SettingsSection.Appearance);
+        app.Navigation.GoTo(NavDestination.Home);
+        app.Home.WaitUntilVisible();
 
-        Assert.True(app.Settings.IsThemeSelected(ThemeOption.Dark),
+        AssertStillThemed(app, dark, light,
             "The Dark theme did not survive an app restart, so it was never persisted.");
     });
+
+    /// <summary>
+    /// Applies Light then Dark, returning the navigation background each paints.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// These two colours are the reference frame for "is the app still on the Dark theme". The
+    /// persistence tests used to ask Settings whether its Dark radio button reported
+    /// <c>checked='true'</c>; a diagnostic run established that attribute is never true on any of
+    /// the three options, tap or no tap, so the question could not be answered that way.
+    /// </para>
+    /// <para>
+    /// Sampling both is what keeps the replacement honest. Asserting "the background is dark"
+    /// against a hard-coded colour would break on every palette change, and asserting it against
+    /// nothing at all would pass on a screen that never changed — so the run measures what each
+    /// theme actually looks like and then requires the app to still match one of them. It leaves
+    /// the app on Home under the Dark theme.
+    /// </para>
+    /// </remarks>
+    private (SampledColor Light, SampledColor Dark) ThemeSignatures(NdiApp app)
+    {
+        var light = ThemeSignature(app, ThemeOption.Light);
+        var dark  = ThemeSignature(app, ThemeOption.Dark);
+
+        _output.WriteLine($"theme signatures: light={light} dark={dark}");
+
+        // Sampled on Home rather than on Settings, so a theme that applies but is dropped the
+        // moment Settings is torn down (#300 exactly) shows up here as the two signatures being
+        // identical. That makes this assertion the #300 detector as much as the one below it,
+        // which is why the message has to name both possibilities rather than guess between them.
+        Assert.True(light != dark,
+            $"Both themes paint the navigation background {light} once Settings is left, so this " +
+            "test cannot tell them apart. Either switching theme never reaches the screen, or it " +
+            "reaches it and is then discarded when Settings is torn down (#300). Fix that before " +
+            "trusting anything else in this file.");
+
+        return (light, dark);
+    }
+
+    private SampledColor ThemeSignature(NdiApp app, ThemeOption theme)
+    {
+        ApplyTheme(app, theme);
+        app.Navigation.GoTo(NavDestination.Home);
+        app.Home.WaitUntilVisible();
+        return SampleNavBackground(app);
+    }
+
+    /// <summary>
+    /// Asserts the app is still painted in <paramref name="expected"/> rather than reverting.
+    /// </summary>
+    /// <remarks>
+    /// Nearest-of-two rather than exact equality. The comparison only has to separate two palettes
+    /// that differ enormously — #E5E5EA against #1C1C1E — and demanding an exact byte match would
+    /// make the test hostage to a single stray pixel in the screenshot.
+    /// </remarks>
+    private void AssertStillThemed(NdiApp app, SampledColor expected, SampledColor reverted, string because)
+    {
+        var actual = SampleNavBackground(app);
+
+        _output.WriteLine($"nav background now {actual} (expected ≈{expected}, reverted would be ≈{reverted})");
+
+        Assert.True(Distance(actual, expected) < Distance(actual, reverted),
+            $"{because}{Environment.NewLine}" +
+            $"The navigation background is {actual}, closer to the {reverted} it had under Light " +
+            $"than to the {expected} it had under Dark.");
+    }
+
+    private static int Distance(SampledColor a, SampledColor b) =>
+        Math.Abs(a.R - b.R) + Math.Abs(a.G - b.G) + Math.Abs(a.B - b.B);
 
     [SkippableFact]
     public void Theme_SwitchingLightToDark_ActuallyChangesWhatIsOnScreen() => Run(app =>
@@ -162,6 +228,13 @@ public sealed class ThemeRegressionTests : UiTestBase
     /// <summary>
     /// Selects a theme through Settings and applies it, leaving the app on a known page.
     /// </summary>
+    /// <remarks>
+    /// The result of <c>Apply</c> is deliberately ignored. Applying a theme the app is already on
+    /// is a no-op — the button is disabled and nothing is confirmed — and the postcondition these
+    /// tests need is "the app is on <paramref name="theme"/>", which holds either way. Since one
+    /// Appium session is shared by the whole collection, the starting theme is whatever the
+    /// previous test left, so this case is routine rather than exceptional.
+    /// </remarks>
     private static void ApplyTheme(NdiApp app, ThemeOption theme)
     {
         app.Rotate(ScreenOrientation.Portrait);
@@ -171,6 +244,5 @@ public sealed class ThemeRegressionTests : UiTestBase
         app.Settings.OpenSection(SettingsSection.Appearance);
         app.Settings.SelectTheme(theme);
         app.Settings.Apply();
-        app.Settings.WaitForApplied();
     }
 }

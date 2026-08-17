@@ -29,6 +29,55 @@ public sealed class SystemBarInsetTests : UiTestBase
     public SystemBarInsetTests(AppiumDriverFixture fixture, ITestOutputHelper output)
         : base(fixture) => _output = output;
 
+    [SkippableFact]
+    public void Navigation_RailItems_AreNotCoveredByTheNavigationBar() => Run(app =>
+    {
+        // #321, and the same defect as #296 on a different edge. In landscape the navigation bar
+        // leaves the bottom and takes a side; the rail is on a side; the window draws edge-to-edge.
+        // Measured before the fix: the bar owned x 0..168 while a rail item spanned x 28..224, so
+        // the centre a tap lands on (x=126) was underneath system UI and the press went to the
+        // system. The app went Home with no crash and nothing in the activity log, because it was
+        // never involved.
+        app.Rotate(ScreenOrientation.Landscape);
+        app.Navigation.GoTo(NavDestination.Home);
+        app.Home.WaitUntilVisible();
+
+        var bar = app.Metrics.NavigationBar;
+        Skip.If(!bar.Visible, "No navigation bar is shown, so nothing can be covered by one.");
+
+        var barLeft   = bar.X;
+        var barRight  = bar.X + bar.Width;
+        var barTop    = bar.Y;
+        var barBottom = bar.Y + bar.Height;
+
+        _output.WriteLine($"navigation bar occupies x {barLeft}..{barRight}, y {barTop}..{barBottom}");
+
+        foreach (var destination in Enum.GetValues<NavDestination>())
+        {
+            var element = app.Navigation.Item(destination);
+            var location = element.Location;
+            var size = element.Size;
+
+            // The centre, because that is where a tap is delivered. Asserting on the item's edge
+            // would pass while the majority of it — and the tap point — stayed under the bar.
+            var centreX = location.X + size.Width / 2;
+            var centreY = location.Y + size.Height / 2;
+
+            _output.WriteLine(
+                $"{destination}: {size.Width}x{size.Height} at ({location.X},{location.Y}), " +
+                $"tap point ({centreX},{centreY})");
+
+            var covered = centreX >= barLeft && centreX < barRight
+                       && centreY >= barTop  && centreY < barBottom;
+
+            Assert.False(covered,
+                $"The {destination} rail item's tap point ({centreX},{centreY}) is inside the " +
+                $"navigation bar (x {barLeft}..{barRight}, y {barTop}..{barBottom}), so a tap on " +
+                "it is delivered to the system instead of the app. This is the #321 failure mode — " +
+                "the rail is not inset from the navigation bar, so tapping it goes Home.");
+        }
+    });
+
     [SkippableTheory]
     [InlineData(ScreenOrientation.Portrait)]
     [InlineData(ScreenOrientation.Landscape)]

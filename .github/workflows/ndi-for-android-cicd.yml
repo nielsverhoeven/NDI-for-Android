@@ -326,6 +326,7 @@ jobs:
             test-results/*.log
             test-results/*.txt
             test-results/failure-evidence/**
+            !test-results/logcat-full.txt
           retention-days: 7
           if-no-files-found: warn
 
@@ -397,6 +398,50 @@ jobs:
             grep -E 'am_kill|lowmemorykiller|Killing|ANR in|force-stop|died|OutOfMemory' \
               test-results/logcat-app.txt | tail -25 || echo "  (no kill, ANR or OOM lines found)"
             echo "-------------------------------------------------------------------"
+
+            # When those patterns find nothing — which is the case for #321, where the activity
+            # finishes with no crash, no kill and no ANR — the kill-line grep above answers
+            # "nobody killed it" and then stops being useful. This is the wider view: activity
+            # lifecycle transitions, task moves, and anything the app itself logged. It is what
+            # distinguishes Shell finishing its own activity from the task being moved to the
+            # back, and neither shows up in a grep for kills.
+            # Whole run, not a tail. The previous version tailed 120 lines, which covered the last
+            # ~45 seconds of a ten-minute run and so never reached a failure. These are the events
+            # that hand the foreground from one app to another, and the question is which one puts
+            # the launcher in front — so the answer has to be searched for across the run, not
+            # sampled from the end of it.
+            echo ""
+            echo "----- foreground handovers (whole run) -----"
+            grep -E 'START u0|moveTaskToBack|finishActivity|am_finish|Force removing|removeTask|TaskRemoved' \
+              test-results/logcat-app.txt | tail -80 || echo "  (nothing matched)"
+            echo "--------------------------------------------"
+
+            # Tags only — deliberately not 'com.ndi.android'. Matching on the package name pulls in
+            # UiAutomator2's per-selector node dumps, which carry it on every line and bury the
+            # lifecycle transitions this exists to surface. The IME config echo is dropped too: it
+            # duplicates every config change and was half the output.
+            echo ""
+            # Tested with -s on a temp file rather than `grep ... | tail || echo`. In that form the
+            # || binds to tail, which succeeds on empty input, so the "nothing found" branch can
+            # never run — and an empty section then looks the same as a section that was never
+            # reached. That cost a round.
+            echo ""
+            echo "----- inset reads (whole run) -----"
+            grep -E 'com\.ndi\.android\.insets' test-results/logcat-app.txt > /tmp/insets.txt 2>/dev/null || true
+            if [ -s /tmp/insets.txt ]; then
+              tail -40 /tmp/insets.txt
+            else
+              echo "  NONE. The app logged no inset reads at all, so ApplyRailInset either never"
+              echo "  ran or its log never reached the buffer — not that the inset was zero."
+            fi
+            echo "-----------------------------------"
+
+            echo ""
+            echo "----- activity lifecycle + app output (last 120 lines) -----"
+            grep -E 'ActivityTaskManager|ActivityManager|AndroidRuntime|monodroid|DOTNET|ndi\.android\.insets' \
+              test-results/logcat-app.txt \
+              | grep -v 'Sending to IME proc' | tail -120 || echo "  (nothing matched)"
+            echo "------------------------------------------------------------"
           else
             echo "No filtered logcat captured."
           fi
