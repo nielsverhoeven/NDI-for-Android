@@ -19,6 +19,9 @@ cleanup() {
   if [[ -n "${APPIUM_PID:-}" ]]; then
     kill "$APPIUM_PID" 2>/dev/null || true
   fi
+  if [[ -n "${LOGCAT_PID:-}" ]]; then
+    kill "$LOGCAT_PID" 2>/dev/null || true
+  fi
 }
 trap cleanup EXIT
 
@@ -44,6 +47,16 @@ sleep 5
 echo "Installing APK: $APK_PATH"
 adb uninstall com.ndi.android >/dev/null 2>&1 || true
 adb install -r "$APK_PATH"
+
+# Capture logcat continuously, into a file, for the whole run — rather than `adb logcat -d` at the
+# end. UiAutomator2 logs the full accessibility node for every selector it matches, which is a
+# torrent, and the ring buffer wraps long before the run finishes: the app's own startup logging is
+# evicted by Appium's chatter and an end-of-run dump cannot recover it. Enlarging the buffer as
+# well, because a wrap is still possible between the clear and the first read.
+adb logcat -G 16M >/dev/null 2>&1 || true
+adb logcat -c >/dev/null 2>&1 || true
+adb logcat -v time > test-results/logcat-full.txt 2>&1 &
+LOGCAT_PID=$!
 
 echo "Starting Appium"
 appium --port 4723 --log-level info > "$APPIUM_LOG" 2>&1 &
@@ -124,8 +137,10 @@ if [[ "$TEST_EXIT" -ne 0 ]]; then
   # included — for every selector it matches, which is thousands of lines per run, all of them
   # containing 'com.ndi.android'. Without the exclusion the filtered log is ~99% Appium selector
   # dumps and the lifecycle lines that explain a failure are impossible to find in it.
-  adb logcat -d -v time 2>/dev/null \
-    | grep -E 'com\.ndi\.android|ActivityManager|ActivityTaskManager|lowmemorykiller|ANR|AndroidRuntime|monodroid|DOTNET' \
+  # Derived from the continuous capture, not from `adb logcat -d`: by this point the ring buffer
+  # has long since wrapped past anything the app logged at startup.
+  grep -E 'com\.ndi\.android|ActivityManager|ActivityTaskManager|lowmemorykiller|ANR|AndroidRuntime|monodroid|DOTNET' \
+    test-results/logcat-full.txt 2>/dev/null \
     | grep -vE 'QueryController|UiObject\(|UiSelector|I/appium|InteractionController' \
     > test-results/logcat-app.txt || true
   adb shell dumpsys package com.ndi.android 2>/dev/null | head -60 > test-results/package-info.txt || true
