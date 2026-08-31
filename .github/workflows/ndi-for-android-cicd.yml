@@ -47,15 +47,15 @@ jobs:
     timeout-minutes: 15
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup .NET SDK
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Cache NuGet packages
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.nuget/packages
           key: ${{ runner.os }}-nuget-tests-${{ hashFiles('**/*.csproj') }}
@@ -78,7 +78,7 @@ jobs:
 
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: unit-test-results
           path: |
@@ -104,7 +104,7 @@ jobs:
       tag_name: ${{ steps.v.outputs.tag_name }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0   # tags are the source of truth for the patch number
 
@@ -126,15 +126,15 @@ jobs:
     timeout-minutes: 30
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup .NET SDK
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Cache NuGet packages
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.nuget/packages
           key: ${{ runner.os }}-nuget-android-${{ hashFiles('**/*.csproj') }}
@@ -171,7 +171,7 @@ jobs:
           echo "Built $(basename "$APK_PATH")"
 
       - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: release-apk
           path: ${{ env.APK_PATH }}
@@ -199,10 +199,10 @@ jobs:
       E2E_REQUIRE_DEVICE: ${{ vars.E2E_REQUIRE_DEVICE || 'true' }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup Java
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '17'
@@ -210,12 +210,12 @@ jobs:
       # Required: the UITests project targets net10.0. Without this the job depends on
       # whichever SDK the runner image happens to ship.
       - name: Setup .NET SDK
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Cache NuGet packages
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.nuget/packages
           key: ${{ runner.os }}-nuget-uitests-${{ hashFiles('**/*.csproj') }}
@@ -225,7 +225,7 @@ jobs:
         run: dotnet restore tests/MauiApp.UITests/NdiForAndroid.UITests.csproj
 
       - name: Download APK artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: release-apk
           path: apk
@@ -241,7 +241,7 @@ jobs:
           echo "Using APK: $APK_PATH"
 
       - name: Setup Node.js for Appium
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: '22'
 
@@ -257,7 +257,7 @@ jobs:
           sudo udevadm trigger --name-match=kvm
 
       - name: Cache Android AVD and system image
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         id: avd-cache
         with:
           path: |
@@ -310,7 +310,7 @@ jobs:
 
       - name: Upload emulator test results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: emulator-test-results
           path: test-results/*.trx
@@ -319,7 +319,7 @@ jobs:
 
       - name: Upload emulator diagnostics
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: emulator-diagnostics
           path: |
@@ -420,7 +420,7 @@ jobs:
       contents: write
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -436,7 +436,7 @@ jobs:
           echo "$TAG is free."
 
       - name: Download APK artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: release-apk
           path: apk
