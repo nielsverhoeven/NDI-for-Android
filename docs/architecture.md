@@ -121,7 +121,7 @@ Rules:
    `[QueryProperty]` on `OutputPage`). Primary destinations (Home/Stream/View/Settings) must be
    navigated through `INavigationService.NavigateToPrimaryAsync(PrimaryNavDestination, string?
    queryString)` — placement-aware — never a hard-coded `//x-tab`/`//x-rail` route string.
-5. Placement-adaptive routing is handled by `AppShell` reading `AdaptiveShellStateViewModel.IsLeftRailNavigationVisible`; rail placement uses `//xxx-rail` routes, bottom-tab placement uses `//xxx-tab` routes.
+5. Placement-adaptive routing is handled by `ShellNavigationService` reading `AdaptiveShellStateViewModel.IsLeftRailNavigationVisible`; rail placement uses `//xxx-rail` routes, bottom-tab placement uses `//xxx-tab` routes.
 
 ### Window size classes and navigation placement (#279)
 
