@@ -160,7 +160,9 @@ public sealed class ThemeRegressionTests : UiTestBase
     }
 
     /// <summary>
-    /// Selects a theme through Settings and applies it, leaving the app on a known page.
+    /// Selects a theme through Settings, leaving the app on a known page. Settings auto-save, so
+    /// <see cref="SettingsPage.SelectTheme"/> confirming the radio button actually toggled is the
+    /// whole action — there is no separate Apply step to wait on.
     /// </summary>
     private static void ApplyTheme(NdiApp app, ThemeOption theme)
     {
@@ -170,7 +172,5 @@ public sealed class ThemeRegressionTests : UiTestBase
 
         app.Settings.OpenSection(SettingsSection.Appearance);
         app.Settings.SelectTheme(theme);
-        app.Settings.Apply();
-        app.Settings.WaitForApplied();
     }
 }

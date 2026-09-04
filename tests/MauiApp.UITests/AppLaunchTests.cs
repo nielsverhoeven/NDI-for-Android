@@ -138,8 +138,7 @@ public sealed class AppLaunchTests : UiTestBase
 
         app.Settings.OpenSection(SettingsSection.Discovery);
         app.Settings.DiscoveryHost = host;
-        app.Settings.Apply();
-        app.Settings.WaitForApplied();
+        Assert.Equal(host, app.Settings.DiscoveryHost);
 
         Skip.IfNot(app.TryRestart(), "App lifecycle commands are unavailable in this environment.");
 

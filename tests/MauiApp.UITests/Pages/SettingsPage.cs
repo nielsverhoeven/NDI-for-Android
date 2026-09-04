@@ -23,7 +23,8 @@ public enum ThemeOption
 }
 
 /// <summary>
-/// The Settings page: a section rail on the left, one visible panel on the right, Apply below.
+/// The Settings page: a section rail on the left, one visible panel on the right. Every change
+/// auto-saves; there is no Apply step.
 /// </summary>
 /// <remarks>
 /// Section panels are all present in the tree and toggled with <c>IsVisible</c>, so "is the
@@ -74,8 +75,8 @@ public sealed class SettingsPage : PageObject
     /// The confirmation is not ceremony. These radio buttons use a MAUI <c>ControlTemplate</c>
     /// rather than the native Android control, so the automation id sits on a container and a tap
     /// on it does not necessarily toggle anything. Without this check, a tap that silently does
-    /// nothing surfaces two calls later as "Settings applied never appeared" — which reads as a
-    /// broken Apply button rather than a selection that never happened.
+    /// nothing surfaces later as a theme assertion failure elsewhere in the test, which reads as
+    /// an unrelated defect rather than a selection that never happened.
     /// </remarks>
     public void SelectTheme(ThemeOption theme) =>
         LastThemeTapStrategy = TapUntilSet(ThemeId(theme), () => IsThemeSelected(theme));
@@ -96,16 +97,6 @@ public sealed class SettingsPage : PageObject
 
     private string CheckedState(ThemeOption theme) =>
         WaitFor(ThemeId(theme)).GetAttribute("checked") ?? "(no checked attribute)";
-
-    // ── Apply ────────────────────────────────────────────────────────────────
-
-    public void Apply() => Tap(TestIds.SettingsApply);
-
-    /// <summary>Waits for the "Settings applied." confirmation to appear.</summary>
-    public void WaitForApplied() =>
-        WaitFor(TestIds.SettingsAppliedNotice, Timeouts.Element, "Settings were not confirmed as applied");
-
-    public bool IsApplied => IsPresent(TestIds.SettingsAppliedNotice);
 
     private static string SectionButtonId(SettingsSection section) => section switch
     {
