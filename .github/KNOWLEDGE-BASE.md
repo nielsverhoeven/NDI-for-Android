@@ -88,6 +88,13 @@ Left navigation rail placement: same pages on `//home-rail`, `//stream-rail`, `/
 
 **Placement policy (#279)**: `WindowSizeClass` = Compact (<600dp) / Medium (600–840dp) / Expanded (>840dp), fed from `AppShell.OnSizeAllocated`. `NavigationPolicyService`: **rail when landscape OR Expanded, bottom tabs otherwise**. `AppShell` selects `-rail` vs `-tab` routes from `AdaptiveShellStateViewModel.IsLeftRailNavigationVisible`.
 
+## Output Session State + Home Quick Actions (#326 / #334 / #328 — branches feature/326-output-session-state, feature/328-home-quick-actions)
+- `INdiOutputBridge.IsActive` (lock-free `Volatile.Read` of the sender handle or the re-stream flag) is the only truth for "output is running"; the persisted `IsOutputActive` flag is a hint that must be corroborated. `OutputStatusChanged` is raised on every start/stop transition.
+- `IVideoCaptureSource`/`IAudioCaptureSource.Stopped` (`CaptureStoppedEventArgs.Reason`) fires only for autonomous stops (MediaProjection revoked, camera lost, mic loop error); `NdiOutputBridge` then stops the sender itself. Never raised for a caller-requested stop.
+- `OutputViewModel`: "Output session restored." only when the bridge corroborates; otherwise "Tap Start to resume output" (no period) and the persisted flag is cleared; "Output stopped" on an autonomous stop. `OutputPage` accepts `resume=true` (query) → `ApplyResumeRequestCommand` pre-fills the stream name and never starts capture.
+- `HomeViewModel` takes `INdiOutputBridge`; Output status and `CanResumeOutput` derive from `state.IsOutputActive && _outputBridge.IsActive`; quick actions are disabled (not hidden) when unavailable. Start Viewing Last Source calls `NavigateToPrimaryAsync(View)` BEFORE pushing `viewer?sourceId=` so the push lands under the View tab/rail (otherwise the handoff never stops the receiver).
+- Interim: the navigation handoff still stops output when leaving the Stream tab (removed by #327, background streaming).
+
 ## Settings Feature (Issue #142 — MERGED to main, PR #211)
 - **ViewModel**: `SettingsViewModel` — 5 sections: General, Appearance, Discovery, DeveloperTools, About
 - **Model**: `NdiSettingsSnapshot` — holds all persisted settings as immutable record
