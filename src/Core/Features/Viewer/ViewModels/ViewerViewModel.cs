@@ -37,6 +37,7 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
     private readonly IAppLifecycleService _lifecycle;
     private readonly ISourceRepository _sourceRepository;
     private readonly IConnectionHistoryService _connectionHistory;
+    private readonly IImmersiveModeService _immersiveMode;
 
     [ObservableProperty]
     private string? _sourceId;
@@ -107,7 +108,8 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
         IAppStateRepository appStateRepo,
         IAppLifecycleService lifecycle,
         ISourceRepository sourceRepository,
-        IConnectionHistoryService connectionHistory)
+        IConnectionHistoryService connectionHistory,
+        IImmersiveModeService immersiveMode)
     {
         _bridge = bridge;
         _timeProvider = timeProvider;
@@ -116,6 +118,7 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
         _lifecycle = lifecycle;
         _sourceRepository = sourceRepository;
         _connectionHistory = connectionHistory;
+        _immersiveMode = immersiveMode;
         RetryRemainingSeconds = ReconnectConstants.RetryWindowSeconds;
         StatusMessage = "Select a source on Home to start viewing.";
         _isAudioEnabled = bridge.IsAudioEnabled; // backing field: don't push the default back to the bridge
@@ -128,6 +131,7 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
     /// <summary>Forwards the user's audio toggle to the active bridge connection.</summary>
     partial void OnIsAudioEnabledChanged(bool value)
     {
+        NotifyControlInteraction();
         _bridge.IsAudioEnabled = value;
     }
 
@@ -248,6 +252,7 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
     private void Stop()
     {
         _userInitiatedStop = true;
+        IsFullScreen = false;
         DisposeTimers();
         _bridge.SetTally(onProgram: false, onPreview: false);
         _bridge.StopReceiver();
@@ -269,6 +274,8 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
     public void Dispose()
     {
         DisposeTimers();
+        _overlayAutoHideTimer?.Dispose();
+        _immersiveMode.KeepScreenOn(false);
         _userInitiatedStop = true;
         _lifecycle.AppResumed -= OnAppResumed;
         _bridge.ConnectionStateChanged -= OnBridgeConnectionStateChanged;
@@ -421,6 +428,7 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private void CancelRetry()
     {
+        NotifyControlInteraction();
         DisposeTimers();
         _reconnectState = ReconnectState.Idle;
         IsReconnecting = false;
@@ -434,6 +442,7 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private void Reconnect()
     {
+        NotifyControlInteraction();
         if (string.IsNullOrEmpty(SourceId) && string.IsNullOrEmpty(_lastSourceId))
             return;
 
@@ -492,6 +501,7 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private async Task ChangeQualityProfileAsync(object? param)
     {
+        NotifyControlInteraction();
         if (param is not string profileName) return;
 
         if (!Enum.TryParse<QualityProfile>(profileName, ignoreCase: true, out var profile)) return;

@@ -19,6 +19,7 @@ public class ViewerViewModelTests
     private readonly Mock<IAppLifecycleService> _lifecycleMock = new();
     private readonly Mock<ISourceRepository> _sourceRepoMock = new();
     private readonly Mock<IConnectionHistoryService> _connectionHistoryMock = new();
+    private readonly Mock<IImmersiveModeService> _immersiveModeMock = new();
 
     public ViewerViewModelTests()
     {
@@ -33,7 +34,7 @@ public class ViewerViewModelTests
             .ReturnsAsync(new List<NdiForAndroid.Features.Sources.Models.NdiSource>());
     }
 
-    private ViewerViewModel CreateSut() => new(_bridgeMock.Object, _timeProvider, _dispatcher, _appStateRepoMock.Object, _lifecycleMock.Object, _sourceRepoMock.Object, _connectionHistoryMock.Object);
+    private ViewerViewModel CreateSut() => new(_bridgeMock.Object, _timeProvider, _dispatcher, _appStateRepoMock.Object, _lifecycleMock.Object, _sourceRepoMock.Object, _connectionHistoryMock.Object, _immersiveModeMock.Object);
 
     [Fact]
     public void StartCommand_WithSourceId_StartsReceiverAndSetsIsPlaying()

@@ -28,6 +28,7 @@ public class SourceListViewModelTests
     private readonly Mock<INdiViewerBridge> _viewerBridgeMock = new();
     private readonly Mock<IAppLifecycleService> _lifecycleMock = new();
     private readonly Mock<IConnectionHistoryService> _connectionHistoryMock = new();
+    private readonly Mock<IImmersiveModeService> _immersiveModeMock = new();
 
     private int _viewerFactoryInvocations;
 
@@ -51,7 +52,8 @@ public class SourceListViewModelTests
             _appStateRepoMock.Object,
             _lifecycleMock.Object,
             _repositoryMock.Object,
-            _connectionHistoryMock.Object);
+            _connectionHistoryMock.Object,
+            _immersiveModeMock.Object);
     }
 
     private SourceListViewModel CreateSut(
