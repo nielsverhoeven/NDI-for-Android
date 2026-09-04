@@ -45,6 +45,17 @@ public sealed record CapturedAudioChunk(
     float[] InterleavedSamples,
     int FrameCount);
 
+public enum CaptureStopReason
+{
+    ProjectionStopped,
+    CameraDisconnected,
+    CameraError,
+    DeviceError,
+}
+
+/// <summary>Raised only for an autonomous stop — never for a caller-requested StopAsync().</summary>
+public sealed record CaptureStoppedEventArgs(CaptureStopReason Reason, string? Message = null);
+
 /// <summary>
 /// Platform video capture (screen via MediaProjection, camera via Camera2).
 /// Frames are raised on a capture thread — never the UI thread.
@@ -52,6 +63,10 @@ public sealed record CapturedAudioChunk(
 public interface IVideoCaptureSource
 {
     event EventHandler<CapturedVideoFrame>? FrameReady;
+
+    /// <summary>Raised (on a native callback thread) when capture stops itself autonomously —
+    /// NEVER for a caller-requested StopAsync().</summary>
+    event EventHandler<CaptureStoppedEventArgs>? Stopped;
 
     bool IsActive { get; }
 
@@ -69,6 +84,8 @@ public interface IVideoCaptureSource
 public interface IAudioCaptureSource
 {
     event EventHandler<CapturedAudioChunk>? ChunkReady;
+
+    event EventHandler<CaptureStoppedEventArgs>? Stopped;
 
     bool IsActive { get; }
 

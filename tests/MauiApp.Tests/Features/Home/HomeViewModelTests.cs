@@ -5,6 +5,7 @@ using NdiForAndroid.Features.Home.ViewModels;
 using NdiForAndroid.Features.Navigation.Services;
 using NdiForAndroid.Features.Sources.Models;
 using NdiForAndroid.Features.Sources.Repositories;
+using NdiForAndroid.NdiBridge;
 using NdiForAndroid.Services;
 using Xunit;
 
@@ -16,6 +17,7 @@ public class HomeViewModelTests
     private readonly Mock<ISourceRepository> _sourceRepositoryMock = new();
     private readonly Mock<IAppStateRepository> _appStateRepoMock = new();
     private readonly Mock<INavigationService> _navigationServiceMock = new();
+    private readonly Mock<INdiOutputBridge> _outputBridgeMock = new();
     private readonly FakeMainThreadDispatcher _dispatcher = new();
 
     public HomeViewModelTests()
@@ -33,6 +35,7 @@ public class HomeViewModelTests
         _sourceRepositoryMock.Object,
         _appStateRepoMock.Object,
         _navigationServiceMock.Object,
+        _outputBridgeMock.Object,
         _dispatcher);
 
     [Fact]
@@ -78,5 +81,59 @@ public class HomeViewModelTests
             DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()));
 
         Assert.Equal(1, sut.SourceCount);
+    }
+
+    [Fact]
+    public void RefreshCommand_WhenAppStateActiveButBridgeNotActive_ShowsIdle()
+    {
+        _appStateRepoMock.Setup(r => r.RestoreStateAsync())
+            .ReturnsAsync(new AppStateSnapshot(null, "X", true, null));
+        _outputBridgeMock.SetupGet(b => b.IsActive).Returns(false);
+
+        var sut = CreateSut();
+
+        Assert.Equal("Idle (no active output)", sut.OutputStatus);
+    }
+
+    [Fact]
+    public void RefreshCommand_WhenAppStateActiveAndBridgeActive_ShowsActiveOutput()
+    {
+        _appStateRepoMock.Setup(r => r.RestoreStateAsync())
+            .ReturnsAsync(new AppStateSnapshot(null, "X", true, null));
+        _outputBridgeMock.SetupGet(b => b.IsActive).Returns(true);
+
+        var sut = CreateSut();
+
+        Assert.Equal("Active output to \"X\"", sut.OutputStatus);
+    }
+
+    [Fact]
+    public void OutputStatusChanged_FromBridge_RefreshesOutputStatus()
+    {
+        var sut = CreateSut();
+        Assert.Equal("Idle (no active output)", sut.OutputStatus);
+
+        _appStateRepoMock.Setup(r => r.RestoreStateAsync())
+            .ReturnsAsync(new AppStateSnapshot(null, "X", true, null));
+        _outputBridgeMock.SetupGet(b => b.IsActive).Returns(true);
+
+        _outputBridgeMock.Raise(b => b.OutputStatusChanged += null, EventArgs.Empty);
+
+        Assert.Equal("Active output to \"X\"", sut.OutputStatus);
+    }
+
+    [Fact]
+    public void Dispose_UnsubscribesFromOutputStatusChanged()
+    {
+        var sut = CreateSut();
+        sut.Dispose();
+
+        _appStateRepoMock.Setup(r => r.RestoreStateAsync())
+            .ReturnsAsync(new AppStateSnapshot(null, "X", true, null));
+        _outputBridgeMock.SetupGet(b => b.IsActive).Returns(true);
+
+        _outputBridgeMock.Raise(b => b.OutputStatusChanged += null, EventArgs.Empty);
+
+        Assert.Equal("Idle (no active output)", sut.OutputStatus);
     }
 }

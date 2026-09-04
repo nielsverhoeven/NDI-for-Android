@@ -96,6 +96,11 @@ public interface INdiOutputBridge
 
     Task StopOutputAsync(CancellationToken cancellationToken = default);
 
+    /// <summary>True while either a capture-output sender or a re-stream sender holds a live
+    /// native handle — the authoritative "is output really active" signal, independent of any
+    /// persisted app-state claim.</summary>
+    bool IsActive { get; }
+
     /// <summary>True while any connected receiver reports this sender on program tally.</summary>
     bool IsOnProgramTally { get; }
 
@@ -103,8 +108,8 @@ public interface INdiOutputBridge
     int ConnectionCount { get; }
 
     /// <summary>
-    /// Raised (on a background thread) when <see cref="IsOnProgramTally"/> or
-    /// <see cref="ConnectionCount"/> changed. Subscribers marshal to the UI thread.
+    /// Raised (on a background thread) when <see cref="IsActive"/>, <see cref="IsOnProgramTally"/>,
+    /// or <see cref="ConnectionCount"/> changed. Subscribers marshal to the UI thread.
     /// </summary>
     event EventHandler? OutputStatusChanged;
 
