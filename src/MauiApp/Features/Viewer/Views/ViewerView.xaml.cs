@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Runtime.InteropServices;
 using Microsoft.Extensions.DependencyInjection;
+using NdiForAndroid.Features.Viewer;
 using NdiForAndroid.Features.Viewer.ViewModels;
 using NdiForAndroid.NdiBridge;
 using SkiaSharp;
@@ -45,6 +46,7 @@ public partial class ViewerView : ContentView
         InitializeComponent();
 
         VideoCanvas.PaintSurface += OnPaintSurface;
+        SizeChanged += (_, _) => UpdateLayoutVisibility();
     }
 
     /// <summary>Starts (or resumes) the ~30 fps frame pull loop. Idempotent.</summary>
@@ -103,10 +105,27 @@ public partial class ViewerView : ContentView
 
         if (_boundViewModel is not null)
             _boundViewModel.PropertyChanged += OnViewModelPropertyChanged;
+
+        UpdateLayoutVisibility();
+    }
+
+    private void UpdateLayoutVisibility()
+    {
+        var isFullScreen = _boundViewModel?.IsFullScreen ?? false;
+        var layout = ViewerControlLayout.Choose(Width, Height);
+
+        // IsFullScreen is shared VM state, so the donor instance sees it too; only the
+        // modal host may show the full-screen overlay.
+        Overlay.IsVisible = isFullScreen && IsModalHost;
+        Deck.IsVisible = !isFullScreen && layout == ViewerControlLayoutKind.Deck;
+        Sheet.IsVisible = !isFullScreen && layout == ViewerControlLayoutKind.Sheet;
     }
 
     private async void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
+        if (e.PropertyName == nameof(ViewerViewModel.IsFullScreen))
+            UpdateLayoutVisibility();
+
         if (IsModalHost) return;
         if (e.PropertyName != nameof(ViewerViewModel.IsFullScreen)) return;
         if (BindingContext is not ViewerViewModel vm || !vm.IsFullScreen) return;

@@ -11,13 +11,14 @@ using NdiForAndroid.Features.Viewer.ViewModels;
 using NdiForAndroid.NdiBridge;
 using NdiForAndroid.Services;
 using Xunit;
+using MsFakeTimeProvider = Microsoft.Extensions.Time.Testing.FakeTimeProvider;
 
 namespace NdiForAndroid.Tests.Features.Viewer;
 
 public class ViewerViewModelTests
 {
     private readonly Mock<INdiViewerBridge> _bridgeMock = new();
-    private readonly FakeTimeProvider _timeProvider = new(initialSeconds: 0);
+    private readonly MsFakeTimeProvider _timeProvider = new();
     private readonly FakeMainThreadDispatcher _dispatcher = new();
     private readonly Mock<IAppStateRepository> _appStateRepoMock = new();
     private readonly Mock<IAppLifecycleService> _lifecycleMock = new();
@@ -333,5 +334,55 @@ public class ViewerViewModelTests
             r => r.SavePtzOverrideAsync("src-1", It.Is<PtzEndpoint>(e => e != null && e.Host == "10.0.0.5" && e.Port == 5678)),
             Times.Once);
         _ptzControllerFactoryMock.Verify(f => f.Create(It.IsAny<PtzEndpoint?>()), Times.AtLeast(2));
+    }
+
+    [Fact]
+    public async Task PtzStorePresetCommand_StoresAndSetsConfirmationThenClearsAfterDelay()
+    {
+        var sut = CreateSut();
+
+        await sut.PtzStorePresetCommand.ExecuteAsync(3);
+
+        _ptzControllerMock.Verify(c => c.StorePresetAsync(3, It.IsAny<CancellationToken>()), Times.Once);
+        Assert.Equal("Preset 3 stored", sut.PtzPresetStatusMessage);
+
+        _timeProvider.Advance(TimeSpan.FromSeconds(2));
+
+        Assert.Null(sut.PtzPresetStatusMessage);
+    }
+
+    [Fact]
+    public async Task PtzRecallPresetCommand_Recalls()
+    {
+        var sut = CreateSut();
+
+        await sut.PtzRecallPresetCommand.ExecuteAsync(5);
+
+        _ptzControllerMock.Verify(c => c.RecallPresetAsync(5, It.IsAny<float>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public void IsPtzControlActive_TrueWhenPtzSupported()
+    {
+        var sut = CreateSut();
+
+        _bridgeMock.SetupGet(b => b.IsPtzSupported).Returns(true);
+        _bridgeMock.Raise(b => b.ConnectionStateChanged += null, _bridgeMock.Object, ConnectionState.Connected);
+
+        Assert.True(sut.IsPtzControlActive);
+    }
+
+    [Fact]
+    public void IsPtzControlActive_FalseWhenNoPtzSupportAndNoOverride()
+    {
+        var sut = CreateSut();
+
+        Assert.False(sut.IsPtzControlActive);
+    }
+
+    [Fact]
+    public void PresetNumbers_IsOneToEight()
+    {
+        Assert.Equal(Enumerable.Range(1, 8), ViewerViewModel.PresetNumbers);
     }
 }

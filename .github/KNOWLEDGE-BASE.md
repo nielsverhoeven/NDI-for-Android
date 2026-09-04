@@ -34,6 +34,8 @@ dotnet test tests/MauiApp.Tests             # Non-NDI unit tests — must pass b
 | Capture source contracts | `src/Core/Services/ICaptureSources.cs`, `IAudioPlaybackSink.cs`, `INdiPlatformBootstrap.cs` |
 | Android capture/audio/NSD services | `src/MauiApp/Platforms/Android/Services/` (`AndroidVideoCaptureSource`, `AndroidMicrophoneCaptureSource`, `AndroidAudioPlaybackSink`, `AndroidNsdBootstrap`, `ScreenShareForegroundService`) |
 | Reusable NDI render surface | `src/MauiApp/Features/Viewer/Views/ViewerView.xaml(.cs)` (SkiaSharp, ~30 fps pull loop) |
+| Viewer control deck / sheet / overlay (#342) | `src/MauiApp/Features/Viewer/Views/PlaybackControlsView.xaml(.cs)`, `CameraControlsView.xaml(.cs)`, `ViewerControlDeck.xaml(.cs)`, `ViewerControlSheet.xaml(.cs)`, `FullScreenControlsOverlay.xaml(.cs)` — `PtzPanelView` removed, superseded by `CameraControlsView` |
+| Viewer control layout policy (Core, unit-tested) | `src/Core/Features/Viewer/ViewerControlLayout.cs` (`ViewerControlLayout.Choose(widthDp, heightDp)` → Deck when width ≥ 640dp and height ≥ 470dp, else Sheet) |
 | Window size class + nav policy | `src/Core/Features/Navigation/Services/` (`WindowSizeClassService`, `NavigationPolicyService`) |
 | SQLite/Data layer | `src/MauiApp/Data/` |
 | Android platform services | `src/MauiApp/Platforms/Android/` |
@@ -70,6 +72,7 @@ tests/
 3. **No business logic in Views** — Views are pure XAML + bindings
 4. **NDI threading**: bridge events (`ConnectionStateChanged`, `TallyEchoChanged`, `OutputStatusChanged`) are raised on pump/background threads — subscribers marshal to the UI thread (`IMainThreadDispatcher` in Core, `MainThread.BeginInvokeOnMainThread` in MauiApp)
 5. **Android APIs** isolated in `Platforms/Android/` behind interfaces
+6. **No root `IsVisible` binding on a reusable `ContentView`** — a `View.SetValue` from host code-behind clears an active one-way binding on that same property, so a `ContentView` reused across multiple hosts (e.g. `CameraControlsView` inside both `ViewerControlDeck` and `ViewerControlSheet`) must bind visibility on an *inner* element and leave its own root free for the host to toggle imperatively (`.IsVisible = ...`) without side effects. See #342 (`ViewerControlDeck`/`ViewerControlSheet`/`FullScreenControlsOverlay`).
 
 ## Shell Routes
 
