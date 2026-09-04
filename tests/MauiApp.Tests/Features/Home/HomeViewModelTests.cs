@@ -187,6 +187,18 @@ public class HomeViewModelTests
     }
 
     [Fact]
+    public void RefreshCommand_WhenStreamNamePersistedAndOutputNotActive_EnablesCanResumeOutput()
+    {
+        _appStateRepoMock.Setup(r => r.RestoreStateAsync())
+            .ReturnsAsync(new AppStateSnapshot(null, "name", false, null));
+        _outputBridgeMock.SetupGet(b => b.IsActive).Returns(false);
+
+        var sut = CreateSut();
+
+        Assert.True(sut.CanResumeOutput);
+    }
+
+    [Fact]
     public void ResumeOutputCommand_WhenNoPersistedStreamName_IsDisabled()
     {
         var sut = CreateSut();
