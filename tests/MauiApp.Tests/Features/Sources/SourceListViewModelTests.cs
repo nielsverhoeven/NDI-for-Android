@@ -32,6 +32,7 @@ public class SourceListViewModelTests
     private readonly Mock<IConnectionHistoryService> _connectionHistoryMock = new();
     private readonly Mock<IPtzControllerFactory> _ptzControllerFactoryMock = new();
     private readonly Mock<IPtzController> _ptzControllerMock = new();
+    private readonly Mock<IImmersiveModeService> _immersiveModeMock = new();
 
     private int _viewerFactoryInvocations;
 
@@ -60,7 +61,8 @@ public class SourceListViewModelTests
             _repositoryMock.Object,
             _connectionHistoryMock.Object,
             _ptzControllerFactoryMock.Object,
-            new PtzEndpointFormViewModel(_ptzControllerFactoryMock.Object));
+            new PtzEndpointFormViewModel(_ptzControllerFactoryMock.Object),
+            _immersiveModeMock.Object);
     }
 
     private SourceListViewModel CreateSut(

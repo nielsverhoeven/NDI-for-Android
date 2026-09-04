@@ -25,6 +25,7 @@ public class ViewerViewModelTests
     private readonly Mock<IConnectionHistoryService> _connectionHistoryMock = new();
     private readonly Mock<IPtzControllerFactory> _ptzControllerFactoryMock = new();
     private readonly Mock<IPtzController> _ptzControllerMock = new();
+    private readonly Mock<IImmersiveModeService> _immersiveModeMock = new();
 
     public ViewerViewModelTests()
     {
@@ -45,7 +46,8 @@ public class ViewerViewModelTests
     private ViewerViewModel CreateSut() => new(
         _bridgeMock.Object, _timeProvider, _dispatcher, _appStateRepoMock.Object, _lifecycleMock.Object,
         _sourceRepoMock.Object, _connectionHistoryMock.Object,
-        _ptzControllerFactoryMock.Object, new PtzEndpointFormViewModel(_ptzControllerFactoryMock.Object));
+        _ptzControllerFactoryMock.Object, new PtzEndpointFormViewModel(_ptzControllerFactoryMock.Object),
+        _immersiveModeMock.Object);
 
     [Fact]
     public void StartCommand_WithSourceId_StartsReceiverAndSetsIsPlaying()

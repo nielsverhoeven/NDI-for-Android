@@ -31,6 +31,41 @@ unconditionally. Rule 5's intent is to keep Android APIs out of **Core** and out
 
 ## Verdicts log
 
+### 2026-09-04 — #338 Full-screen viewer (chromeless modal, 3rd `ViewerView` host)
+
+**APPROVE-WITH-CHANGES.** Option B (chromeless `FullScreenViewerPage` pushed via
+`Navigation.PushModalAsync`, hosting a 2nd `ViewerView` bound to the donor's live
+`ViewerViewModel`) is accepted; a **third `ViewerView` host** is a sanctioned extension of
+`docs/architecture.md:131` ("shared by `ViewerPage` and the embedded pane") and must be
+documented in T13. `IImmersiveModeService` (Enter/Exit/KeepScreenOn) in `src/Core/Services/`
+with `Platforms/Android/Services/AndroidImmersiveModeService` + `Services/NoopImmersiveModeService`
+fits Rule 5 and mirrors `IMulticastLockService`. Blocking changes:
+
+1. **plan.md §3 / FR11 "no `AppShell.xaml.cs` change" is REJECTED as an unverified claim.**
+   MAUI 10 (`Microsoft.Maui.Controls` `10.*`) Shell integrates modal pages into its navigation
+   state; `AppShell.OnNavigating` (`AppShell.xaml.cs:210`) + `ParseDestination` (`:267`) use
+   substring `Contains`, so an implicit modal route containing "view" would misclassify. Required:
+   guard at the top of `OnNavigating` (after `base`) — `if (Navigation?.ModalStack?.Count > 0)
+   return;` (plus `ShellNavigationSource.PushModal/PopModal` if those values exist on the target
+   MAUI version). New task T2a.
+2. **`ViewerPage.OnDisappearing` (`ViewerPage.xaml.cs:35-48`) must be hardened.** Its
+   `NavigationStack.Contains(this)` guard is the only thing between a modal push and
+   `_viewModel.Dispose()`. Add `Shell.Current?.Navigation?.ModalStack?.Count > 0` as an
+   additional skip condition. FR11's "no donor page changes" is therefore amended.
+3. **Keep-screen-on must be released on teardown**: `ViewerViewModel.Dispose()` must call
+   `_immersiveMode.KeepScreenOn(false)` — `Dispose()` does not set `IsPlaying = false`, so the
+   flag would otherwise leak for the process lifetime.
+4. **`AndroidImmersiveModeService` marshals to the UI thread itself** (`MainThread.
+   BeginInvokeOnMainThread`) for all three members; Core must not learn about threading here.
+5. **Modal `ViewerView` teardown is mandatory** (transient page + `SKBitmap` + un-unsubscribed
+   `PropertyChanged` = ~8 MB leaked per full-screen entry).
+6. **Test seam: use `Microsoft.Extensions.Time.Testing.FakeTimeProvider`** (already referenced by
+   `tests/MauiApp.Tests`), not `InternalsVisibleTo`. T5 is dropped.
+7. `#AA000000` → `{DynamicResource ScrimBackground}` (`Resources/Styles/Colors.xaml:31`).
+8. Full-screen members live in `ViewerViewModel.FullScreen.cs` (partial); PTZ
+   `NotifyControlInteraction()` wiring is **deferred to the #338+#339 integrator**
+   (those methods move to `ViewerViewModel.Ptz.cs` on the parallel branch).
+
 ### 2026-09-04 — Soak-test logcat instrumentation (NdiViewerBridge stats + LogBridgeEvent mirror)
 
 **APPROVE-WITH-CHANGES.** Runtime `IsDiagnosticOverlayService.IsDeveloperMode` gate accepted as the
