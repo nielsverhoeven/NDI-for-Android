@@ -117,6 +117,18 @@ public partial class OutputViewModel : ObservableObject, IDisposable
         });
     }
 
+    /// <summary>Applies an inbound re-stream request from a deep link or the Sources page.</summary>
+    public void ApplyReStreamRequest(string? sourceId, bool isReStreamMode)
+    {
+        if (string.IsNullOrWhiteSpace(sourceId))
+            return;
+
+        ReStreamSourceId = sourceId;
+        IsReStreamMode = isReStreamMode;
+        StreamName = "NDI-" + new string(sourceId.Where(char.IsLetterOrDigit).Take(32).ToArray());
+        StatusMessage = "Re-stream mode: ready — tap Start to begin.";
+    }
+
     [RelayCommand]
     private async Task ToggleReStreamModeAsync()
     {
@@ -125,7 +137,7 @@ public partial class OutputViewModel : ObservableObject, IDisposable
         if (IsReStreamMode)
         {
             // When switching to re-stream mode, default stream name uses the source identifier.
-            StreamName = $"NDI-{string.Concat(ReStreamSourceId!.TakeWhile(char.IsLetterOrDigit)).Take(32)}";
+            StreamName = "NDI-" + new string(ReStreamSourceId!.Where(char.IsLetterOrDigit).Take(32).ToArray());
             StatusMessage = "Re-stream mode: select a discovered source on the Sources page.";
         }
         else

@@ -1,4 +1,5 @@
 using NdiForAndroid.Features.DeepLinking.Services;
+using NdiForAndroid.Features.Navigation.Models;
 using NdiForAndroid.NdiBridge;
 using Microsoft.Extensions.DependencyInjection;
 using NdiForAndroid.Services;
@@ -42,7 +43,7 @@ public sealed class DeepLinkService : IDeepLinkService
                 return false;
             }
 
-            var path = uri.AbsolutePath.TrimStart('/');
+            var action = string.IsNullOrEmpty(uri.Host) ? uri.AbsolutePath.Trim('/') : uri.Host;
             var query = uri.Query.TrimStart('?');
             var sourceId = ParseQueryString(query, "sourceId");
 
@@ -70,8 +71,8 @@ public sealed class DeepLinkService : IDeepLinkService
                 }
             }
 
-            // Route based on path segment
-            switch (path.ToLowerInvariant())
+            // Route based on the action derived from the host (or path fallback)
+            switch (action.ToLowerInvariant())
             {
                 case "view":
                     await NavigateToViewerAsync(sourceId);
@@ -82,7 +83,7 @@ public sealed class DeepLinkService : IDeepLinkService
                     return true;
 
                 default:
-                    _lastErrorMessage = $"Unknown action '{path}'. Use 'view' or 'stream'.";
+                    _lastErrorMessage = $"Unknown action '{action}'. Use 'view' or 'stream'.";
                     return false;
             }
         }
@@ -91,18 +92,24 @@ public sealed class DeepLinkService : IDeepLinkService
             _lastErrorMessage = "Invalid deep link: malformed URI.";
             return false;
         }
+        catch (Exception ex)
+        {
+            _lastErrorMessage = $"Navigation failed: {ex.Message}";
+            return false;
+        }
     }
 
     private async Task NavigateToViewerAsync(string sourceId)
     {
         // Navigate to the viewer page and set the selected source
-        await _navigation.NavigateToAsync($"//viewer?sourceId={Uri.EscapeDataString(sourceId)}");
+        await _navigation.NavigateToAsync($"viewer?sourceId={Uri.EscapeDataString(sourceId)}");
     }
 
     private async Task NavigateToOutputForReStreamAsync(string sourceId)
     {
-        // Navigate to the output page in re-stream mode with the source ID pre-set
-        await _navigation.NavigateToAsync($"//output?reStreamSourceId={Uri.EscapeDataString(sourceId)}&isReStreamMode=true");
+        await _navigation.NavigateToPrimaryAsync(
+            PrimaryNavDestination.Stream,
+            $"reStreamSourceId={Uri.EscapeDataString(sourceId)}&isReStreamMode=true");
     }
 
     private static string? ParseQueryString(string query, string key)
