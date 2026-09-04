@@ -104,6 +104,7 @@ Placement-change path is safe: `EnsurePrimaryDestinationVisibleAsync` keeps the 
 `from == to` short-circuits (`NdiNavigationHandoffService.cs:29`). Guard `ApplyPlacement`'s dispatched
 `GoToAsync` against landing while a deferral is pending.
 
+<<<<<<< HEAD
 ### 2026-09-04 — B: Home quick actions (#328)
 
 **APPROVE-WITH-CHANGES.** T001 AWC · T002 REJECT · T003 AWC · T004 AWC · T005 A · T006 AWC ·
@@ -148,6 +149,75 @@ file.
 6. Not starting capture from `ApplyResumeRequestAsync` is the correct invariant — no silent
    MediaProjection re-consent. All tests remain reachable from `tests/MauiApp.Tests`; only T004's
    visual disabled state needs device verification.
+=======
+### 2026-09-04 — A: Output session lifecycle (#326 + #334 slice 1; #327 slice 2)
+
+**APPROVE-WITH-CHANGES (slice 1). APPROVE-WITH-CHANGES + HOLD (slice 2).**
+Per-task: T001 A · T002 A · T003 A · T004 AWC · T005 A · T006 AWC · T007 AWC · T008 AWC ·
+T009–T012 A · T013 AWC(hold) · T014 AWC · T015 A · T016 AWC.
+
+Binding changes:
+1. **T006 — `IsActive` must not take `_sendLock`.** `_sendLock` is held across the synchronous
+   `NDIlib_send_send_video_v2` at 30 fps (`NdiOutputBridge.cs:256-263`); both ViewModels read
+   `IsActive` on the UI thread. Use `Volatile.Read(ref _send) != IntPtr.Zero || _reStreamRunning`
+   (IntPtr read is atomic on both packaged ABIs). **`IsActive` must never acquire `_outputLock`** —
+   `RaiseOutputStatusChanged` is invoked while `_outputLock` is held.
+2. **T004 — guard `RaiseStopped` with `if (!_isActive) return;`.** The "never on a caller-requested
+   stop" invariant currently rests only on `UnregisterCallback` preceding `projection.Stop()`
+   (`AndroidVideoCaptureSource.cs:122,125`). Mirror the mic's `_running` guard.
+3. **T007 — wrap `OnAppResumed`'s post-`await` mutations in `_dispatcher.BeginInvokeOnMainThread`**
+   (Rule 4; `async void` + `await` continuation).
+4. **T008 — `INdiOutputBridge` in `HomeViewModel` is APPROVED** (Core interface, Dependency Rule 2;
+   Home's charter is the output/viewer status summary). Known debt: `HomeViewModel` is transient
+   (`MauiProgram.cs:125`) and `HomePage` must not dispose it (ShellContent tab root — FIX-02 rule),
+   so the `Dispose()` unsubscribe is dead code and ≤2 stale VMs stay subscribed to the singleton
+   bridge. Same shape as `OutputViewModel` today; accepted, follow-up issue owed for tab-root VM
+   lifetime. Use `_ = RefreshCommand.ExecuteAsync(null)` (AsyncRelayCommand suppresses concurrent
+   executions).
+5. **T013 must not merge before slice 1 is device-verified.** It removes the only code that clears
+   persisted `IsOutputActive` on leaving Stream; the corroboration path replaces it.
+6. **T016 — add a check for `StartCommandResult.Sticky`** (`ScreenShareForegroundService.cs:52`): a
+   sticky restart delivers a null intent, falling through to `StartForeground(TypeMediaProjection)`
+   with no live projection (API 34+ SecurityException). Likely surfaced by background testing;
+   treat a fix as new scope.
+
+Confirmed real: mic `_running` never reset on autonomous loop exit
+(`AndroidMicrophoneCaptureSource.cs:96,104` vs `IsActive => _running` at `:26`). The
+`|| wasActive` addition to `StopOutputCoreAsync`'s `statusChanged` is not a pre-existing bug — it
+is a required consequence of adding `IsActive` to the `OutputStatusChanged` contract.
+No deadlock in the `Stopped` → `StopOutputAsync` path (all waits are async `SemaphoreSlim`).
+`IPlatformApplication.Current.Services.GetService` in the FGS is accepted (OS-constructed `Service`,
+`MainActivity` precedent) — confine it to the `ActionStopRequested` branch.
+Doc debt: `docs/architecture.md` Navigation rule 4 must gain the `resume` query parameter.
+
+### 2026-09-04 — B: Home quick actions (#328)
+
+**APPROVE-WITH-CHANGES.** T001 AWC · T002 REJECT · T003 AWC · T004 AWC · T005 A · T006 AWC ·
+T007–T010 AWC. #328 lands **after** A, on top of A's `HomeViewModel`.
+
+1. **T002 REJECT — `NavigateToAsync("viewer?sourceId=…")` from Home pushes under `//home-tab`.**
+   `AppShell.ParseDestination` matches `home` first (`AppShell.xaml.cs:274`), so the location
+   resolves to **Home**, the handoff's `View` branch never fires, and `ViewerViewModel.Dispose()`
+   does **not** call `StopReceiver()` — the NDI receiver leaks (docs/architecture.md NDI Bridge
+   rule 4). Fix: `await NavigateToPrimaryAsync(PrimaryNavDestination.View);` then
+   `await NavigateToAsync($"viewer?sourceId={Uri.EscapeDataString(...)}")`. Alternative (larger):
+   make `ViewerViewModel.Dispose()` stop the receiver.
+2. **T001/T003 seam over A (exact).** No 7th ctor param — reuse A's `_outputBridge`. In
+   `RefreshAsync`'s dispatcher block: `var outputActive = state.IsOutputActive && _outputBridge.IsActive;`
+   → `OutputStatus` from `outputActive`; `LastOutputStreamName = state.StreamName;`
+   `CanResumeOutput = !outputActive && !string.IsNullOrWhiteSpace(state.StreamName);`. B's
+   persisted-only interim rule is **replaced**, not kept. A's `OnOutputStatusChanged` → Refresh
+   makes `[NotifyCanExecuteChangedFor]` live for free.
+3. **T006 REQUIRED — drop `state.IsOutputActive` from `ApplyResumeRequestAsync`'s gate.** After A
+   the flag is cleared on non-corroborated resume, so the command would be dead. Gate on
+   `!string.IsNullOrWhiteSpace(state.StreamName)` only, and use A's exact string
+   `"Tap Start to resume output"` (no trailing period) in both ViewModels and both test sets.
+4. **T004 — disabled-not-hidden APPROVED**; verify on device that the explicit
+   `BackgroundColor="{DynamicResource Primary}"` still yields a visibly disabled state (add a
+   `Disabled` VisualState using `DynamicResource` if not).
+5. Not starting capture from `ApplyResumeRequestAsync` is the correct invariant — no silent
+   MediaProjection re-consent.
+>>>>>>> feature/326-output-session-state
 
 ## Open questions / assumptions
 

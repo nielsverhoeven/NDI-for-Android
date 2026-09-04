@@ -97,13 +97,34 @@ public partial class OutputViewModel : ObservableObject, IDisposable
 
     private async void OnAppResumed()
     {
-        // Re-attach output session on resume if there was an active stream
+        // Re-attach output session on resume if there was an active stream — but only
+        // claim "restored" when the bridge corroborates it. A stale persisted flag
+        // (process death, revoked permission, camera/mic loss while backgrounded) must
+        // not lie to the user.
         var state = await _appStateRepo.RestoreStateAsync();
-        if (state.IsOutputActive && !string.IsNullOrEmpty(state.StreamName))
+        if (!state.IsOutputActive || string.IsNullOrEmpty(state.StreamName))
+            return;
+
+        if (_bridge.IsActive)
         {
-            IsOutputActive = true;
-            StatusMessage = "Output session restored.";
-            StreamName = state.StreamName;
+            _dispatcher.BeginInvokeOnMainThread(() =>
+            {
+                StreamName = state.StreamName;
+                IsOutputActive = true;
+                StatusMessage = "Output session restored.";
+            });
+        }
+        else
+        {
+            await _appStateRepo.SaveAsync(new AppStateSnapshot(
+                state.LastViewerSourceId, state.StreamName, false, state.LastSelectedSourceId));
+
+            _dispatcher.BeginInvokeOnMainThread(() =>
+            {
+                StreamName = state.StreamName;
+                IsOutputActive = false;
+                StatusMessage = "Tap Start to resume output";
+            });
         }
     }
 
@@ -114,6 +135,14 @@ public partial class OutputViewModel : ObservableObject, IDisposable
         {
             IsOnProgramTally = _bridge.IsOnProgramTally;
             ConnectionCount = _bridge.ConnectionCount;
+
+            // The bridge stopped itself (autonomous capture loss, or the notification
+            // Stop action) — correct local state to match.
+            if (IsOutputActive && !_bridge.IsActive)
+            {
+                IsOutputActive = false;
+                StatusMessage = "Output stopped";
+            }
         });
     }
 
