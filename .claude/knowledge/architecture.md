@@ -250,7 +250,72 @@ Acceptable narrower alternative if blast radius must stay inside #328: an `x:Key
 **Housekeeping:** the "B: Home quick actions (#328)" verdict is duplicated in this file (also at the
 earlier heading); collapse to one on the next edit.
 
+### 2026-09-04 — A slice 2 (#327) refreshed implementation plan + #351 guard
+
+**APPROVE-WITH-CHANGES.** T013 A (hold from the slice-1 verdict is **lifted** — slice 1 is
+device-verified) · T014 AWC · T015 A · #351 guard A · docs-1 A · docs-2 AWC · docs-3 A ·
+decision-log.md REJECT (out of scope).
+
+Re-verified against the worktree code: `NdiNavigationHandoffService.cs:29-40` still has the Stream
+branch; `AppShell.RunNavigatingHandoffAsync` (`AppShell.xaml.cs:230-247`) caps the handoff at 3 s and
+completes the deferral in `finally` — after T013 the handoff returns `Task.CompletedTask`, so the
+deferral completes synchronously and the ANR/latency risk from the handoff-timing verdict disappears.
+Nothing outside DI constructs the service (`MauiProgram.cs:84`, `AppShell.xaml.cs:14` interface-typed).
+`HomeViewModel.CanResumeOutput` (`HomeViewModel.cs:91-100`) depends on `state.StreamName` +
+`_outputBridge.IsActive`, not on the removed branch. Teardown path re-checked: `StopOutputCoreAsync`
+(`NdiOutputBridge.cs:188-198`) unsubscribes `Stopped` before `StopAsync()`, `AndroidVideoCaptureSource
+.StopAsync` (`:147-155`) sends `ActionStop` only when `_startedForegroundSession` — no double-fire, no
+deadlock (all waits async, `Context.StartService` does not block on `OnStartCommand`).
+
+Binding changes:
+1. **T014 — the `ActionStopRequested` branch needs a self-stop fallback.** If
+   `IPlatformApplication.Current?.Services.GetService<INdiOutputBridge>()` returns `null`, or the
+   bridge is already inactive (double tap; a tap that lands after `ActionStop` destroyed and Android
+   re-created the service), nothing ever sends `ActionStop` — `AndroidVideoCaptureSource.StopAsync`
+   short-circuits on `_startedForegroundSession == false` — leaving an undismissable notification or a
+   started, non-foreground, never-stopped service. Required:
+   `if (bridge is null || !bridge.IsActive) { StopForeground(StopForegroundFlags.Remove); StopSelf(); }
+   else bridge.StopOutputAsync().FireAndForget();`. This does not weaken the "never stop the service
+   directly while capture is live" rule — the direct stop happens only when nothing is live.
+2. **docs-2 — factually wrong as written.** No code clears `AppState.StreamName` on a
+   notification-triggered stop: only `OutputViewModel.StopOutputCommand` (`OutputViewModel.cs:274-279`)
+   writes `StreamName = null`; the notification path reaches the ViewModel only through
+   `OnOutputStatusChanged` (`:132-147`), which mutates in-memory state and persists nothing (the
+   persisted `IsOutputActive` is corrected later by `OnAppResumed`, `:119-120`). Document the actual
+   behaviour: after a notification Stop the session stays **resumable** (`StreamName` kept,
+   `IsOutputActive` corroborated `false`), unlike the in-app Stop button.
+3. **decision-log.md is not #327's to create.** Feature rationale belongs in
+   `docs/features/output-session-state/` + the PR/issue; architect verdicts belong in this file. A
+   third, developer-written decision store in `.claude/knowledge/` will drift. Drop the step.
+
+Accepted as-is: `IPlatformApplication.Current.Services.GetService` confined to the
+`ActionStopRequested` branch (rule 5 — `MainActivity.cs:104,145` precedent, `src/MauiApp` is
+Android-only); `INdiOutputBridge` is a Core contract so no NDI type crosses the boundary (rule 2);
+`PendingIntent.GetService` + `Immutable | UpdateCurrent` is correct for API 26-35 (a running FGS keeps
+the app out of the background-start restriction, and a notification action is allowlisted anyway); no
+manifest change (the `[Service]` attribute already declares the component, `POST_NOTIFICATIONS` and
+all four `FOREGROUND_SERVICE*` permissions are present). The #351 null-intent guard is minimal and
+correct — a null `Intent` only ever arrives via sticky restart after process death, when neither the
+MediaProjection consent nor the sender survives, and a stickily restarted service is not foreground so
+there is no `startForeground` deadline to miss.
+
+Non-blocking observations (do not expand #327 scope): (a) returning `StartCommandResult.NotSticky`
+from the *start* path would remove the pointless restart entirely — the service can never resume
+anything — and is the cleaner long-term shape; (b) `StopOutputAsync().FireAndForget()` from
+`OnStartCommand` runs the teardown inline on the main thread until the first real await, exactly as the
+in-app Stop button does on the UI thread — acceptable precedent, `Task.Run(...)` if device testing ever
+shows a stall; (c) a concurrent re-stream session is not stopped by the notification action
+(`StopOutputAsync` ≠ `StopReStreamAsync`) — unreachable from today's `OutputViewModel`, note only.
+
 ## Open questions / assumptions
 
 - Assumed this instrumentation is **permanent, low-cost diagnostics** rather than throwaway; if it
   is throwaway, it should be reverted after the soak rather than documented in `docs/architecture.md`.
+- **#327 — is a notification Stop a "deliberate stop" for `AppState.StreamName`?** The owner's
+  decision names the in-app Stop button and the notification action as the two deliberate stops, but
+  only the former clears `StreamName`, so Home keeps offering **Resume** after a notification stop and
+  `OutputViewModel` settles on "Tap Start to resume output" rather than the idle text. Harmless under
+  the "resume only pre-fills, never starts" invariant, so #327 ships as-is with docs describing the
+  real behaviour. If parity is wanted, the seam is the ViewModel/AppState layer (a user-requested vs.
+  autonomous stop distinction on `OutputStatusChanged`) — **not** `IAppStateRepository` writes from the
+  Android foreground service. Owner decision needed; follow-up issue if yes.

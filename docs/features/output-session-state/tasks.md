@@ -302,9 +302,13 @@ T015 → T016
     still read "active" (no false "Tap Start to resume output").
   - [ ] Tap the notification's Stop action while backgrounded; confirm the sender stops (receiving
     client sees the source disappear) and the notification is dismissed.
-  - [ ] Foreground the app after a notification-triggered stop; confirm `OutputViewModel`/
-    `HomeViewModel` show the idle/stopped state (proves the `OutputStatusChanged`/`IsActive`
-    correction path from Slice 1 covers the notification-stop case too).
+  - [ ] Foreground the app after a notification-triggered stop; expected end state (not a
+    regression): `OutputViewModel` reads "Tap Start to resume output" and `HomeViewModel` shows
+    "Idle (no active output)" with Resume **enabled** — the notification stop only calls
+    `StopOutputAsync()`, so `AppStateSnapshot.StreamName` stays set and `OnAppResumed` corrects
+    the stale persisted `IsOutputActive` to `false` against the now-inactive bridge (proves the
+    `OutputStatusChanged`/`IsActive` correction path from Slice 1 covers the notification-stop
+    case too).
   - [ ] Repeat the #326/#334 scenarios from Slice 1 on-device: revoke screen-capture permission
     from the system status bar while output is active — confirm `IsActive` flips to `false` and
     both ViewModels correct their status without requiring the user to tap Stop.

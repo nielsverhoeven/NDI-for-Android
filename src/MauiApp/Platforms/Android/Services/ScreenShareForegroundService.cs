@@ -3,6 +3,9 @@ using Android.Content;
 using Android.Content.PM;
 using Android.OS;
 using AndroidX.Core.App;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Maui;
+using NdiForAndroid.NdiBridge;
 using NdiForAndroid.Services;
 
 namespace NdiForAndroid.Platforms.Android.Services;
@@ -15,25 +18,53 @@ public sealed class ScreenShareForegroundService : Service
 {
     internal const string ActionStart = "com.ndi.android.action.START_SCREEN_SHARE";
     internal const string ActionStop = "com.ndi.android.action.STOP_SCREEN_SHARE";
+    internal const string ActionStopRequested = "com.ndi.android.action.STOP_REQUESTED";
     internal const string ExtraStreamName = "extra_stream_name";
     internal const string ExtraCaptureKind = "extra_capture_kind";
 
     private const string ChannelId = "ndi_screen_share";
     private const int NotificationId = 4107;
+    private const int StopActionRequestCode = 4108;
 
     public override IBinder? OnBind(Intent? intent) => null;
 
     public override StartCommandResult OnStartCommand(Intent? intent, StartCommandFlags flags, int startId)
     {
-        if (intent?.Action == ActionStop)
+        if (intent is null)
+        {
+            // Sticky restart with no live capture session to resume; starting foreground
+            // with TypeMediaProjection here throws SecurityException on API 34+.
+            StopSelf();
+            return StartCommandResult.NotSticky;
+        }
+
+        if (intent.Action == ActionStopRequested)
+        {
+            // Teardown flows through the bridge; it re-enters via ActionStop below once
+            // IScreenSharePlatformService.StopForegroundSessionAsync() sends that intent.
+            var bridge = IPlatformApplication.Current?.Services.GetService<INdiOutputBridge>();
+            if (bridge is null || !bridge.IsActive)
+            {
+                StopForeground(StopForegroundFlags.Remove);
+                StopSelf();
+            }
+            else
+            {
+                bridge.StopOutputAsync().FireAndForget();
+            }
+
+            return StartCommandResult.NotSticky;
+        }
+
+        if (intent.Action == ActionStop)
         {
             StopForeground(StopForegroundFlags.Remove);
             StopSelf();
             return StartCommandResult.NotSticky;
         }
 
-        var streamName = intent?.GetStringExtra(ExtraStreamName);
-        var kindValue = intent?.GetIntExtra(ExtraCaptureKind, (int)VideoInputKind.Screen) ?? (int)VideoInputKind.Screen;
+        var streamName = intent.GetStringExtra(ExtraStreamName);
+        var kindValue = intent.GetIntExtra(ExtraCaptureKind, (int)VideoInputKind.Screen);
         var kind = (VideoInputKind)kindValue;
         var notification = BuildNotification(streamName);
 
@@ -99,6 +130,14 @@ public sealed class ScreenShareForegroundService : Service
         builder.SetContentText($"Streaming: {streamName ?? "NDI-Android"}");
         builder.SetSmallIcon(global::Android.Resource.Drawable.StatSysWarning);
         builder.SetOngoing(true);
+
+        var stopIntent = new Intent(this, typeof(ScreenShareForegroundService));
+        stopIntent.SetAction(ActionStopRequested);
+        var stopPendingIntent = PendingIntent.GetService(
+            this, StopActionRequestCode, stopIntent,
+            PendingIntentFlags.UpdateCurrent | PendingIntentFlags.Immutable);
+        builder.AddAction(new NotificationCompat.Action.Builder(
+            global::Android.Resource.Drawable.IcMenuCloseClearCancel, "Stop", stopPendingIntent).Build());
 
         // NotificationCompat.Builder.Build() is non-null in practice for a well-formed builder.
         return builder.Build()!;

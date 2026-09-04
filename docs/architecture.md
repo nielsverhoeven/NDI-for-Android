@@ -140,7 +140,7 @@ Standard bridge pattern:
 1. Define discovery/viewer/output bridge interfaces in `src/Core/NdiBridge/INdiBridges.cs`; plain C# models in `src/Core/NdiBridge/NdiBridgeModels.cs` and `QualityProfile.cs`.
 2. Implement bridge classes in `src/MauiApp/NdiBridge/` (file split below). All `[DllImport("ndi")]` declarations live in the interop layer only.
 3. Bridge events (`ConnectionStateChanged`, `TallyEchoChanged`, `OutputStatusChanged`) are raised on pump/background threads — subscribers marshal to the UI thread (`IMainThreadDispatcher` in Core ViewModels).
-4. Stop or transfer active native sessions during route transitions or app suspend events (`INavigationHandoffService`).
+4. `INavigationHandoffService` stops the **viewer** receiver (`StopReceiver()`) when leaving the View tab. It does **not** touch the output sender: once started, `INdiOutputBridge` output keeps streaming across tab switches and app backgrounding via `ScreenShareForegroundService`, and stops only via the in-app Stop button or the persistent notification's Stop action.
 
 ### Bridge file layout (`src/MauiApp/NdiBridge/`)
 
@@ -174,7 +174,7 @@ The output bridge consumes platform capture through Core interfaces (`src/Core/S
 | `IAudioPlaybackSink` | `AndroidAudioPlaybackSink` | AudioTrack float PCM output for received NDI audio |
 | `INdiPlatformBootstrap` | `AndroidNsdBootstrap` | Holds `NsdManager` for the SDK's mDNS machinery |
 
-Non-Android targets register `Noop*` implementations (`src/MauiApp/Services/`). Sending runs under `ScreenShareForegroundService` (`foregroundServiceType="mediaProjection|camera|microphone"`, granted types only on API 34+).
+Non-Android targets register `Noop*` implementations (`src/MauiApp/Services/`). Sending runs under `ScreenShareForegroundService` (`foregroundServiceType="mediaProjection|camera|microphone"`, granted types only on API 34+); its persistent notification carries a Stop action that resolves `INdiOutputBridge` from the MAUI service provider and calls `StopOutputAsync()`, and a null `Intent` (Android's sticky-restart redelivery after process death) stops the service immediately instead of starting foreground with no live capture session.
 
 ### Discovery mode API (`INdiDiscoveryBridge`)
 
@@ -208,6 +208,8 @@ The bridge also exposes:
 - **Re-stream**: `StartReStreamFromSourceAsync(sourceId, qualityProfile)` / `StopReStreamAsync` / `IsReStreamActive` — a dedicated receiver+sender pair pumps frames from a remote source into a new sender named `"Re-stream of {sourceId}"`, forwarding the recv-owned native buffer zero-copy. Independent of the viewer bridge's connection.
 
 The last-used output configuration (`PreferredStreamName`, `InputKind`, `CaptureMicrophone`) is persisted via `IOutputConfigurationRepository` (`src/MauiApp/Features/Output/Repositories/OutputConfigurationRepository.cs`).
+
+Session state (`AppStateSnapshot.StreamName`/`IsOutputActive`, `src/Core/Features/AppState/Models/AppStateSnapshot.cs`, persisted via `IAppStateRepository`) is a separate, shorter-lived record: `StreamName` names the current or most recent **unterminated** output session, and is cleared to `null` only by the in-app Stop button (`OutputViewModel.StopOutputCommand`) — never by navigation or backgrounding. A stop triggered from the notification action goes through `INdiOutputBridge.StopOutputAsync()` only, so it leaves `StreamName` set: the session stays resumable (`IsOutputActive` corroborated `false`, `HomeViewModel.CanResumeOutput` true). `IsOutputActive` is a hint only; it is trusted for the UI's "restored" vs. "tap Start to resume" distinction only when corroborated live by `INdiOutputBridge.IsActive` (see `OutputViewModel.OnAppResumed` and `HomeViewModel.RefreshAsync`).
 
 ### INdiViewerBridge connection state
 
