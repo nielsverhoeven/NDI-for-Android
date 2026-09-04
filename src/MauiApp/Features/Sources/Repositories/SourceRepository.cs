@@ -40,7 +40,8 @@ public sealed class SourceRepository : ISourceRepository
                 await _db.MarkDiscoveryServerSourcesStaleAsync(currentSourceIds);
             }
 
-            return new DiscoverySnapshot(snapshotId, DiscoveryStatus.Success, sources,
+            var status = sources.Count == 0 ? DiscoveryStatus.Empty : DiscoveryStatus.Success;
+            return new DiscoverySnapshot(snapshotId, status, sources,
                 DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
         }
         catch (OperationCanceledException)

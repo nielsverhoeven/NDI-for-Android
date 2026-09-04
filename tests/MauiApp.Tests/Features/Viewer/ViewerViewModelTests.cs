@@ -48,6 +48,29 @@ public class ViewerViewModelTests
     }
 
     [Fact]
+    public async Task StartCommand_PreservesExistingOutputAndSelectedSourceState()
+    {
+        _appStateRepoMock
+            .Setup(r => r.RestoreStateAsync())
+            .ReturnsAsync(new AppStateSnapshot(null, "X", true, "Y"));
+        AppStateSnapshot? savedSnapshot = null;
+        _appStateRepoMock
+            .Setup(r => r.SaveAsync(It.IsAny<AppStateSnapshot>()))
+            .Callback<AppStateSnapshot>(s => savedSnapshot = s)
+            .Returns(Task.CompletedTask);
+        var sut = CreateSut();
+
+        sut.SourceId = "src-new";
+        await sut.StartCommand.ExecuteAsync(null);
+
+        Assert.NotNull(savedSnapshot);
+        Assert.Equal("src-new", savedSnapshot!.LastViewerSourceId);
+        Assert.Equal("X", savedSnapshot.StreamName);
+        Assert.True(savedSnapshot.IsOutputActive);
+        Assert.Equal("Y", savedSnapshot.LastSelectedSourceId);
+    }
+
+    [Fact]
     public void StartCommand_WithNullSourceId_DoesNotStartReceiver()
     {
         var sut = CreateSut();
