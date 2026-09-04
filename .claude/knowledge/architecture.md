@@ -104,7 +104,6 @@ Placement-change path is safe: `EnsurePrimaryDestinationVisibleAsync` keeps the 
 `from == to` short-circuits (`NdiNavigationHandoffService.cs:29`). Guard `ApplyPlacement`'s dispatched
 `GoToAsync` against landing while a deferral is pending.
 
-<<<<<<< HEAD
 ### 2026-09-04 — B: Home quick actions (#328)
 
 **APPROVE-WITH-CHANGES.** T001 AWC · T002 REJECT · T003 AWC · T004 AWC · T005 A · T006 AWC ·
@@ -149,7 +148,6 @@ file.
 6. Not starting capture from `ApplyResumeRequestAsync` is the correct invariant — no silent
    MediaProjection re-consent. All tests remain reachable from `tests/MauiApp.Tests`; only T004's
    visual disabled state needs device verification.
-=======
 ### 2026-09-04 — A: Output session lifecycle (#326 + #334 slice 1; #327 slice 2)
 
 **APPROVE-WITH-CHANGES (slice 1). APPROVE-WITH-CHANGES + HOLD (slice 2).**
@@ -217,7 +215,6 @@ T007–T010 AWC. #328 lands **after** A, on top of A's `HomeViewModel`.
    `Disabled` VisualState using `DynamicResource` if not).
 5. Not starting capture from `ApplyResumeRequestAsync` is the correct invariant — no silent
    MediaProjection re-consent.
->>>>>>> feature/326-output-session-state
 
 ## Open questions / assumptions
 
