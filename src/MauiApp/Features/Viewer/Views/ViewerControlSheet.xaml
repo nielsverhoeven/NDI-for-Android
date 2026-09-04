@@ -18,9 +18,9 @@
         </Grid>
 
         <Grid Grid.Row="1" ColumnDefinitions="*,*" RowDefinitions="Auto,3">
-            <Button x:Name="PlaybackTabButton" Grid.Row="0" Grid.Column="0" Text="Weergave"
+            <Button x:Name="PlaybackTabButton" Grid.Row="0" Grid.Column="0" Text="Playback"
                     BackgroundColor="Transparent" TextColor="{DynamicResource TextPrimary}"
-                    SemanticProperties.Description="Weergave tab, selected" />
+                    SemanticProperties.Description="Playback tab, selected" />
             <Button x:Name="PtzTabButton" Grid.Row="0" Grid.Column="1" Text="PTZ"
                     BackgroundColor="Transparent" TextColor="{DynamicResource TextPrimary}"
                     IsVisible="{Binding IsPtzControlActive}"
