@@ -23,6 +23,7 @@ public partial class FullScreenViewerPage : ContentPage
         InitializeComponent();
         _immersiveMode = immersiveMode;
         _lifecycle = lifecycle;
+        Loaded += (_, _) => _immersiveMode.EnterImmersive();
     }
 
     public void Initialize(ViewerViewModel viewModel, Action onClosed)
@@ -39,6 +40,13 @@ public partial class FullScreenViewerPage : ContentPage
         base.OnAppearing();
         FullScreenViewer.StartRendering();
         _immersiveMode.EnterImmersive();
+    }
+
+    protected override void OnHandlerChanged()
+    {
+        base.OnHandlerChanged();
+        if (Handler is not null)
+            _immersiveMode.EnterImmersive();
     }
 
     protected override void OnDisappearing()

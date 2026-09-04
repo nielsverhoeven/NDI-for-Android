@@ -88,7 +88,17 @@
                     </Style.Triggers>
                 </Style>
             </ScrollView.Style>
-            <VerticalStackLayout Spacing="16" VerticalOptions="End">
+            <VerticalStackLayout Spacing="16">
+                <VerticalStackLayout.Style>
+                    <Style TargetType="VerticalStackLayout">
+                        <Setter Property="VerticalOptions" Value="Start" />
+                        <Style.Triggers>
+                            <DataTrigger TargetType="VerticalStackLayout" Binding="{Binding IsFullScreen}" Value="True">
+                                <Setter Property="VerticalOptions" Value="End" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </VerticalStackLayout.Style>
                 <Label Text="{Binding StatusMessage}" HorizontalOptions="Center" />
 
                 <!-- Quality profile selector (shown when IsPlaying) -->
