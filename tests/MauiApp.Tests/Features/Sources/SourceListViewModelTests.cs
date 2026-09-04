@@ -2,6 +2,7 @@ using Moq;
 using NdiForAndroid.Features.AppState.Models;
 using NdiForAndroid.Features.AppState.Repositories;
 using NdiForAndroid.Features.ConnectionHistory.Services;
+using NdiForAndroid.Features.Navigation.Models;
 using NdiForAndroid.Features.Navigation.Services;
 using NdiForAndroid.Features.Settings.Services;
 using NdiForAndroid.Features.Sources.Models;
@@ -55,7 +56,8 @@ public class SourceListViewModelTests
 
     private SourceListViewModel CreateSut(
         DiscoveryMode mode = DiscoveryMode.Mdns,
-        WindowSizeClass sizeClass = WindowSizeClass.Compact)
+        WindowSizeClass sizeClass = WindowSizeClass.Compact,
+        IMainThreadDispatcher? dispatcher = null)
     {
         _orchestratorMock.Setup(o => o.ActiveMode).Returns(mode);
         _windowSizeClassMock.Setup(s => s.Current).Returns(sizeClass);
@@ -66,7 +68,8 @@ public class SourceListViewModelTests
             _refreshServiceMock.Object,
             _appStateRepoMock.Object,
             _windowSizeClassMock.Object,
-            CreateViewerViewModel);
+            CreateViewerViewModel,
+            dispatcher ?? new FakeMainThreadDispatcher());
     }
 
     private DiscoverySnapshot SuccessSnapshot(IReadOnlyList<NdiSource>? sources = null) => new(
@@ -211,12 +214,47 @@ public class SourceListViewModelTests
     }
 
     [Fact]
-    public void ViewModel_DoesNotHaveNavigateToOutputCommand()
+    public async Task NavigateToOutputCommand_Exists_AndNavigatesToStreamTabWithSelectedSourceId()
     {
+        var source = new NdiSource("src-abc", "Camera 1", "192.168.1.10", true, 1000);
         var sut = CreateSut();
-        var type = sut.GetType();
-        var prop = type.GetProperty("NavigateToOutputCommand");
-        Assert.Null(prop);
+
+        await sut.NavigateToOutputCommand.ExecuteAsync(source);
+
+        _navigationMock.Verify(
+            n => n.NavigateToPrimaryAsync(
+                PrimaryNavDestination.Stream,
+                It.Is<string>(q => q.Contains(source.SourceId) && q.Contains("isReStreamMode=true"))),
+            Times.Once);
+        _appStateRepoMock.Verify(
+            r => r.SaveAsync(It.Is<AppStateSnapshot>(s => s.LastSelectedSourceId == source.SourceId)),
+            Times.Once);
+    }
+
+    [Fact]
+    public void OnSnapshotReady_RaisedFromBackgroundThread_DispatchesUpdateToMainThread()
+    {
+        var dispatcher = new RecordingMainThreadDispatcher();
+        var sources = new List<NdiSource> { new("src-1", "Camera 1", "192.168.1.10", true, 1000) };
+        var sut = CreateSut(dispatcher: dispatcher);
+
+        Task.Run(() => _refreshServiceMock.Raise(r => r.SnapshotReady += null, sut, SuccessSnapshot(sources))).Wait();
+
+        Assert.Equal(1, dispatcher.InvocationCount);
+        Assert.Single(sut.Sources);
+        Assert.False(sut.IsRefreshing);
+    }
+
+    /// <summary>Synchronous dispatcher that also counts invocations, to prove dispatch occurred.</summary>
+    private sealed class RecordingMainThreadDispatcher : IMainThreadDispatcher
+    {
+        public int InvocationCount { get; private set; }
+
+        public void BeginInvokeOnMainThread(Action action)
+        {
+            InvocationCount++;
+            action.Invoke();
+        }
     }
 
     // ── AC-4: Hot-switch label reflects new mode without app restart ──────────

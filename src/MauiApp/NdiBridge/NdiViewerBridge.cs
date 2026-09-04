@@ -56,6 +56,9 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
 
     private volatile float _measuredFps;
     private volatile float _droppedFramePercent;
+    // Largest inter-frame gap (ms) since the last stats tick. Written and reset only on
+    // the video pump thread; surfaced once per second via the developer-mode logcat line.
+    private long _maxFrameGapMs;
     private volatile bool _isPtzSupported;
     private volatile bool _audioEnabled = true;
 
@@ -370,6 +373,10 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
                             NdiNativeMethods.NDIlib_recv_free_video_v2(recv, ref video);
                         }
 
+                        // Single comparison only — no logging/allocation in the frame path.
+                        if (hasEverConnected && now - lastVideoTicks > _maxFrameGapMs)
+                            _maxFrameGapMs = now - lastVideoTicks;
+
                         lastVideoTicks = now;
                         hasEverConnected = true;
                         frameTimes.Enqueue(now);
@@ -450,6 +457,10 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
         if (width <= 0 || height <= 0 || video.p_data == IntPtr.Zero)
             return;
 
+        const int MaxDimension = 8192;
+        if (width > MaxDimension || height > MaxDimension || (long)width * height > int.MaxValue)
+            return; // drop malformed/oversized frame; caller still frees it
+
         var pixelCount = width * height;
         if (_backPixels is null || _backPixels.Length != pixelCount)
             _backPixels = new int[pixelCount]; // reallocate only when the size changes
@@ -510,7 +521,28 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
             }
 
             _diagnostics.UpdateViewerDiagnostics(_measuredFps, _droppedFramePercent, width, height, sourceId);
+
+            // Developer mode only (persisted Settings toggle): one logcat line per second so
+            // soak tests can measure fps / drops / frame gaps with `adb logcat -s NdiStats`.
+            // Runs on the pump thread — must never throw into VideoPumpLoop, whose catch
+            // would report the failure as a lost stream.
+            if (_diagnostics.IsDeveloperMode)
+            {
+                try
+                {
+                    Android.Util.Log.Debug("NdiStats",
+                        $"src=\"{sourceId}\" fps={_measuredFps:0} drop={_droppedFramePercent:0.00}% " +
+                        $"total={total.video_frames} dropped={dropped.video_frames} " +
+                        $"maxGapMs={_maxFrameGapMs} res={width}x{height} profile={_qualityProfile}");
+                }
+                catch
+                {
+                    // Logging is best-effort.
+                }
+            }
         }
+
+        _maxFrameGapMs = 0;
     }
 
     // ── Audio pump ───────────────────────────────────────────────────────────
@@ -597,8 +629,23 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
             _connectionState = newState;
         }
 
-        if (changed)
-            ConnectionStateChanged?.Invoke(this, newState);
+        if (!changed)
+            return;
+
+        // Developer mode only: state transitions to logcat (rare, never per-frame).
+        if (_diagnostics?.IsDeveloperMode == true)
+        {
+            try
+            {
+                Android.Util.Log.Debug("NDI-Bridge", $"Viewer connection state -> {newState}");
+            }
+            catch
+            {
+                // Logging is best-effort.
+            }
+        }
+
+        ConnectionStateChanged?.Invoke(this, newState);
     }
 
     /// <summary>Must hold <see cref="_stateLock"/>.</summary>

@@ -37,6 +37,13 @@ public partial class ViewerPage : ContentPage
     protected override void OnDisappearing()
     {
         Viewer.StopRendering();
+
+        // OnDisappearing also fires when the app is merely backgrounded, not only when
+        // this page is popped — only dispose once it has actually left the nav stack, so
+        // the ViewModel survives backgrounding and is still alive for OnAppResumed.
+        if (Shell.Current?.Navigation?.NavigationStack?.Contains(this) != true)
+            _viewModel.Dispose();
+
         base.OnDisappearing();
     }
 }

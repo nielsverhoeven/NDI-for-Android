@@ -10,9 +10,9 @@ public partial class HomePage : ContentPage
         BindingContext = viewModel;
     }
 
-    protected override void OnDisappearing()
+    protected override void OnAppearing()
     {
-        base.OnDisappearing();
-        (BindingContext as HomeViewModel)?.Dispose();
+        base.OnAppearing();
+        (BindingContext as HomeViewModel)?.RefreshCommand.Execute(null);
     }
 }

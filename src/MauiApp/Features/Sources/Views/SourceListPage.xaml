@@ -13,12 +13,26 @@
     <!-- Compact/Medium: single column (pane column collapsed to 0).
          Expanded (>840dp): code-behind widens the pane column to a 2*/3* split. -->
     <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
         <Grid.ColumnDefinitions>
             <ColumnDefinition x:Name="ListColumn" Width="*" />
             <ColumnDefinition x:Name="PaneColumn" Width="0" />
         </Grid.ColumnDefinitions>
 
-        <RefreshView Grid.Column="0"
+        <VerticalStackLayout Grid.Row="0" Grid.ColumnSpan="2" Padding="16,8,16,0" Spacing="4">
+            <Label Text="{Binding ActiveDiscoveryModeLabel}"
+                   FontSize="12"
+                   TextColor="{DynamicResource TextSecondary}" />
+            <Label Text="{Binding ErrorMessage}"
+                   FontSize="12"
+                   TextColor="{DynamicResource ErrorRed}"
+                   IsVisible="{Binding ErrorMessage, Converter={StaticResource IsNotNullConverter}}" />
+        </VerticalStackLayout>
+
+        <RefreshView Grid.Row="1" Grid.Column="0"
                      AutomationId="{x:Static t:TestIds.SourcesRefresh}"
                      IsRefreshing="{Binding IsRefreshing}"
                      Command="{Binding RefreshCommand}">
@@ -56,7 +70,7 @@
 
         <!-- Embedded viewer pane (Expanded windows only). Its BindingContext is the
              lazily-created PaneViewer ViewerViewModel; null until first Expanded tap. -->
-        <viewer:ViewerView Grid.Column="1"
+        <viewer:ViewerView Grid.Row="1" Grid.Column="1"
                            x:Name="ViewerPane"
                            AutomationId="{x:Static t:TestIds.SourcesViewerPane}"
                            IsVisible="False"

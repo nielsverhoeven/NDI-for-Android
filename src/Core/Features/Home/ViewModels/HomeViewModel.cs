@@ -53,13 +53,15 @@ public partial class HomeViewModel : ObservableObject, IDisposable
         // Subscribe to discovery snapshots
         _discoveryService.SnapshotReady += OnDiscoverySnapshot;
 
-        LoadAsync();
+        RefreshCommand.Execute(null);
     }
 
-    private async void LoadAsync()
+    [RelayCommand]
+    private async Task RefreshAsync()
     {
         var state = await _appStateRepo.RestoreStateAsync();
-        
+        var cachedSources = await _sourceRepository.GetCachedSourcesAsync();
+
         _dispatcher.BeginInvokeOnMainThread(() =>
         {
             ViewerStatus = string.IsNullOrWhiteSpace(state.LastViewerSourceId)
@@ -69,6 +71,12 @@ public partial class HomeViewModel : ObservableObject, IDisposable
             OutputStatus = state.IsOutputActive
                 ? $"Active output to \"{state.StreamName ?? "unknown"}\""
                 : "Idle (no active output)";
+
+            if (cachedSources.Count > 0)
+            {
+                SourceCount = cachedSources.Count;
+                DiscoveryStatus = "Connected to NDI network";
+            }
         });
     }
 

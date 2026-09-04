@@ -222,7 +222,8 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
         catch { /* Silent fail – will default to Balanced */ }
 
         // Persist last active viewer source for resume recovery (non-critical housekeeping)
-        _appStateRepo.SaveAsync(new AppStateSnapshot(SourceId, null, false, null)).FireAndForget();
+        var existingState = await _appStateRepo.RestoreStateAsync();
+        _appStateRepo.SaveAsync(new AppStateSnapshot(SourceId, existingState.StreamName, existingState.IsOutputActive, existingState.LastSelectedSourceId)).FireAndForget();
 
         // Record connection event for history tracking (try to resolve display name from cache)
         string displayName = SourceId;
@@ -341,7 +342,7 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
 
             if (!string.IsNullOrEmpty(SourceId))
             {
-                _bridge.StartReceiver(SourceId);
+                _bridge.StartReceiver(SourceId, QualityProfile);
                 var state = _bridge.GetConnectionState();
 
                 if (state == ConnectionState.Connected)
@@ -379,7 +380,7 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
     private void StartCountdown()
     {
         _countdownTimer = new Timer(
-            _ => TickCountdown(),
+            _ => _dispatcher.BeginInvokeOnMainThread(TickCountdown),
             null,
             TimeSpan.FromSeconds(ReconnectConstants.CountdownTickIntervalSeconds),
             TimeSpan.FromSeconds(ReconnectConstants.CountdownTickIntervalSeconds));

@@ -15,32 +15,16 @@ namespace NdiForAndroid;
 
 public partial class AppShell : Shell
 {
-    private readonly IReadOnlyDictionary<PrimaryNavDestination, string> _landscapeRoutes =
-        new Dictionary<PrimaryNavDestination, string>
-        {
-            [PrimaryNavDestination.Home]     = "//home-rail",
-            [PrimaryNavDestination.Stream]   = "//stream-rail",
-            [PrimaryNavDestination.View]     = "//view-rail",
-            [PrimaryNavDestination.Settings] = "//settings-rail",
-        };
-
-    private readonly IReadOnlyDictionary<PrimaryNavDestination, string> _portraitRoutes =
-        new Dictionary<PrimaryNavDestination, string>
-        {
-            [PrimaryNavDestination.Home]     = "//home-tab",
-            [PrimaryNavDestination.Stream]   = "//stream-tab",
-            [PrimaryNavDestination.View]     = "//view-tab",
-            [PrimaryNavDestination.Settings] = "//settings-tab",
-        };
-
     private readonly AdaptiveShellStateViewModel _stateViewModel;
     private readonly IAndroidOrientationBridge _orientationBridge;
     private readonly INavigationHandoffService _handoffService;
     private readonly IWindowSizeClassService _windowSizeClassService;
     private readonly IWindowInsetsService _windowInsetsService;
     private readonly IAppearanceService _appearanceService;
+    private readonly ShellNavigationService _navigationService;
 
     private PrimaryNavDestination _currentPrimaryDestination = PrimaryNavDestination.Home;
+    private bool _handoffInProgress;
 
     private readonly Dictionary<PrimaryNavDestination, (Border Container, Label Label, Path Icon)> _railButtons = [];
 
@@ -63,7 +47,8 @@ public partial class AppShell : Shell
         INavigationHandoffService handoffService,
         IWindowSizeClassService windowSizeClassService,
         IWindowInsetsService windowInsetsService,
-        IAppearanceService appearanceService)
+        IAppearanceService appearanceService,
+        ShellNavigationService navigationService)
     {
         InitializeComponent();
 
@@ -73,6 +58,7 @@ public partial class AppShell : Shell
         _windowSizeClassService = windowSizeClassService;
         _windowInsetsService = windowInsetsService;
         _appearanceService = appearanceService;
+        _navigationService = navigationService;
 
         Routing.RegisterRoute("viewer", typeof(ViewerPage));
         Routing.RegisterRoute("diagnostic-log", typeof(Features.DiagOverlay.Views.DiagnosticLogPage));
@@ -247,6 +233,45 @@ public partial class AppShell : Shell
             await GoToAsync(route);
     }
 
+    protected override void OnNavigating(ShellNavigatingEventArgs args)
+    {
+        base.OnNavigating(args);
+
+        if (args.Cancelled)
+            return;
+
+        var to = ParseDestination(args.Target?.Location?.OriginalString);
+        if (to is null || to == _currentPrimaryDestination)
+            return;
+
+        if (!args.CanCancel)
+            return;
+
+        var deferral = args.GetDeferral();
+        _handoffInProgress = true;
+
+        _ = RunNavigatingHandoffAsync(to.Value, deferral);
+    }
+
+    private async Task RunNavigatingHandoffAsync(PrimaryNavDestination to, ShellNavigatingDeferral deferral)
+    {
+        try
+        {
+            await _handoffService.HandlePrimaryDestinationChangeAsync(_currentPrimaryDestination, to)
+                .WaitAsync(TimeSpan.FromSeconds(3));
+            _currentPrimaryDestination = to;
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Navigation handoff failed: {ex}");
+        }
+        finally
+        {
+            _handoffInProgress = false;
+            deferral.Complete();
+        }
+    }
+
     private async void OnShellNavigated(object? sender, ShellNavigatedEventArgs e)
     {
         var to = ParseDestination(e.Current.Location.OriginalString) ?? _currentPrimaryDestination;
@@ -268,7 +293,10 @@ public partial class AppShell : Shell
     private static PrimaryNavDestination? ParseDestination(string? location)
     {
         if (string.IsNullOrWhiteSpace(location)) return null;
-        var s = location.ToLowerInvariant();
+        // Match on the path only — a query value (e.g. reStreamSourceId containing
+        // "stream") must never influence which destination this resolves to.
+        var path = location.Split('?', 2)[0];
+        var s = path.ToLowerInvariant();
         if (s.Contains("home")     || s.Contains("sources")) return PrimaryNavDestination.Home;
         if (s.Contains("stream")   || s.Contains("output"))  return PrimaryNavDestination.Stream;
         if (s.Contains("view")     || s.Contains("viewer"))  return PrimaryNavDestination.View;
@@ -276,14 +304,14 @@ public partial class AppShell : Shell
         return null;
     }
 
-    private bool TryGetRouteForCurrentPlacement(PrimaryNavDestination destination, out string route)
-    {
-        var routes = _stateViewModel.IsLeftRailNavigationVisible ? _landscapeRoutes : _portraitRoutes;
-        return routes.TryGetValue(destination, out route!);
-    }
+    private bool TryGetRouteForCurrentPlacement(PrimaryNavDestination destination, out string route) =>
+        _navigationService.TryGetRouteForCurrentPlacement(destination, out route);
 
     private async Task EnsurePrimaryDestinationVisibleAsync()
     {
+        if (_handoffInProgress)
+            return;
+
         if (!TryGetRouteForCurrentPlacement(_stateViewModel.SelectedDestination, out var route))
             return;
 

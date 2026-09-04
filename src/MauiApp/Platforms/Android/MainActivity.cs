@@ -84,6 +84,7 @@ public class MainActivity : MauiAppCompatActivity
 
     protected override void OnNewIntent(Intent? intent)
     {
+        Intent = intent;
         base.OnNewIntent(intent);
 
         // Process ndi:// deep links from external apps or shortcuts
