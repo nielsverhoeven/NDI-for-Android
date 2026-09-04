@@ -4,6 +4,8 @@ using NdiForAndroid.Features.AppState.Repositories;
 using NdiForAndroid.Features.ConnectionHistory.Services;
 using NdiForAndroid.Features.Navigation.Models;
 using NdiForAndroid.Features.Navigation.Services;
+using NdiForAndroid.Features.Ptz.Services;
+using NdiForAndroid.Features.Ptz.ViewModels;
 using NdiForAndroid.Features.Settings.Services;
 using NdiForAndroid.Features.Sources.Models;
 using NdiForAndroid.Features.Sources.Repositories;
@@ -28,6 +30,8 @@ public class SourceListViewModelTests
     private readonly Mock<INdiViewerBridge> _viewerBridgeMock = new();
     private readonly Mock<IAppLifecycleService> _lifecycleMock = new();
     private readonly Mock<IConnectionHistoryService> _connectionHistoryMock = new();
+    private readonly Mock<IPtzControllerFactory> _ptzControllerFactoryMock = new();
+    private readonly Mock<IPtzController> _ptzControllerMock = new();
 
     private int _viewerFactoryInvocations;
 
@@ -39,6 +43,9 @@ public class SourceListViewModelTests
         _repositoryMock
             .Setup(r => r.GetCachedSourcesAsync())
             .ReturnsAsync(new List<NdiSource>());
+        _ptzControllerFactoryMock
+            .Setup(f => f.Create(It.IsAny<NdiForAndroid.Features.Ptz.Models.PtzEndpoint?>()))
+            .Returns(_ptzControllerMock.Object);
     }
 
     private ViewerViewModel CreateViewerViewModel()
@@ -51,7 +58,9 @@ public class SourceListViewModelTests
             _appStateRepoMock.Object,
             _lifecycleMock.Object,
             _repositoryMock.Object,
-            _connectionHistoryMock.Object);
+            _connectionHistoryMock.Object,
+            _ptzControllerFactoryMock.Object,
+            new PtzEndpointFormViewModel(_ptzControllerFactoryMock.Object));
     }
 
     private SourceListViewModel CreateSut(
