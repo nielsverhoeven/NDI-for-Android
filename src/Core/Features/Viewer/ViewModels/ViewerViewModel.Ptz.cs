@@ -24,23 +24,37 @@ public partial class ViewerViewModel
     [ObservableProperty]
     private string _ptzPresetNumber = "0";
 
-    /// <summary>Gates the pad/zoom/preset controls: available for NDI-native PTZ or once a VISCA endpoint is connected.</summary>
-    public bool IsPtzControlActive => IsPtzSupported || PtzLinkState == PtzLinkState.Connected;
+    /// <summary>True when the active source has a VISCA endpoint override configured.</summary>
+    [ObservableProperty]
+    private bool _hasPtzOverride;
+
+    /// <summary>The VISCA endpoint currently attached (null while NDI-native PTZ is in use).</summary>
+    private PtzEndpoint? _ptzEndpoint;
+
+    /// <summary>
+    /// Gates the pad/zoom/preset controls: available for NDI-native PTZ or whenever a VISCA
+    /// endpoint is configured. The VISCA link is established lazily on the first command, so
+    /// gating on <see cref="PtzLinkState.Connected"/> would hide the pad forever.
+    /// </summary>
+    public bool IsPtzControlActive => IsPtzSupported || HasPtzOverride;
 
     partial void OnIsPtzSupportedChanged(bool value) => OnPropertyChanged(nameof(IsPtzControlActive));
 
-    partial void OnPtzLinkStateChanged(PtzLinkState value) => OnPropertyChanged(nameof(IsPtzControlActive));
+    partial void OnHasPtzOverrideChanged(bool value) => OnPropertyChanged(nameof(IsPtzControlActive));
 
     partial void StartPtz(NdiSource? source)
     {
         _activeSource = source;
-        AttachPtzController(_ptzControllerFactory.Create(BuildPtzEndpoint(source)));
+        var endpoint = BuildPtzEndpoint(source);
+        HasPtzOverride = endpoint is not null;
+        AttachPtzController(_ptzControllerFactory.Create(endpoint), endpoint);
     }
 
     partial void StopPtz()
     {
         DetachPtzController();
         _activeSource = null;
+        HasPtzOverride = false;
         PtzLinkState = PtzLinkState.Disconnected;
         PtzStatusText = null;
     }
@@ -129,21 +143,32 @@ public partial class ViewerViewModel
         if (_activeSource is not null)
             _activeSource = _activeSource with { PtzOverrideHost = endpoint?.Host, PtzOverridePort = endpoint?.Port };
 
-        AttachPtzController(_ptzControllerFactory.Create(endpoint));
+        HasPtzOverride = endpoint is not null;
+        var controller = _ptzControllerFactory.Create(endpoint);
+        AttachPtzController(controller, endpoint);
+
+        // Establish the VISCA link right away (a harmless pan/tilt stop) so the status
+        // indicator reflects reachability without waiting for the first real command.
+        if (endpoint is not null)
+            controller.PanTiltAsync(0f, 0f).FireAndForget();
     }
 
     private IPtzController GetOrCreatePtzController()
     {
         if (_ptzController is null)
-            AttachPtzController(_ptzControllerFactory.Create(BuildPtzEndpoint(_activeSource)));
+        {
+            var endpoint = BuildPtzEndpoint(_activeSource);
+            AttachPtzController(_ptzControllerFactory.Create(endpoint), endpoint);
+        }
 
         return _ptzController!;
     }
 
-    private void AttachPtzController(IPtzController controller)
+    private void AttachPtzController(IPtzController controller, PtzEndpoint? endpoint)
     {
         DetachPtzController();
         _ptzController = controller;
+        _ptzEndpoint = endpoint;
         controller.LinkStateChanged += OnPtzControllerLinkStateChanged;
         PtzLinkState = controller.LinkState;
         PtzStatusText = DescribePtzLinkState(controller.LinkState);
@@ -157,6 +182,7 @@ public partial class ViewerViewModel
         _ptzController.LinkStateChanged -= OnPtzControllerLinkStateChanged;
         _ptzController.ShutdownAsync().FireAndForget();
         _ptzController = null;
+        _ptzEndpoint = null;
     }
 
     private void OnPtzControllerLinkStateChanged(object? sender, PtzLinkState state) =>
@@ -171,11 +197,19 @@ public partial class ViewerViewModel
             ? new PtzEndpoint(source.PtzOverrideHost!.Trim(), source.PtzOverridePort ?? PtzEndpoint.DefaultPort)
             : null;
 
-    private static string DescribePtzLinkState(PtzLinkState state) => state switch
+    private string DescribePtzLinkState(PtzLinkState state)
     {
-        PtzLinkState.Connected => "PTZ: Connected",
-        PtzLinkState.Connecting => "PTZ: Connecting...",
-        PtzLinkState.Error => "PTZ: Connection error",
-        _ => "PTZ: Using NDI",
-    };
+        if (_ptzEndpoint is null)
+            return "PTZ: Using NDI";
+
+        var link = state switch
+        {
+            PtzLinkState.Connected => "connected",
+            PtzLinkState.Connecting => "connecting...",
+            PtzLinkState.Error => "error",
+            _ => "not connected",
+        };
+
+        return $"PTZ: VISCA {_ptzEndpoint.Host}:{_ptzEndpoint.Port} ({link})";
+    }
 }
