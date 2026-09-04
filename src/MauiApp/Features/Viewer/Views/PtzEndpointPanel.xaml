@@ -5,7 +5,7 @@
              xmlns:vm="clr-namespace:NdiForAndroid.Features.Viewer.ViewModels;assembly=NdiForAndroid.Core"
              x:Class="NdiForAndroid.Features.Viewer.Views.PtzEndpointPanel"
              x:DataType="vm:ViewerViewModel"
-             IsVisible="{Binding PtzEndpointForm.IsOpen}"
+             IsVisible="{Binding PtzEndpointForm.IsOpen, FallbackValue=False, TargetNullValue=False}"
              BackgroundColor="{DynamicResource ScrimBackground}">
     <Border BindingContext="{Binding PtzEndpointForm}"
             BackgroundColor="{DynamicResource CardBackground}"

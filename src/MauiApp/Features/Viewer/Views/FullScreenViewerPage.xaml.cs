@@ -23,7 +23,13 @@ public partial class FullScreenViewerPage : ContentPage
         InitializeComponent();
         _immersiveMode = immersiveMode;
         _lifecycle = lifecycle;
-        Loaded += (_, _) => _immersiveMode.EnterImmersive();
+        // Re-arm the auto-hide countdown once the overlay is actually on screen, not just
+        // when IsFullScreen flipped (modal construction can itself take longer than the countdown).
+        Loaded += (_, _) =>
+        {
+            _immersiveMode.EnterImmersive();
+            _viewModel?.NotifyControlInteraction();
+        };
     }
 
     public void Initialize(ViewerViewModel viewModel, Action onClosed)
