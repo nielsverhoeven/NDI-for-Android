@@ -7,7 +7,8 @@
 - **DI**: `Microsoft.Extensions.DependencyInjection` via `MauiProgram.cs` — no service locator
 - **Persistence**: SQLite-net-pcl (async API only) | **NDI**: **real P/Invoke** against bundled `libndi.so` (NDI SDK 6.3.1, arm64-v8a + armeabi-v7a; soft-disabled on x86/x86_64 — no native lib there)
 - **Tests**: xUnit 2.x + Moq | **Build**: `dotnet CLI`
-- **CI**: GitHub Actions — `.github/workflows/emulator-tests.yml`, `.github/workflows/release.yml`
+- **CI**: GitHub Actions — `ndi-for-android-cicd.yml` (unit tests → version → build → e2e → release),
+  `codeql.yml`, `emulator-tests.yml` (manual). See the **CI Pipeline** section below.
 
 ## Build & Test Commands
 ```powershell
@@ -315,14 +316,190 @@ Invoke-RestMethod http://localhost:11434/api/tags   # lists available models
 Get-Process ollama -ErrorAction SilentlyContinue
 ```
 
-## CI / Emulator Test Patterns
+## CI Pipeline (rebuilt — see the CI audit, PR for issue-less chore)
+
+Workflows: `ndi-for-android-cicd.yml`, `codeql.yml`, `emulator-tests.yml` (manual only).
+`copilot-setup-steps.yml` was **deleted** — it was an unmodified Node/Playwright template
+(`npm ci`, `npx run build`) in a repo with no `package.json`.
+
+Job graph in `ndi-for-android-cicd.yml`:
+
+```
+unit-tests   (lean, no MAUI workload)     ─┐
+version      (patch from highest git tag) ─┼─> build-android ─> e2e-tests ─> publish-release
+                                                                   (PRs to main + main)  (main only)
+```
+
+- **`unit-tests` needs no MAUI workload or Android SDK.** `tests/MauiApp.Tests` references only
+  `src/Core`, and both are plain `net10.0`. Restore the **test project**, never the solution —
+  restoring `NdiForAndroid.sln` drags in the android head and forces the workload.
+- **All jobs run on `ubuntu-latest`.** The MAUI workload installs in ~16s there versus **~4m50s**
+  on `windows-latest` (measured, run 31649953564). There is no Windows head; do not move
+  build jobs back to Windows.
+- **Every job that restores needs a NuGet cache.** The old `build-and-test` was the only job
+  without one and paid 1m53s per run against 9s for the cached jobs.
+- **The APK is built once** in `build-android` and passed downstream as an artifact. Do not add
+  a second publish step.
+- **`concurrency` with `cancel-in-progress` on PRs only.** Never cancel `main` — each run publishes.
+
+### E2E must be able to fail (the vacuous-gate trap)
+
+Every UI test is a `[SkippableFact]` gated on `AppiumDriverFixture.SkipReason`. The fixture
+originally set that reason on *every* environmental failure, so a broken emulator turned all 10
+tests into skips and `dotnet test` still exited 0 — **the gate reported success while executing
+nothing** (`Passed: 0, Skipped: 10` on a green main run).
+
+Two mechanisms keep it honest; do not remove either:
+
+- **`E2E_REQUIRE_DEVICE=true`** makes `AppiumDriverFixture` **throw** instead of setting
+  `SkipReason`. Set in CI; unset locally so developers without an emulator still get skips.
+- **`run-emulator-tests.sh` asserts `passed > 0`** by reading the TRX `<Counters>` back. A zero
+  exit code from `dotnet test` is not sufficient evidence that anything ran.
+
+### Versioning
+
+- `version.properties` supplies **major.minor** and the `versionCode` floor. The patch
+  auto-increments from the highest `v<major>.<minor>.*` git tag — nothing writes back to the
+  protected `main` branch. See `.github/scripts/compute-version.sh`.
+- `versionCode = fileVersionCode + (nextPatch - filePatch)`, so it stays monotonic without
+  external state. (Commit count is **not** usable: it is 246 against a floor of 394.)
+- The computed version is stamped into the APK via `/p:ApplicationDisplayVersion` and
+  `/p:ApplicationVersion`. Before this, the csproj defaults (`1` / `1.0.0`) shipped in every
+  release regardless of its tag.
+- `publish-release` **fails** if the tag already exists. Previously it re-published the same tag
+  on every merge and `softprops/action-gh-release` silently updated the existing release.
+
+### Helper scripts (`.github/scripts/`)
+
+| Script | Purpose |
+|---|---|
+| `compute-version.sh` | Next version/tag from `version.properties` + git tags |
+| `report-test-results.sh` | TRX counts + Cobertura coverage to the run summary; optional coverage gate |
+| `codeql-severity-gate.sh` | Fails on open high/critical alerts — `analyze@v4` has no threshold of its own |
+
+- **Coverage gates at `COVERAGE_MIN: '60'`** — a ratchet set just under the measured 63.3% line
+  coverage, so it holds the current level without blocking work. The target is still 70: raise the
+  floor as coverage climbs, and never lower it to turn a red run green. (`'0'` disables the gate
+  and switches the script to report-only, which is where this started before a run printed a real
+  number — gating blind would have blocked every PR.)
+- **CodeQL must build `src/MauiApp`, not just `src/Core`.** Building Core alone left the entire
+  P/Invoke interop layer unanalyzed. `wait-for-processing: true` is required — the severity gate
+  reads alerts that do not exist until SARIF processing finishes.
+
+## Emulator Test Patterns
 
 - **Node.js version**: `22` (upgraded from 20 — EOL June 2026). Do NOT revert to 20.
 - **Emulator cold-start**: always poll `sys.boot_completed=1` before `adb install` — see `testing/e2e/scripts/run-emulator-tests.sh`
-- **UI test timeouts**: `ClickNav` base wait = **30s**, `AssertPageVisible` = **30s** for cold emulator. Do not reduce below 30s.
+- **UI test timeouts** come from `tests/MauiApp.UITests/Infrastructure/Timeouts.cs` and nowhere
+  else — `Element` 10s, `Navigation` 20s, `AppStart` 45s, `Network` 30s. Widen the named budget,
+  never a single call site; per-call numbers are what produced 10/12/15/20/30s scattered through
+  one file with a 10s wait failing where its 15s sibling passed on the same screen.
 - **APK to install**: always use `com.ndi.android-Signed.apk` (not the unsigned variant) — path: `src/MauiApp/bin/Debug/net10.0-android/com.ndi.android-Signed.apk`
 - **`DELETE_FAILED_INTERNAL_ERROR`** on `adb uninstall` is harmless — package was not installed; `adb install` will succeed.
 - **`INSTALL_PARSE_FAILED_NO_CERTIFICATES`** means unsigned APK was used — switch to `-Signed.apk`.
+- **The emulator job must install the .NET SDK.** `MauiApp.UITests` targets `net10.0`; without an
+  explicit `actions/setup-dotnet` the job silently depends on the runner image's preinstalled SDK.
+
+### UI test structure (#311, #312)
+
+- **Locators live in page objects, never in test methods.** `tests/MauiApp.UITests/Pages/` — one
+  class per screen, all extending `PageObject`, which is the only place that calls `FindElement`.
+  A test that needs a new element gets a new property on the page object, not an XPath.
+- **Elements are found by automation id**, declared once in `src/Core/Testing/TestIds.cs` and
+  referenced from both the XAML (`{x:Static t:TestIds.X}`) and the page objects — so renaming one
+  is a compile error rather than a locator that quietly stops matching. MAUI maps `AutomationId`
+  to Android's `resource-id`. **Never match on visible text**: Shell renders the current page's
+  `Title` in the top app bar, so while Home is showing the string "Home" is in the tree three
+  times, and a text locator picks the title.
+  - `TestIds` members are deliberately **flat, not nested classes** — `{x:Static t:TestIds+Home.Page}`
+    needs nested-type resolution that XAML compilers do not reliably support, and the Android head
+    cannot be built outside CI to catch it.
+- **Navigation is the one exception** and resolves id-first, falling back to the accessibility
+  label. The rail is our own `Border` so its id sticks; the bottom bar is Shell's native
+  `BottomNavigationView`, which does not reliably carry `AutomationId` through from `ShellContent`.
+  `NavigationBar.LastResolution` records which path was used.
+- **Failures capture themselves.** `UiTestBase.Run` wraps every test body, writing a screenshot,
+  the full view hierarchy, and device state to `E2E_ARTIFACT_DIR` (CI:
+  `test-results/failure-evidence/`, uploaded in `emulator-diagnostics`). Locator timeouts also
+  inline the ids that *were* on screen, which distinguishes wrong-page from not-yet-rendered from
+  genuinely-missing without another 8-minute run.
+- **Every test establishes the app; none inherits it.** One Appium session serves the whole
+  collection, so a test that restarts the app leaves every later test running against the
+  **launcher** — and the first casualty then reports "page did not become visible", which points
+  investigation at the page rather than at what removed the app. `UiTestBase.Run` calls
+  `NdiApp.EnsureInForeground()` before each body, and says so explicitly when the app cannot be
+  brought back. Two traps this exposed, both worth remembering:
+  - **"Any element with text" is not proof the app is running** — the launcher satisfies it, and a
+    startup smoke test written that way reported success while the app was not running at all.
+  - **`CurrentPackage` is not proof either.** After the `am force-stop` that `TerminateApp` issues,
+    ActivityManager logs `Force removing ActivityRecord … app died, no saved state` while
+    `CurrentPackage` still returns `com.ndi.android`. Assert a node exists under
+    `com.ndi.android:id/` instead: Android namespaces `resource-id` by package, so one is present
+    only if our process is really rendering.
+  - **A skip travels as an exception**, so a `try`/`catch` that captures failure evidence will file
+    a screenshot for every conditional skip unless it filters them out.
+
+### Theme, layout and accessibility coverage (#313, #314)
+
+- **Colour is asserted as contrast, never as hex.** Pinning literal colours fails on every
+  intentional palette change, which is how colour assertions end up deleted. Contrast is also the
+  property that actually broke in #294 — the icon was not "wrong", it was *invisible against what
+  was behind it*. `ScreenSampler` reads real pixels, because a MAUI `Path`'s `Fill` is not in the
+  accessibility tree at all and Appium therefore cannot see it.
+- **Themes are switched through the app's own Settings UI**, never by forcing `UserAppTheme` —
+  forcing it skips the persistence path, which is where #300 lived.
+- **`DeviceMetrics` throws rather than defaulting.** A status-bar height that fell back to `0`
+  would turn "the rail sits below the status bar" into "y >= 0", which passes against #296. Any
+  measurement that cannot be read is an infrastructure failure and must look like one.
+- **Watch for vacuous colour assertions.** A contrast ratio stays healthy if the theme never
+  changes at all, so `Theme_SwitchingLightToDark_ActuallyChangesWhatIsOnScreen` compares the two
+  themes' real background pixels. Without it every other assertion in that file could pass on an
+  app whose theme switch was completely broken.
+- **The accessibility gate is a ratchet**, `A11Y_MAX_VIOLATIONS` (same pattern as `COVERAGE_MIN`).
+  Lower it as violations are fixed; never raise it to turn a red run green. Two checks sit
+  *outside* the ratchet and may not regress at all: navigation items must announce a destination,
+  and no element may announce an automation id as its label.
+- **`AutomationId` ≠ `SemanticProperties.Description`.** One is a machine hook, the other is what
+  TalkBack reads aloud. `Accessibility_AutomationIds_AreNotUsedAsScreenReaderLabels` asserts the
+  two never collide — a guard against the 99 ids added in #311 leaking into announcements.
+
+### Every test establishes the app; none inherits it
+
+One Appium session is shared by the whole collection, so a test that terminates the app — two of
+them restart it deliberately — leaves every later test running against the **launcher**. The first
+casualty reports "page did not become visible" and every test after it repeats the same misleading
+message, turning one real problem into a wall of noise. `UiTestBase.Run` calls
+`NdiApp.EnsureInForeground()` before each body; when the app cannot be brought back it says so,
+naming the package that *is* in front, instead of blaming the page.
+
+Two traps this exposed, both worth remembering:
+
+- **"Any element with text" is not proof the app is running.** The Android launcher satisfies it.
+  A startup smoke test written that way reported success while the app was not running at all —
+  vacuous green, one layer down from where it was last removed.
+- **`CurrentPackage` is not proof either.** After the `am force-stop` that `TerminateApp` issues,
+  ActivityManager logs `Force removing ActivityRecord … app died, no saved state` while
+  `CurrentPackage` still returns `com.ndi.android` — so a package-only foreground check declares a
+  dead app healthy and skips the relaunch. Assert a node exists under `com.ndi.android:id/`
+  instead: Android namespaces `resource-id` by package, so one is present only if our process is
+  really rendering.
+- **A skip travels as an exception.** Wrapping a test body in a `try`/`catch` to capture failure
+  evidence will treat every conditional skip as a failure and file a screenshot for it, which
+  reads as a failure to anyone scanning the artifact list. Filter it out.
+
+### Proving a regression test actually catches its bug
+
+`emulator-tests.yml` takes `app_ref`, `test_filter` and `expect_failure`. It builds the **APK from
+any commit** while the **tests come from the current branch**, so today's suite can be pointed at a
+pre-fix build. With `expect_failure: true` the run is green only when the test *fails* — which is
+the thing being proven. A regression test written after its fix has never seen the defect, so
+without this nothing establishes that it would have caught it.
+
+> **Local limitation**: `dotnet build NdiForAndroid.sln` cannot build `src/MauiApp` in a web
+> session — the Ubuntu-packaged SDK does not expose workloads to MSBuild, so `maui-android` never
+> resolves even after `dotnet workload install` reports success and `dotnet workload list` shows it.
+> Core and both test projects build and run locally; **XAML is only compiled in CI**. Treat a XAML
+> edit as unverified until the `build-and-test` / `Build Release APK` jobs are green.
 
 ## MAUI Theming Rules (lessons from #142)
 

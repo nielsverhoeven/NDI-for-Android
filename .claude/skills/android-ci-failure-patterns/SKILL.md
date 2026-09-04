@@ -129,6 +129,102 @@ Before any `adb install` step in a test or CI script, verify:
 
 ---
 
+## Failure Class 4 — Vacuous Green: the e2e suite passes without running
+
+This is the inverse of the classes above. Nothing looks broken; the job is **green**. That is
+the failure.
+
+### Signature
+```
+Skipped! - Failed: 0, Passed: 0, Skipped: 10, Total: 10, Duration: 31 ms
+dotnet test exit code: 0
+```
+Any run where `passed = 0` and the job still succeeded. A suspiciously fast emulator step
+(~1 min for boot + install + Appium + tests) is the other tell.
+
+### Root Cause
+Every test in `MauiApp.UITests` is a `[SkippableFact]` guarded by
+`Skip.If(_fixture.SkipReason is not null)`. `AppiumDriverFixture` sets `SkipReason` — rather
+than throwing — whenever it cannot produce a driver: missing `ANDROID_APK_PATH`, unreachable
+Appium, non-success HTTP from `/status`, or a failed `AndroidDriver` construction.
+
+So **any** infrastructure problem converts the whole suite into skips, and `dotnet test` exits
+0. The gate cannot fail for environmental reasons; it can only fail on an assertion inside a
+test that got far enough to run. When the driver never connects, none do.
+
+### Fix
+Two independent mechanisms, both already in the repo. Do not remove either:
+
+1. **`E2E_REQUIRE_DEVICE=true`** (set in the `e2e-tests` job) makes `AppiumDriverFixture` throw
+   on an unavailable session instead of recording a skip. Leave it unset locally so developers
+   without an emulator still get skips rather than failures.
+2. **`run-emulator-tests.sh` reads the TRX `<Counters>` back** and exits 1 when `passed = 0`.
+   A zero exit from `dotnet test` is not evidence that anything executed.
+
+### Diagnosing the underlying connection failure
+Once the gate is honest it will surface whatever was hidden. The real error is in the Appium
+log, which the workflow uploads as the `emulator-diagnostics` artifact:
+```bash
+# in test-results/appium.log — look for the session-creation failure
+grep -iE "error|failed|could not|refused" test-results/appium.log | head -30
+```
+Common causes: UIAutomator2 driver not installed, the APK's launcher activity not resolvable
+(the MAUI `crc64…` activity name changes per build — do not pin `appium:appActivity`), or the
+emulator reporting `boot_completed` before system services are actually ready.
+
+### Prevention
+Treat `passed = 0` as a failure everywhere, not just here. Any gate built on a test runner that
+can skip needs an explicit assertion that work was done — otherwise a green check is
+indistinguishable from an empty one, and it manufactures confidence.
+
+---
+
+## Failure Class 5 — Appium: "'crc64<hash>.MainActivity' never started"
+
+### Signature
+```
+WebDriverException: Cannot start the 'com.ndi.android' application.
+Original error: 'crc643c67d503e9d44ae5.MainActivity' or
+'com.ndi.android.crc643c67d503e9d44ae5.MainActivity' never started.
+```
+Session creation fails. The app may in fact be running perfectly well.
+
+### Root Cause
+Appium reads the launcher activity from the APK manifest, launches it, then waits for *that
+exact activity* to become the foreground activity. Two things in this app break the match:
+
+1. **MAUI generates the activity name as a `crc64…` hash**, regenerated per build. Never pin
+   `appium:appActivity` to it.
+2. **`MainActivity.OnCreate` requests `POST_NOTIFICATIONS` on API 33+.** On API 33+ emulators
+   the permission dialog is the foreground activity at exactly the moment Appium checks.
+
+The default `appWaitDuration` is 20s, and MAUI cold start on a software-rendered emulator
+routinely exceeds that — this repo's own floor for a cold emulator is 30s.
+
+### Fix
+Set these capabilities in `AppiumDriverFixture` (all three are already there — do not remove):
+```csharp
+options.AddAdditionalAppiumOption("appium:appWaitActivity", "*");        // accept any foreground activity
+options.AddAdditionalAppiumOption("appium:appWaitDuration", 60000);      // MAUI cold start > 20s default
+options.AddAdditionalAppiumOption("appium:autoGrantPermissions", true);  // dismiss the permission dialog
+```
+
+### Distinguishing "crashed" from "slow"
+Both look identical from Appium's side. `run-emulator-tests.sh` collects device state on
+failure **while the emulator is still alive** — after the emulator-runner action returns, it
+is gone. Check the `emulator-diagnostics` artifact:
+
+| File | Tells you |
+|---|---|
+| `logcat-crash.txt` | Non-empty ⇒ the app aborted. Cross-reference Failure Classes 1–3. |
+| `logcat-tail.txt` | Last 400 lines of the full log — startup exceptions, native loader errors |
+| `package-info.txt` | Whether the APK actually installed, and its resolved activities |
+
+An empty crash buffer means the app did not abort and the activity wait timed out instead —
+that is this failure class, not a crash.
+
+---
+
 ## Quick Reference Table
 
 | Error in logs | Class | Fix |
@@ -138,3 +234,6 @@ Before any `adb install` step in a test or CI script, verify:
 | `XAGNM7009 missing native code generation state` | Stale Release Build | `dotnet clean` then rebuild |
 | `INSTALL_FAILED_VERSION_DOWNGRADE` | Version downgrade | Increment `ApplicationVersion` |
 | App exits silently, `adb shell pidof com.ndi.android` returns nothing | Check crash buffer | `adb logcat -b crash -d -v time` |
+| `Passed: 0, Skipped: N` with a green job | Vacuous Green | Set `E2E_REQUIRE_DEVICE=true`; assert `passed > 0` |
+| `'crc64<hash>.MainActivity' never started` | Activity wait mismatch | `appWaitActivity: "*"`, longer `appWaitDuration`, `autoGrantPermissions` |
+| `APK at 'apk/…' does not exist` in the fixture | Relative APK path | Pass `ANDROID_APK_PATH` absolute — the test host's cwd is the project output dir |

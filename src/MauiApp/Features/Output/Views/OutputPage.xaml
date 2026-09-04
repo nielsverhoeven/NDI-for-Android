@@ -2,8 +2,10 @@
 <ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              xmlns:vm="clr-namespace:NdiForAndroid.Features.Output.ViewModels;assembly=NdiForAndroid.Core"
+             xmlns:t="clr-namespace:NdiForAndroid.Testing;assembly=NdiForAndroid.Core"
              x:Class="NdiForAndroid.Features.Output.Views.OutputPage"
              x:DataType="vm:OutputViewModel"
+             AutomationId="{x:Static t:TestIds.OutputPage}"
              Title="Output">
     <!-- ScrollView keeps the full form reachable in landscape / small windows (#280). -->
     <ScrollView>
@@ -13,7 +15,8 @@
         <Frame>
             <HorizontalStackLayout Spacing="8" HorizontalOptions="Center">
                 <Label Text="Capture:" VerticalOptions="Center" />
-                <Switch IsToggled="{Binding IsReStreamMode, Converter={StaticResource InverseBoolConverter}}" />
+                <Switch AutomationId="{x:Static t:TestIds.OutputModeToggle}"
+                        IsToggled="{Binding IsReStreamMode, Converter={StaticResource InverseBoolConverter}}" />
                 <Label Text="Re-stream:" VerticalOptions="Center" />
             </HorizontalStackLayout>
         </Frame>
@@ -21,6 +24,7 @@
         <!-- Stream name -->
         <Label Text="Stream Name" FontAttributes="Bold" />
         <Entry Text="{Binding StreamName}"
+               AutomationId="{x:Static t:TestIds.OutputStreamName}"
                Placeholder="NDI-Android"
                IsEnabled="{Binding IsOutputActive, Converter={StaticResource InverseBoolConverter}}" />
 
@@ -28,7 +32,8 @@
         <Label Text="Video Input"
                FontAttributes="Bold"
                IsVisible="{Binding IsReStreamMode, Converter={StaticResource InverseBoolConverter}}" />
-        <Picker ItemsSource="{Binding AvailableInputKinds}"
+        <Picker AutomationId="{x:Static t:TestIds.OutputVideoInput}"
+                ItemsSource="{Binding AvailableInputKinds}"
                 SelectedItem="{Binding SelectedInputKind}"
                 ItemDisplayBinding="{Binding ., Converter={StaticResource VideoInputKindDisplayConverter}}"
                 IsVisible="{Binding IsReStreamMode, Converter={StaticResource InverseBoolConverter}}"
@@ -37,7 +42,8 @@
         <!-- Microphone audio (capture mode only) -->
         <HorizontalStackLayout Spacing="8"
                                IsVisible="{Binding IsReStreamMode, Converter={StaticResource InverseBoolConverter}}">
-            <Switch IsToggled="{Binding CaptureMicrophone}"
+            <Switch AutomationId="{x:Static t:TestIds.OutputMicrophoneToggle}"
+                    IsToggled="{Binding CaptureMicrophone}"
                     IsEnabled="{Binding IsOutputActive, Converter={StaticResource InverseBoolConverter}}" />
             <Label Text="Send microphone audio" VerticalOptions="Center" />
         </HorizontalStackLayout>
@@ -47,6 +53,7 @@
                FontAttributes="Bold"
                IsVisible="{Binding IsReStreamMode}" />
         <Entry Text="{Binding ReStreamSourceId}"
+               AutomationId="{x:Static t:TestIds.OutputReStreamSourceId}"
                Placeholder="Select a source on Sources page"
                IsVisible="{Binding IsReStreamMode}"
                IsEnabled="{Binding IsOutputActive, Converter={StaticResource InverseBoolConverter}}" />
@@ -56,9 +63,11 @@
                                HorizontalOptions="Center"
                                IsVisible="{Binding IsOutputActive}">
             <Label Text="{Binding ConnectionCount, StringFormat='Connections: {0}'}"
+                   AutomationId="{x:Static t:TestIds.OutputConnectionCount}"
                    TextColor="{DynamicResource TextSecondary}"
                    VerticalOptions="Center" />
             <Label Text="ON AIR"
+                   AutomationId="{x:Static t:TestIds.OutputOnAirTally}"
                    FontAttributes="Bold"
                    TextColor="{DynamicResource ErrorRed}"
                    IsVisible="{Binding IsOnProgramTally}"
@@ -66,11 +75,15 @@
         </HorizontalStackLayout>
 
         <!-- Status -->
-        <Label Text="{Binding StatusMessage}" HorizontalOptions="Center" />
+        <Label Text="{Binding StatusMessage}"
+               AutomationId="{x:Static t:TestIds.OutputStatus}"
+               HorizontalOptions="Center" />
         <Button Text="Start Output" Command="{Binding StartOutputCommand}"
+                AutomationId="{x:Static t:TestIds.OutputStart}"
                 IsVisible="{Binding IsOutputActive, Converter={StaticResource InverseBoolConverter}}"
                 HorizontalOptions="Center" />
         <Button Text="Stop Output" Command="{Binding StopOutputCommand}"
+                AutomationId="{x:Static t:TestIds.OutputStop}"
                 IsVisible="{Binding IsOutputActive}" HorizontalOptions="Center" />
     </VerticalStackLayout>
     </ScrollView>

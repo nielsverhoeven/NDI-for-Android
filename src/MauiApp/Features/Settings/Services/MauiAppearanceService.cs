@@ -16,6 +16,8 @@ namespace NdiForAndroid.Features.Settings.Services;
 /// </summary>
 public sealed class MauiAppearanceService : IAppearanceService
 {
+    public event EventHandler? AppearanceChanged;
+
     // Last applied chrome state, so ReapplyChrome can restore it after Shell navigation
     // re-applies per-page toolbar appearance (resets the AppBarLayout background, #296).
     private static Palette? _lastPalette;
@@ -49,7 +51,7 @@ public sealed class MauiAppearanceService : IAppearanceService
         });
     }
 
-    private static void ApplyCore(ThemeMode theme, AccentColorOption accentColor)
+    private void ApplyCore(ThemeMode theme, AccentColorOption accentColor)
     {
         if (Application.Current is null)
             return;
@@ -70,11 +72,14 @@ public sealed class MauiAppearanceService : IAppearanceService
         var accent  = ResolveAccent(accentColor);
 
         UpdateResources(palette, accent);
-        UpdateShell(palette, isLight);
+        UpdateShell(palette);
         UpdateAndroidStatusBar(palette, isLight);
 
         _lastPalette = palette;
         _lastIsLight = isLight;
+
+        // Fires last: subscribers re-read the resource dictionary this call just rewrote.
+        AppearanceChanged?.Invoke(this, EventArgs.Empty);
     }
 
     // ── Color palettes ──────────────────────────────────────────────
@@ -120,7 +125,12 @@ public sealed class MauiAppearanceService : IAppearanceService
         ShellForeground:    Color.FromArgb("#1C1C1E"),
         ShellTitleColor:    Color.FromArgb("#1C1C1E"),
         ShellTabSelected:   Color.FromArgb("#1C1C1E"),
-        ShellTabUnselected: Color.FromArgb("#8E8E93"),
+        // #6E6E73, not the #8E8E93 the dark palette uses. That grey was inherited unchanged from
+        // dark, where it sits on #1C1C1E at a comfortable 5.2:1 — but against this palette's
+        // #E5E5EA shell it is only 2.59:1, under the 3:1 WCAG AA bar for graphical objects, so
+        // unselected navigation items were genuinely hard to read in the light theme. #6E6E73
+        // restores 4.0:1 while staying visibly secondary next to the selected item.
+        ShellTabUnselected: Color.FromArgb("#6E6E73"),
         TextPrimary:        Color.FromArgb("#1C1C1E"),
         TextSecondary:      Color.FromArgb("#3C3C43"),
         TextPlaceholder:    Color.FromArgb("#8E8E93"),
@@ -165,7 +175,7 @@ public sealed class MauiAppearanceService : IAppearanceService
 
     // ── Shell chrome ────────────────────────────────────────────────
 
-    private static void UpdateShell(Palette p, bool isLight)
+    private static void UpdateShell(Palette p)
     {
         // Single-window app: the Shell is the first (only) window's page.
         if (Application.Current?.Windows.FirstOrDefault()?.Page is not Shell shell)
@@ -182,10 +192,6 @@ public sealed class MauiAppearanceService : IAppearanceService
 
         if (shell.FlyoutContent is Grid flyoutGrid)
             flyoutGrid.BackgroundColor = p.ShellBackground;
-
-        // Rail icons/labels don't react to resource changes — retint them explicitly (#294).
-        if (shell is AppShell appShell)
-            appShell.ApplyThemePalette(isLight);
     }
 
     // ── Android status bar ──────────────────────────────────────────
@@ -226,8 +232,7 @@ public sealed class MauiAppearanceService : IAppearanceService
         // the app draws underneath it. Two views own that region and both default to MAUI
         // template colors (#2C3E50): the Shell DrawerLayout's statusBarBackground and the
         // AppBarLayout background (its Toolbar child is inset below the status bar, but its
-        // own background extends to y=0). Recolor both to the theme chrome, and push the
-        // rail below the inset so it no longer interleaves with the system clock (#296).
+        // own background extends to y=0). Recolor both to the theme chrome (#296).
         var decor = activity.Window.DecorView;
         var chrome = new Android.Graphics.Color(
             (byte)(p.ShellBackground.Red   * 255),
@@ -237,13 +242,6 @@ public sealed class MauiAppearanceService : IAppearanceService
 
         FindView<AndroidX.DrawerLayout.Widget.DrawerLayout>(decor)?.SetStatusBarBackgroundColor(chrome);
         FindView<Google.Android.Material.AppBar.AppBarLayout>(decor)?.SetBackgroundColor(chrome);
-
-        var topPx = ViewCompat.GetRootWindowInsets(decor)?
-            .GetInsets(WindowInsetsCompat.Type.StatusBars()).Top ?? GetStatusBarHeightPx(activity);
-        var density = activity.Resources?.DisplayMetrics?.Density ?? 1f;
-
-        if (Application.Current?.Windows.FirstOrDefault()?.Page is AppShell appShell)
-            appShell.SetRailTopInset(topPx / density);
 #endif
     }
 
@@ -263,13 +261,6 @@ public sealed class MauiAppearanceService : IAppearanceService
         }
 
         return null;
-    }
-
-    private static int GetStatusBarHeightPx(Android.App.Activity activity)
-    {
-        var resources = activity.Resources;
-        var id = resources?.GetIdentifier("status_bar_height", "dimen", "android") ?? 0;
-        return id > 0 ? resources!.GetDimensionPixelSize(id) : 0;
     }
 #endif
 }

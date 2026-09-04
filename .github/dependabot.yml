@@ -1,0 +1,40 @@
+version: 2
+
+updates:
+  # Action versions drift silently until something breaks. The workflows already emit Node 20
+  # deprecation warnings for six actions, which is exactly what this is meant to surface.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(ci)"
+    groups:
+      actions:
+        patterns: ["*"]
+
+  - package-ecosystem: nuget
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      # Test tooling moves together and is low risk to batch.
+      test-tooling:
+        patterns:
+          - "xunit*"
+          - "Moq"
+          - "Microsoft.NET.Test.Sdk"
+          - "coverlet.*"
+          - "Microsoft.Extensions.TimeProvider.Testing"
+    ignore:
+      # Pinned deliberately: MAUI major upgrades are a migration, not a dependency bump.
+      - dependency-name: "Microsoft.Maui.Controls"
+        update-types: ["version-update:semver-major"]
+      # 1.11.x-beta is the version the SQLite data layer is built and tested against.
+      - dependency-name: "sqlite-net-pcl"

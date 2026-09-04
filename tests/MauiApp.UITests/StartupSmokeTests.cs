@@ -1,93 +1,60 @@
-using OpenQA.Selenium;
-using OpenQA.Selenium.Appium.Android;
-using OpenQA.Selenium.Support.UI;
+using NdiForAndroid.UITests.Infrastructure;
 using Xunit;
 
 namespace NdiForAndroid.UITests;
 
 /// <summary>
-/// Smoke tests that validate the app launches and reaches a visible UI state
-/// after APK installation. These specifically guard against the startup-abort
-/// regression described in issue #153 (libmonodroid Fast Deployment abort).
+/// The app launches and reaches a visible UI state after installation.
 /// </summary>
+/// <remarks>
+/// Guards the startup-abort regression from #153 (libmonodroid Fast Deployment abort). If the APK
+/// aborts on startup the Appium session cannot be created at all, so in CI — where
+/// <c>E2E_REQUIRE_DEVICE=true</c> — the fixture throws during setup and the suite goes red rather
+/// than reporting a pass it never earned.
+/// </remarks>
 [Collection("AppiumSession")]
-public sealed class StartupSmokeTests
+public sealed class StartupSmokeTests : UiTestBase
 {
-    private readonly AppiumDriverFixture _fixture;
-
-    public StartupSmokeTests(AppiumDriverFixture fixture)
-    {
-        _fixture = fixture;
-    }
+    public StartupSmokeTests(AppiumDriverFixture fixture) : base(fixture) { }
 
     /// <summary>
-    /// Verifies the app reaches a visible UI element within the timeout window.
-    /// If the APK aborts on startup due to a Fast Deployment mismatch, the
-    /// Appium session itself will fail to create (driver will be null / SkipReason set),
-    /// causing all tests to be skipped rather than incorrectly reported as passing.
-    /// A successful session creation proves the app survived startup.
+    /// The app survives startup far enough for Appium to attach.
     /// </summary>
+    /// <remarks>
+    /// Reaching the test body <i>is</i> the assertion: <see cref="UiTestBase.Run"/> only gets a
+    /// driver once the session was created, which cannot happen if the process aborted at the
+    /// Fast Deployment check.
+    /// </remarks>
     [SkippableFact]
-    public void AppStartup_DoesNotAbort_DriverSessionEstablished()
+    public void AppStartup_DoesNotAbort_SessionIsEstablished() => Run(app =>
     {
-        Skip.If(_fixture.SkipReason is not null, _fixture.SkipReason ?? string.Empty);
-
-        // If we reach here, the Appium session was created — the app did not abort
-        // at the libmonodroid Fast Deployment check. Driver being non-null is the assertion.
-        Assert.NotNull(_fixture.Driver);
-    }
+        Assert.NotNull(app);
+    });
 
     /// <summary>
-    /// Verifies the app renders at least one visible UI element within 30 seconds of launch.
-    /// Guards against cases where the app process starts but immediately exits without
-    /// rendering anything (silent crash after Appium session creation).
-    /// Timeout is 30s (not 15s) to accommodate cold-start emulator boot in CI.
+    /// The app renders something within the cold-start budget.
     /// </summary>
+    /// <remarks>
+    /// Catches a process that starts and then exits without drawing — a silent crash after the
+    /// Appium session exists, which the session check above cannot see. The name used to promise
+    /// 15 seconds while the code waited 30; the budget now comes from
+    /// <see cref="Timeouts.AppStart"/> and the name no longer states a number it does not own.
+    /// </remarks>
     [SkippableFact]
-    public void AppStartup_RendersUiWithin15Seconds()
+    public void AppStartup_RendersUiWithinTheColdStartBudget() => Run(app =>
     {
-        Skip.If(_fixture.SkipReason is not null, _fixture.SkipReason ?? string.Empty);
+        var deadline = DateTime.UtcNow + Timeouts.AppStart;
 
-        var driver = _fixture.Driver!;
-        var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(30));
-
-        // Any visible, non-loading element proves the UI rendered.
-        // Try the Sources tab first (MAUI Shell home), then known Settings elements,
-        // then fall back to any visible text to handle app being on any page.
-        var element = wait.Until(d =>
+        while (DateTime.UtcNow < deadline)
         {
-            try
-            {
-                // Primary: Sources shell tab visible
-                var el = d.FindElement(By.XPath(
-                    "//*[@content-desc='Sources' or @text='NDI Sources' or @text='Sources']"));
-                return el.Displayed ? el : null;
-            }
-            catch (NoSuchElementException)
-            {
-                try
-                {
-                    // Secondary: Settings sidebar buttons are always visible on Settings page
-                    var settingsEl = d.FindElement(By.XPath(
-                        "//*[@text='General' or @text='GENERAL' or @text='Appearance' or @text='APPEARANCE']"));
-                    return settingsEl.Displayed ? settingsEl : null;
-                }
-                catch (NoSuchElementException)
-                {
-                    try
-                    {
-                        // Fallback: any non-empty text element proves UI rendered
-                        var anyText = d.FindElement(By.XPath("//*[@text and string-length(@text) > 0]"));
-                        return anyText.Displayed ? anyText : null;
-                    }
-                    catch (NoSuchElementException)
-                    {
-                        return null;
-                    }
-                }
-            }
-        });
+            if (app.HasRenderedContent())
+                return;
 
-        Assert.NotNull(element);
-    }
+            Thread.Sleep(250);
+        }
+
+        Assert.Fail(
+            $"No visible text rendered within {Timeouts.AppStart.TotalSeconds:0}s of launch. " +
+            "See the captured screenshot and view hierarchy for what was on screen.");
+    });
 }

@@ -1,7 +1,37 @@
+# Manual emulator runs, and the regression-proof harness.
+#
+# Beyond running the UI suite on demand, this workflow answers a question the PR pipeline cannot:
+# *does a regression test actually fail against the bug it was written for?* A test written after
+# a fix has never seen the defect, so nothing proves it would have caught it — and a regression
+# test that cannot fail on the original bug proves nothing at all. #313 makes that the acceptance
+# bar for the theme and inset tests.
+#
+# `app_ref` builds the APK from any commit while the tests still come from this branch, so the
+# current suite can be pointed at a pre-fix build of the app. With `expect_failure`, the run is
+# green when the test *fails*, which is what proves it works.
+#
+#   Prove the #294 rail-tint test catches the original defect:
+#     app_ref:        <commit immediately before the #294 fix>
+#     test_filter:    FullyQualifiedName~Theme_NavigationIcons_ContrastAgainstTheirBackground
+#     expect_failure: true
 name: Emulator UI Tests (manual only)
 
 on:
   workflow_dispatch:
+    inputs:
+      app_ref:
+        description: 'Git ref to build the APK from. Blank = this branch. Set to a pre-fix commit to prove a regression test.'
+        required: false
+        type: string
+      test_filter:
+        description: 'dotnet test --filter expression. Blank = run everything.'
+        required: false
+        type: string
+      expect_failure:
+        description: 'Invert the result: the run passes only if a test FAILS. Use with app_ref to prove a regression test.'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -17,7 +47,19 @@ jobs:
     timeout-minutes: 30
 
     steps:
+      # The app is built from app_ref when given, so it can be an older commit than the tests.
+      # Blank falls through to the branch the workflow was dispatched on.
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.app_ref || github.ref }}
+
+      - name: Report what is being built
+        run: |
+          echo "Building the app from: $(git rev-parse HEAD)"
+          git log -1 --format='  %h %s (%ci)'
+          if [ -n "${{ inputs.app_ref }}" ]; then
+            echo "NOTE: this is a non-default ref — tests will come from ${{ github.ref }}."
+          fi
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
@@ -63,8 +105,15 @@ jobs:
 
     env:
       APPIUM_SERVER_URL: http://127.0.0.1:4723/
+      # Tests must be able to fail for a proof run to mean anything, so the fixture still treats
+      # a missing device as fatal here exactly as it does in the PR pipeline.
+      E2E_REQUIRE_DEVICE: 'true'
+      E2E_TEST_FILTER: ${{ inputs.test_filter }}
+      E2E_EXPECT_FAILURE: ${{ inputs.expect_failure }}
 
     steps:
+      # Deliberately NOT app_ref: the tests always come from the branch under development. That
+      # separation is the whole mechanism — current tests, historical app.
       - uses: actions/checkout@v4
 
       - name: Setup Java
@@ -94,9 +143,13 @@ jobs:
           name: android-apk
           path: apk
 
+      # Absolute — see the same step in ndi-for-android-cicd.yml. dotnet test runs the test
+      # host from the project output directory, so a workspace-relative path does not resolve
+      # inside AppiumDriverFixture.
       - name: Locate downloaded APK
         run: |
-          APK_PATH=$(find apk -name "*.apk" | head -1)
+          APK_PATH=$(find "$PWD/apk" -name '*.apk' -type f -print -quit)
+          if [ -z "$APK_PATH" ]; then echo "No APK in artifact"; exit 1; fi
           echo "APK_PATH=$APK_PATH" >> $GITHUB_ENV
           echo "Using APK: $APK_PATH"
 
@@ -165,4 +218,5 @@ jobs:
           path: |
             test-results/*.log
             test-results/*.txt
+            test-results/failure-evidence/**
           if-no-files-found: warn
