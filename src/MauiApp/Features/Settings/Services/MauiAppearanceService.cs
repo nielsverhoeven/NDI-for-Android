@@ -1,8 +1,6 @@
 using NdiForAndroid.Features.Settings.Models;
-using NdiForAndroid.Features.Settings.Services;
 
 #if ANDROID
-using Android.Views;
 using AndroidX.Core.View;
 #endif
 
@@ -33,21 +31,22 @@ public sealed class MauiAppearanceService : IAppearanceService
 
     public void ReapplyChrome()
     {
-        if (_lastPalette is null)
+        if (_lastPalette is not { } palette)
             return;
-
-        var palette = _lastPalette;
-        var isLight = _lastIsLight;
 
         // Always queue (never run inline): the toolbar appearance tracker that resets the
         // AppBarLayout background runs synchronously during navigation, and freshly created
         // pages apply theirs once more after the Navigated event — a second, delayed pass
         // wins that race without visible flicker.
-        MainThread.BeginInvokeOnMainThread(() => UpdateAndroidStatusBar(palette, isLight));
+        MainThread.BeginInvokeOnMainThread(() => UpdateAndroidStatusBar(palette, _lastIsLight));
         _ = Task.Run(async () =>
         {
             await Task.Delay(250).ConfigureAwait(false);
-            MainThread.BeginInvokeOnMainThread(() => UpdateAndroidStatusBar(palette, isLight));
+            MainThread.BeginInvokeOnMainThread(() =>
+            {
+                if (_lastPalette is { } latestPalette)
+                    UpdateAndroidStatusBar(latestPalette, _lastIsLight);
+            });
         });
     }
 
