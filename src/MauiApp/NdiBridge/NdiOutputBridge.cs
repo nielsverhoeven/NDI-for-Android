@@ -33,6 +33,13 @@ public sealed class NdiOutputBridge : INdiOutputBridge, IDisposable
     /// <summary>Guards re-stream lifecycle state (handles + thread reference).</summary>
     private readonly object _reStreamLock = new();
 
+    /// <summary>Serializes Start/StopOutputAsync so a stop mid-start can never race
+    /// a start reporting success after its handle was torn down.</summary>
+    private readonly SemaphoreSlim _outputLock = new(1, 1);
+
+    /// <summary>Serializes Start/StopReStreamAsync — independent session from output capture.</summary>
+    private readonly SemaphoreSlim _reStreamStartStopLock = new(1, 1);
+
     private IntPtr _send;
     private bool _micRequested;
     private Timer? _statusTimer;
@@ -73,11 +80,28 @@ public sealed class NdiOutputBridge : INdiOutputBridge, IDisposable
         bool captureMicrophone = false,
         CancellationToken cancellationToken = default)
     {
+        await _outputLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await StartOutputCoreAsync(streamName, inputKind, captureMicrophone, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _outputLock.Release();
+        }
+    }
+
+    private async Task StartOutputCoreAsync(
+        string streamName,
+        VideoInputKind inputKind,
+        bool captureMicrophone,
+        CancellationToken cancellationToken)
+    {
         if (string.IsNullOrWhiteSpace(streamName))
             throw new ArgumentException("Stream name is required.", nameof(streamName));
 
         // Full clean stop of any active session before starting a new one.
-        await StopOutputAsync(CancellationToken.None).ConfigureAwait(false);
+        await StopOutputCoreAsync().ConfigureAwait(false);
 
         if (!_runtime.EnsureInitialized())
             throw new InvalidOperationException(
@@ -131,7 +155,7 @@ public sealed class NdiOutputBridge : INdiOutputBridge, IDisposable
         {
             // Permission declined or capture failure — tear the sender down and rethrow
             // so the caller can surface the reason (OperationCanceledException = declined).
-            await StopOutputAsync(CancellationToken.None).ConfigureAwait(false);
+            await StopOutputCoreAsync().ConfigureAwait(false);
             throw;
         }
 
@@ -139,6 +163,19 @@ public sealed class NdiOutputBridge : INdiOutputBridge, IDisposable
     }
 
     public async Task StopOutputAsync(CancellationToken cancellationToken = default)
+    {
+        await _outputLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await StopOutputCoreAsync().ConfigureAwait(false);
+        }
+        finally
+        {
+            _outputLock.Release();
+        }
+    }
+
+    private async Task StopOutputCoreAsync()
     {
         // Unsubscribe first so no new frames arrive while tearing down.
         _videoSource.FrameReady -= OnFrameReady;
@@ -326,97 +363,129 @@ public sealed class NdiOutputBridge : INdiOutputBridge, IDisposable
         QualityProfile qualityProfile,
         CancellationToken cancellationToken = default)
     {
+        await _reStreamStartStopLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await StartReStreamFromSourceCoreAsync(sourceId, qualityProfile).ConfigureAwait(false);
+        }
+        finally
+        {
+            _reStreamStartStopLock.Release();
+        }
+    }
+
+    private async Task StartReStreamFromSourceCoreAsync(string sourceId, QualityProfile qualityProfile)
+    {
         if (string.IsNullOrWhiteSpace(sourceId))
             throw new ArgumentException("Source id is required.", nameof(sourceId));
 
         // Full clean stop of any previous re-stream before starting a new one.
-        await StopReStreamAsync(CancellationToken.None).ConfigureAwait(false);
+        await StopReStreamCoreAsync().ConfigureAwait(false);
 
         if (!_runtime.EnsureInitialized())
             throw new InvalidOperationException(
                 "The NDI runtime could not be initialized on this device (unsupported CPU or native library failure).");
 
-        // ONE runtime handle covers the recv + send pair; released in StopReStreamAsync.
+        // ONE runtime handle covers the recv + send pair; released in StopReStreamAsync
+        // on success, or the catch below on any failure after EnsureInitialized.
         lock (_reStreamLock)
         {
-            IntPtr recv;
-            var recvNamePtr = Marshal.StringToHGlobalAnsi("NDI for Android Re-stream");
-            var sourceIdPtr = Marshal.StringToHGlobalAnsi(sourceId);
+            var recv = IntPtr.Zero;
+            var send = IntPtr.Zero;
             try
             {
-                // Same single-id convention as NdiViewerBridge: host:port → url address,
-                // anything else → mDNS NDI name.
-                var isUrlAddress = LooksLikeUrlAddress(sourceId);
-                var create = new NdiRecvCreateV3Native
+                var recvNamePtr = Marshal.StringToHGlobalAnsi("NDI for Android Re-stream");
+                var sourceIdPtr = Marshal.StringToHGlobalAnsi(sourceId);
+                try
                 {
-                    source_to_connect_to = new NdiSourceNative
+                    // Same single-id convention as NdiViewerBridge: host:port → url address,
+                    // anything else → mDNS NDI name.
+                    var isUrlAddress = LooksLikeUrlAddress(sourceId);
+                    var create = new NdiRecvCreateV3Native
                     {
-                        p_ndi_name = isUrlAddress ? IntPtr.Zero : sourceIdPtr,
-                        p_url_address = isUrlAddress ? sourceIdPtr : IntPtr.Zero,
-                    },
-                    color_format = (int)NdiRecvColorFormat.BGRX_BGRA,
-                    bandwidth = (int)MapBandwidth(qualityProfile),
-                    allow_video_fields = false,
-                    p_ndi_recv_name = recvNamePtr,
-                };
+                        source_to_connect_to = new NdiSourceNative
+                        {
+                            p_ndi_name = isUrlAddress ? IntPtr.Zero : sourceIdPtr,
+                            p_url_address = isUrlAddress ? sourceIdPtr : IntPtr.Zero,
+                        },
+                        color_format = (int)NdiRecvColorFormat.BGRX_BGRA,
+                        bandwidth = (int)MapBandwidth(qualityProfile),
+                        allow_video_fields = false,
+                        p_ndi_recv_name = recvNamePtr,
+                    };
 
-                recv = NdiNativeMethods.NDIlib_recv_create_v3(ref create);
-                if (recv == IntPtr.Zero)
+                    recv = NdiNativeMethods.NDIlib_recv_create_v3(ref create);
+                    if (recv == IntPtr.Zero)
+                        throw new InvalidOperationException($"Failed to create the NDI receiver for '{sourceId}'.");
+
+                    var source = create.source_to_connect_to;
+                    NdiNativeMethods.NDIlib_recv_connect(recv, ref source);
+                }
+                finally
                 {
-                    _runtime.ReleaseHandle();
-                    throw new InvalidOperationException($"Failed to create the NDI receiver for '{sourceId}'.");
+                    // The SDK copies the create/connect strings — safe to free now.
+                    Marshal.FreeHGlobal(recvNamePtr);
+                    Marshal.FreeHGlobal(sourceIdPtr);
                 }
 
-                var source = create.source_to_connect_to;
-                NdiNativeMethods.NDIlib_recv_connect(recv, ref source);
-            }
-            finally
-            {
-                // The SDK copies the create/connect strings — safe to free now.
-                Marshal.FreeHGlobal(recvNamePtr);
-                Marshal.FreeHGlobal(sourceIdPtr);
-            }
-
-            IntPtr send;
-            var sendNamePtr = Marshal.StringToHGlobalAnsi($"Re-stream of {sourceId}");
-            try
-            {
-                var sendCreate = new NdiSendCreateNative
+                var sendNamePtr = Marshal.StringToHGlobalAnsi($"Re-stream of {sourceId}");
+                try
                 {
-                    p_ndi_name = sendNamePtr,
-                    p_groups = IntPtr.Zero,
-                    // The incoming stream paces us — forward frames as they arrive.
-                    clock_video = false,
-                    clock_audio = false,
+                    var sendCreate = new NdiSendCreateNative
+                    {
+                        p_ndi_name = sendNamePtr,
+                        p_groups = IntPtr.Zero,
+                        // The incoming stream paces us — forward frames as they arrive.
+                        clock_video = false,
+                        clock_audio = false,
+                    };
+                    send = NdiNativeMethods.NDIlib_send_create(ref sendCreate);
+                    NdiConnectionMetadata.Apply(send, isSender: true, sessionName: "re-stream");
+                }
+                finally
+                {
+                    Marshal.FreeHGlobal(sendNamePtr);
+                }
+
+                if (send == IntPtr.Zero)
+                    throw new InvalidOperationException($"Failed to create the NDI re-stream sender for '{sourceId}'.");
+
+                _reStreamRecv = recv;
+                _reStreamSend = send;
+                _reStreamRunning = true;
+                _reStreamThread = new Thread(() => ReStreamPumpLoop(recv, send))
+                {
+                    IsBackground = true,
+                    Name = "ndi-restream-pump",
                 };
-                send = NdiNativeMethods.NDIlib_send_create(ref sendCreate);
-                NdiConnectionMetadata.Apply(send, isSender: true, sessionName: "re-stream");
+                _reStreamThread.Start();
             }
-            finally
+            catch
             {
-                Marshal.FreeHGlobal(sendNamePtr);
-            }
-
-            if (send == IntPtr.Zero)
-            {
-                NdiNativeMethods.NDIlib_recv_destroy(recv);
+                if (send != IntPtr.Zero)
+                    NdiNativeMethods.NDIlib_send_destroy(send);
+                if (recv != IntPtr.Zero)
+                    NdiNativeMethods.NDIlib_recv_destroy(recv);
                 _runtime.ReleaseHandle();
-                throw new InvalidOperationException($"Failed to create the NDI re-stream sender for '{sourceId}'.");
+                throw;
             }
-
-            _reStreamRecv = recv;
-            _reStreamSend = send;
-            _reStreamRunning = true;
-            _reStreamThread = new Thread(() => ReStreamPumpLoop(recv, send))
-            {
-                IsBackground = true,
-                Name = "ndi-restream-pump",
-            };
-            _reStreamThread.Start();
         }
     }
 
     public async Task StopReStreamAsync(CancellationToken cancellationToken = default)
+    {
+        await _reStreamStartStopLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await StopReStreamCoreAsync().ConfigureAwait(false);
+        }
+        finally
+        {
+            _reStreamStartStopLock.Release();
+        }
+    }
+
+    private async Task StopReStreamCoreAsync()
     {
         Thread? pumpThread;
 
@@ -510,6 +579,9 @@ public sealed class NdiOutputBridge : INdiOutputBridge, IDisposable
         // Synchronous full teardown — safe here: no continuation depends on the caller context.
         StopOutputAsync().GetAwaiter().GetResult();
         StopReStreamAsync().GetAwaiter().GetResult();
+
+        _outputLock.Dispose();
+        _reStreamStartStopLock.Dispose();
     }
 
     private static uint MapFourCC(CapturedPixelFormat format) => format switch
