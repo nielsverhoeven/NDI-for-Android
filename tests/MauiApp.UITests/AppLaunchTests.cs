@@ -130,23 +130,48 @@ public sealed class AppLaunchTests : UiTestBase
     [SkippableFact]
     public void Settings_DiscoveryHost_SurvivesAnAppRestart() => Run(app =>
     {
-        const string host = "persist.test.local";
+        // Typing into the add-server Entry proves nothing: AddDiscoveryServerAsync clears it
+        // before PersistAsync, so what actually survives a restart is a row in the discovery
+        // server list. 10.255.255.1 is a non-routable address that will never collide with a
+        // real server; the unusual port keeps cleanup unambiguous.
+        const string host = "10.255.255.1";
+        const string port = "45959";
+        var endpoint = $"{host}:{port}";
 
         app.ResetToHome();
         app.Navigation.GoTo(NavDestination.Settings);
         app.Settings.WaitUntilVisible();
-
-        app.Settings.OpenSection(SettingsSection.Discovery);
-        app.Settings.DiscoveryHost = host;
-        Assert.Equal(host, app.Settings.DiscoveryHost);
-
-        Skip.IfNot(app.TryRestart(), "App lifecycle commands are unavailable in this environment.");
-
-        app.Navigation.GoTo(NavDestination.Settings);
-        app.Settings.WaitUntilVisible();
         app.Settings.OpenSection(SettingsSection.Discovery);
 
-        Assert.Equal(host, app.Settings.DiscoveryHost);
+        app.Settings.AddServer(host, port);
+
+        try
+        {
+            // The row is added to the collection before PersistAsync is awaited, so it is not a
+            // save barrier. Leaving Settings and coming back re-runs LoadCommand from the
+            // repository, which is.
+            app.Navigation.GoTo(NavDestination.Home);
+            app.Home.WaitUntilVisible();
+            app.Navigation.GoTo(NavDestination.Settings);
+            app.Settings.WaitUntilVisible();
+            app.Settings.OpenSection(SettingsSection.Discovery);
+
+            Assert.Contains(endpoint, app.Settings.ServerRowEndpoints);
+
+            Skip.IfNot(app.TryRestart(), "App lifecycle commands are unavailable in this environment.");
+
+            app.Navigation.GoTo(NavDestination.Settings);
+            app.Settings.WaitUntilVisible();
+            app.Settings.OpenSection(SettingsSection.Discovery);
+
+            Assert.Contains(endpoint, app.Settings.ServerRowEndpoints);
+        }
+        finally
+        {
+            // A persisted bogus server outlives this test and skews discovery for every test
+            // that runs after it, so it has to come out even when an assertion above throws.
+            app.Settings.RemoveServer(endpoint);
+        }
     });
 }
 

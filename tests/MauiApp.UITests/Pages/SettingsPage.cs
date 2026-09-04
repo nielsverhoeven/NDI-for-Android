@@ -66,6 +66,32 @@ public sealed class SettingsPage : PageObject
 
     public string ValidationError => TextOf(TestIds.SettingsDiscoveryServersError);
 
+    /// <summary>Fills the add-server form and taps Add Server.</summary>
+    public void AddServer(string host, string port = "")
+    {
+        DiscoveryHost = host;
+        DiscoveryPort = port;
+        Tap(TestIds.SettingsDiscoveryServerAction, Timeouts.Navigation);
+    }
+
+    /// <summary>Endpoint text ("host:port") of every rendered server row, in list order.</summary>
+    public IReadOnlyList<string> ServerRowEndpoints =>
+        FindDisplayed(TestIds.SettingsServerRowEndpoint).Select(row => row.Text).ToList();
+
+    /// <summary>Deletes the row whose endpoint matches <paramref name="endpoint"/>, if one is rendered.</summary>
+    public void RemoveServer(string endpoint)
+    {
+        var index = FindDisplayed(TestIds.SettingsServerRowEndpoint)
+            .Select(row => row.Text)
+            .ToList()
+            .IndexOf(endpoint);
+
+        if (index < 0)
+            return;
+
+        FindDisplayed(TestIds.SettingsServerRowDelete)[index].Click();
+    }
+
     // ── Appearance section ───────────────────────────────────────────────────
 
     /// <summary>
@@ -94,6 +120,29 @@ public sealed class SettingsPage : PageObject
 
     public bool IsThemeSelected(ThemeOption theme) =>
         string.Equals(CheckedState(theme), "true", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Polls until the selection reads back as <paramref name="theme"/>, or the timeout elapses.
+    /// </summary>
+    /// <remarks>
+    /// SettingsViewModel is transient and reloads from the repository asynchronously in
+    /// OnAppearing, so the panel can render before that load has populated the selection — a
+    /// single read right after <see cref="OpenSection"/> can catch that default value instead of
+    /// what was actually persisted.
+    /// </remarks>
+    public bool WaitUntilThemeReads(ThemeOption theme, TimeSpan? timeout = null)
+    {
+        var deadline = DateTime.UtcNow + (timeout ?? Timeouts.Navigation);
+        while (DateTime.UtcNow < deadline)
+        {
+            if (IsThemeSelected(theme))
+                return true;
+
+            Thread.Sleep(250);
+        }
+
+        return IsThemeSelected(theme);
+    }
 
     private string CheckedState(ThemeOption theme) =>
         WaitFor(ThemeId(theme)).GetAttribute("checked") ?? "(no checked attribute)";

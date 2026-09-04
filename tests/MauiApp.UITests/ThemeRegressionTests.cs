@@ -113,6 +113,19 @@ public sealed class ThemeRegressionTests : UiTestBase
     {
         ApplyTheme(app, ThemeOption.Dark);
 
+        // PersistAsync is fire-and-forget, so without a save barrier the restart below can race
+        // it. Leaving Settings and coming back forces a fresh SettingsViewModel to load from the
+        // repository; only once that reads back as Dark has the save actually landed.
+        app.Navigation.GoTo(NavDestination.Home);
+        app.Home.WaitUntilVisible();
+        app.Navigation.GoTo(NavDestination.Settings);
+        app.Settings.WaitUntilVisible();
+        app.Settings.OpenSection(SettingsSection.Appearance);
+
+        Assert.True(app.Settings.WaitUntilThemeReads(ThemeOption.Dark),
+            "The Dark theme was not read back as selected after navigating away and back, so " +
+            "the restart below would not be testing persistence at all.");
+
         Skip.IfNot(app.TryRestart(), "App lifecycle commands are unavailable in this environment.");
 
         app.Navigation.GoTo(NavDestination.Settings);
