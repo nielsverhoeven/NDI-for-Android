@@ -2,6 +2,7 @@ using Moq;
 using NdiForAndroid.Features.AppState.Models;
 using NdiForAndroid.Features.AppState.Repositories;
 using NdiForAndroid.Features.Home.ViewModels;
+using NdiForAndroid.Features.Navigation.Models;
 using NdiForAndroid.Features.Navigation.Services;
 using NdiForAndroid.Features.Sources.Models;
 using NdiForAndroid.Features.Sources.Repositories;
@@ -135,5 +136,84 @@ public class HomeViewModelTests
         _outputBridgeMock.Raise(b => b.OutputStatusChanged += null, EventArgs.Empty);
 
         Assert.Equal("Idle (no active output)", sut.OutputStatus);
+    }
+
+    [Fact]
+    public async Task StartViewingLastSourceCommand_WhenLastSourcePersisted_NavigatesToViewThenViewer()
+    {
+        _appStateRepoMock.Setup(r => r.RestoreStateAsync())
+            .ReturnsAsync(new AppStateSnapshot("src-1", null, false, null));
+
+        var sut = CreateSut();
+
+        await sut.StartViewingLastSourceCommand.ExecuteAsync(null);
+
+        _navigationServiceMock.Verify(n => n.NavigateToPrimaryAsync(PrimaryNavDestination.View, null), Times.Once);
+        _navigationServiceMock.Verify(n => n.NavigateToAsync("viewer?sourceId=src-1"), Times.Once);
+    }
+
+    [Fact]
+    public void StartViewingLastSourceCommand_WhenNoLastSourcePersisted_IsDisabled()
+    {
+        var sut = CreateSut();
+
+        Assert.False(sut.StartViewingLastSourceCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public async Task StartViewingLastSourceCommand_WhenForcedWithNoLastSource_MakesNoNavigationCalls()
+    {
+        var sut = CreateSut();
+
+        await sut.StartViewingLastSourceCommand.ExecuteAsync(null);
+
+        _navigationServiceMock.Verify(
+            n => n.NavigateToPrimaryAsync(It.IsAny<PrimaryNavDestination>(), It.IsAny<string>()), Times.Never);
+        _navigationServiceMock.Verify(n => n.NavigateToAsync(It.IsAny<string>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ResumeOutputCommand_WhenStreamNamePersistedAndOutputNotActive_NavigatesToStreamWithResumeQuery()
+    {
+        _appStateRepoMock.Setup(r => r.RestoreStateAsync())
+            .ReturnsAsync(new AppStateSnapshot(null, "MyStream", false, null));
+
+        var sut = CreateSut();
+
+        await sut.ResumeOutputCommand.ExecuteAsync(null);
+
+        _navigationServiceMock.Verify(
+            n => n.NavigateToPrimaryAsync(PrimaryNavDestination.Stream, "resume=true"), Times.Once);
+    }
+
+    [Fact]
+    public void ResumeOutputCommand_WhenNoPersistedStreamName_IsDisabled()
+    {
+        var sut = CreateSut();
+
+        Assert.False(sut.ResumeOutputCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public void ResumeOutputCommand_WhenOutputAlreadyActive_IsDisabled()
+    {
+        _appStateRepoMock.Setup(r => r.RestoreStateAsync())
+            .ReturnsAsync(new AppStateSnapshot(null, "MyStream", true, null));
+        _outputBridgeMock.SetupGet(b => b.IsActive).Returns(true);
+
+        var sut = CreateSut();
+
+        Assert.False(sut.ResumeOutputCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public async Task ResumeOutputCommand_WhenForcedWithNoPersistedStreamName_MakesNoNavigationCalls()
+    {
+        var sut = CreateSut();
+
+        await sut.ResumeOutputCommand.ExecuteAsync(null);
+
+        _navigationServiceMock.Verify(
+            n => n.NavigateToPrimaryAsync(It.IsAny<PrimaryNavDestination>(), It.IsAny<string>()), Times.Never);
     }
 }

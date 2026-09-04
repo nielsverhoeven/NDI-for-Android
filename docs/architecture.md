@@ -117,10 +117,11 @@ Rules:
 2. ViewModels initiate navigation through the injected `INavigationService` abstraction.
 3. Route parameters are validated before bridge session creation.
 4. `OutputPage` is a top-level tab and does not accept or require a `sourceId` query parameter, but
-   does accept the re-stream query parameters `reStreamSourceId` and `isReStreamMode` (bound via
-   `[QueryProperty]` on `OutputPage`). Primary destinations (Home/Stream/View/Settings) must be
-   navigated through `INavigationService.NavigateToPrimaryAsync(PrimaryNavDestination, string?
-   queryString)` — placement-aware — never a hard-coded `//x-tab`/`//x-rail` route string.
+   does accept the re-stream query parameters `reStreamSourceId` and `isReStreamMode`, and the
+   `resume` query parameter (bound via `[QueryProperty]` on `OutputPage`). Primary destinations
+   (Home/Stream/View/Settings) must be navigated through
+   `INavigationService.NavigateToPrimaryAsync(PrimaryNavDestination, string? queryString)` —
+   placement-aware — never a hard-coded `//x-tab`/`//x-rail` route string.
 5. Placement-adaptive routing is handled by `AppShell` reading `AdaptiveShellStateViewModel.IsLeftRailNavigationVisible`; rail placement uses `//xxx-rail` routes, bottom-tab placement uses `//xxx-tab` routes.
 
 ### Window size classes and navigation placement (#279)

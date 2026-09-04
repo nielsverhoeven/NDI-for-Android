@@ -146,6 +146,18 @@ public partial class OutputViewModel : ObservableObject, IDisposable
         });
     }
 
+    /// <summary>Pre-populates the stream name for a resume request without starting output.</summary>
+    [RelayCommand]
+    private async Task ApplyResumeRequestAsync()
+    {
+        var state = await _appStateRepo.RestoreStateAsync();
+        if (string.IsNullOrWhiteSpace(state.StreamName))
+            return;
+
+        StreamName = state.StreamName;
+        StatusMessage = "Tap Start to resume output";
+    }
+
     /// <summary>Applies an inbound re-stream request from a deep link or the Sources page.</summary>
     public void ApplyReStreamRequest(string? sourceId, bool isReStreamMode)
     {
