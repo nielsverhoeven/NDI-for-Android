@@ -92,6 +92,7 @@ public sealed class ThemeRegressionTests : UiTestBase
         // appeared once the user left the page. Selecting and asserting without leaving — which is
         // all a naive test would do — passes against the bug.
         ApplyTheme(app, ThemeOption.Dark);
+        _output.WriteLine($"theme tap strategy: {app.Settings.LastThemeTapStrategy}");
 
         app.Navigation.GoTo(NavDestination.Home);
         app.Home.WaitUntilVisible();
@@ -106,6 +107,13 @@ public sealed class ThemeRegressionTests : UiTestBase
             "The Dark theme was applied, but after navigating away and back Settings no longer " +
             "reports it as selected. This is the #300 failure mode — the selection is lost when " +
             "the page is torn down.");
+
+        // Negative control: without this, a read-back regressed to "always true" would make
+        // every persistence assertion in this file pass silently.
+        Assert.False(app.Settings.IsThemeSelected(ThemeOption.Light),
+            "Settings reports both Dark and Light as selected — the read-back is not distinguishing them.");
+        Assert.False(app.Settings.IsThemeSelected(ThemeOption.System),
+            "Settings reports both Dark and System as selected — the read-back is not distinguishing them.");
     });
 
     [SkippableFact]
