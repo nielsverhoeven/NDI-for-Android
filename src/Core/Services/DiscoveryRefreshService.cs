@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using NdiForAndroid.Features.DiagOverlay.Services;
 using NdiForAndroid.Features.Settings.Repositories;
 using NdiForAndroid.Features.Sources.Models;
 using NdiForAndroid.Features.Sources.Repositories;
@@ -20,6 +21,7 @@ public sealed class DiscoveryRefreshService : IDiscoveryRefreshService
     private readonly TimeProvider _timeProvider;
     private readonly TimeSpan _pollingInterval;
     private readonly TimeSpan _debounceWindow;
+    private readonly IDiagnosticOverlayService? _diagnostics;
 
     // 0 = stopped, 1 = running  — use Interlocked for atomic CAS (C2)
     private int _isRunning;
@@ -40,7 +42,8 @@ public sealed class DiscoveryRefreshService : IDiscoveryRefreshService
         ILogger<DiscoveryRefreshService> logger,
         TimeProvider? timeProvider = null,
         TimeSpan? pollingInterval = null,
-        TimeSpan? debounceWindow = null)
+        TimeSpan? debounceWindow = null,
+        IDiagnosticOverlayService? diagnostics = null)
     {
         _repository      = repository;
         _settingsRepository = settingsRepository;
@@ -48,6 +51,7 @@ public sealed class DiscoveryRefreshService : IDiscoveryRefreshService
         _timeProvider    = timeProvider ?? TimeProvider.System;
         _pollingInterval = pollingInterval ?? DefaultPollingInterval;
         _debounceWindow  = debounceWindow  ?? DefaultDebounceWindow;
+        _diagnostics     = diagnostics;
 
         lifecycle.AppResumed += Start;
         lifecycle.AppPaused  += Stop;
@@ -135,6 +139,8 @@ public sealed class DiscoveryRefreshService : IDiscoveryRefreshService
         if (Interlocked.CompareExchange(ref _isInFlight, 1, 0) != 0)
             return;
 
+        var startedAt = _timeProvider.GetUtcNow();
+
         try
         {
             await EnsureDiscoverySettingsAppliedAsync().ConfigureAwait(false);
@@ -144,6 +150,8 @@ public sealed class DiscoveryRefreshService : IDiscoveryRefreshService
             // Only raise if still running (guards against race after Stop)
             if (_isRunning == 1 || ct == CancellationToken.None)
                 SnapshotReady?.Invoke(this, snapshot);
+
+            ReportDiagnostics(snapshot.Status.ToString(), snapshot.Sources.Count, _timeProvider.GetUtcNow() - startedAt);
         }
         catch (OperationCanceledException)
         {
@@ -161,10 +169,24 @@ public sealed class DiscoveryRefreshService : IDiscoveryRefreshService
                 ErrorMessage: ex.Message);
 
             SnapshotReady?.Invoke(this, failureSnapshot);
+
+            ReportDiagnostics(failureSnapshot.Status.ToString(), failureSnapshot.Sources.Count, _timeProvider.GetUtcNow() - startedAt);
         }
         finally
         {
             Interlocked.Exchange(ref _isInFlight, 0);
+        }
+    }
+
+    private void ReportDiagnostics(string status, int sourceCount, TimeSpan duration)
+    {
+        try
+        {
+            _diagnostics?.UpdateDiscoveryDiagnostics(status, sourceCount, duration);
+        }
+        catch
+        {
+            // Diagnostics must never fault the poll loop.
         }
     }
 }

@@ -166,14 +166,23 @@ public sealed class AndroidVideoCaptureSource : IVideoCaptureSource
             activity.StartActivityForResult(manager.CreateScreenCaptureIntent(), ScreenCaptureRequestCode))
             .ConfigureAwait(false);
 
-        var (resultCode, data) = await consent.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
-        _consentTcs = null;
+        Result resultCode;
+        Intent? data;
+        try
+        {
+            (resultCode, data) = await consent.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            Interlocked.CompareExchange(ref _consentTcs, null, consent);
+        }
+
         if (resultCode != Result.Ok || data is null)
             throw new OperationCanceledException("Screen capture consent was declined.");
 
         // 2. The mediaProjection-typed foreground service must be RUNNING before
         //    GetMediaProjection on API 34+.
-        await _screenShareService.StartForegroundSessionAsync("NDI-Android", cancellationToken).ConfigureAwait(false);
+        await _screenShareService.StartForegroundSessionAsync("NDI-Android", VideoInputKind.Screen, cancellationToken).ConfigureAwait(false);
         _startedForegroundSession = true;
 
         // StartForegroundService completes asynchronously; until the service has
@@ -311,6 +320,9 @@ public sealed class AndroidVideoCaptureSource : IVideoCaptureSource
         if (status != PermissionStatus.Granted)
             throw new OperationCanceledException("Camera permission was denied.");
         cancellationToken.ThrowIfCancellationRequested();
+
+        await _screenShareService.StartForegroundSessionAsync("NDI-Android", kind, cancellationToken).ConfigureAwait(false);
+        _startedForegroundSession = true;
 
         var context = global::Android.App.Application.Context;
         var manager = (CameraManager?)context.GetSystemService(Context.CameraService)

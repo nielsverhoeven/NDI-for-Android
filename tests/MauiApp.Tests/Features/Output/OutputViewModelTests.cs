@@ -254,4 +254,16 @@ public class OutputViewModelTests
         var prop = type.GetProperty("SourceId");
         Assert.Null(prop);
     }
+
+    [Fact]
+    public void ApplyReStreamRequest_SetsReStreamSourceIdAndModeAndDefaultStreamName()
+    {
+        var sut = CreateSut();
+
+        sut.ApplyReStreamRequest("abc123", true);
+
+        Assert.Equal("abc123", sut.ReStreamSourceId);
+        Assert.True(sut.IsReStreamMode);
+        Assert.StartsWith("NDI-", sut.StreamName);
+    }
 }

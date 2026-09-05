@@ -75,7 +75,8 @@ public static class MauiProgram
         builder.Services.AddSingleton<IConnectionHistoryService, ConnectionHistoryService>();
         builder.Services.AddSingleton<IDeepLinkService, DeepLinkService>();
         builder.Services.AddSingleton<ITelemetryService, TelemetryService>();
-        builder.Services.AddSingleton<INavigationService, ShellNavigationService>();
+        builder.Services.AddSingleton<ShellNavigationService>();
+        builder.Services.AddSingleton<INavigationService>(sp => sp.GetRequiredService<ShellNavigationService>());
         // Window width size classes (#279): fed by AppShell.OnSizeAllocated; consumed by
         // the navigation policy (rail on Expanded) and the two-pane SourceListPage.
         builder.Services.AddSingleton<IWindowSizeClassService, WindowSizeClassService>();

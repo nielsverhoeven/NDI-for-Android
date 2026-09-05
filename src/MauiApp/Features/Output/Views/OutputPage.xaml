@@ -10,7 +10,7 @@
     <VerticalStackLayout Padding="16" Spacing="16">
 
         <!-- Mode toggle -->
-        <Frame>
+        <Frame BackgroundColor="{DynamicResource CardBackground}" BorderColor="{DynamicResource BorderColor}">
             <HorizontalStackLayout Spacing="8" HorizontalOptions="Center">
                 <Label Text="Capture:" VerticalOptions="Center" />
                 <Switch IsToggled="{Binding IsReStreamMode, Converter={StaticResource InverseBoolConverter}}" />

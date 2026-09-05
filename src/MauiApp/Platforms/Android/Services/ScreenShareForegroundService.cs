@@ -3,6 +3,7 @@ using Android.Content;
 using Android.Content.PM;
 using Android.OS;
 using AndroidX.Core.App;
+using NdiForAndroid.Services;
 
 namespace NdiForAndroid.Platforms.Android.Services;
 
@@ -15,6 +16,7 @@ public sealed class ScreenShareForegroundService : Service
     internal const string ActionStart = "com.ndi.android.action.START_SCREEN_SHARE";
     internal const string ActionStop = "com.ndi.android.action.STOP_SCREEN_SHARE";
     internal const string ExtraStreamName = "extra_stream_name";
+    internal const string ExtraCaptureKind = "extra_capture_kind";
 
     private const string ChannelId = "ndi_screen_share";
     private const int NotificationId = 4107;
@@ -31,6 +33,8 @@ public sealed class ScreenShareForegroundService : Service
         }
 
         var streamName = intent?.GetStringExtra(ExtraStreamName);
+        var kindValue = intent?.GetIntExtra(ExtraCaptureKind, (int)VideoInputKind.Screen) ?? (int)VideoInputKind.Screen;
+        var kind = (VideoInputKind)kindValue;
         var notification = BuildNotification(streamName);
 
         if (OperatingSystem.IsAndroidVersionAtLeast(29))
@@ -38,7 +42,7 @@ public sealed class ScreenShareForegroundService : Service
             // API 29+: declare the active service types explicitly. Passing a type
             // whose runtime permission is not granted throws SecurityException on
             // API 34+, so camera/microphone are only included when currently granted.
-            StartForeground(NotificationId, notification, GetGrantedServiceTypes());
+            StartForeground(NotificationId, notification, GetGrantedServiceTypes(kind));
         }
         else
         {
@@ -49,16 +53,21 @@ public sealed class ScreenShareForegroundService : Service
     }
 
     [System.Runtime.Versioning.SupportedOSPlatform("android29.0")]
-    private ForegroundService GetGrantedServiceTypes()
+    private ForegroundService GetGrantedServiceTypes(VideoInputKind kind)
     {
+        ForegroundService types = 0;
+
         // MediaProjection is gated by the consent dialog (not a runtime permission)
-        // and the caller only starts this service after consent, so it is always safe.
-        var types = ForegroundService.TypeMediaProjection;
+        // and the caller only starts this service after consent, so it is always safe
+        // — but only for a screen-capture session.
+        if (kind == VideoInputKind.Screen)
+            types |= ForegroundService.TypeMediaProjection;
 
         // Camera/microphone service types exist from API 30.
         if (OperatingSystem.IsAndroidVersionAtLeast(30))
         {
-            if (CheckSelfPermission(global::Android.Manifest.Permission.Camera) == Permission.Granted)
+            if (kind is VideoInputKind.CameraFront or VideoInputKind.CameraRear
+                && CheckSelfPermission(global::Android.Manifest.Permission.Camera) == Permission.Granted)
                 types |= ForegroundService.TypeCamera;
 
             if (CheckSelfPermission(global::Android.Manifest.Permission.RecordAudio) == Permission.Granted)
