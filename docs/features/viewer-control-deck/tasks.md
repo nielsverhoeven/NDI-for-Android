@@ -2,9 +2,8 @@
 
 ## Status
 
-**Not started.** Ready for `feature.breakdown` to create the child issues below under parent
-issue #342. Source plan: `docs/features/viewer-control-deck/plan.md`. Spec:
-`docs/features/viewer-control-deck/spec.md`.
+**Done.** PR #357 merged 2026-09-05. Source plan: `docs/features/viewer-control-deck/plan.md`.
+Spec: `docs/features/viewer-control-deck/spec.md`.
 
 ## Summary
 
@@ -65,11 +64,11 @@ Ready immediately (no deps): **T1**.
   acceptable elaboration of the existing "`ViewerView` shared by three hosts" framing in
   `docs/architecture.md` — the hosts are unchanged (`ViewerPage`, embedded pane,
   `FullScreenViewerPage`), only `ViewerView`'s *internal* composition grows; (b) the
-  deck-vs-sheet rule living in `ViewerView.xaml.cs` off `IWindowSizeClassService` (plan.md §9),
-  not in `ViewerViewModel`, fits Dependency Rule 1 (Views depend on ViewModels/bindings — reusing
-  an existing Core service directly in a View's code-behind is the same pattern
-  `SourceListPage.xaml.cs` already uses, not a new precedent); (c) the hand-built bottom sheet
-  (plan.md §6, no new NuGet package) is acceptable.
+  deck-vs-sheet rule living in `ViewerView.xaml.cs` off `ViewerControlLayout.Choose(widthDp,
+  heightDp)` (plan.md §9), not in `ViewerViewModel`, fits Dependency Rule 1 (Views depend on
+  ViewModels/bindings — reusing a pure Core policy directly in a View's code-behind is the same
+  pattern `SourceListPage.xaml.cs` already uses for its own size-driven layout switch, not a new
+  precedent); (c) the hand-built bottom sheet (plan.md §6, no new NuGet package) is acceptable.
 - **Depends on**: none.
 - **Acceptance**: Recorded verdict, no unresolved architect objection blocking T2/T3/T5.
 
@@ -165,11 +164,11 @@ Ready immediately (no deps): **T1**.
   `ViewerControlSheet.xaml.cs` (NEW)
 - **Description**: Per plan.md §6 exactly — `HalfHeight = 320`, `ExpandedHeight = 440`,
   `TranslationY`-based two-state overlay, drag handle `BoxView`, two MD3-style tab `Button`s
-  ("Weergave"/"PTZ", PTZ tab `IsVisible="{Binding IsPtzControlActive}"`), tab content hosts
+  ("Playback"/"PTZ", PTZ tab `IsVisible="{Binding IsPtzControlActive}"`), tab content hosts
   `PlaybackControlsView`/`CameraControlsView` by reference (`x:Name`, visibility toggled
   imperatively in `SelectTab`), `PanGestureRecognizer` + tap-to-toggle on the handle area,
   stranded-tab guard subscribing to `PropertyChanged` for `IsPtzControlActive`. Default state:
-  Half, tab: Weergave.
+  Half, tab: Playback.
 - **Depends on**: T5, T6.
 - **Acceptance**: Compiles; dangling until T10. On-device drag/tap behavior verified in T12.
 
@@ -195,20 +194,19 @@ Ready immediately (no deps): **T1**.
 - **Description**: Per plan.md §2 exactly.
   - XAML: keep the video `Border`/`SKCanvasView` and `PtzEndpointPanel` untouched; remove the old
     `ScrollView`/`VerticalStackLayout` stack, the `<views:PtzPanelView />` reference, and the old
-    floating full-screen toggle `Button`; add `<views:ViewerControlDeck>`,
-    `<views:ViewerControlSheet>`, `<views:FullScreenControlsOverlay>` bound to the three new
-    `IsDeckVisible`/`IsSheetVisible`/`IsFullScreenOverlayVisible` properties via
-    `{x:Reference Root}` (add `x:Name="Root"` to the root `ContentView` tag).
-  - Code-behind: add the three `BindableProperty` declarations, resolve
-    `IWindowSizeClassService` from `IPlatformApplication.Current?.Services` in the constructor
-    (same pattern as the existing `Func<FullScreenViewerPage>` resolution), subscribe/unsubscribe
-    `Changed` (subscribe in ctor, unsubscribe in `Teardown()`), extend
-    `OnViewModelPropertyChanged` and `OnBindingContextChanged` to call the new
-    `UpdateLayoutVisibility()` helper.
+    floating full-screen toggle `Button`; add named `<views:ViewerControlDeck x:Name="Deck">`,
+    `<views:ViewerControlSheet x:Name="Sheet">`, `<views:FullScreenControlsOverlay x:Name="Overlay">`
+    with no `IsVisible` binding of their own (visibility is set directly in code-behind — see
+    plan.md §2.2 for why not a `BindableProperty` + `{x:Reference Root}` binding).
+  - Code-behind: add the `UpdateLayoutVisibility()` helper calling
+    `ViewerControlLayout.Choose(Width, Height)` and setting `Overlay`/`Deck`/`Sheet.IsVisible`
+    directly; invoke it from `SizeChanged`, `OnBindingContextChanged`, and from
+    `OnViewModelPropertyChanged` on `IsFullScreen` changes. No `IWindowSizeClassService`
+    dependency, no new `BindableProperty`.
 - **Depends on**: T2 (dangling reference removed), T7, T8, T9 (all three new hosts must exist to
   compile the XAML references).
-- **Acceptance**: `dotnet build NdiForAndroid.sln` succeeds; the three `IsXxxVisible` properties
-  toggle correctly for the three (`IsFullScreen`, `WindowSizeClass`) combinations described in
+- **Acceptance**: `dotnet build NdiForAndroid.sln` succeeds; `Overlay`/`Deck`/`Sheet.IsVisible`
+  toggle correctly for the `IsFullScreen` / measured-size combinations described in
   plan.md §9 — spot-checked on-device in T12, not unit-testable without MAUI runtime.
 
 ### T11 — `dotnet build` + `dotnet test` green
@@ -227,8 +225,9 @@ Ready immediately (no deps): **T1**.
   matching emulator profile at 1280×800 dp) with `tools/ViscaMockCamera` running as the PTZ
   endpoint. Walk every acceptance criterion in spec.md: landscape two-pane deck (no scrolling,
   no overlap), no-PTZ source (camera column absent, playback spans full width), portrait
-  Compact/Medium bottom-sheet-vs-deck per the exact rule (plan.md §9), full-screen overlay
-  (auto-hide/tap/double-tap, d-pad/zoom operable, tally border visible), preset tap-vs-long-press
+  bottom-sheet-vs-deck per the ViewerControlLayout.Choose 640×470 dp measured-size rule (plan.md
+  §9), full-screen overlay (auto-hide/tap/double-tap, d-pad/zoom operable, tally border visible),
+  preset tap-vs-long-press
   (600 ms) with confirmation text and auto-clear.
 - **Depends on**: T11.
 - **Acceptance**: Every checkbox in spec.md's Acceptance Criteria section verified true; any

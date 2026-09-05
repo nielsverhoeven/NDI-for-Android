@@ -76,7 +76,7 @@ public partial class ViewerControlSheet : ContentView
         PtzTabContent.IsVisible = isPtz;
         PlaybackTabIndicator.IsVisible = !isPtz;
         PtzTabIndicator.IsVisible = isPtz;
-        SemanticProperties.SetDescription(PlaybackTabButton, isPtz ? "Weergave tab" : "Weergave tab, selected");
+        SemanticProperties.SetDescription(PlaybackTabButton, isPtz ? "Playback tab" : "Playback tab, selected");
         SemanticProperties.SetDescription(PtzTabButton, isPtz ? "PTZ tab, selected" : "PTZ tab");
     }
 

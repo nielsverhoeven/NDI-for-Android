@@ -561,6 +561,50 @@ commands (safe removal); `IPtzController.cs:30,33` signatures match plan §10; `
 /`_dispatcher` exist (`ViewerViewModel.cs:36-37`); every `DynamicResource` key in the plan exists
 in `Resources/Styles/Colors.xaml`; `IsNotNullConverter` is app-scoped (`Styles.xaml:116`).
 
+#### Addendum 2026-09-05 — #360 Viewer control deck polish (6 changes, post-PR #357)
+
+**APPROVE-WITH-CHANGES.** No violation of Architecture Rules 1–6, Dependency Rules 1–7, or the
+`DynamicResource`-only theming rule (no colour keys are touched). `ViewerControlLayout`
+(`src/Core/Features/Viewer/ViewerControlLayout.cs:15-16`) **must not change**: the playback column
+grows 148→156 dp against a 188 dp deck budget (`ViewerControlDeck.xaml:8`, 200 − 12 padding), so
+`MinDeckWidthDp=640` / `MinDeckHeightDp=470` stay valid. Binding decisions:
+
+1. **BLOCKER — eight 48 dp presets cannot fit one row in a 400 dp window.**
+   `FullScreenControlsOverlay.xaml:8-34`: 8×48 + 7×spacing + 2×margin ≥ 8 + 384 + 28 = **420 dp**
+   at the issue's own 4 dp floors. Required: a **2 rows × 4 columns** `Grid` (`RowDefinitions="48,48"
+   ColumnDefinitions="48,48,48,48"`, Row/ColumnSpacing 6, `Margin="16"`) = 210×102 dp, mirroring the
+   existing deck preset grid (`CameraControlsView.xaml:53-63`) and spec.md:33-35.
+2. **Overlay presets are recall-only** (`FullScreenControlsOverlay.xaml:10-33` bind
+   `PtzRecallPresetCommand`; long-press storing exists only in `CameraControlsView.xaml.cs:36-71`).
+   Accessibility text must not promise long-press storing there.
+3. **`SemanticProperties` (not `AutomationProperties`) is the standing repo idiom** — MAUI-native,
+   sole precedent `ViewerControlSheet.xaml:23,27` + `.xaml.cs:79-80`. `AutomationProperties` appears
+   only in stale doc text (`docs/features/ndi-integration-rework/plan.md:326`). No file uses
+   `SemanticProperties.Hint` yet; introducing one is a deliberate new idiom, not a drift.
+4. Descriptions belong on the tap target, never on a `Label` (Android maps Description →
+   `ContentDescription` and suppresses the label text). The endpoint chips are tap-gesture
+   `Border`s (`CameraControlsView.xaml:8-13`, `FullScreenControlsOverlay.xaml:66-74`); if device
+   TalkBack shows them unfocusable, convert to a `Button` per the precedent at
+   `PlaybackControlsView.xaml:12-17` rather than nesting more semantics.
+5. Removing `ViewerViewModel.IsFullScreenToggleVisible` is safe (4 in-repo references, all inside
+   `ViewerViewModel.FullScreen.cs`); the `[NotifyPropertyChangedFor(nameof(AreControlsVisible))]`
+   attributes and the `_immersiveMode.KeepScreenOn(IsPlaying)` side effect must survive.
+6. Doc drift is wider than the issue lists: the `IWindowSizeClassService` rule is stale in
+   **spec.md:30,39,72-74,92 + plan.md:96-124,626-634,674**, and the "Weergave" tab name is stale in
+   **docs/architecture.md:135, spec.md:41,43, plan.md:21,408,465,506, tasks.md:168,172**.
+   `docs/architecture.md:135` already describes `ViewerControlLayout.Choose` correctly.
+
+**Pre-existing defects found (not caused by #360, escalated for a scope decision):**
+- `FullScreenControlsOverlay.xaml:36-62` — the d-pad and zoom `Border`s are `VerticalOptions="End"
+  Margin="16"`, so their bottom 24-32 dp sits under the always-visible 48 dp toolbar (`:64`).
+  The ▼ and W buttons lose half their target. Fix: `Margin="16,16,16,64"` on both borders.
+- `FullScreenControlsOverlay.xaml:64` — `ColumnDefinitions="Auto,152,48,48,Auto,48"` + spacing +
+  padding needs ≥ ~420 dp; the toolbar overflows a 400 dp portrait window and the chip (`:66`)
+  duplicates the ⋮ overflow's `OpenPtzEndpointFormCommand` (`:126`).
+- Preset **storing is unreachable with TalkBack** (long-press only) — follow-up issue owed.
+- `CameraControlsView` overflows the 188 dp deck budget by ~18 dp while
+  `PtzPresetStatusMessage` is shown (`:66-68`).
+
 ### 2026-09-04 — #339 PTZ over VISCA-over-IP (raw TCP) — plan.md/tasks.md T1–T26
 
 **APPROVE-WITH-CHANGES overall.** No violation of Architecture Rules 1–6 or `docs/architecture.md`
