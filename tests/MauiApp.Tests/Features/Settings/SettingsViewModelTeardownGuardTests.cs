@@ -4,6 +4,7 @@ using NdiForAndroid.Features.Settings.Repositories;
 using NdiForAndroid.Features.Settings.Services;
 using NdiForAndroid.Features.Settings.ViewModels;
 using NdiForAndroid.Features.Sources.Repositories;
+using NdiForAndroid.NdiBridge;
 using NdiForAndroid.Services;
 using Xunit;
 
@@ -16,8 +17,8 @@ namespace NdiForAndroid.Tests.Features.Settings;
 /// <remarks>
 /// <c>RadioButtonGroup.SelectedValue</c> writes <c>null</c> back through its two-way binding
 /// while the page's visual tree unloads. Left unguarded that null parses to the default
-/// (<see cref="ThemeMode.System"/>) and is staged as a real edit, so any save that follows
-/// persists the default theme over whatever the user actually picked.
+/// (<see cref="ThemeMode.System"/>) and would be auto-saved over whatever the user actually
+/// picked.
 /// </remarks>
 public sealed class SettingsViewModelTeardownGuardTests
 {
@@ -25,6 +26,7 @@ public sealed class SettingsViewModelTeardownGuardTests
     private readonly ISettingsValidationService _validationService = new SettingsValidationService();
     private readonly Mock<ISettingsPlatformService> _platformServiceMock = new();
     private readonly Mock<ISourceRepository> _sourceRepositoryMock = new();
+    private readonly Mock<INdiDiscoveryBridge> _discoveryBridgeMock = new();
 
     private SettingsViewModel CreateSut()
     {
@@ -36,12 +38,18 @@ public sealed class SettingsViewModelTeardownGuardTests
             .Setup(r => r.GetCachedSourcesAsync())
             .ReturnsAsync(Array.Empty<NdiForAndroid.Features.Sources.Models.NdiSource>());
 
+        _repositoryMock
+            .Setup(r => r.SaveSettingsAsync(It.IsAny<NdiSettingsSnapshot>()))
+            .Returns(Task.CompletedTask);
+
         return new SettingsViewModel(
             _repositoryMock.Object,
             _validationService,
             _platformServiceMock.Object,
             _sourceRepositoryMock.Object,
-            new Mock<INdiVersionInfo>().Object);
+            new Mock<INdiVersionInfo>().Object,
+            _discoveryBridgeMock.Object,
+            new FakeMainThreadDispatcher());
     }
 
     /// <summary>Loads a persisted snapshot whose theme is an explicit, non-default choice.</summary>
@@ -57,6 +65,7 @@ public sealed class SettingsViewModelTeardownGuardTests
 
         var sut = CreateSut();
         await sut.LoadCommand.ExecuteAsync(null);
+        _repositoryMock.Invocations.Clear();
         return sut;
     }
 
@@ -73,28 +82,18 @@ public sealed class SettingsViewModelTeardownGuardTests
     }
 
     [Fact]
-    public async Task SelectedThemeOption_SetToNullByTeardown_DoesNotStagePendingChanges()
+    public async Task SelectedThemeOption_SetToNullByTeardown_DoesNotPersist()
     {
         var sut = await CreateLoadedWithLightThemeAsync();
 
         sut.SelectedThemeOption = null;
 
-        Assert.False(sut.HasPendingChanges);
+        _repositoryMock.Verify(r => r.SaveSettingsAsync(It.IsAny<NdiSettingsSnapshot>()), Times.Never);
     }
 
+    /// <summary>The defect's payload: a save that follows teardown must not carry the default theme.</summary>
     [Fact]
-    public async Task SelectedThemeOption_SetToNullByTeardown_LeavesApplyDisabled()
-    {
-        var sut = await CreateLoadedWithLightThemeAsync();
-
-        sut.SelectedThemeOption = null;
-
-        Assert.False(sut.ApplyCommand.CanExecute(null));
-    }
-
-    /// <summary>The defect's payload: a save after teardown must not write the default theme.</summary>
-    [Fact]
-    public async Task ApplyAfterTeardownNull_DoesNotPersistDefaultTheme()
+    public async Task PersistAfterTeardownNull_DoesNotPersistDefaultTheme()
     {
         var sut = await CreateLoadedWithLightThemeAsync();
         NdiSettingsSnapshot? persisted = null;
@@ -104,9 +103,8 @@ public sealed class SettingsViewModelTeardownGuardTests
             .Returns(Task.CompletedTask);
 
         sut.SelectedThemeOption = null;
-        // A genuine, unrelated edit so Apply is reachable.
-        sut.DiscoveryHost = "10.0.0.99";
-        await sut.ApplyCommand.ExecuteAsync(null);
+        // A genuine, unrelated edit so a save actually happens.
+        sut.DeveloperModeEnabled = true;
 
         Assert.NotNull(persisted);
         Assert.Equal(ThemeMode.Light, persisted!.ThemeMode);
@@ -123,18 +121,19 @@ public sealed class SettingsViewModelTeardownGuardTests
         sut.SelectedThemeOption = value;
 
         Assert.Equal("Light", sut.SelectedThemeOption);
-        Assert.False(sut.HasPendingChanges);
+        _repositoryMock.Verify(r => r.SaveSettingsAsync(It.IsAny<NdiSettingsSnapshot>()), Times.Never);
     }
 
     [Fact]
-    public async Task SelectedThemeOption_SetToRealChoice_StillStagesPendingChanges()
+    public async Task SelectedThemeOption_SetToRealChoice_StillPersists()
     {
         var sut = await CreateLoadedWithLightThemeAsync();
 
         sut.SelectedThemeOption = "Dark";
 
         Assert.Equal("Dark", sut.SelectedThemeOption);
-        Assert.True(sut.HasPendingChanges);
+        _repositoryMock.Verify(r => r.SaveSettingsAsync(
+            It.Is<NdiSettingsSnapshot>(s => s.ThemeMode == ThemeMode.Dark)), Times.Once);
     }
 
     [Fact]
@@ -146,7 +145,8 @@ public sealed class SettingsViewModelTeardownGuardTests
         sut.SelectedThemeOption = "Dark";
 
         Assert.Equal("Dark", sut.SelectedThemeOption);
-        Assert.True(sut.HasPendingChanges);
+        _repositoryMock.Verify(r => r.SaveSettingsAsync(
+            It.Is<NdiSettingsSnapshot>(s => s.ThemeMode == ThemeMode.Dark)), Times.Once);
     }
 
     // ─── Accent color ─────────────────────────────────────────────────────────
@@ -159,17 +159,18 @@ public sealed class SettingsViewModelTeardownGuardTests
         sut.SelectedAccentColor = null;
 
         Assert.Equal("Teal", sut.SelectedAccentColor);
-        Assert.False(sut.HasPendingChanges);
+        _repositoryMock.Verify(r => r.SaveSettingsAsync(It.IsAny<NdiSettingsSnapshot>()), Times.Never);
     }
 
     [Fact]
-    public async Task SelectedAccentColor_SetToRealChoice_StillStagesPendingChanges()
+    public async Task SelectedAccentColor_SetToRealChoice_StillPersists()
     {
         var sut = await CreateLoadedWithLightThemeAsync();
 
         sut.SelectedAccentColor = "Orange";
 
         Assert.Equal("Orange", sut.SelectedAccentColor);
-        Assert.True(sut.HasPendingChanges);
+        _repositoryMock.Verify(r => r.SaveSettingsAsync(
+            It.Is<NdiSettingsSnapshot>(s => s.AccentColor == AccentColorOption.Orange)), Times.Once);
     }
 }

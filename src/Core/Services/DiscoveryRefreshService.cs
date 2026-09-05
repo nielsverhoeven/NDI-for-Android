@@ -1,4 +1,6 @@
 using Microsoft.Extensions.Logging;
+using NdiForAndroid.Features.DiagOverlay.Services;
+using NdiForAndroid.Features.Settings.Repositories;
 using NdiForAndroid.Features.Sources.Models;
 using NdiForAndroid.Features.Sources.Repositories;
 
@@ -14,15 +16,19 @@ public sealed class DiscoveryRefreshService : IDiscoveryRefreshService
     private static readonly TimeSpan DefaultDebounceWindow  = TimeSpan.FromSeconds(1);
 
     private readonly ISourceRepository _repository;
+    private readonly ISettingsRepository _settingsRepository;
     private readonly ILogger<DiscoveryRefreshService> _logger;
     private readonly TimeProvider _timeProvider;
     private readonly TimeSpan _pollingInterval;
     private readonly TimeSpan _debounceWindow;
+    private readonly IDiagnosticOverlayService? _diagnostics;
 
     // 0 = stopped, 1 = running  — use Interlocked for atomic CAS (C2)
     private int _isRunning;
     // 0 = idle, 1 = in-flight
     private int _isInFlight;
+    // 0 = discovery settings not yet applied this process, 1 = applied
+    private int _settingsApplied;
 
     private CancellationTokenSource? _cts;
     private DateTimeOffset _lastCompletedAt = DateTimeOffset.MinValue;
@@ -31,17 +37,21 @@ public sealed class DiscoveryRefreshService : IDiscoveryRefreshService
 
     public DiscoveryRefreshService(
         ISourceRepository repository,
+        ISettingsRepository settingsRepository,
         IAppLifecycleService lifecycle,
         ILogger<DiscoveryRefreshService> logger,
         TimeProvider? timeProvider = null,
         TimeSpan? pollingInterval = null,
-        TimeSpan? debounceWindow = null)
+        TimeSpan? debounceWindow = null,
+        IDiagnosticOverlayService? diagnostics = null)
     {
         _repository      = repository;
+        _settingsRepository = settingsRepository;
         _logger          = logger;
         _timeProvider    = timeProvider ?? TimeProvider.System;
         _pollingInterval = pollingInterval ?? DefaultPollingInterval;
         _debounceWindow  = debounceWindow  ?? DefaultDebounceWindow;
+        _diagnostics     = diagnostics;
 
         lifecycle.AppResumed += Start;
         lifecycle.AppPaused  += Stop;
@@ -82,6 +92,30 @@ public sealed class DiscoveryRefreshService : IDiscoveryRefreshService
         _ = Task.Run(() => ExecuteSinglePollAsync(CancellationToken.None));
     }
 
+    /// <summary>
+    /// Applies the persisted discovery settings (mDNS vs Discovery Server) to the NDI runtime
+    /// exactly once per process, before the first discovery poll. Without this the runtime is
+    /// only ever configured when the Settings page happens to load, so a configured discovery
+    /// server is ignored on a normal launch and discovery silently falls back to mDNS.
+    /// GetSettingsAsync applies the discovery orchestrator (and appearance) as a side effect.
+    /// </summary>
+    private async Task EnsureDiscoverySettingsAppliedAsync()
+    {
+        if (Interlocked.CompareExchange(ref _settingsApplied, 1, 0) != 0)
+            return;
+
+        try
+        {
+            await _settingsRepository.GetSettingsAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            // Non-fatal: discovery proceeds with whatever mode the runtime already has.
+            _logger.LogWarning(ex, "Applying persisted discovery settings before first poll failed");
+            Interlocked.Exchange(ref _settingsApplied, 0); // allow a later retry
+        }
+    }
+
     private async Task PollLoopAsync(CancellationToken ct)
     {
         while (!ct.IsCancellationRequested)
@@ -105,14 +139,19 @@ public sealed class DiscoveryRefreshService : IDiscoveryRefreshService
         if (Interlocked.CompareExchange(ref _isInFlight, 1, 0) != 0)
             return;
 
+        var startedAt = _timeProvider.GetUtcNow();
+
         try
         {
+            await EnsureDiscoverySettingsAppliedAsync().ConfigureAwait(false);
             var snapshot = await _repository.DiscoverAsync(ct).ConfigureAwait(false);
             _lastCompletedAt = _timeProvider.GetUtcNow();
 
             // Only raise if still running (guards against race after Stop)
             if (_isRunning == 1 || ct == CancellationToken.None)
                 SnapshotReady?.Invoke(this, snapshot);
+
+            ReportDiagnostics(snapshot.Status.ToString(), snapshot.Sources.Count, _timeProvider.GetUtcNow() - startedAt);
         }
         catch (OperationCanceledException)
         {
@@ -130,10 +169,24 @@ public sealed class DiscoveryRefreshService : IDiscoveryRefreshService
                 ErrorMessage: ex.Message);
 
             SnapshotReady?.Invoke(this, failureSnapshot);
+
+            ReportDiagnostics(failureSnapshot.Status.ToString(), failureSnapshot.Sources.Count, _timeProvider.GetUtcNow() - startedAt);
         }
         finally
         {
             Interlocked.Exchange(ref _isInFlight, 0);
+        }
+    }
+
+    private void ReportDiagnostics(string status, int sourceCount, TimeSpan duration)
+    {
+        try
+        {
+            _diagnostics?.UpdateDiscoveryDiagnostics(status, sourceCount, duration);
+        }
+        catch
+        {
+            // Diagnostics must never fault the poll loop.
         }
     }
 }

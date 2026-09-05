@@ -23,7 +23,15 @@ public sealed class AndroidMicrophoneCaptureSource : IAudioCaptureSource
 
     public event EventHandler<CapturedAudioChunk>? ChunkReady;
 
+    public event EventHandler<CaptureStoppedEventArgs>? Stopped;
+
     public bool IsActive => _running;
+
+    private void RaiseStopped(CaptureStopReason reason, string? message = null)
+    {
+        try { Stopped?.Invoke(this, new CaptureStoppedEventArgs(reason, message)); }
+        catch { /* subscriber failures must never break capture teardown */ }
+    }
 
     public async Task StartAsync(CancellationToken cancellationToken = default)
     {
@@ -93,7 +101,15 @@ public sealed class AndroidMicrophoneCaptureSource : IAudioCaptureSource
                 // (the binding exposes it as a plain int, not an enum).
                 var read = record.Read(buffer, 0, buffer.Length, 0);
                 if (read < 0)
-                    break; // ERROR_* code — the recorder is unusable, exit the loop
+                {
+                    // ERROR_* code — the recorder is unusable, exit the loop
+                    if (_running)
+                    {
+                        _running = false;
+                        RaiseStopped(CaptureStopReason.DeviceError, $"AudioRecord.Read returned error code {read}.");
+                    }
+                    break;
+                }
                 if (read == 0)
                     continue;
 
@@ -102,6 +118,11 @@ public sealed class AndroidMicrophoneCaptureSource : IAudioCaptureSource
             catch
             {
                 // The capture loop must never crash the process; stop capturing instead.
+                if (_running)
+                {
+                    _running = false;
+                    RaiseStopped(CaptureStopReason.DeviceError, "The microphone capture loop threw an unexpected exception.");
+                }
                 break;
             }
         }

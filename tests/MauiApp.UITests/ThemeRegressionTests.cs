@@ -113,6 +113,19 @@ public sealed class ThemeRegressionTests : UiTestBase
     {
         ApplyTheme(app, ThemeOption.Dark);
 
+        // PersistAsync is fire-and-forget, so without a save barrier the restart below can race
+        // it. Leaving Settings and coming back forces a fresh SettingsViewModel to load from the
+        // repository; only once that reads back as Dark has the save actually landed.
+        app.Navigation.GoTo(NavDestination.Home);
+        app.Home.WaitUntilVisible();
+        app.Navigation.GoTo(NavDestination.Settings);
+        app.Settings.WaitUntilVisible();
+        app.Settings.OpenSection(SettingsSection.Appearance);
+
+        Assert.True(app.Settings.WaitUntilThemeReads(ThemeOption.Dark),
+            "The Dark theme was not read back as selected after navigating away and back, so " +
+            "the restart below would not be testing persistence at all.");
+
         Skip.IfNot(app.TryRestart(), "App lifecycle commands are unavailable in this environment.");
 
         app.Navigation.GoTo(NavDestination.Settings);
@@ -160,7 +173,9 @@ public sealed class ThemeRegressionTests : UiTestBase
     }
 
     /// <summary>
-    /// Selects a theme through Settings and applies it, leaving the app on a known page.
+    /// Selects a theme through Settings, leaving the app on a known page. Settings auto-save, so
+    /// <see cref="SettingsPage.SelectTheme"/> confirming the radio button actually toggled is the
+    /// whole action — there is no separate Apply step to wait on.
     /// </summary>
     private static void ApplyTheme(NdiApp app, ThemeOption theme)
     {
@@ -170,7 +185,5 @@ public sealed class ThemeRegressionTests : UiTestBase
 
         app.Settings.OpenSection(SettingsSection.Appearance);
         app.Settings.SelectTheme(theme);
-        app.Settings.Apply();
-        app.Settings.WaitForApplied();
     }
 }

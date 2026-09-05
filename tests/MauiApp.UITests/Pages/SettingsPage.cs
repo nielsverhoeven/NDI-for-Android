@@ -23,7 +23,8 @@ public enum ThemeOption
 }
 
 /// <summary>
-/// The Settings page: a section rail on the left, one visible panel on the right, Apply below.
+/// The Settings page: a section rail on the left, one visible panel on the right. Every change
+/// auto-saves; there is no Apply step.
 /// </summary>
 /// <remarks>
 /// Section panels are all present in the tree and toggled with <c>IsVisible</c>, so "is the
@@ -65,6 +66,32 @@ public sealed class SettingsPage : PageObject
 
     public string ValidationError => TextOf(TestIds.SettingsDiscoveryServersError);
 
+    /// <summary>Fills the add-server form and taps Add Server.</summary>
+    public void AddServer(string host, string port = "")
+    {
+        DiscoveryHost = host;
+        DiscoveryPort = port;
+        Tap(TestIds.SettingsDiscoveryServerAction, Timeouts.Navigation);
+    }
+
+    /// <summary>Endpoint text ("host:port") of every rendered server row, in list order.</summary>
+    public IReadOnlyList<string> ServerRowEndpoints =>
+        FindDisplayed(TestIds.SettingsServerRowEndpoint).Select(row => row.Text).ToList();
+
+    /// <summary>Deletes the row whose endpoint matches <paramref name="endpoint"/>, if one is rendered.</summary>
+    public void RemoveServer(string endpoint)
+    {
+        var index = FindDisplayed(TestIds.SettingsServerRowEndpoint)
+            .Select(row => row.Text)
+            .ToList()
+            .IndexOf(endpoint);
+
+        if (index < 0)
+            return;
+
+        FindDisplayed(TestIds.SettingsServerRowDelete)[index].Click();
+    }
+
     // ── Appearance section ───────────────────────────────────────────────────
 
     /// <summary>
@@ -74,8 +101,8 @@ public sealed class SettingsPage : PageObject
     /// The confirmation is not ceremony. These radio buttons use a MAUI <c>ControlTemplate</c>
     /// rather than the native Android control, so the automation id sits on a container and a tap
     /// on it does not necessarily toggle anything. Without this check, a tap that silently does
-    /// nothing surfaces two calls later as "Settings applied never appeared" — which reads as a
-    /// broken Apply button rather than a selection that never happened.
+    /// nothing surfaces later as a theme assertion failure elsewhere in the test, which reads as
+    /// an unrelated defect rather than a selection that never happened.
     /// </remarks>
     public void SelectTheme(ThemeOption theme) =>
         LastThemeTapStrategy = TapUntilSet(ThemeId(theme), () => IsThemeSelected(theme));
@@ -94,18 +121,31 @@ public sealed class SettingsPage : PageObject
     public bool IsThemeSelected(ThemeOption theme) =>
         string.Equals(CheckedState(theme), "true", StringComparison.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// Polls until the selection reads back as <paramref name="theme"/>, or the timeout elapses.
+    /// </summary>
+    /// <remarks>
+    /// SettingsViewModel is transient and reloads from the repository asynchronously in
+    /// OnAppearing, so the panel can render before that load has populated the selection — a
+    /// single read right after <see cref="OpenSection"/> can catch that default value instead of
+    /// what was actually persisted.
+    /// </remarks>
+    public bool WaitUntilThemeReads(ThemeOption theme, TimeSpan? timeout = null)
+    {
+        var deadline = DateTime.UtcNow + (timeout ?? Timeouts.Navigation);
+        while (DateTime.UtcNow < deadline)
+        {
+            if (IsThemeSelected(theme))
+                return true;
+
+            Thread.Sleep(250);
+        }
+
+        return IsThemeSelected(theme);
+    }
+
     private string CheckedState(ThemeOption theme) =>
         WaitFor(ThemeId(theme)).GetAttribute("checked") ?? "(no checked attribute)";
-
-    // ── Apply ────────────────────────────────────────────────────────────────
-
-    public void Apply() => Tap(TestIds.SettingsApply);
-
-    /// <summary>Waits for the "Settings applied." confirmation to appear.</summary>
-    public void WaitForApplied() =>
-        WaitFor(TestIds.SettingsAppliedNotice, Timeouts.Element, "Settings were not confirmed as applied");
-
-    public bool IsApplied => IsPresent(TestIds.SettingsAppliedNotice);
 
     private static string SectionButtonId(SettingsSection section) => section switch
     {

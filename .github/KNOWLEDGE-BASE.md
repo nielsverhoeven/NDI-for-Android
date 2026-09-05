@@ -35,6 +35,8 @@ dotnet test tests/MauiApp.Tests             # Non-NDI unit tests — must pass b
 | Capture source contracts | `src/Core/Services/ICaptureSources.cs`, `IAudioPlaybackSink.cs`, `INdiPlatformBootstrap.cs` |
 | Android capture/audio/NSD services | `src/MauiApp/Platforms/Android/Services/` (`AndroidVideoCaptureSource`, `AndroidMicrophoneCaptureSource`, `AndroidAudioPlaybackSink`, `AndroidNsdBootstrap`, `ScreenShareForegroundService`) |
 | Reusable NDI render surface | `src/MauiApp/Features/Viewer/Views/ViewerView.xaml(.cs)` (SkiaSharp, ~30 fps pull loop) |
+| Viewer control deck / sheet / overlay (#342) | `src/MauiApp/Features/Viewer/Views/PlaybackControlsView.xaml(.cs)`, `CameraControlsView.xaml(.cs)`, `ViewerControlDeck.xaml(.cs)`, `ViewerControlSheet.xaml(.cs)`, `FullScreenControlsOverlay.xaml(.cs)` — `PtzPanelView` removed, superseded by `CameraControlsView` |
+| Viewer control layout policy (Core, unit-tested) | `src/Core/Features/Viewer/ViewerControlLayout.cs` (`ViewerControlLayout.Choose(widthDp, heightDp)` → Deck when width ≥ 640dp and height ≥ 470dp, else Sheet) |
 | Window size class + nav policy | `src/Core/Features/Navigation/Services/` (`WindowSizeClassService`, `NavigationPolicyService`) |
 | SQLite/Data layer | `src/MauiApp/Data/` |
 | Android platform services | `src/MauiApp/Platforms/Android/` |
@@ -71,6 +73,7 @@ tests/
 3. **No business logic in Views** — Views are pure XAML + bindings
 4. **NDI threading**: bridge events (`ConnectionStateChanged`, `TallyEchoChanged`, `OutputStatusChanged`) are raised on pump/background threads — subscribers marshal to the UI thread (`IMainThreadDispatcher` in Core, `MainThread.BeginInvokeOnMainThread` in MauiApp)
 5. **Android APIs** isolated in `Platforms/Android/` behind interfaces
+6. **No root `IsVisible` binding on a reusable `ContentView`** — a `View.SetValue` from host code-behind clears an active one-way binding on that same property, so a `ContentView` reused across multiple hosts (e.g. `CameraControlsView` inside both `ViewerControlDeck` and `ViewerControlSheet`) must bind visibility on an *inner* element and leave its own root free for the host to toggle imperatively (`.IsVisible = ...`) without side effects. See #342 (`ViewerControlDeck`/`ViewerControlSheet`/`FullScreenControlsOverlay`).
 
 ## Shell Routes
 
@@ -89,12 +92,19 @@ Left navigation rail placement: same pages on `//home-rail`, `//stream-rail`, `/
 
 **Placement policy (#279)**: `WindowSizeClass` = Compact (<600dp) / Medium (600–840dp) / Expanded (>840dp), fed from `AppShell.OnSizeAllocated`. `NavigationPolicyService`: **rail when landscape OR Expanded, bottom tabs otherwise**. `AppShell` selects `-rail` vs `-tab` routes from `AdaptiveShellStateViewModel.IsLeftRailNavigationVisible`.
 
+## Output Session State + Home Quick Actions (#326 / #334 / #328 — branches feature/326-output-session-state, feature/328-home-quick-actions)
+- `INdiOutputBridge.IsActive` (lock-free `Volatile.Read` of the sender handle or the re-stream flag) is the only truth for "output is running"; the persisted `IsOutputActive` flag is a hint that must be corroborated. `OutputStatusChanged` is raised on every start/stop transition.
+- `IVideoCaptureSource`/`IAudioCaptureSource.Stopped` (`CaptureStoppedEventArgs.Reason`) fires only for autonomous stops (MediaProjection revoked, camera lost, mic loop error); `NdiOutputBridge` then stops the sender itself. Never raised for a caller-requested stop.
+- `OutputViewModel`: "Output session restored." only when the bridge corroborates; otherwise "Tap Start to resume output" (no period) and the persisted flag is cleared; "Output stopped" on an autonomous stop. `OutputPage` accepts `resume=true` (query) → `ApplyResumeRequestCommand` pre-fills the stream name and never starts capture.
+- `HomeViewModel` takes `INdiOutputBridge`; Output status and `CanResumeOutput` derive from `state.IsOutputActive && _outputBridge.IsActive`; quick actions are disabled (not hidden) when unavailable. Start Viewing Last Source calls `NavigateToPrimaryAsync(View)` BEFORE pushing `viewer?sourceId=` so the push lands under the View tab/rail (otherwise the handoff never stops the receiver).
+- Background streaming (#327): an active output keeps running across tab switches and app backgrounding under `ScreenShareForegroundService`; `NdiNavigationHandoffService` only stops the viewer receiver when leaving View (constructor: `INdiViewerBridge` only). The persistent notification has a **Stop** action (`ActionStopRequested` → `INdiOutputBridge.StopOutputAsync()`; if the bridge is null or inactive the service stops itself). A sticky restart with a null intent stops the service (#351). A notification stop keeps `AppState.StreamName`, so Home offers Resume; only the in-app Stop button clears the name.
+
 ## Settings Feature (Issue #142 — MERGED to main, PR #211)
 - **ViewModel**: `SettingsViewModel` — 5 sections: General, Appearance, Discovery, DeveloperTools, About
 - **Model**: `NdiSettingsSnapshot` — holds all persisted settings as immutable record
 - **Sections**: `SettingsSection` enum drives `IsXxxSectionSelected` properties
-- **Apply flow**: user stages changes → clicks Apply → `ApplyAsync()` validates → saves via `ISettingsRepository`
-- **Pending state**: `HasPendingChanges` tracked by comparing current state to `_baselineSnapshot`
+- **Auto-save (#292)**: no Apply button — every change (theme/accent/dev-mode, discovery-server add/edit/delete/toggle/reorder) persists immediately via `PersistAsync()` → `ISettingsRepository.SaveSettingsAsync`
+- **Discovery servers (#292)**: three add fields (optional display name, hostname, port); rows show display name (hostname fallback), endpoint, and live connection state (`DiscoveryServerConnectionState`, 10 s TCP probe via `INdiDiscoveryBridge.IsDiscoveryServerReachableAsync`, started/stopped from page `OnAppearing`/`OnDisappearing`); editing opens an in-page modal overlay (scrim + dialog) driven by `IsEditServerDialogOpen`. Legacy single `DiscoveryHost`/`DiscoveryPort` fields removed (columns remain unmapped in SQLite).
 - **Platform info**: `ISettingsPlatformService.GetAppInfo()` → `SettingsAppInfo(AppName, Version, Build)`
 - **Cached sources**: loaded from `ISourceRepository.GetCachedSourcesAsync()`
 - **Appearance service**: `IAppearanceService` / `MauiAppearanceService` — central runtime color application

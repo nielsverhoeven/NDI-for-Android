@@ -12,4 +12,12 @@ public interface IAppearanceService
     /// <c>DynamicResource</c> — subscribes to this to re-read its colors (#294).
     /// </summary>
     event EventHandler? AppearanceChanged;
+
+    /// <summary>
+    /// Re-applies platform chrome colors (status-bar strip, toolbar background) using the
+    /// last applied theme. Called after Shell navigation because MAUI re-applies per-page
+    /// toolbar appearance, resetting the AppBarLayout background to template defaults (#296).
+    /// No-op before the first <see cref="Apply"/> and on platforms without such chrome.
+    /// </summary>
+    void ReapplyChrome() { }
 }

@@ -12,7 +12,9 @@ public record NdiSource(
     long LastSeenAtEpochMillis,
     bool PreviouslyConnected = false,
     DiscoveryMode DiscoveryMode = DiscoveryMode.Mdns,
-    QualityProfile QualityProfile = QualityProfile.Balanced);
+    QualityProfile QualityProfile = QualityProfile.Balanced,
+    string? PtzOverrideHost = null,
+    int? PtzOverridePort = null);
 
 public record DiscoverySnapshot(
     string SnapshotId,

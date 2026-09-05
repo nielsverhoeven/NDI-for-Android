@@ -6,7 +6,7 @@ public sealed class NoopScreenSharePlatformService : IScreenSharePlatformService
 {
     public bool IsForegroundServiceActive { get; private set; }
 
-    public Task StartForegroundSessionAsync(string streamName, CancellationToken cancellationToken = default)
+    public Task StartForegroundSessionAsync(string streamName, VideoInputKind kind, CancellationToken cancellationToken = default)
     {
         IsForegroundServiceActive = true;
         return Task.CompletedTask;
