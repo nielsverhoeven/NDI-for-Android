@@ -17,6 +17,7 @@ This guide defines the active MAUI architecture baseline for NDI-for-Android and
 | `src/MauiApp/Features/Settings` | Feature presentation + app orchestration | Settings persistence UI, diagnostics toggles, server config |
 | `src/Core/Features/Navigation` | Cross-feature navigation services | `WindowSizeClassService`, `NavigationPolicyService`, adaptive shell state, navigation handoff |
 | `src/MauiApp/NdiBridge` + `src/Core/NdiBridge` | Native boundary | P/Invoke wrappers (`NdiRuntime`, discovery/viewer/output bridges, interop layer) and plain C# bridge models only |
+| `src/Core/Features/Ptz` | Feature domain (Core, MAUI-free) | PTZ control seam (`IPtzController`) with two backends — `NdiPtzController` (wraps `INdiViewerBridge`, zero behavior change) and `ViscaPtzController` (raw VISCA-over-TCP via `System.Net.Sockets`, own connect/reconnect/timeout state machine). `IPtzControllerFactory` selects a backend per source's optional VISCA override endpoint; `ViewerViewModel` owns the selection (`ViewerViewModel.Ptz.cs`), same place the per-source `QualityProfile` restore lives. |
 | `src/MauiApp/Data` | Persistence infrastructure | SQLite-backed repositories and data access services |
 | `src/MauiApp/Platforms/Android` | Platform implementation | Android-only lifecycle hooks, permissions, `NsdManager` bootstrap, MediaProjection/Camera2/AudioRecord capture sources, `AudioTrack` playback sink, foreground service |
 | `tests/MauiApp.Tests` | Unit and component tests | ViewModel and repository tests with mocked bridge |
@@ -30,6 +31,7 @@ This guide defines the active MAUI architecture baseline for NDI-for-Android and
 4. `NdiBridge` is the only layer allowed to perform native interop calls.
 5. Native NDI SDK types never leave the bridge boundary; only plain C# records/classes cross layers.
 6. Android-specific APIs are isolated in `Platforms/Android` services and injected through interfaces.
+7. Core may use BCL networking (`System.Net.Sockets`) for non-NDI device-control protocols (e.g. VISCA-over-TCP PTZ); NDI native interop stays bridge-only (Rule 4 governs `[DllImport("ndi")]` and NDI SDK types, not all networking).
 
 ## Architecture Diagram
 
@@ -125,14 +127,15 @@ Rules:
    (Home/Stream/View/Settings) must be navigated through
    `INavigationService.NavigateToPrimaryAsync(PrimaryNavDestination, string? queryString)` —
    placement-aware — never a hard-coded `//x-tab`/`//x-rail` route string.
-5. Placement-adaptive routing is handled by `AppShell` reading `AdaptiveShellStateViewModel.IsLeftRailNavigationVisible`; rail placement uses `//xxx-rail` routes, bottom-tab placement uses `//xxx-tab` routes.
+5. Placement-adaptive routing is handled by `ShellNavigationService` reading `AdaptiveShellStateViewModel.IsLeftRailNavigationVisible`; rail placement uses `//xxx-rail` routes, bottom-tab placement uses `//xxx-tab` routes.
 
 ### Window size classes and navigation placement (#279)
 
 - `IWindowSizeClassService` / `WindowSizeClassService` (`src/Core/Features/Navigation/Services/`) tracks the Material window width size class — **Compact** (< 600dp), **Medium** (600–840dp), **Expanded** (> 840dp). `AppShell.OnSizeAllocated` feeds the window width (device-independent units) into `UpdateFromWidth`, so the `Changed` event is always raised on the UI thread and only on class transitions.
 - `INavigationPolicyService` / `NavigationPolicyService` combines size class and device orientation: **left rail when landscape OR Expanded; bottom tabs otherwise.** Compact/Medium portrait phones keep tabs; 10" tablets get the rail in both orientations.
 - **Two-pane View tab**: `SourceListPage` (`src/MauiApp/Features/Sources/Views/SourceListPage.xaml.cs`) subscribes to size-class changes and switches to a 2*/3* two-column layout with an embedded `ViewerView` pane on Expanded, collapsing back to a single column otherwise. The pane's render loop is started/stopped with page visibility and size-class transitions.
-- `ViewerView` (`src/MauiApp/Features/Viewer/Views/ViewerView.xaml`) is the reusable SkiaSharp render surface shared by `ViewerPage` and the embedded pane: a ~30 fps dispatcher-timer pull loop invalidates the canvas only when the bridge has produced a newer frame, blitting the ARGB `int[]` into a reused `SKBitmap`.
+- `ViewerView` (`src/MauiApp/Features/Viewer/Views/ViewerView.xaml`) is the reusable SkiaSharp render surface shared by three hosts — `ViewerPage`, the embedded pane, and the chromeless `FullScreenViewerPage` modal (`IsModalHost="True"`) presented over either of the first two: a ~30 fps dispatcher-timer pull loop invalidates the canvas only when the bridge has produced a newer frame, blitting the ARGB `int[]` into a reused `SKBitmap`.
+- **Viewer control deck / sheet / full-screen overlay (#342)**: below the video surface, `ViewerView` switches between three `ContentView`s — `ViewerControlDeck` (fixed-height two-column deck: `PlaybackControlsView` + `CameraControlsView`), `ViewerControlSheet` (hand-built draggable bottom sheet, no `CommunityToolkit.Maui` dependency, tabbed Weergave/PTZ), and `FullScreenControlsOverlay` (wireframe-A overlay reusing the #338 auto-hide `AreControlsVisible` state) — all under `src/MauiApp/Features/Viewer/Views/`. The deck-vs-sheet choice is a pure Core policy, `ViewerControlLayout.Choose(widthDp, heightDp)` (`src/Core/Features/Viewer/ViewerControlLayout.cs`, unit-tested): Deck only when the host's own measured width ≥ 640dp **and** height ≥ 470dp, else Sheet. `ViewerView.xaml.cs` computes this from its own `SizeChanged` (no `IWindowSizeClassService` subscription — that would leak on the transient `ViewerPage`/`FullScreenViewerPage` hosts) and sets `.IsVisible` directly on the three named hosts (no `BindableProperty` + `{x:Reference Root}` — a reusable `ContentView` must never bind its own root `IsVisible`, since an external host later assigning `.IsVisible` on that same instance — e.g. `ViewerControlSheet`'s tab switch — would silently clear the binding; visibility gating for reused content lives on an *inner* element instead). `PtzPanelView` is retired, superseded by `CameraControlsView`.
 
 ## NDI Bridge
 

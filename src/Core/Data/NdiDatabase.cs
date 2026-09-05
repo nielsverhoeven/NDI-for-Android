@@ -21,6 +21,8 @@ public class SourceEntity
     public bool PreviouslyConnected { get; set; }
     public string DiscoveryMode { get; set; } = "Mdns";
     public string QualityProfile { get; set; } = "Balanced";
+    public string? PtzOverrideHost { get; set; }
+    public int? PtzOverridePort { get; set; }
 }
 
 [Table("settings")]
@@ -183,6 +185,10 @@ public sealed class NdiDatabase : IDisposable
     public async Task UpsertSourceAsync(NdiSource source)
     {
         await EnsureInitializedAsync();
+        // Discovery rebuilds NdiSource records with the PTZ override fields left null (they are
+        // not part of NDI source metadata); carry forward whatever is already persisted so a
+        // discovery poll never clobbers a saved VISCA endpoint.
+        var existing = await _connection.FindAsync<SourceEntity>(source.SourceId);
         var entity = new SourceEntity
         {
             SourceId = source.SourceId,
@@ -193,8 +199,20 @@ public sealed class NdiDatabase : IDisposable
             PreviouslyConnected = source.PreviouslyConnected,
             DiscoveryMode = source.DiscoveryMode.ToString(),
             QualityProfile = source.QualityProfile.ToString(),
+            PtzOverrideHost = source.PtzOverrideHost ?? existing?.PtzOverrideHost,
+            PtzOverridePort = source.PtzOverridePort ?? existing?.PtzOverridePort,
         };
         await _connection.InsertOrReplaceAsync(entity);
+    }
+
+    /// <summary>Targeted update of just the PTZ override columns — does not touch any other column, so it
+    /// never races with a concurrent discovery upsert of the same row.</summary>
+    public async Task SavePtzOverrideAsync(string sourceId, string? host, int? port)
+    {
+        await EnsureInitializedAsync();
+        await _connection.ExecuteAsync(
+            "UPDATE sources SET PtzOverrideHost = ?, PtzOverridePort = ? WHERE SourceId = ?",
+            host, port, sourceId);
     }
 
     public async Task<IReadOnlyList<NdiSource>> GetSourcesAsync()
@@ -205,7 +223,8 @@ public sealed class NdiDatabase : IDisposable
             e.SourceId, e.DisplayName, e.EndpointAddress, e.IsAvailable,
             e.LastSeenAtEpochMillis, e.PreviouslyConnected,
             ParseDiscoveryMode(e.DiscoveryMode),
-            ParseQualityProfile(e.QualityProfile))).ToList();
+            ParseQualityProfile(e.QualityProfile),
+            e.PtzOverrideHost, e.PtzOverridePort)).ToList();
     }
 
     public async Task DeleteSourceAsync(string sourceId)
@@ -279,6 +298,12 @@ public sealed class NdiDatabase : IDisposable
         if (!columnNames.Contains("QualityProfile"))
             await _connection.ExecuteAsync(
                 "ALTER TABLE sources ADD COLUMN QualityProfile TEXT NOT NULL DEFAULT 'Balanced'");
+
+        if (!columnNames.Contains("PtzOverrideHost"))
+            await _connection.ExecuteAsync("ALTER TABLE sources ADD COLUMN PtzOverrideHost TEXT");
+
+        if (!columnNames.Contains("PtzOverridePort"))
+            await _connection.ExecuteAsync("ALTER TABLE sources ADD COLUMN PtzOverridePort INTEGER");
     }
 
     /// <summary>
