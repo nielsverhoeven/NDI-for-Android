@@ -85,44 +85,59 @@ public partial class OutputViewModel : ObservableObject, IDisposable
     private async Task LoadAsync()
     {
         var config = await _configRepo.GetAsync();
-        if (config is null)
-            return;
+        if (config is not null)
+        {
+            if (!string.IsNullOrWhiteSpace(config.PreferredStreamName))
+                StreamName = config.PreferredStreamName;
 
-        if (!string.IsNullOrWhiteSpace(config.PreferredStreamName))
-            StreamName = config.PreferredStreamName;
+            SelectedInputKind = config.InputKind;
+            CaptureMicrophone = config.CaptureMicrophone;
+        }
 
-        SelectedInputKind = config.InputKind;
-        CaptureMicrophone = config.CaptureMicrophone;
+        await CorroborateWithBridgeAsync("Output active");
     }
 
     private async void OnAppResumed()
     {
-        // Re-attach output session on resume if there was an active stream — but only
-        // claim "restored" when the bridge corroborates it. A stale persisted flag
-        // (process death, revoked permission, camera/mic loss while backgrounded) must
-        // not lie to the user.
+        await CorroborateWithBridgeAsync("Output session restored.");
+    }
+
+    /// <summary>
+    /// Reconciles observable state against the persisted snapshot and the live bridge — only
+    /// claim an active/restored session when the bridge corroborates it. A stale persisted flag
+    /// (process death, revoked permission, camera/mic loss while backgrounded) must not lie to
+    /// the user.
+    /// </summary>
+    private async Task CorroborateWithBridgeAsync(string activeStatusMessage)
+    {
         var state = await _appStateRepo.RestoreStateAsync();
-        if (!state.IsOutputActive || string.IsNullOrEmpty(state.StreamName))
+        if (string.IsNullOrWhiteSpace(state.StreamName))
             return;
 
         if (_bridge.IsActive)
         {
             _dispatcher.BeginInvokeOnMainThread(() =>
             {
-                StreamName = state.StreamName;
                 IsOutputActive = true;
-                StatusMessage = "Output session restored.";
+                StreamName = state.StreamName;
+                IsReStreamMode = _bridge.IsReStreamActive;
+                ConnectionCount = _bridge.ConnectionCount;
+                IsOnProgramTally = _bridge.IsOnProgramTally;
+                StatusMessage = activeStatusMessage;
             });
         }
         else
         {
-            await _appStateRepo.SaveAsync(new AppStateSnapshot(
-                state.LastViewerSourceId, state.StreamName, false, state.LastSelectedSourceId));
+            if (state.IsOutputActive)
+            {
+                await _appStateRepo.SaveAsync(new AppStateSnapshot(
+                    state.LastViewerSourceId, state.StreamName, false, state.LastSelectedSourceId));
+            }
 
             _dispatcher.BeginInvokeOnMainThread(() =>
             {
-                StreamName = state.StreamName;
                 IsOutputActive = false;
+                StreamName = state.StreamName;
                 StatusMessage = "Tap Start to resume output";
             });
         }
