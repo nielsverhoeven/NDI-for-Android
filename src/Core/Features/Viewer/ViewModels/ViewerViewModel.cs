@@ -4,6 +4,8 @@ using CommunityToolkit.Mvvm.Input;
 using NdiForAndroid.Features.AppState.Models;
 using NdiForAndroid.Features.AppState.Repositories;
 using NdiForAndroid.Features.ConnectionHistory.Services;
+using NdiForAndroid.Features.Ptz.Services;
+using NdiForAndroid.Features.Ptz.ViewModels;
 using NdiForAndroid.Features.Sources.Models;
 using NdiForAndroid.Features.Sources.Repositories;
 using NdiForAndroid.NdiBridge;
@@ -37,6 +39,8 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
     private readonly IAppLifecycleService _lifecycle;
     private readonly ISourceRepository _sourceRepository;
     private readonly IConnectionHistoryService _connectionHistory;
+    private readonly IPtzControllerFactory _ptzControllerFactory;
+    private readonly IImmersiveModeService _immersiveMode;
 
     [ObservableProperty]
     private string? _sourceId;
@@ -107,7 +111,10 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
         IAppStateRepository appStateRepo,
         IAppLifecycleService lifecycle,
         ISourceRepository sourceRepository,
-        IConnectionHistoryService connectionHistory)
+        IConnectionHistoryService connectionHistory,
+        IPtzControllerFactory ptzControllerFactory,
+        PtzEndpointFormViewModel ptzEndpointForm,
+        IImmersiveModeService immersiveMode)
     {
         _bridge = bridge;
         _timeProvider = timeProvider;
@@ -116,6 +123,9 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
         _lifecycle = lifecycle;
         _sourceRepository = sourceRepository;
         _connectionHistory = connectionHistory;
+        _ptzControllerFactory = ptzControllerFactory;
+        PtzEndpointForm = ptzEndpointForm;
+        _immersiveMode = immersiveMode;
         RetryRemainingSeconds = ReconnectConstants.RetryWindowSeconds;
         StatusMessage = "Select a source on Home to start viewing.";
         _isAudioEnabled = bridge.IsAudioEnabled; // backing field: don't push the default back to the bridge
@@ -123,11 +133,19 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
         _lifecycle.AppResumed += OnAppResumed;
         _bridge.ConnectionStateChanged += OnBridgeConnectionStateChanged;
         _bridge.TallyEchoChanged += OnBridgeTallyEchoChanged;
+        PtzEndpointForm.EndpointSaved += OnPtzEndpointSaved;
     }
+
+    /// <summary>PTZ lifecycle hooks implemented in ViewerViewModel.Ptz.cs; declared here so this
+    /// file compiles standalone even if that partial were ever removed.</summary>
+    partial void StartPtz(NdiSource? source);
+    partial void StopPtz();
+    partial void DisposePtz();
 
     /// <summary>Forwards the user's audio toggle to the active bridge connection.</summary>
     partial void OnIsAudioEnabledChanged(bool value)
     {
+        NotifyControlInteraction();
         _bridge.IsAudioEnabled = value;
     }
 
@@ -227,16 +245,18 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
 
         // Record connection event for history tracking (try to resolve display name from cache)
         string displayName = SourceId;
+        NdiSource? cached = null;
         try
         {
             var cachedSources = await _sourceRepository.GetCachedSourcesAsync();
-            var cached = cachedSources.FirstOrDefault(s => s.SourceId == SourceId);
+            cached = cachedSources.FirstOrDefault(s => s.SourceId == SourceId);
             if (!string.IsNullOrEmpty(cached?.DisplayName))
                 displayName = cached.DisplayName;
         }
         catch { /* Silent fail – will fall back to sourceId */ }
 
         _connectionHistory.RecordConnectedAsync(SourceId, displayName, QualityProfile).FireAndForget();
+        StartPtz(cached);
 
         _bridge.StartReceiver(SourceId, QualityProfile);
         _bridge.SetTally(onProgram: true, onPreview: false);
@@ -248,6 +268,7 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
     private void Stop()
     {
         _userInitiatedStop = true;
+        IsFullScreen = false;
         DisposeTimers();
         _bridge.SetTally(onProgram: false, onPreview: false);
         _bridge.StopReceiver();
@@ -260,6 +281,7 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
         CanReconnect = false;
         IsTallyProgram = false;
         IsPtzSupported = false;
+        StopPtz();
         RetryStatusMessage = null;
         StatusMessage = null;
         RetryRemainingSeconds = ReconnectConstants.RetryWindowSeconds;
@@ -269,10 +291,13 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
     public void Dispose()
     {
         DisposeTimers();
+        _overlayAutoHideTimer?.Dispose();
+        _immersiveMode.KeepScreenOn(false);
         _userInitiatedStop = true;
         _lifecycle.AppResumed -= OnAppResumed;
         _bridge.ConnectionStateChanged -= OnBridgeConnectionStateChanged;
         _bridge.TallyEchoChanged -= OnBridgeTallyEchoChanged;
+        DisposePtz();
     }
 
     private void DisposeTimers()
@@ -421,6 +446,7 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private void CancelRetry()
     {
+        NotifyControlInteraction();
         DisposeTimers();
         _reconnectState = ReconnectState.Idle;
         IsReconnecting = false;
@@ -434,6 +460,7 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private void Reconnect()
     {
+        NotifyControlInteraction();
         if (string.IsNullOrEmpty(SourceId) && string.IsNullOrEmpty(_lastSourceId))
             return;
 
@@ -444,54 +471,14 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
         BeginReconnectWindow();
     }
 
-    // --- PTZ (only offered when IsPtzSupported) ---
-
-    /// <summary>Short pan/tilt burst: run at ±<see cref="PtzNudgeSpeed"/> for 250 ms, then stop.</summary>
-    [RelayCommand]
-    private async Task PtzNudge(string? direction)
-    {
-        var (pan, tilt) = direction switch
-        {
-            "left" => (-PtzNudgeSpeed, 0f),
-            "right" => (PtzNudgeSpeed, 0f),
-            "up" => (0f, PtzNudgeSpeed),
-            "down" => (0f, -PtzNudgeSpeed),
-            _ => (0f, 0f),
-        };
-        if (pan == 0f && tilt == 0f)
-            return;
-
-        _bridge.PtzPanTiltSpeed(pan, tilt);
-        await Task.Delay(PtzNudgeDurationMs);
-        _bridge.PtzPanTiltSpeed(0f, 0f);
-    }
-
-    /// <summary>Short zoom burst: run at ±<see cref="PtzNudgeSpeed"/> for 250 ms, then stop.</summary>
-    [RelayCommand]
-    private async Task PtzZoomNudge(string? direction)
-    {
-        var speed = direction switch
-        {
-            "in" => PtzNudgeSpeed,
-            "out" => -PtzNudgeSpeed,
-            _ => 0f,
-        };
-        if (speed == 0f)
-            return;
-
-        _bridge.PtzZoomSpeed(speed);
-        await Task.Delay(PtzNudgeDurationMs);
-        _bridge.PtzZoomSpeed(0f);
-    }
-
-    [RelayCommand]
-    private void PtzAutoFocus() => _bridge.PtzAutoFocus();
+    // --- PTZ (only offered when IsPtzSupported) --- see ViewerViewModel.Ptz.cs
 
     // --- Quality Profile ---
 
     [RelayCommand]
     private async Task ChangeQualityProfileAsync(object? param)
     {
+        NotifyControlInteraction();
         if (param is not string profileName) return;
 
         if (!Enum.TryParse<QualityProfile>(profileName, ignoreCase: true, out var profile)) return;

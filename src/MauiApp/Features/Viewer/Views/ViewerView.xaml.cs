@@ -1,4 +1,7 @@
+using System.ComponentModel;
 using System.Runtime.InteropServices;
+using Microsoft.Extensions.DependencyInjection;
+using NdiForAndroid.Features.Viewer;
 using NdiForAndroid.Features.Viewer.ViewModels;
 using NdiForAndroid.NdiBridge;
 using SkiaSharp;
@@ -14,6 +17,19 @@ namespace NdiForAndroid.Features.Viewer.Views;
 /// </summary>
 public partial class ViewerView : ContentView
 {
+    /// <summary>
+    /// True for the <see cref="ViewerView"/> embedded in <see cref="FullScreenViewerPage"/>,
+    /// so it never itself presents a nested full-screen modal.
+    /// </summary>
+    public static readonly BindableProperty IsModalHostProperty =
+        BindableProperty.Create(nameof(IsModalHost), typeof(bool), typeof(ViewerView), false);
+
+    public bool IsModalHost
+    {
+        get => (bool)GetValue(IsModalHostProperty);
+        set => SetValue(IsModalHostProperty, value);
+    }
+
     // Rendering plumbing only (allowed in code-behind): a ~30 fps pull loop that
     // invalidates the canvas when the bridge has produced a newer frame, and a
     // paint handler that blits the ARGB int[] into a reusable SKBitmap.
@@ -22,11 +38,15 @@ public partial class ViewerView : ContentView
     private long _lastRenderedTimestamp = -1;
     private SKBitmap? _frameBitmap;
 
+    private ViewerViewModel? _boundViewModel;
+    private bool _presentingFullScreen;
+
     public ViewerView()
     {
         InitializeComponent();
 
         VideoCanvas.PaintSurface += OnPaintSurface;
+        SizeChanged += (_, _) => UpdateLayoutVisibility();
     }
 
     /// <summary>Starts (or resumes) the ~30 fps frame pull loop. Idempotent.</summary>
@@ -46,6 +66,100 @@ public partial class ViewerView : ContentView
     public void StopRendering()
     {
         _renderTimer?.Stop();
+    }
+
+    /// <summary>
+    /// Full teardown for a modal-host instance once its <see cref="FullScreenViewerPage"/> has
+    /// been popped: releases the render timer, detaches from the bound ViewModel, clears
+    /// BindingContext, and releases the frame bitmap.
+    /// </summary>
+    public void Teardown()
+    {
+        if (_renderTimer is not null)
+        {
+            _renderTimer.Stop();
+            _renderTimer.Tick -= OnRenderTick;
+            _renderTimer = null;
+        }
+
+        if (_boundViewModel is not null)
+        {
+            _boundViewModel.PropertyChanged -= OnViewModelPropertyChanged;
+            _boundViewModel = null;
+        }
+
+        BindingContext = null;
+
+        _frameBitmap?.Dispose();
+        _frameBitmap = null;
+    }
+
+    protected override void OnBindingContextChanged()
+    {
+        base.OnBindingContextChanged();
+
+        if (_boundViewModel is not null)
+            _boundViewModel.PropertyChanged -= OnViewModelPropertyChanged;
+
+        _boundViewModel = BindingContext as ViewerViewModel;
+
+        if (_boundViewModel is not null)
+            _boundViewModel.PropertyChanged += OnViewModelPropertyChanged;
+
+        UpdateLayoutVisibility();
+    }
+
+    private void UpdateLayoutVisibility()
+    {
+        var isFullScreen = _boundViewModel?.IsFullScreen ?? false;
+        var layout = ViewerControlLayout.Choose(Width, Height);
+
+        // IsFullScreen is shared VM state, so the donor instance sees it too; only the
+        // modal host may show the full-screen overlay.
+        Overlay.IsVisible = isFullScreen && IsModalHost;
+        Deck.IsVisible = !isFullScreen && layout == ViewerControlLayoutKind.Deck;
+        Sheet.IsVisible = !isFullScreen && layout == ViewerControlLayoutKind.Sheet;
+    }
+
+    private async void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(ViewerViewModel.IsFullScreen))
+            UpdateLayoutVisibility();
+
+        if (IsModalHost) return;
+        if (e.PropertyName != nameof(ViewerViewModel.IsFullScreen)) return;
+        if (BindingContext is not ViewerViewModel vm || !vm.IsFullScreen) return;
+        if (_presentingFullScreen) return;
+
+        _presentingFullScreen = true;
+        try
+        {
+            await PresentFullScreenAsync(vm);
+        }
+        catch
+        {
+            vm.IsFullScreen = false;
+            StartRendering();
+        }
+        finally
+        {
+            _presentingFullScreen = false;
+        }
+    }
+
+    private async Task PresentFullScreenAsync(ViewerViewModel vm)
+    {
+        StopRendering(); // explicit hand-off — page lifecycle is not reliable under a modal push
+        var factory = IPlatformApplication.Current?.Services.GetService<Func<FullScreenViewerPage>>();
+        if (factory is null || Shell.Current is null)
+        {
+            StartRendering();
+            return;
+        }
+
+        var page = factory();
+        page.Initialize(vm, onClosed: StartRendering);
+        await Shell.Current.Navigation.PushModalAsync(page);
     }
 
     private void OnRenderTick(object? sender, EventArgs e)
