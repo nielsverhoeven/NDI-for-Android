@@ -20,7 +20,7 @@ public class NdiNavigationHandoffServiceTests
         _appStateRepoMock.Object);
 
     [Fact]
-    public async Task HandlePrimaryDestinationChangeAsync_LeavingStream_ClearsIsOutputActiveInAppState()
+    public async Task HandlePrimaryDestinationChangeAsync_LeavingStream_ClearsIsOutputActiveButKeepsStreamName()
     {
         _appStateRepoMock
             .Setup(r => r.RestoreStateAsync())
@@ -32,7 +32,7 @@ public class NdiNavigationHandoffServiceTests
         _outputBridgeMock.Verify(b => b.StopOutputAsync(It.IsAny<CancellationToken>()), Times.Once);
         _appStateRepoMock.Verify(r => r.SaveAsync(It.Is<AppStateSnapshot>(s =>
             s.LastViewerSourceId == "v1" &&
-            s.StreamName == null &&
+            s.StreamName == "X" &&
             s.IsOutputActive == false &&
             s.LastSelectedSourceId == "Y")), Times.Once);
     }

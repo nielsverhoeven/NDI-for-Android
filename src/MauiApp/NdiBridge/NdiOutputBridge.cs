@@ -64,6 +64,9 @@ public sealed class NdiOutputBridge : INdiOutputBridge, IDisposable
     public event EventHandler? OutputStatusChanged;
 
     /// <inheritdoc />
+    public bool IsActive => Volatile.Read(ref _send) != IntPtr.Zero || _reStreamRunning;
+
+    /// <inheritdoc />
     public bool IsOnProgramTally => _isOnProgramTally;
 
     /// <inheritdoc />
@@ -100,7 +103,9 @@ public sealed class NdiOutputBridge : INdiOutputBridge, IDisposable
         if (string.IsNullOrWhiteSpace(streamName))
             throw new ArgumentException("Stream name is required.", nameof(streamName));
 
-        // Full clean stop of any active session before starting a new one.
+        // Full clean stop of any active session before starting a new one. When a
+        // session was already active this raises OutputStatusChanged with IsActive
+        // momentarily false before the new sender below flips it back true.
         await StopOutputCoreAsync().ConfigureAwait(false);
 
         if (!_runtime.EnsureInitialized())
@@ -139,8 +144,12 @@ public sealed class NdiOutputBridge : INdiOutputBridge, IDisposable
 
         _micRequested = captureMicrophone;
         _videoSource.FrameReady += OnFrameReady;
+        _videoSource.Stopped += OnCaptureStopped;
         if (captureMicrophone)
+        {
             _audioSource.ChunkReady += OnAudioChunkReady;
+            _audioSource.Stopped += OnCaptureStopped;
+        }
 
         try
         {
@@ -160,6 +169,7 @@ public sealed class NdiOutputBridge : INdiOutputBridge, IDisposable
         }
 
         _statusTimer = new Timer(PollSenderStatus, null, StatusPollInterval, StatusPollInterval);
+        RaiseOutputStatusChanged();
     }
 
     public async Task StopOutputAsync(CancellationToken cancellationToken = default)
@@ -177,9 +187,14 @@ public sealed class NdiOutputBridge : INdiOutputBridge, IDisposable
 
     private async Task StopOutputCoreAsync()
     {
-        // Unsubscribe first so no new frames arrive while tearing down.
+        var wasActive = _send != IntPtr.Zero; // read BEFORE any teardown below
+
+        // Unsubscribe first so no new frames arrive while tearing down, and so
+        // OnCaptureStopped can never fire from the StopAsync() calls just below.
         _videoSource.FrameReady -= OnFrameReady;
+        _videoSource.Stopped -= OnCaptureStopped;
         _audioSource.ChunkReady -= OnAudioChunkReady;
+        _audioSource.Stopped -= OnCaptureStopped;
 
         var statusTimer = Interlocked.Exchange(ref _statusTimer, null);
         statusTimer?.Dispose();
@@ -216,7 +231,7 @@ public sealed class NdiOutputBridge : INdiOutputBridge, IDisposable
             }
         }
 
-        var statusChanged = _isOnProgramTally || _connectionCount != 0;
+        var statusChanged = _isOnProgramTally || _connectionCount != 0 || wasActive;
         _isOnProgramTally = false;
         _connectionCount = 0;
         if (statusChanged)
@@ -311,6 +326,12 @@ public sealed class NdiOutputBridge : INdiOutputBridge, IDisposable
             // A capture callback must never take down the process.
         }
     }
+
+    /// <summary>Raised on the capture source's native callback thread when it stops itself
+    /// autonomously. Stops the whole output session; the resulting OutputStatusChanged/IsActive
+    /// transition is what OutputViewModel/HomeViewModel react to.</summary>
+    private void OnCaptureStopped(object? sender, CaptureStoppedEventArgs e) =>
+        StopOutputAsync().FireAndForget();
 
     /// <summary>1 s timer callback — polls tally + connection count while output is active.</summary>
     private void PollSenderStatus(object? state)
@@ -470,6 +491,8 @@ public sealed class NdiOutputBridge : INdiOutputBridge, IDisposable
                 throw;
             }
         }
+
+        RaiseOutputStatusChanged();
     }
 
     public async Task StopReStreamAsync(CancellationToken cancellationToken = default)
@@ -501,9 +524,10 @@ public sealed class NdiOutputBridge : INdiOutputBridge, IDisposable
         if (pumpThread is not null && !ReferenceEquals(pumpThread, Thread.CurrentThread))
             await Task.Run(pumpThread.Join, CancellationToken.None).ConfigureAwait(false);
 
+        bool hadHandles;
         lock (_reStreamLock)
         {
-            var hadHandles = _reStreamRecv != IntPtr.Zero || _reStreamSend != IntPtr.Zero;
+            hadHandles = _reStreamRecv != IntPtr.Zero || _reStreamSend != IntPtr.Zero;
 
             if (_reStreamRecv != IntPtr.Zero)
             {
@@ -521,6 +545,9 @@ public sealed class NdiOutputBridge : INdiOutputBridge, IDisposable
             if (hadHandles)
                 _runtime.ReleaseHandle();
         }
+
+        if (hadHandles)
+            RaiseOutputStatusChanged();
     }
 
     /// <summary>
