@@ -33,6 +33,14 @@ not a stub.
 ```powershell
 dotnet build NdiForAndroid.sln        # solution is at the REPO ROOT (not under src/); run after every task
 dotnet test tests/MauiApp.Tests       # non-NDI unit tests — must pass before PR merge
+
+# UI e2e suite (Appium, tests/MauiApp.UITests) — MANDATORY before any PR whose base is `main`
+# merges (see Workflow Reliability Rules). Two ways to get a green run:
+gh workflow run emulator-tests.yml --repo nielsverhoeven/NDI-for-Android --ref <branch> -f app_ref=<branch-or-sha> -f test_filter="<dotnet test filter or blank>"   # dispatch on demand
+gh run watch <run-id>                                                                                                                                              # or: gh run view <run-id> --log-failed
+# local, against a connected device/emulator (Appium server running separately: `appium`):
+$env:ANDROID_APK_PATH = "src/MauiApp/bin/Debug/net10.0-android/com.ndi.android-Signed.apk"
+dotnet test tests/MauiApp.UITests
 ```
 
 `tests/MauiApp.Tests` references only `src/Core`, and both target plain `net10.0` — so the unit
@@ -187,6 +195,17 @@ Full stage-by-stage detail (entry conditions, exit gates) lives in [`AGENTS.md`]
 - Open a PR for completed work before closing the issue; include the PR link in the closure note.
 - Parent/child issue hierarchy is mandatory (feature = parent, tasks = children) via real GitHub
   sub-issue relations, not checklists alone.
+- **UI e2e gate for `main`**: before opening or merging a PR whose base is `main`, the Appium UI
+  e2e suite (`tests/MauiApp.UITests`) must be green — either a dispatched `emulator-tests.yml` run
+  on the branch (link the run in the PR) or the PR's own "Run Emulator UI Tests" check
+  (`ndi-for-android-cicd.yml`'s `e2e-tests` job, which only runs for PRs into `main`/on `main`).
+- **Never merge while any check is pending or failing** — wait for every check to complete. PR
+  #299 was merged while its "Run Emulator UI Tests" run was still pending; that run then failed
+  and blocked the next release (#361).
+- **AutomationIds move with the control**: when a restructure moves or renames a control, its
+  `TestIds` (`src/Core/Testing/TestIds.cs`) AutomationId moves with it, and the affected page
+  object(s) under `tests/MauiApp.UITests/Pages/` are re-run in the same PR (#342 broke this and
+  the gap was only found in #360).
 
 ## Note on local-AI / Ollama steps
 The original `implementer` agent referenced `.github/scripts/ollama-task.ps1` to offload boilerplate
