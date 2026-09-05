@@ -1,3 +1,4 @@
+using NdiForAndroid.Features.Viewer;
 using NdiForAndroid.Features.Viewer.ViewModels;
 using Timer = System.Threading.Timer;
 
@@ -9,6 +10,7 @@ public partial class CameraControlsView : ContentView
     private const int LongPressThresholdMs = 600;
 
     private readonly List<Timer> _presetTimers = new();
+    private bool _presetsStacked;
 
     public CameraControlsView()
     {
@@ -23,7 +25,34 @@ public partial class CameraControlsView : ContentView
         WirePreset(Preset7Button, 7);
         WirePreset(Preset8Button, 8);
 
+        SizeChanged += (_, _) => ApplyPresetPlacement();
+
         Unloaded += OnUnloaded;
+    }
+
+    private void ApplyPresetPlacement()
+    {
+        if (Width <= 0) return;                       // pre-measure / hidden tab
+        var stacked = ViewerControlLayout.ShouldStackCameraPresets(Width);
+        if (stacked == _presetsStacked) return;        // re-entrancy / thrash guard
+        _presetsStacked = stacked;
+
+        if (stacked)
+        {
+            Grid.SetRow(PresetGrid, 1);
+            Grid.SetColumn(PresetGrid, 0);
+            Grid.SetColumnSpan(PresetGrid, 3);
+            PresetGrid.Margin = new Thickness(0, 8, 0, 0);
+            PresetGrid.HorizontalOptions = LayoutOptions.Start;
+        }
+        else
+        {
+            Grid.SetRow(PresetGrid, 0);
+            Grid.SetColumn(PresetGrid, 2);
+            Grid.SetColumnSpan(PresetGrid, 1);
+            PresetGrid.Margin = new Thickness(0);
+            PresetGrid.HorizontalOptions = LayoutOptions.Fill;
+        }
     }
 
     private void OnUnloaded(object? sender, EventArgs e)

@@ -36,7 +36,7 @@ dotnet test tests/MauiApp.Tests             # Non-NDI unit tests — must pass b
 | Android capture/audio/NSD services | `src/MauiApp/Platforms/Android/Services/` (`AndroidVideoCaptureSource`, `AndroidMicrophoneCaptureSource`, `AndroidAudioPlaybackSink`, `AndroidNsdBootstrap`, `ScreenShareForegroundService`) |
 | Reusable NDI render surface | `src/MauiApp/Features/Viewer/Views/ViewerView.xaml(.cs)` (SkiaSharp, ~30 fps pull loop) |
 | Viewer control deck / sheet / overlay (#342) | `src/MauiApp/Features/Viewer/Views/PlaybackControlsView.xaml(.cs)`, `CameraControlsView.xaml(.cs)`, `ViewerControlDeck.xaml(.cs)`, `ViewerControlSheet.xaml(.cs)`, `FullScreenControlsOverlay.xaml(.cs)` — `PtzPanelView` removed, superseded by `CameraControlsView` |
-| Viewer control layout policy (Core, unit-tested) | `src/Core/Features/Viewer/ViewerControlLayout.cs` (`ViewerControlLayout.Choose(widthDp, heightDp)` → Deck when width ≥ 640dp and height ≥ 470dp, else Sheet) |
+| Viewer control layout policy (Core, unit-tested) | `src/Core/Features/Viewer/ViewerControlLayout.cs` (`Choose(widthDp, heightDp)` → Deck when width ≥ 640dp and height ≥ 470dp, else Sheet; `ShouldStackCameraPresets`, `ChooseSheetExpandedHeightDp`/`ChooseSheetPeekHeightDp`, `ChooseVideoHeightDp` added for #370 — video height and the sheet's expanded/peek heights are derived from the same Core policy; 240dp video / 440dp expanded / 320dp peek remain the values for a portrait phone and for the deck) |
 | Window size class + nav policy | `src/Core/Features/Navigation/Services/` (`WindowSizeClassService`, `NavigationPolicyService`) |
 | SQLite/Data layer | `src/MauiApp/Data/` |
 | Android platform services | `src/MauiApp/Platforms/Android/` |

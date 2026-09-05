@@ -119,6 +119,11 @@ public partial class ViewerView : ContentView
         Overlay.IsVisible = isFullScreen && IsModalHost;
         Deck.IsVisible = !isFullScreen && layout == ViewerControlLayoutKind.Deck;
         Sheet.IsVisible = !isFullScreen && layout == ViewerControlLayoutKind.Sheet;
+
+        var innerHeight = isFullScreen ? Height : Height - (2 * ViewerControlLayout.ViewerContentPaddingDp);
+        var videoHeight = ViewerControlLayout.ChooseVideoHeightDp(innerHeight, layout, isFullScreen);
+        if (Math.Abs(VideoCanvas.HeightRequest - videoHeight) > 0.5)
+            VideoCanvas.HeightRequest = videoHeight;
     }
 
     private async void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)

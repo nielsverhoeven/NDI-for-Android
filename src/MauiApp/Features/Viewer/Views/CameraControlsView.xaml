@@ -30,8 +30,8 @@
             </Label>
         </Border>
 
-        <Grid ColumnDefinitions="Auto,Auto,Auto" ColumnSpacing="8">
-            <Grid Grid.Column="0" RowDefinitions="48,48,48" ColumnDefinitions="48,48,48"
+        <Grid x:Name="ControlsGrid" RowDefinitions="Auto,Auto" ColumnDefinitions="Auto,Auto,Auto" RowSpacing="0" ColumnSpacing="8">
+            <Grid x:Name="PadGrid" Grid.Row="0" Grid.Column="0" RowDefinitions="48,48,48" ColumnDefinitions="48,48,48"
                   RowSpacing="8" ColumnSpacing="8">
                 <Button Grid.Row="0" Grid.Column="1" Text="▲" WidthRequest="48" HeightRequest="48" Padding="0"
                         AutomationId="{x:Static t:TestIds.ViewerPtzUp}"
@@ -54,7 +54,7 @@
                         SemanticProperties.Description="Pan down" />
             </Grid>
 
-            <VerticalStackLayout Grid.Column="1" Spacing="8" VerticalOptions="Center">
+            <VerticalStackLayout x:Name="ZoomStack" Grid.Row="0" Grid.Column="1" Spacing="8" VerticalOptions="Center">
                 <Button Text="T" WidthRequest="48" HeightRequest="48" Padding="0"
                         AutomationId="{x:Static t:TestIds.ViewerPtzZoomIn}"
                         Command="{Binding PtzZoomNudgeCommand}" CommandParameter="in"
@@ -65,7 +65,7 @@
                         SemanticProperties.Description="Zoom out" />
             </VerticalStackLayout>
 
-            <Grid Grid.Column="2" RowDefinitions="48,48" ColumnDefinitions="48,48,48,48"
+            <Grid x:Name="PresetGrid" Grid.Row="0" Grid.Column="2" RowDefinitions="48,48" ColumnDefinitions="48,48,48,48"
                   RowSpacing="8" ColumnSpacing="8" VerticalOptions="Center">
                 <Button x:Name="Preset1Button" Grid.Row="0" Grid.Column="0" Text="1" WidthRequest="48" HeightRequest="48" Padding="0"
                         SemanticProperties.Description="Preset 1" />

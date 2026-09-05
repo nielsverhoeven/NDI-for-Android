@@ -76,56 +76,53 @@
             </VerticalStackLayout>
         </Border>
 
-        <Grid VerticalOptions="End" HeightRequest="48" ColumnDefinitions="Auto,152,48,48,Auto,48"
+        <Grid VerticalOptions="End" HeightRequest="48" ColumnDefinitions="*,48,48,48,Auto,48"
               ColumnSpacing="8" Padding="8,0" BackgroundColor="{DynamicResource ScrimBackground}">
-            <Border Grid.Column="0" Padding="8,3" StrokeShape="RoundRectangle 10"
-                    BackgroundColor="{DynamicResource CardBackground}"
-                    VerticalOptions="Center"
-                    IsVisible="{Binding IsPtzControlActive}"
-                    SemanticProperties.Description="PTZ endpoint settings">
-                <Border.GestureRecognizers>
-                    <TapGestureRecognizer Command="{Binding OpenPtzEndpointFormCommand}" />
-                </Border.GestureRecognizers>
-                <Label Text="{Binding PtzStatusText}" FontSize="11" />
-            </Border>
+            <Label Grid.Column="0" Text="{Binding PtzStatusText}" FontSize="11" LineBreakMode="TailTruncation"
+                   VerticalOptions="Center" IsVisible="{Binding IsPtzControlActive}">
+                <Label.Style>
+                    <Style TargetType="Label">
+                        <Setter Property="TextColor" Value="{DynamicResource TextSecondary}" />
+                        <Style.Triggers>
+                            <DataTrigger TargetType="Label" Binding="{Binding PtzLinkState}" Value="Connected">
+                                <Setter Property="TextColor" Value="{DynamicResource SuccessGreen}" />
+                            </DataTrigger>
+                            <DataTrigger TargetType="Label" Binding="{Binding PtzLinkState}" Value="Error">
+                                <Setter Property="TextColor" Value="{DynamicResource ErrorRed}" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Label.Style>
+            </Label>
 
-            <Grid Grid.Column="1" ColumnDefinitions="*,*,*" ColumnSpacing="4">
-                <Button Grid.Column="0" Text="S" Padding="0" FontSize="12" Command="{Binding ChangeQualityProfileCommand}" CommandParameter="Smooth"
-                        SemanticProperties.Description="Smooth quality">
+            <Grid Grid.Column="1" WidthRequest="48">
+                <Button Text="S" WidthRequest="48" HeightRequest="48" Padding="0" FontSize="12"
+                        Command="{Binding ChangeQualityProfileCommand}" CommandParameter="Balanced"
+                        IsVisible="False"
+                        SemanticProperties.Description="Quality Smooth. Activate for Balanced.">
                     <Button.Triggers>
-                        <DataTrigger TargetType="Button" Binding="{Binding QualityProfile}" Value="Balanced">
-                            <Setter Property="BackgroundColor" Value="{DynamicResource ControlBackground}" />
-                            <Setter Property="TextColor" Value="{DynamicResource TextPrimary}" />
-                        </DataTrigger>
-                        <DataTrigger TargetType="Button" Binding="{Binding QualityProfile}" Value="High">
-                            <Setter Property="BackgroundColor" Value="{DynamicResource ControlBackground}" />
-                            <Setter Property="TextColor" Value="{DynamicResource TextPrimary}" />
+                        <DataTrigger TargetType="Button" Binding="{Binding QualityProfile}" Value="Smooth">
+                            <Setter Property="IsVisible" Value="True" />
                         </DataTrigger>
                     </Button.Triggers>
                 </Button>
-                <Button Grid.Column="1" Text="B" Padding="0" FontSize="12" Command="{Binding ChangeQualityProfileCommand}" CommandParameter="Balanced"
-                        SemanticProperties.Description="Balanced quality">
+                <Button Text="B" WidthRequest="48" HeightRequest="48" Padding="0" FontSize="12"
+                        Command="{Binding ChangeQualityProfileCommand}" CommandParameter="High"
+                        IsVisible="False"
+                        SemanticProperties.Description="Quality Balanced. Activate for High.">
                     <Button.Triggers>
-                        <DataTrigger TargetType="Button" Binding="{Binding QualityProfile}" Value="Smooth">
-                            <Setter Property="BackgroundColor" Value="{DynamicResource ControlBackground}" />
-                            <Setter Property="TextColor" Value="{DynamicResource TextPrimary}" />
-                        </DataTrigger>
-                        <DataTrigger TargetType="Button" Binding="{Binding QualityProfile}" Value="High">
-                            <Setter Property="BackgroundColor" Value="{DynamicResource ControlBackground}" />
-                            <Setter Property="TextColor" Value="{DynamicResource TextPrimary}" />
+                        <DataTrigger TargetType="Button" Binding="{Binding QualityProfile}" Value="Balanced">
+                            <Setter Property="IsVisible" Value="True" />
                         </DataTrigger>
                     </Button.Triggers>
                 </Button>
-                <Button Grid.Column="2" Text="H" Padding="0" FontSize="12" Command="{Binding ChangeQualityProfileCommand}" CommandParameter="High"
-                        SemanticProperties.Description="High quality">
+                <Button Text="H" WidthRequest="48" HeightRequest="48" Padding="0" FontSize="12"
+                        Command="{Binding ChangeQualityProfileCommand}" CommandParameter="Smooth"
+                        IsVisible="False"
+                        SemanticProperties.Description="Quality High. Activate for Smooth.">
                     <Button.Triggers>
-                        <DataTrigger TargetType="Button" Binding="{Binding QualityProfile}" Value="Smooth">
-                            <Setter Property="BackgroundColor" Value="{DynamicResource ControlBackground}" />
-                            <Setter Property="TextColor" Value="{DynamicResource TextPrimary}" />
-                        </DataTrigger>
-                        <DataTrigger TargetType="Button" Binding="{Binding QualityProfile}" Value="Balanced">
-                            <Setter Property="BackgroundColor" Value="{DynamicResource ControlBackground}" />
-                            <Setter Property="TextColor" Value="{DynamicResource TextPrimary}" />
+                        <DataTrigger TargetType="Button" Binding="{Binding QualityProfile}" Value="High">
+                            <Setter Property="IsVisible" Value="True" />
                         </DataTrigger>
                     </Button.Triggers>
                 </Button>

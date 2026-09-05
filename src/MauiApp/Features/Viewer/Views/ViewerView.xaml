@@ -48,18 +48,7 @@
             <!-- ~16:9 video area; frames are letterboxed by the paint handler. -->
             <skia:SKCanvasView x:Name="VideoCanvas"
                                AutomationId="{x:Static t:TestIds.ViewerVideoCanvas}"
-                               VerticalOptions="Fill" HorizontalOptions="Fill">
-                <skia:SKCanvasView.Style>
-                    <Style TargetType="skia:SKCanvasView">
-                        <Setter Property="HeightRequest" Value="240" />
-                        <Style.Triggers>
-                            <DataTrigger TargetType="skia:SKCanvasView" Binding="{Binding IsFullScreen}" Value="True">
-                                <Setter Property="HeightRequest" Value="-1" />
-                            </DataTrigger>
-                        </Style.Triggers>
-                    </Style>
-                </skia:SKCanvasView.Style>
-            </skia:SKCanvasView>
+                               VerticalOptions="Fill" HorizontalOptions="Fill" />
         </Border>
 
         <views:ViewerControlDeck x:Name="Deck" Grid.Row="1" />
