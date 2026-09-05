@@ -32,9 +32,9 @@
         </Grid>
 
         <ScrollView Grid.Row="2" Padding="16,0,16,16" VerticalScrollBarVisibility="Default">
-            <Grid>
-                <views:PlaybackControlsView x:Name="PlaybackTabContent" VerticalOptions="Start" />
-                <views:CameraControlsView x:Name="PtzTabContent" VerticalOptions="Start" IsVisible="False" />
+            <Grid RowDefinitions="Auto">
+                <views:PlaybackControlsView x:Name="PlaybackTabContent" Grid.Row="0" VerticalOptions="Start" />
+                <views:CameraControlsView x:Name="PtzTabContent" Grid.Row="0" VerticalOptions="Start" IsVisible="False" />
             </Grid>
         </ScrollView>
     </Grid>
