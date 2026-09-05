@@ -141,7 +141,7 @@
                     </DataTrigger>
                 </Button.Triggers>
             </Button>
-            <Button Grid.Column="4" Text="Stop" Command="{Binding StopCommand}" FontSize="12" Padding="10,4"
+            <Button Grid.Column="4" Text="Stop" Command="{Binding StopCommand}" FontSize="12" Padding="10,4" HeightRequest="48" MinimumWidthRequest="72"
                     VerticalOptions="Center"
                     BackgroundColor="{DynamicResource ErrorRed}" TextColor="{DynamicResource White}" />
             <Button Grid.Column="5" Text="⋮" Command="{Binding OpenPtzEndpointFormCommand}" WidthRequest="48" HeightRequest="48" Padding="0"
