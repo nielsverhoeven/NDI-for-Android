@@ -307,6 +307,52 @@ in-app Stop button does on the UI thread — acceptable precedent, `Task.Run(...
 shows a stall; (c) a concurrent re-stream session is not stopped by the notification action
 (`StopOutputAsync` ≠ `StopReStreamAsync`) — unreachable from today's `OutputViewModel`, note only.
 
+#### Addendum 2026-09-05 — #327 device fit-check: Stream tab does not reflect a live sender
+
+**APPROVE-WITH-CHANGES** on "extract `CorroborateWithBridgeAsync` and call it from `LoadAsync` too".
+
+**Tab-root page/VM lifetime — determined: assume RE-CREATION, never caching.** The observed
+"Tap Start to begin broadcasting from this device." is written by exactly one line, the
+`OutputViewModel` constructor (`OutputViewModel.cs:77`); nothing else in the repo writes it. Seeing
+it after Stream→View→Home→Stream therefore proves a **new** `OutputViewModel` (transient,
+`MauiProgram.cs:130`) inside a **new** `OutputPage` (transient, `:138`) was bound. Mechanism: MAUI's
+Android Shell destroys the non-current section fragment on a tab switch, which recycles the
+`ContentTemplate` cache of the `ShellContent`, so the next entry re-resolves both from DI.
+Independently, `stream-rail` (`AppShell.xaml:43`) and `stream-tab` (`:72`) are two distinct
+`ShellContent`s, i.e. two instance families across a rotation. **This falsifies the premise of the
+2026-09-04 FIX-02 verdict** ("ShellContent `ContentTemplate` target … Shell-cached for the section
+lifetime"). FIX-02's *conclusion* (don't dispose the VM from page lifecycle) is now unsupported and
+must be re-decided in the tab-root VM lifetime follow-up already owed from the slice-1 verdict
+(item 4) — the leak is **unbounded** (one live VM per Stream visit, each still subscribed to the
+singleton bridge and to `AppResumed`, each writing `SaveAsync` from `OnAppResumed`), not ≤2. Repo
+precedent for the alternative: `SourceListPage`/`SourceListViewModel` are both singletons
+(`MauiProgram.cs:124,136`, "Singleton: matches ViewModel lifetime (C1)"). Out of #327 scope.
+
+Binding changes:
+1. `LoadAsync`'s `if (config is null) return;` (`OutputViewModel.cs:88-89`) must not skip
+   corroboration — guard only the three config assignments, then always await the shared method.
+2. Resumable predicate must match Home. Replace the `!state.IsOutputActive ||` guard
+   (`:105`) with `StreamName`-only; `state.IsOutputActive` decides only whether the corrective
+   `SaveAsync` runs. Otherwise, after the first corroboration clears the flag, Output falls back to
+   the ctor default while `HomeViewModel.CanResumeOutput` (`HomeViewModel.cs:100`) still offers
+   Resume. Same rule the #328 T006 verdict already imposed on `ApplyResumeRequestAsync`.
+3. Corroborated-active branch must set `IsReStreamMode = _bridge.IsReStreamActive`
+   (`INdiBridges.cs:135`, Core contract). Without it a fresh VM over a live re-stream routes Stop to
+   `StopOutputAsync` (`OutputViewModel.cs:265`), which does not touch the re-stream path
+   (`NdiOutputBridge.cs:175-186` vs `:498-509`) — UI says stopped, sender keeps sending.
+4. **Ordering (blocking).** `OutputPage.OnAppearing` (`OutputPage.xaml.cs:26-37`) fires
+   `LoadCommand` fire-and-forget, so its post-await continuation races/overwrites
+   `ApplyReStreamRequest` and `ApplyResumeRequestCommand`. Already a live bug (`LoadAsync:92`
+   overwrites the re-stream name with `PreferredStreamName`); adding `StatusMessage` writes makes it
+   visible. Sequence them in an `async Task ApplyEntryStateAsync()` (await Load, *then* apply the
+   query intent) and null the three `[QueryProperty]` fields in `finally` — one-shot consumption is
+   what makes the fix correct under **both** lifetimes. Ordering/lifecycle wiring only; Rule 3 holds.
+5. Keep `_dispatcher.BeginInvokeOnMainThread` **inside** the extracted method, not at call sites
+   (Rule 4 for the `AppResumed` caller; free for the UI-thread `LoadAsync` caller).
+6. Message split: `LoadAsync` passes `"Output active"` (identical to `StartOutputCommand`, `:228`),
+   `OnAppResumed` keeps `"Output session restored."`. A page appearance renders state; only a resume
+   narrates a transition.
+
 ## Open questions / assumptions
 
 - Assumed this instrumentation is **permanent, low-cost diagnostics** rather than throwaway; if it

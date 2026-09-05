@@ -118,7 +118,10 @@ Rules:
 3. Route parameters are validated before bridge session creation.
 4. `OutputPage` is a top-level tab and does not accept or require a `sourceId` query parameter, but
    does accept the re-stream query parameters `reStreamSourceId` and `isReStreamMode`, and the
-   `resume` query parameter (bound via `[QueryProperty]` on `OutputPage`). Primary destinations
+   `resume` query parameter (bound via `[QueryProperty]` on `OutputPage`). On every appearance
+   `OutputPage` awaits `OutputViewModel.LoadCommand`, which corroborates observable state against
+   `INdiOutputBridge` before applying any one-shot query-parameter intent, since the page and its
+   ViewModel are re-created (not cached) on each tab entry. Primary destinations
    (Home/Stream/View/Settings) must be navigated through
    `INavigationService.NavigateToPrimaryAsync(PrimaryNavDestination, string? queryString)` —
    placement-aware — never a hard-coded `//x-tab`/`//x-rail` route string.
