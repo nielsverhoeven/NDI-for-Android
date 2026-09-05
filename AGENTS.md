@@ -23,10 +23,10 @@ The agent network is organized into three rings:
 2. **`feature.clarifier`** — resolves spec ambiguities through targeted questions. Writes answers back to the GitHub issue.
 3. **`feature.planner`** — translates an enriched issue into a feature spec and technical plan.
 4. **`feature.breakdown`** — breaks the plan into dependency-ordered tasks and creates GitHub issues for each.
-5. **`implementer`** — writes the .NET MAUI code for each task. Consults `maui.expert` and `ndi.expert`.
+5. **`implementer`** — writes the .NET MAUI code for each task. Consults `maui.expert` and `ndi.expert`. When a task moves or renames a control while restructuring XAML, its `TestIds` (`src/Core/Testing/TestIds.cs`) AutomationId moves with it — this is part of the task, not a follow-up.
 6. **`github.action-manager`** — validates CI after implementation. Classifies failures and delegates fixes to `implementer`, `tester`, or `orchestrator`.
-7. **`tester`** — runs all test stages, plans and generates new tests, heals broken tests.
-8. **`documenter`** — updates project documentation to reflect implemented features.
+7. **`tester`** — runs all test stages, plans and generates new tests, heals broken tests. **For any work bound for `main`**, this includes the Appium UI e2e suite (`tests/MauiApp.UITests`) — the run link (dispatched `emulator-tests.yml` run or the PR's own "Run Emulator UI Tests" check) is a required artifact reported back to the orchestrator and recorded in the PR.
+8. **`documenter`** — updates project documentation to reflect implemented features. Verifies that any XAML restructuring in the change carried its `TestIds` AutomationIds along, and calls it out if the docs (or the page objects) still reference an id that moved without it.
 
 ## Feature Development Flow
 
