@@ -31,7 +31,7 @@ public partial class SettingsPage : ContentPage
     }
 
     /// <summary>
-    /// Layout plumbing only: collapses the 220dp section rail into a horizontal selector above
+    /// Layout plumbing only: collapses the 220dp section rail into a wrapping selector above
     /// the panel at Compact width, where a fixed rail would leave too little room for the detail
     /// panel.
     /// </summary>

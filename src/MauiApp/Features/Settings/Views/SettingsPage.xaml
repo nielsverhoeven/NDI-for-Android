@@ -13,11 +13,12 @@
         <ScrollView>
               <!-- Medium/Expanded: 220dp vertical rail beside the panel (RailColumn width 220,
                    VerticalRail visible). Compact: RailColumn collapses to 0 and the same five
-                   section buttons render as a horizontal, scrollable selector in CompactRail
-                   above the panel instead — a fixed 220dp rail leaves too little width for the
-                   detail panel on a phone. SettingsPage.xaml.cs's OnSizeAllocated toggles between
-                   the two; both button sets share their AutomationIds, the same pattern already
-                   used for the bottom tab bar vs. the landscape nav rail. -->
+                   section buttons render as a wrapping selector in CompactRail above the panel
+                   instead — a fixed 220dp rail leaves too little width for the detail panel on a
+                   phone, and a horizontally-scrolling rail leaves later buttons scrolled off
+                   screen. SettingsPage.xaml.cs's OnSizeAllocated toggles between the two; both
+                   button sets share their AutomationIds, the same pattern already used for the
+                   bottom tab bar vs. the landscape nav rail. -->
               <Grid x:Name="SectionsGrid" Padding="16" RowSpacing="12" ColumnSpacing="16">
                      <Grid.RowDefinitions>
                             <RowDefinition Height="Auto" />
@@ -28,31 +29,30 @@
                             <ColumnDefinition Width="*" />
                      </Grid.ColumnDefinitions>
 
-                     <ScrollView x:Name="CompactRail" Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2"
-                                       Orientation="Horizontal" IsVisible="False">
-                            <HorizontalStackLayout Spacing="10">
-                                   <Button Text="General"
-                                          AutomationId="{x:Static t:TestIds.SettingsSectionGeneral}"
-                                                 Command="{Binding SelectSectionCommand}"
-                                          CommandParameter="{x:Static vm:SettingsSection.General}" />
-                                   <Button Text="Appearance"
-                                          AutomationId="{x:Static t:TestIds.SettingsSectionAppearance}"
-                                                 Command="{Binding SelectSectionCommand}"
-                                          CommandParameter="{x:Static vm:SettingsSection.Appearance}" />
-                                   <Button Text="Discovery"
-                                          AutomationId="{x:Static t:TestIds.SettingsSectionDiscovery}"
-                                                 Command="{Binding SelectSectionCommand}"
-                                          CommandParameter="{x:Static vm:SettingsSection.Discovery}" />
-                                   <Button Text="Developer tools"
-                                          AutomationId="{x:Static t:TestIds.SettingsSectionDeveloperTools}"
-                                                 Command="{Binding SelectSectionCommand}"
-                                          CommandParameter="{x:Static vm:SettingsSection.DeveloperTools}" />
-                                   <Button Text="About"
-                                          AutomationId="{x:Static t:TestIds.SettingsSectionAbout}"
-                                                 Command="{Binding SelectSectionCommand}"
-                                          CommandParameter="{x:Static vm:SettingsSection.About}" />
-                            </HorizontalStackLayout>
-                     </ScrollView>
+                     <FlexLayout x:Name="CompactRail" Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2"
+                                       Wrap="Wrap" Direction="Row" JustifyContent="Start" AlignItems="Start"
+                                       IsVisible="False">
+                            <Button Text="General" HeightRequest="48" Margin="0,0,10,10"
+                                   AutomationId="{x:Static t:TestIds.SettingsSectionGeneral}"
+                                          Command="{Binding SelectSectionCommand}"
+                                   CommandParameter="{x:Static vm:SettingsSection.General}" />
+                            <Button Text="Appearance" HeightRequest="48" Margin="0,0,10,10"
+                                   AutomationId="{x:Static t:TestIds.SettingsSectionAppearance}"
+                                          Command="{Binding SelectSectionCommand}"
+                                   CommandParameter="{x:Static vm:SettingsSection.Appearance}" />
+                            <Button Text="Discovery" HeightRequest="48" Margin="0,0,10,10"
+                                   AutomationId="{x:Static t:TestIds.SettingsSectionDiscovery}"
+                                          Command="{Binding SelectSectionCommand}"
+                                   CommandParameter="{x:Static vm:SettingsSection.Discovery}" />
+                            <Button Text="Developer tools" HeightRequest="48" Margin="0,0,10,10"
+                                   AutomationId="{x:Static t:TestIds.SettingsSectionDeveloperTools}"
+                                          Command="{Binding SelectSectionCommand}"
+                                   CommandParameter="{x:Static vm:SettingsSection.DeveloperTools}" />
+                            <Button Text="About" HeightRequest="48" Margin="0,0,10,10"
+                                   AutomationId="{x:Static t:TestIds.SettingsSectionAbout}"
+                                          Command="{Binding SelectSectionCommand}"
+                                   CommandParameter="{x:Static vm:SettingsSection.About}" />
+                     </FlexLayout>
 
                      <VerticalStackLayout x:Name="VerticalRail" Grid.Row="1" Grid.Column="0" Spacing="10">
                             <Button Text="General"
@@ -137,8 +137,12 @@
                                              AutomationId="{x:Static t:TestIds.SettingsDiscoveryServersError}"
                                              TextColor="{DynamicResource ErrorRed}" />
 
-                                   <CollectionView AutomationId="{x:Static t:TestIds.SettingsDiscoveryServerList}" ItemsSource="{Binding DiscoveryServers}">
-                                          <CollectionView.ItemTemplate>
+                                   <!-- BindableLayout, not CollectionView: this list sits inside the page's own
+                                        outer ScrollView, and a CollectionView added there does not re-measure its
+                                        Auto-height ancestors when items are added after the initial layout pass —
+                                        the row stays present in the ItemsSource but never gets an on-screen area. -->
+                                   <VerticalStackLayout AutomationId="{x:Static t:TestIds.SettingsDiscoveryServerList}" BindableLayout.ItemsSource="{Binding DiscoveryServers}">
+                                          <BindableLayout.ItemTemplate>
                                                  <DataTemplate x:DataType="vm:DiscoveryServerItem">
                                                         <!-- Two rows: identity, then actions. A single seven-column row does not
                                                              fit a Switch plus four >=48dp action buttons in the detail panel's
@@ -186,8 +190,8 @@
                                                                </HorizontalStackLayout>
                                                         </Grid>
                                                  </DataTemplate>
-                                          </CollectionView.ItemTemplate>
-                                   </CollectionView>
+                                          </BindableLayout.ItemTemplate>
+                                   </VerticalStackLayout>
                             </VerticalStackLayout>
 
                             <VerticalStackLayout AutomationId="{x:Static t:TestIds.SettingsPanelDeveloperTools}" IsVisible="{Binding IsDeveloperToolsSectionSelected}" Spacing="10">
