@@ -49,7 +49,7 @@ jobs:
     steps:
       # The app is built from app_ref when given, so it can be an older commit than the tests.
       # Blank falls through to the branch the workflow was dispatched on.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.app_ref || github.ref }}
 
@@ -62,12 +62,12 @@ jobs:
           fi
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '10.0.x'
 
       - name: Cache NuGet packages
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.nuget/packages
           key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
@@ -87,7 +87,7 @@ jobs:
           echo "Found APK: $APK_PATH"
 
       - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: android-apk
           path: ${{ env.APK_PATH }}
@@ -114,21 +114,21 @@ jobs:
     steps:
       # Deliberately NOT app_ref: the tests always come from the branch under development. That
       # separation is the whole mechanism — current tests, historical app.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup Java
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '17'
 
       - name: Setup .NET (for dotnet test only)
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '10.0.x'
 
       - name: Cache NuGet packages
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.nuget/packages
           key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
@@ -138,7 +138,7 @@ jobs:
         run: dotnet restore tests/MauiApp.UITests/NdiForAndroid.UITests.csproj
 
       - name: Download APK artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: android-apk
           path: apk
@@ -154,7 +154,7 @@ jobs:
           echo "Using APK: $APK_PATH"
 
       - name: Setup Node.js for Appium
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: '22'
 
@@ -170,7 +170,7 @@ jobs:
           sudo udevadm trigger --name-match=kvm
 
       - name: Cache Android AVD and system image
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         id: avd-cache
         with:
           path: |
@@ -204,7 +204,7 @@ jobs:
 
       - name: Upload emulator test results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: emulator-test-results
           path: test-results/*.trx
@@ -212,7 +212,7 @@ jobs:
 
       - name: Upload emulator diagnostics
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: emulator-diagnostics
           path: |
