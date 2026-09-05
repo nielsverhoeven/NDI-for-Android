@@ -211,6 +211,11 @@ public partial class AppShell : Shell
     {
         base.OnNavigating(args);
 
+        // A modal push/pop (e.g. the full-screen viewer) does not change Shell.CurrentState and
+        // must never be misclassified as a primary-destination change by ParseDestination below.
+        if (Navigation?.ModalStack?.Count > 0)
+            return;
+
         if (args.Cancelled)
             return;
 

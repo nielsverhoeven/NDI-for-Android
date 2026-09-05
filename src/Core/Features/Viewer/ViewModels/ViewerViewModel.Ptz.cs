@@ -21,8 +21,13 @@ public partial class ViewerViewModel
     [ObservableProperty]
     private string? _ptzStatusText;
 
+    public static IReadOnlyList<int> PresetNumbers { get; } = Enumerable.Range(1, 8).ToArray();
+
     [ObservableProperty]
-    private string _ptzPresetNumber = "0";
+    private string? _ptzPresetStatusMessage;
+
+    private ITimer? _presetStatusTimer;
+    private static readonly TimeSpan PresetStatusDisplayDuration = TimeSpan.FromSeconds(2);
 
     /// <summary>True when the active source has a VISCA endpoint override configured.</summary>
     [ObservableProperty]
@@ -62,6 +67,7 @@ public partial class ViewerViewModel
     partial void DisposePtz()
     {
         DetachPtzController();
+        _presetStatusTimer?.Dispose();
         PtzEndpointForm.EndpointSaved -= OnPtzEndpointSaved;
     }
 
@@ -69,6 +75,7 @@ public partial class ViewerViewModel
     [RelayCommand]
     private async Task PtzNudge(string? direction)
     {
+        NotifyControlInteraction();
         var (pan, tilt) = direction switch
         {
             "left" => (-PtzNudgeSpeed, 0f),
@@ -90,6 +97,7 @@ public partial class ViewerViewModel
     [RelayCommand]
     private async Task PtzZoomNudge(string? direction)
     {
+        NotifyControlInteraction();
         var speed = direction switch
         {
             "in" => PtzNudgeSpeed,
@@ -106,24 +114,30 @@ public partial class ViewerViewModel
     }
 
     [RelayCommand]
-    private async Task PtzAutoFocus() => await GetOrCreatePtzController().AutoFocusAsync();
-
-    [RelayCommand]
-    private async Task PtzStorePreset()
+    private async Task PtzAutoFocus()
     {
-        if (!int.TryParse(PtzPresetNumber, out var presetNo))
-            return;
-
-        await GetOrCreatePtzController().StorePresetAsync(presetNo);
+        NotifyControlInteraction();
+        await GetOrCreatePtzController().AutoFocusAsync();
     }
 
     [RelayCommand]
-    private async Task PtzRecallPreset()
+    private async Task PtzStorePreset(int presetNumber)
     {
-        if (!int.TryParse(PtzPresetNumber, out var presetNo))
-            return;
+        NotifyControlInteraction();
+        await GetOrCreatePtzController().StorePresetAsync(presetNumber);
 
-        await GetOrCreatePtzController().RecallPresetAsync(presetNo);
+        PtzPresetStatusMessage = $"Preset {presetNumber} stored";
+        _presetStatusTimer?.Dispose();
+        _presetStatusTimer = _timeProvider.CreateTimer(
+            _ => _dispatcher.BeginInvokeOnMainThread(() => PtzPresetStatusMessage = null),
+            null, PresetStatusDisplayDuration, Timeout.InfiniteTimeSpan);
+    }
+
+    [RelayCommand]
+    private async Task PtzRecallPreset(int presetNumber)
+    {
+        NotifyControlInteraction();
+        await GetOrCreatePtzController().RecallPresetAsync(presetNumber);
     }
 
     [RelayCommand]

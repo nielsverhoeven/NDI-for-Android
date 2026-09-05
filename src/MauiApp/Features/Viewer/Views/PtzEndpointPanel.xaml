@@ -2,19 +2,20 @@
 <ContentView xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              xmlns:ptzVm="clr-namespace:NdiForAndroid.Features.Ptz.ViewModels;assembly=NdiForAndroid.Core"
+             xmlns:vm="clr-namespace:NdiForAndroid.Features.Viewer.ViewModels;assembly=NdiForAndroid.Core"
              x:Class="NdiForAndroid.Features.Viewer.Views.PtzEndpointPanel"
-             BindingContext="{Binding PtzEndpointForm}"
-             x:DataType="ptzVm:PtzEndpointFormViewModel"
-             IsVisible="{Binding IsOpen}"
+             x:DataType="vm:ViewerViewModel"
+             IsVisible="{Binding PtzEndpointForm.IsOpen, FallbackValue=False, TargetNullValue=False}"
              BackgroundColor="{DynamicResource ScrimBackground}">
-    <Border BackgroundColor="{DynamicResource CardBackground}"
+    <Border BindingContext="{Binding PtzEndpointForm}"
+            BackgroundColor="{DynamicResource CardBackground}"
             Stroke="{DynamicResource BorderColor}"
             StrokeShape="RoundRectangle 12"
             Padding="20"
             WidthRequest="320"
             HorizontalOptions="Center"
             VerticalOptions="Center">
-        <VerticalStackLayout Spacing="10">
+        <VerticalStackLayout x:DataType="ptzVm:PtzEndpointFormViewModel" Spacing="10">
             <Label Text="PTZ endpoint" FontAttributes="Bold" FontSize="18" />
             <Entry Placeholder="Host (blank = use NDI PTZ)" Text="{Binding Host}" Keyboard="Url" />
             <Entry Placeholder="Port (default 5678)" Text="{Binding PortText}" Keyboard="Numeric" />

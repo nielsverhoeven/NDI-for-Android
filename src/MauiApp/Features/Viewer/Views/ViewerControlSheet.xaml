@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentView xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:vm="clr-namespace:NdiForAndroid.Features.Viewer.ViewModels;assembly=NdiForAndroid.Core"
+             xmlns:views="clr-namespace:NdiForAndroid.Features.Viewer.Views"
+             x:Class="NdiForAndroid.Features.Viewer.Views.ViewerControlSheet"
+             x:DataType="vm:ViewerViewModel">
+    <Grid x:Name="SheetContainer" HeightRequest="440" VerticalOptions="End"
+          BackgroundColor="{DynamicResource CardBackground}"
+          RowDefinitions="48,40,*">
+        <Grid Grid.Row="0">
+            <BoxView WidthRequest="36" HeightRequest="4" CornerRadius="2"
+                     Color="{DynamicResource DividerColor}" HorizontalOptions="Center" VerticalOptions="Center" />
+            <Grid.GestureRecognizers>
+                <PanGestureRecognizer PanUpdated="OnSheetPanUpdated" />
+                <TapGestureRecognizer Tapped="OnHandleTapped" />
+            </Grid.GestureRecognizers>
+        </Grid>
+
+        <Grid Grid.Row="1" ColumnDefinitions="*,*" RowDefinitions="Auto,3">
+            <Button x:Name="PlaybackTabButton" Grid.Row="0" Grid.Column="0" Text="Playback"
+                    BackgroundColor="Transparent" TextColor="{DynamicResource TextPrimary}"
+                    SemanticProperties.Description="Playback tab, selected" />
+            <Button x:Name="PtzTabButton" Grid.Row="0" Grid.Column="1" Text="PTZ"
+                    BackgroundColor="Transparent" TextColor="{DynamicResource TextPrimary}"
+                    IsVisible="{Binding IsPtzControlActive}"
+                    SemanticProperties.Description="PTZ tab" />
+            <BoxView x:Name="PlaybackTabIndicator" Grid.Row="1" Grid.Column="0" HeightRequest="3"
+                     Color="{DynamicResource Primary}" />
+            <BoxView x:Name="PtzTabIndicator" Grid.Row="1" Grid.Column="1" HeightRequest="3"
+                     Color="{DynamicResource Primary}" IsVisible="False" />
+        </Grid>
+
+        <Grid Grid.Row="2" Padding="16,0,16,16">
+            <views:PlaybackControlsView x:Name="PlaybackTabContent" VerticalOptions="Start" />
+            <views:CameraControlsView x:Name="PtzTabContent" VerticalOptions="Start" IsVisible="False" />
+        </Grid>
+    </Grid>
+</ContentView>

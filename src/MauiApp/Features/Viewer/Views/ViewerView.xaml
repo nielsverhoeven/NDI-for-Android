@@ -6,7 +6,19 @@
              xmlns:views="clr-namespace:NdiForAndroid.Features.Viewer.Views"
              x:Class="NdiForAndroid.Features.Viewer.Views.ViewerView"
              x:DataType="vm:ViewerViewModel">
-    <Grid RowDefinitions="Auto,*" Padding="16" RowSpacing="16">
+    <Grid RowDefinitions="Auto,*">
+        <Grid.Style>
+            <Style TargetType="Grid">
+                <Setter Property="Padding" Value="16" />
+                <Setter Property="RowSpacing" Value="16" />
+                <Style.Triggers>
+                    <DataTrigger TargetType="Grid" Binding="{Binding IsFullScreen}" Value="True">
+                        <Setter Property="Padding" Value="0" />
+                        <Setter Property="RowSpacing" Value="0" />
+                    </DataTrigger>
+                </Style.Triggers>
+            </Style>
+        </Grid.Style>
 
         <!-- Video surface. Border turns red while the source echoes program tally. -->
         <Border Grid.Row="0"
@@ -16,58 +28,39 @@
             <Border.Style>
                 <Style TargetType="Border">
                     <Setter Property="Stroke" Value="{DynamicResource BorderColor}" />
+                    <Setter Property="Grid.RowSpan" Value="1" />
                     <Style.Triggers>
                         <DataTrigger TargetType="Border" Binding="{Binding IsTallyProgram}" Value="True">
                             <Setter Property="Stroke" Value="{DynamicResource ErrorRed}" />
                         </DataTrigger>
+                        <DataTrigger TargetType="Border" Binding="{Binding IsFullScreen}" Value="True">
+                            <Setter Property="Grid.RowSpan" Value="2" />
+                        </DataTrigger>
                     </Style.Triggers>
                 </Style>
             </Border.Style>
+            <Border.GestureRecognizers>
+                <TapGestureRecognizer NumberOfTapsRequired="1" Command="{Binding ShowControlsOverlayCommand}" />
+                <TapGestureRecognizer NumberOfTapsRequired="2" Command="{Binding ToggleFullScreenCommand}" />
+            </Border.GestureRecognizers>
             <!-- ~16:9 video area; frames are letterboxed by the paint handler. -->
-            <skia:SKCanvasView x:Name="VideoCanvas" HeightRequest="240" />
+            <skia:SKCanvasView x:Name="VideoCanvas" VerticalOptions="Fill" HorizontalOptions="Fill">
+                <skia:SKCanvasView.Style>
+                    <Style TargetType="skia:SKCanvasView">
+                        <Setter Property="HeightRequest" Value="240" />
+                        <Style.Triggers>
+                            <DataTrigger TargetType="skia:SKCanvasView" Binding="{Binding IsFullScreen}" Value="True">
+                                <Setter Property="HeightRequest" Value="-1" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </skia:SKCanvasView.Style>
+            </skia:SKCanvasView>
         </Border>
 
-        <ScrollView Grid.Row="1">
-            <VerticalStackLayout Spacing="16">
-                <Label Text="{Binding StatusMessage}" HorizontalOptions="Center" />
-
-                <!-- Quality profile selector (shown when IsPlaying) -->
-                <HorizontalStackLayout HorizontalOptions="Center" Spacing="8" IsVisible="{Binding IsPlaying}">
-                    <Button Text="Smooth" Command="{Binding ChangeQualityProfileCommand}"
-                            CommandParameter="Smooth" HorizontalOptions="Center" />
-                    <Button Text="Balanced" Command="{Binding ChangeQualityProfileCommand}"
-                            CommandParameter="Balanced" HorizontalOptions="Center" />
-                    <Button Text="High" Command="{Binding ChangeQualityProfileCommand}"
-                            CommandParameter="High" HorizontalOptions="Center" />
-                </HorizontalStackLayout>
-
-                <!-- Audio playback toggle (shown when IsPlaying) -->
-                <HorizontalStackLayout HorizontalOptions="Center" Spacing="8" IsVisible="{Binding IsPlaying}">
-                    <Label Text="Audio" VerticalOptions="Center" TextColor="{DynamicResource TextSecondary}" />
-                    <Switch IsToggled="{Binding IsAudioEnabled}" />
-                </HorizontalStackLayout>
-
-                <!-- PTZ controls (pad/zoom/presets; endpoint button reachable whenever playing) -->
-                <views:PtzPanelView />
-
-                <!-- Retry indicator + countdown (shown during reconnect window) -->
-                <HorizontalStackLayout HorizontalOptions="Center" Spacing="8" IsVisible="{Binding IsReconnecting}">
-                    <ActivityIndicator IsRunning="{Binding IsReconnecting}" Color="{DynamicResource TextPrimary}" />
-                    <Label Text="{Binding RetryStatusMessage}" HorizontalOptions="Center" />
-                </HorizontalStackLayout>
-
-                <!-- Cancel an in-progress reconnect window (FR6) -->
-                <Button Text="Cancel Retry" Command="{Binding CancelRetryCommand}"
-                        IsVisible="{Binding IsReconnecting}" HorizontalOptions="Center" />
-
-                <!-- Post-expiry manual recovery (FR7) -->
-                <Button Text="Reconnect" Command="{Binding ReconnectCommand}"
-                        IsVisible="{Binding CanReconnect}" HorizontalOptions="Center" />
-
-                <Button Text="Stop" Command="{Binding StopCommand}"
-                        IsVisible="{Binding IsPlaying}" HorizontalOptions="Center" />
-            </VerticalStackLayout>
-        </ScrollView>
+        <views:ViewerControlDeck x:Name="Deck" Grid.Row="1" />
+        <views:ViewerControlSheet x:Name="Sheet" Grid.RowSpan="2" />
+        <views:FullScreenControlsOverlay x:Name="Overlay" Grid.RowSpan="2" />
 
         <views:PtzEndpointPanel Grid.RowSpan="2" />
     </Grid>
