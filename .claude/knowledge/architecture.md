@@ -678,6 +678,90 @@ grows 148→156 dp against a 188 dp deck budget (`ViewerControlDeck.xaml:8`, 200
 - `CameraControlsView` overflows the 188 dp deck budget by ~18 dp while
   `PtzPresetStatusMessage` is shown (`:66-68`).
 
+#### Addendum 2026-09-05 — #370 phone validation (Galaxy S21 Ultra): #367 / #368 / #369
+
+**APPROVE-WITH-CHANGES.** All three are pure View-layer defects; no Architecture Rule 1–6 or
+Dependency Rule is violated today and none is relaxed by the fix. `ViewerControlLayout.Choose`
+(`src/Core/Features/Viewer/ViewerControlLayout.cs:18-21`) and its `MinDeckWidthDp=640` /
+`MinDeckHeightDp=470` thresholds **stay untouched**; every *new* numeric policy is added to the same
+Core class and unit-tested in `tests/MauiApp.Tests/Features/Viewer/ViewerControlLayoutTests.cs`,
+which is the standing rule from the 2026-09-04 #342 verdict item 3 ("layout policy moves to a pure
+Core helper; the View keeps only the `SizeChanged` wiring"). The deck (≥ 640 × 470 dp) is
+geometrically unchanged by all three fixes — verified per fix below.
+
+**#367 — camera cluster: width-triggered two-row wrap, threshold 440 dp.**
+Measured from `CameraControlsView.xaml:33-87`: d-pad 3×48 + 2×8 = **160**, zoom **48**, presets
+4×48 + 3×8 = **216**, outer `ColumnSpacing=8` ×2 = **16** → **440 dp**, not the ~390 dp in the issue.
+Sheet content width at 360 dp = 360 − 32 (`ViewerControlSheet.xaml:34` `Padding="16,0,16,16"`) =
+**328** → 112 dp overflow, i.e. presets 3/4/7/8 unreachable. Prescribed: one outer
+`Grid RowDefinitions="Auto,Auto" ColumnSpacing="8" RowSpacing="0"`, preset grid named and moved
+(`Grid.SetRow/SetColumn/SetColumnSpan` + `Margin="0,8,0,0"`) to row 1 when
+`ViewerControlLayout.ShouldStackCameraPresets(Width)` (new Core member, `< 440`). Compact footprint
+= 216 × 272 dp (160 pad row + 8 + 104 preset rows) ≤ 328 ✓. **No oscillation:** in a Fill parent
+(sheet) `Width` is content-independent; in the deck's `Auto` column the two states are both fixed
+points (wide desires 440 ≥ 440 → wide; stacked desires 216 < 440 → stacked) and the XAML ships in
+the wide state, so the deck never switches. Deck floor re-checked: 640 − 24 padding = 616, camera
+`Auto` = 440 → playback star = 164 dp ≥ the 156 dp the #360 verdict budgeted ✓. A host-set
+"compact" flag on the sheet is **rejected**: at 800 × 360 the sheet is ~700 dp wide and the *wide*
+row (160 dp tall) is the only one that fits the short host — the trigger must be width, not host.
+
+**#368 — overlay toolbar: one 48 dp row, star-first columns, quality collapsed to 48 dp.**
+Current `FullScreenControlsOverlay.xaml:79` `ColumnDefinitions="Auto,152,48,48,Auto,48"` needs
+≈ 594 dp (chip ~170 + 152 + 48 + 48 + 72 + 48 + 40 spacing + 16 padding). Prescribed
+`ColumnDefinitions="*,48,48,48,Auto,48"` = 264 fixed + 40 spacing + 16 padding = **320 dp**, so at
+360 dp every required target keeps its 48 dp and 40 dp is left for a truncating status label; it
+still fits at the 320 dp floor (star → 0) and shows the full `PtzStatusText` on a tablet.
+Two binding decisions: (a) the endpoint chip (`:81-90`) is **deleted** — same
+`OpenPtzEndpointFormCommand` as the ⋮ overflow (`:147`), already flagged as duplication in the #360
+addendum; its `PtzStatusText` survives as the star-column label with the Connected/Error
+`DynamicResource` triggers, so link state stays glanceable. (b) A **second toolbar row is rejected
+by arithmetic**: it forces `Margin="16,16,16,112"` on the pad/zoom borders and the left column then
+needs 102 (presets) + 176 (d-pad) = 278 dp inside 360 − 112 − 16 = 232 dp → the ▼ key is clipped in
+landscape, which is the mode full screen is actually used in. Today's 48 dp toolbar leaves exactly
+280 dp for those 278 dp, so the row height is load-bearing and `Margin="16,16,16,64"` stays valid.
+A floating quality cluster is likewise rejected: top-left presets already occupy x 16..226, and a
+vertical right-hand cluster (y 16..188) collides with the zoom border (y 176..296) at 360 dp height.
+
+**#369 — landscape sheet: adaptive video height + sheet floor, both as Core policy.**
+Diagnosis reproduced exactly: `ViewerPage.xaml:10` has a `Title` and no `Shell.NavBarIsVisible`, so
+at 800 × 360 dp the `ViewerView` is ≈ 280 dp and its padded inner area (= `Sheet.Height`, `Grid`
+`Padding=16`) ≈ **248 dp**; the fixed `HeightRequest="240"` canvas (`ViewerView.xaml:54`) + 6 dp
+stroke leaves row 1 negative, and `ApplySheetHeights` (`ViewerControlSheet.xaml.cs:61-62`) yields
+expanded = min(440, 0.8×248) = 198 → content viewport = 198 − 48 − 40 − 16 = **94 dp**, the "~100 dp"
+in the issue. Prescribed policy (Core, unit-tested; portrait and deck values provably unchanged):
+expanded = `Min(h, Max(Min(440, h·0.8), 312))`, peek = `Clamp(h·0.55, min(136,max), Min(320,
+expanded))`, video = `Clamp(h − peek − 6, 96, 240)` for Sheet, `240` for Deck, `-1` for full screen.
+Portrait (h ≈ 608) → 440 / 320 / 240 = today's constants exactly; landscape (h = 248) → 248 / 136 /
+106, i.e. 106 + 6 + 136 = 248 → the collapsed sheet and the video tile the host with **zero**
+overlap. Tablet portrait 800 × 1200 → Deck → 240 and the sheet is `IsVisible=false`; untouched.
+Two required mechanics: the `SKCanvasView` `Style`+`DataTrigger` block (`ViewerView.xaml:52-61`)
+must be **deleted** — a local `HeightRequest` written from `UpdateLayoutVisibility()` outranks a
+style/trigger setter, so leaving both would strand full screen at the clamped height — and the
+assignment must be change-guarded (it runs inside `SizeChanged`).
+
+**Escalated, arithmetic-forced:** at 800 × 360 dp the wireframe rule "no scrolling to reach PTZ
+controls" is **unsatisfiable by any layout**: 48 (handle) + 40 (tabs) + 22 (chip) + 160 (d-pad, the
+floor for 48 dp targets) + 16 (padding) = **286 dp > 248 dp** of host, even with the video removed.
+The prescribed baseline is therefore a `ScrollView` around the sheet's tab content (row 2 only, so
+the deck is untouched; the pan recognizer lives on the row-0 handle, `ViewerControlSheet.xaml:14-17`,
+so there is no gesture conflict), which never scrolls in portrait (318 dp content vs 336 dp
+viewport) and absorbs 12–62 dp in landscape. Owner decision, not taken here: setting
+`Shell.NavBarIsVisible="False"` on `ViewerPage` in the Sheet layout recovers ~56 dp (host 304 →
+viewport 200 ≥ 186) and would make the rule hold in landscape at the cost of the Shell back
+affordance; routing landscape phones to the full-screen overlay instead is the larger alternative
+(a third `ViewerControlLayoutKind`) and is out of scope for a bugfix.
+
+**P-3 (Settings compact rail) is not actionable on this branch** — the #361 `FlexLayout` rail is not
+present; `SettingsPage.xaml:21-38` is still the fixed two-column `Grid`, and the only `FlexLayout`
+(`:57-69`) is the accent-colour radio group. Re-run P-3 after main is merged in.
+
+Theming, semantics and layering all hold: no colour literal is introduced (every new brush is
+`DynamicResource`), all moved/added controls keep 48 dp and their `SemanticProperties.Description`
+on the tap target (never on a `Label`, per the #360 addendum item 4), the overlay has no
+`AutomationId`s so no UITest is affected, and the `AutomationId`s on the PTZ pad/zoom
+(`CameraControlsView.xaml:37-65`) are preserved by the reflow, so `Pages/ViewerPage.cs:63-69`
+keeps working.
+
 ### 2026-09-04 — #339 PTZ over VISCA-over-IP (raw TCP) — plan.md/tasks.md T1–T26
 
 **APPROVE-WITH-CHANGES overall.** No violation of Architecture Rules 1–6 or `docs/architecture.md`

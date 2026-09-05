@@ -20,7 +20,7 @@
         </Grid>
 
         <Grid Grid.Row="1">
-            <Grid ColumnDefinitions="*,*,*" ColumnSpacing="4" HeightRequest="48">
+            <Grid ColumnDefinitions="*,*,*" ColumnSpacing="4" HeightRequest="48" MinimumHeightRequest="48">
                 <Grid.Style>
                     <Style TargetType="Grid">
                         <Setter Property="IsVisible" Value="{Binding IsPlaying}" />
@@ -31,7 +31,7 @@
                         </Style.Triggers>
                     </Style>
                 </Grid.Style>
-                <Button Grid.Column="0" Text="Smooth" Padding="4,0"
+                <Button Grid.Column="0" Text="Smooth" Padding="4,0" HeightRequest="48" MinimumHeightRequest="48"
                         AutomationId="{x:Static t:TestIds.ViewerQualitySmooth}"
                         Command="{Binding ChangeQualityProfileCommand}" CommandParameter="Smooth">
                     <Button.Triggers>
@@ -45,7 +45,7 @@
                         </DataTrigger>
                     </Button.Triggers>
                 </Button>
-                <Button Grid.Column="1" Text="Balanced" Padding="4,0"
+                <Button Grid.Column="1" Text="Balanced" Padding="4,0" HeightRequest="48" MinimumHeightRequest="48"
                         AutomationId="{x:Static t:TestIds.ViewerQualityBalanced}"
                         Command="{Binding ChangeQualityProfileCommand}" CommandParameter="Balanced">
                     <Button.Triggers>
@@ -59,7 +59,7 @@
                         </DataTrigger>
                     </Button.Triggers>
                 </Button>
-                <Button Grid.Column="2" Text="High" Padding="4,0"
+                <Button Grid.Column="2" Text="High" Padding="4,0" HeightRequest="48" MinimumHeightRequest="48"
                         AutomationId="{x:Static t:TestIds.ViewerQualityHigh}"
                         Command="{Binding ChangeQualityProfileCommand}" CommandParameter="High">
                     <Button.Triggers>
@@ -89,14 +89,14 @@
                     IsVisible="{Binding CanReconnect}" HeightRequest="48" />
         </Grid>
 
-        <Grid Grid.Row="2" ColumnDefinitions="48,48,*" ColumnSpacing="6" HeightRequest="48"
+        <Grid Grid.Row="2" ColumnDefinitions="48,48,*" ColumnSpacing="6" HeightRequest="48" MinimumHeightRequest="48"
               IsVisible="{Binding IsPlaying}">
             <Switch Grid.Column="0" IsToggled="{Binding IsAudioEnabled}"
                     AutomationId="{x:Static t:TestIds.ViewerAudioToggle}"
-                    WidthRequest="48" HeightRequest="48" HorizontalOptions="Center"
+                    WidthRequest="48" HeightRequest="48" MinimumHeightRequest="48" HorizontalOptions="Center"
                     SemanticProperties.Description="Audio" />
             <Button Grid.Column="1" Text="⛶" Command="{Binding ToggleFullScreenCommand}"
-                    WidthRequest="48" HeightRequest="48" Padding="0"
+                    WidthRequest="48" HeightRequest="48" MinimumHeightRequest="48" Padding="0"
                     SemanticProperties.Description="Toggle full screen">
                 <Button.Triggers>
                     <DataTrigger TargetType="Button" Binding="{Binding IsFullScreen}" Value="True">
@@ -106,7 +106,7 @@
             </Button>
             <Button Grid.Column="2" Text="Stop" Command="{Binding StopCommand}"
                     AutomationId="{x:Static t:TestIds.ViewerStop}"
-                    HorizontalOptions="Fill" HeightRequest="48"
+                    HorizontalOptions="Fill" HeightRequest="48" MinimumHeightRequest="48"
                     BackgroundColor="{DynamicResource ErrorRed}" TextColor="{DynamicResource White}" />
         </Grid>
     </Grid>
