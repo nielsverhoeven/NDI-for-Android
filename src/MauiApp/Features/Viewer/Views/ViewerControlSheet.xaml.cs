@@ -9,13 +9,10 @@ namespace NdiForAndroid.Features.Viewer.Views;
 /// </summary>
 public partial class ViewerControlSheet : ContentView
 {
-    private const double DefaultExpandedHeight = 440;
-    private const double DefaultHalfHeight = 320;
-    private const double ExpandedHeightRatio = 0.8;
     private const uint AnimationDurationMs = 200;
 
-    private double _expandedHeight = DefaultExpandedHeight;
-    private double _halfHeight = DefaultHalfHeight;
+    private double _expandedHeight = ViewerControlLayout.DefaultSheetExpandedDp;
+    private double _halfHeight = ViewerControlLayout.DefaultSheetPeekDp;
     private bool _isExpanded;
     private bool _isPtzTabSelected;
     private double _panStartTranslationY;
@@ -58,8 +55,8 @@ public partial class ViewerControlSheet : ContentView
         if (hostHeight <= 0)
             return;
 
-        var expanded = Math.Min(DefaultExpandedHeight, hostHeight * ExpandedHeightRatio);
-        var half = Math.Min(DefaultHalfHeight, expanded);
+        var expanded = ViewerControlLayout.ChooseSheetExpandedHeightDp(hostHeight);
+        var half = ViewerControlLayout.ChooseSheetPeekHeightDp(hostHeight);
         if (expanded == _expandedHeight && half == _halfHeight)
             return;
 
@@ -76,16 +73,21 @@ public partial class ViewerControlSheet : ContentView
         PtzTabContent.IsVisible = isPtz;
         PlaybackTabIndicator.IsVisible = !isPtz;
         PtzTabIndicator.IsVisible = isPtz;
-        SemanticProperties.SetDescription(PlaybackTabButton, isPtz ? "Weergave tab" : "Weergave tab, selected");
+        SemanticProperties.SetDescription(PlaybackTabButton, isPtz ? "Playback tab" : "Playback tab, selected");
         SemanticProperties.SetDescription(PtzTabButton, isPtz ? "PTZ tab, selected" : "PTZ tab");
+
+        if (isPtz && !_isExpanded)
+            _ = SetExpandedAsync(true);
     }
 
-    private async Task ToggleStateAsync()
+    private async Task SetExpandedAsync(bool expanded)
     {
-        _isExpanded = !_isExpanded;
+        _isExpanded = expanded;
         var targetY = _isExpanded ? 0 : _expandedHeight - _halfHeight;
         await SheetContainer.TranslateToAsync(0, targetY, AnimationDurationMs, Easing.CubicOut);
     }
+
+    private Task ToggleStateAsync() => SetExpandedAsync(!_isExpanded);
 
     private void OnHandleTapped(object? sender, TappedEventArgs e) => _ = ToggleStateAsync();
 

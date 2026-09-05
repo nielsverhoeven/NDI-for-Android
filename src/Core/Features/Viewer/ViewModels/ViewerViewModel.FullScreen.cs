@@ -13,19 +13,14 @@ public partial class ViewerViewModel
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(AreControlsVisible))]
-    [NotifyPropertyChangedFor(nameof(IsFullScreenToggleVisible))]
     private bool _isFullScreen;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(AreControlsVisible))]
-    [NotifyPropertyChangedFor(nameof(IsFullScreenToggleVisible))]
     private bool _isControlsOverlayVisible = true;
 
     /// <summary>Controls are visible in normal mode, or in full screen while the overlay hasn't auto-hidden.</summary>
     public bool AreControlsVisible => !IsFullScreen || IsControlsOverlayVisible;
-
-    /// <summary>The full-screen toggle button follows the same auto-hiding overlay as the other controls.</summary>
-    public bool IsFullScreenToggleVisible => IsPlaying && AreControlsVisible;
 
     protected override void OnPropertyChanged(PropertyChangedEventArgs e)
     {
@@ -34,7 +29,6 @@ public partial class ViewerViewModel
         if (e.PropertyName == nameof(IsPlaying))
         {
             _immersiveMode.KeepScreenOn(IsPlaying);
-            OnPropertyChanged(nameof(IsFullScreenToggleVisible));
         }
     }
 

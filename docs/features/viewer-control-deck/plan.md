@@ -18,10 +18,10 @@ implicitly to the inherited `ViewerViewModel` (`x:DataType="vm:ViewerViewModel"`
 
 | View | Role | Used by |
 |---|---|---|
-| `PlaybackControlsView.xaml(.cs)` | Status, quality segmented buttons, audio, full-screen toggle, Stop, reconnect UI | `ViewerControlDeck`, `ViewerControlSheet` (Weergave tab) |
+| `PlaybackControlsView.xaml(.cs)` | Status, quality segmented buttons, audio, full-screen toggle, Stop, reconnect UI | `ViewerControlDeck`, `ViewerControlSheet` (Playback tab) |
 | `CameraControlsView.xaml(.cs)` | Endpoint chip, d-pad, zoom rocker, preset grid (tap/long-press) | `ViewerControlDeck`, `ViewerControlSheet` (PTZ tab) |
-| `ViewerControlDeck.xaml(.cs)` | Fixed-height (200) two-column Grid host | `ViewerView` (Medium/Expanded, normal) |
-| `ViewerControlSheet.xaml(.cs)` | Draggable bottom-sheet overlay with 2 tabs | `ViewerView` (Compact, normal) |
+| `ViewerControlDeck.xaml(.cs)` | Fixed-height (200) two-column Grid host | `ViewerView` (deck layout, normal) |
+| `ViewerControlSheet.xaml(.cs)` | Draggable bottom-sheet overlay with 2 tabs | `ViewerView` (sheet layout, normal) |
 | `FullScreenControlsOverlay.xaml(.cs)` | Wireframe-A overlay (d-pad/zoom/presets/toolbar) | `ViewerView` (full screen) |
 
 `PtzPanelView.xaml(.cs)` and `PtzEndpointFormViewModel`'s consumer wiring are **deleted**
@@ -32,7 +32,7 @@ as-is — the issue explicitly keeps that dialog).
 canvas; this feature does not touch video sizing), and the existing `PtzEndpointPanel` overlay
 (unchanged, stays topmost). It gains a root-level 3-way switch between `ViewerControlDeck` /
 `ViewerControlSheet` / `FullScreenControlsOverlay`, computed in code-behind from
-`IWindowSizeClassService.Current` + `ViewerViewModel.IsFullScreen` (§2).
+`ViewerControlLayout.Choose(Width, Height)` + `ViewerViewModel.IsFullScreen` (§2).
 
 No changes to `INdiViewerBridge`, `IPtzController`, VISCA transport, `AppShell.xaml.cs`,
 `ViewerPage.xaml(.cs)`, or `SourceListPage.xaml(.cs)`.
@@ -44,8 +44,8 @@ No changes to `INdiViewerBridge`, `IPtzController`, VISCA transport, `AppShell.x
 ### 2.1 XAML skeleton (root `Grid`, replaces current body)
 
 ```xml
-<ContentView ... x:Name="Root">
-    <Grid x:Name="RootGrid" RowDefinitions="Auto,Auto">
+<ContentView ...>
+    <Grid RowDefinitions="Auto,*">
         <!-- existing Grid.Style triggers for Padding/RowSpacing on IsFullScreen: UNCHANGED -->
 
         <!-- 1. Video border + SKCanvasView: UNCHANGED from current file (Grid.Row=0,
@@ -53,18 +53,15 @@ No changes to `INdiViewerBridge`, `IPtzController`, VISCA transport, `AppShell.x
              gestures). Do not modify. -->
         <Border Grid.Row="0"> ... </Border>
 
-        <!-- 2. Deck: Medium/Expanded, normal mode -->
-        <views:ViewerControlDeck Grid.Row="1"
-            IsVisible="{Binding IsDeckVisible, Source={x:Reference Root}}" />
+        <!-- 2. Deck: fixed-height two-column layout, normal mode -->
+        <views:ViewerControlDeck x:Name="Deck" Grid.Row="1" />
 
-        <!-- 3. Sheet: Compact, normal mode. Overlays from the bottom, spans both rows so it can
-             ride up over the video when expanded. -->
-        <views:ViewerControlSheet Grid.RowSpan="2" VerticalOptions="End"
-            IsVisible="{Binding IsSheetVisible, Source={x:Reference Root}}" />
+        <!-- 3. Sheet: compact layout, normal mode. Overlays from the bottom, spans both rows so
+             it can ride up over the video when expanded. -->
+        <views:ViewerControlSheet x:Name="Sheet" Grid.RowSpan="2" />
 
         <!-- 4. Full-screen overlay: wireframe A -->
-        <views:FullScreenControlsOverlay Grid.RowSpan="2"
-            IsVisible="{Binding IsFullScreenOverlayVisible, Source={x:Reference Root}}" />
+        <views:FullScreenControlsOverlay x:Name="Overlay" Grid.RowSpan="2" />
 
         <!-- 5. Endpoint dialog: UNCHANGED, stays topmost -->
         <views:PtzEndpointPanel Grid.RowSpan="2" />
@@ -74,60 +71,66 @@ No changes to `INdiViewerBridge`, `IPtzController`, VISCA transport, `AppShell.x
 
 Remove entirely: the old floating full-screen toggle `Button` (its job moves into
 `PlaybackControlsView`'s Row 2 and `FullScreenControlsOverlay`'s toolbar), and the old
-`ScrollView` + `VerticalStackLayout` controls stack (replaced by items 2–4 above).
+`ScrollView` + `VerticalStackLayout` controls stack (replaced by items 2–4 above). Note the three
+new hosts (`Deck`/`Sheet`/`Overlay`) carry **no** `IsVisible` binding in XAML — see §2.2 for why.
 
 ### 2.2 Code-behind additions (`ViewerView.xaml.cs`)
 
-Three new read-only bindable properties, computed together whenever either input changes:
+No new `BindableProperty`, no `IWindowSizeClassService` dependency, and no new `ViewerViewModel`
+member. The layout decision is the existing pure Core policy,
+`ViewerControlLayout.Choose(widthDp, heightDp)` (`src/Core/Features/Viewer/ViewerControlLayout.cs`,
+unit-tested), driven by `ViewerView`'s own measured size:
 
 ```csharp
-public static readonly BindableProperty IsDeckVisibleProperty =
-    BindableProperty.Create(nameof(IsDeckVisible), typeof(bool), typeof(ViewerView), false);
-public bool IsDeckVisible { get => (bool)GetValue(IsDeckVisibleProperty); private set => SetValue(IsDeckVisibleProperty, value); }
+public ViewerView()
+{
+    InitializeComponent();
+    VideoCanvas.PaintSurface += OnPaintSurface;
+    SizeChanged += (_, _) => UpdateLayoutVisibility();
+}
 
-public static readonly BindableProperty IsSheetVisibleProperty =
-    BindableProperty.Create(nameof(IsSheetVisible), typeof(bool), typeof(ViewerView), false);
-public bool IsSheetVisible { get => (bool)GetValue(IsSheetVisibleProperty); private set => SetValue(IsSheetVisibleProperty, value); }
+protected override void OnBindingContextChanged()
+{
+    base.OnBindingContextChanged();
+    // ... existing subscribe/unsubscribe of _boundViewModel.PropertyChanged ...
+    UpdateLayoutVisibility();
+}
 
-public static readonly BindableProperty IsFullScreenOverlayVisibleProperty =
-    BindableProperty.Create(nameof(IsFullScreenOverlayVisible), typeof(bool), typeof(ViewerView), false);
-public bool IsFullScreenOverlayVisible { get => (bool)GetValue(IsFullScreenOverlayVisibleProperty); private set => SetValue(IsFullScreenOverlayVisibleProperty, value); }
+private void UpdateLayoutVisibility()
+{
+    var isFullScreen = _boundViewModel?.IsFullScreen ?? false;
+    var layout = ViewerControlLayout.Choose(Width, Height);
 
-private IWindowSizeClassService? _windowSizeClassService;
+    // IsFullScreen is shared VM state, so the donor instance sees it too; only the
+    // modal host may show the full-screen overlay.
+    Overlay.IsVisible = isFullScreen && IsModalHost;
+    Deck.IsVisible = !isFullScreen && layout == ViewerControlLayoutKind.Deck;
+    Sheet.IsVisible = !isFullScreen && layout == ViewerControlLayoutKind.Sheet;
+}
+
+private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
+{
+    if (e.PropertyName == nameof(ViewerViewModel.IsFullScreen))
+        UpdateLayoutVisibility();
+
+    // ... existing full-screen-modal presenting logic, IsModalHost-gated, unchanged ...
+}
 ```
 
-- Constructor: after `InitializeComponent()`, resolve
-  `_windowSizeClassService = IPlatformApplication.Current?.Services.GetService<IWindowSizeClassService>();`
-  then `if (_windowSizeClassService is not null) _windowSizeClassService.Changed += OnWindowSizeClassChanged;`
-  then call `UpdateLayoutVisibility();` (same DI-resolution pattern already used for
-  `Func<FullScreenViewerPage>` in `PresentFullScreenAsync`).
-- `OnWindowSizeClassChanged(object?, WindowSizeClass) => UpdateLayoutVisibility();`
-- `OnBindingContextChanged()`: after the existing subscribe/unsubscribe logic, call
-  `UpdateLayoutVisibility();`.
-- `OnViewModelPropertyChanged`: **extend** the existing `if (e.PropertyName !=
-  nameof(ViewerViewModel.IsFullScreen)) return;` early-return block — before that early return,
-  add `if (e.PropertyName == nameof(ViewerViewModel.IsFullScreen)) UpdateLayoutVisibility();` (do
-  this as a separate check at the top of the method, not inside the existing full-screen-modal
-  branch, since `IsModalHost` instances also need their overlay flag updated but must *skip* the
-  modal-presenting logic below).
-- New private method:
-  ```csharp
-  private void UpdateLayoutVisibility()
-  {
-      var isFullScreen = _boundViewModel?.IsFullScreen ?? false;
-      var sizeClass = _windowSizeClassService?.Current ?? WindowSizeClass.Compact;
-      IsFullScreenOverlayVisible = isFullScreen;
-      IsDeckVisible = !isFullScreen && sizeClass != WindowSizeClass.Compact;
-      IsSheetVisible = !isFullScreen && sizeClass == WindowSizeClass.Compact;
-  }
-  ```
-- `Teardown()`: add `if (_windowSizeClassService is not null) _windowSizeClassService.Changed -= OnWindowSizeClassChanged;`
-  (mirrors the existing VM-unsubscribe there — the modal-host instance must not leak this
-  subscription either).
-
-This keeps the Compact/Medium/Expanded decision entirely in the existing, already-tested
-`WindowSizeClassService` (Core, MAUI-free) — **no new ViewModel property**, and no new
-width-measurement plumbing. `ViewerViewModel` and its tests are unaffected by this rule.
+Why not a `BindableProperty` + `{x:Reference Root}` binding (as an earlier draft of this plan had
+it), and why not `IWindowSizeClassService`: `ViewerView` is a reusable `ContentView` instantiated
+by three different hosts (`ViewerPage`, the embedded `SourceListPage` pane, the modal
+`FullScreenViewerPage`) and its own `Deck`/`Sheet`/`Overlay` children are likewise reused instances
+— a `BindableProperty` on the shared `ViewerView` would need a widget host to bind through
+`{x:Reference Root}`, but `Overlay`/`Deck`/`Sheet` are set as *direct* `IsVisible` on the named
+child instances instead, since a reusable `ContentView` must never bind its own root/child
+`IsVisible` to something an external host later overwrites imperatively (`ViewerControlSheet`'s
+own tab-switch code already sets `IsVisible` on its inner content). `IWindowSizeClassService`
+tracks the *window's* size class, not `ViewerView`'s own measured size — the embedded pane on
+`SourceListPage`'s two-column split can be narrower than the window, so measuring the view
+directly (via its own `SizeChanged`) is the only rule that classifies every host correctly, and it
+also avoids a `Changed`-event subscription that a `WindowSizeClassService` singleton would need
+torn down on every transient `ViewerPage`/`FullScreenViewerPage` instance.
 
 ---
 
@@ -405,7 +408,7 @@ Constants: `HalfHeight = 320`, `ExpandedHeight = 440` (both `double`, `const` fi
 
         <!-- Row 1: two MD3 secondary tabs -->
         <Grid Grid.Row="1" ColumnDefinitions="*,*">
-            <Button x:Name="PlaybackTabButton" Grid.Column="0" Text="Weergave"
+            <Button x:Name="PlaybackTabButton" Grid.Column="0" Text="Playback"
                     BackgroundColor="Transparent" />
             <Button x:Name="PtzTabButton" Grid.Column="1" Text="PTZ"
                     BackgroundColor="Transparent" IsVisible="{Binding IsPtzControlActive}" />
@@ -462,7 +465,7 @@ public partial class ViewerControlSheet : ContentView
     {
         if (e.PropertyName == nameof(ViewerViewModel.IsPtzControlActive)
             && BindingContext is ViewerViewModel { IsPtzControlActive: false } && _isPtzTabSelected)
-            SelectTab(isPtz: false); // stranded-tab guard: PTZ disappeared, fall back to Weergave
+            SelectTab(isPtz: false); // stranded-tab guard: PTZ disappeared, fall back to Playback
     }
 
     private void SelectTab(bool isPtz)
@@ -503,7 +506,7 @@ public partial class ViewerControlSheet : ContentView
 }
 ```
 
-Default tab on open: **Weergave** (`_isPtzTabSelected = false`, matches field defaults — no
+Default tab on open: **Playback** (`_isPtzTabSelected = false`, matches field defaults — no
 explicit call needed). Default state: **Half** (constructor sets `TranslationY` directly, no
 animation on first show). `PtzTabContent`'s own `IsVisible="{Binding IsPtzControlActive}"` (§4.1)
 still applies underneath the tab-selection `IsVisible` set here — both must be true to render, but
@@ -521,14 +524,18 @@ changes needed here at all.
 <ContentView ... x:Class="...FullScreenControlsOverlay" x:DataType="vm:ViewerViewModel"
              IsVisible="{Binding AreControlsVisible}" BackgroundColor="Transparent">
     <Grid>
-        <!-- Preset chips, top-left: tap = recall only (no long-press/store in full screen) -->
-        <HorizontalStackLayout Grid.Row="0" Margin="16" Spacing="6" VerticalOptions="Start" HorizontalOptions="Start">
-            <!-- 8 chip-style Buttons ("1".."8"), each Command="{Binding PtzRecallPresetCommand}"
+        <!-- Preset grid, top-left: tap = recall only (no long-press/store in full screen) -->
+        <Grid Margin="16" VerticalOptions="Start" HorizontalOptions="Start"
+              RowDefinitions="48,48" ColumnDefinitions="48,48,48,48" RowSpacing="6" ColumnSpacing="6"
+              IsVisible="{Binding IsPtzControlActive}">
+            <!-- 8 Buttons ("1".."8"), 2 rows x 4 columns at 48 dp each (an 8-across single row
+                 does not fit a 400 dp-wide portrait window at 48 dp targets — see the #360
+                 architecture verdict), each Command="{Binding PtzRecallPresetCommand}"
                  CommandParameter bound as an int literal via x:Static or a simple
-                 <Button.CommandParameter><x:Int32>1</x:Int32></Button.CommandParameter> per chip
+                 <Button.CommandParameter><x:Int32>1</x:Int32></Button.CommandParameter> per button
                  (RelayCommand<int> accepts a boxed int CommandParameter directly - no converter
-                 needed). IsVisible="{Binding IsPtzControlActive}" on the whole StackLayout. -->
-        </HorizontalStackLayout>
+                 needed). -->
+        </Grid>
 
         <!-- D-pad, bottom-left: semi-transparent card, 16dp from edges -->
         <Border Margin="16" HorizontalOptions="Start" VerticalOptions="End"
@@ -623,15 +630,16 @@ alongside the existing `DetachPtzController()` / event-unsubscribe lines).
 
 ## 9. Deck-vs-sheet rule — exact statement (for spec/tests traceability)
 
-> `IWindowSizeClassService.Current == WindowSizeClass.Compact` → bottom sheet.
-> `Medium` or `Expanded` → fixed deck.
+> `ViewerControlLayout.Choose(widthDp, heightDp)`: width ≥ 640 dp **and** height ≥ 470 dp → Deck.
+> Otherwise → Sheet.
 
-This lives in `ViewerView.xaml.cs` (`UpdateLayoutVisibility`, §2.2), **not** in
-`ViewerViewModel` — it is a pure view-layer layout decision reusing an existing, already
-unit-tested Core service (`WindowSizeClassServiceTests`, pre-existing), exactly like
-`SourceListPage.xaml.cs`'s `ApplySizeClass` already does for the two-pane split. No new
-ViewModel test is needed for this rule; `tasks.md` includes a manual/device verification step
-instead (both breakpoints, both orientations, per issue acceptance criteria).
+This is `ViewerControlLayout.Choose` (`src/Core/Features/Viewer/ViewerControlLayout.cs`), a pure,
+unit-tested `static` Core policy (`ViewerControlLayoutTests`) — **not** a `ViewerViewModel`
+member. `ViewerView.xaml.cs` (`UpdateLayoutVisibility`, §2.2) calls it with its own measured
+`Width`/`Height` (from `SizeChanged`), **not** `IWindowSizeClassService` — see §2.2 for why a
+window-size-class service is the wrong input here. No new ViewModel test is needed for this rule;
+`tasks.md` includes a manual/device verification step instead (both breakpoints, both
+orientations, per issue acceptance criteria).
 
 ---
 
@@ -669,9 +677,9 @@ spacing) is **not** unit-testable without MAUI runtime — verified on-device pe
 
 ## 11. Risks / Known Limitations
 
-- **Narrow Expanded panes** (§ spec.md "Out of scope") — the deck's two-column layout could be
-  tight just above the 840 dp Expanded threshold on the embedded pane. Accepted per the issue's
-  explicit `IWindowSizeClassService`-based rule; not fixed in this feature.
+- **Narrow embedded panes** (§ spec.md "Out of scope") — resolved by measuring `ViewerView`'s own
+  width/height directly rather than the window size class: a `SourceListPage` pane narrower than
+  640 dp now correctly falls back to the sheet instead of being forced into a cramped deck.
 - **Sizing budget is exact, not generous** (§5) — expect minor `Spacing`/`Padding` tuning during
   on-device verification; keep changes local to the numeric literals called out, not a structural
   rework.
