@@ -35,7 +35,7 @@ public sealed class NdiNavigationHandoffService : INavigationHandoffService
         if (from == PrimaryNavDestination.Stream)
         {
             var state = await _appStateRepo.RestoreStateAsync();
-            await _appStateRepo.SaveAsync(new AppStateSnapshot(state.LastViewerSourceId, null, false, state.LastSelectedSourceId));
+            await _appStateRepo.SaveAsync(new AppStateSnapshot(state.LastViewerSourceId, state.StreamName, false, state.LastSelectedSourceId));
             await _outputBridge.StopOutputAsync(cancellationToken);
         }
     }

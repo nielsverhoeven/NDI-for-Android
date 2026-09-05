@@ -139,6 +139,50 @@ Placement-change path is safe: `EnsurePrimaryDestinationVisibleAsync` keeps the 
 `from == to` short-circuits (`NdiNavigationHandoffService.cs:29`). Guard `ApplyPlacement`'s dispatched
 `GoToAsync` against landing while a deferral is pending.
 
+### 2026-09-04 — B: Home quick actions (#328)
+
+**APPROVE-WITH-CHANGES.** T001 AWC · T002 REJECT · T003 AWC · T004 AWC · T005 A · T006 AWC ·
+T007–T010 AWC. #328 lands **after** #326/#334 (worktree `…-wt/output`), on top of that branch's
+`HomeViewModel` (which gains an `INdiOutputBridge outputBridge` 5th ctor parameter, a
+`_outputBridge` field, an `OutputStatusChanged` subscription that re-runs `RefreshCommand`, and a
+corroborated `OutputStatus` condition). Full A verdict lives in the output worktree's copy of this
+file.
+
+1. **T002 REJECT — `NavigateToAsync("viewer?sourceId=…")` from Home pushes under `//home-tab`.**
+   `AppShell.ParseDestination` matches `home` first (`AppShell.xaml.cs:274`), so the location
+   resolves to **Home**, `NdiNavigationHandoffService`'s `View` branch never fires, and
+   `ViewerViewModel.Dispose()` does **not** call `StopReceiver()` — the NDI receiver keeps running
+   after the user leaves (docs/architecture.md NDI Bridge rule 4: stop native sessions on route
+   transitions). Fix: `await NavigateToPrimaryAsync(PrimaryNavDestination.View);` then
+   `await NavigateToAsync($"viewer?sourceId={Uri.EscapeDataString(...)}")`, so the push lands under
+   `//view-tab`/`//view-rail`. Alternative (larger, viewer-owned): make `ViewerViewModel.Dispose()`
+   stop the receiver.
+2. **T001/T003 seam over A (exact).** No 7th ctor parameter — reuse A's `_outputBridge`. In
+   `RefreshAsync`'s existing `_dispatcher.BeginInvokeOnMainThread` block compute once:
+   `var outputActive = state.IsOutputActive && _outputBridge.IsActive;` → `OutputStatus` from
+   `outputActive`; `LastOutputStreamName = state.StreamName;`
+   `CanResumeOutput = !outputActive && !string.IsNullOrWhiteSpace(state.StreamName);`.
+   plan.md's persisted-only interim rule and its "prefer a read model over a direct bridge
+   dependency" follow-up note are **superseded** — the direct `INdiOutputBridge` dependency is
+   approved and already present after A. A's `OnOutputStatusChanged` → `RefreshCommand` makes
+   `[NotifyCanExecuteChangedFor(nameof(CanResumeOutput))]` update live with no extra wiring.
+   Note `StopOutputCommand` persists `StreamName = null`, so Resume stays disabled after a
+   deliberate stop — intended semantics.
+3. **T006 REQUIRED — drop `state.IsOutputActive` from `ApplyResumeRequestAsync`'s gate.** After A,
+   that flag is cleared whenever the bridge does not corroborate, so the command would be dead code
+   in exactly the resume scenario. Gate on `!string.IsNullOrWhiteSpace(state.StreamName)` only.
+   Use A's exact string `"Tap Start to resume output"` (**no** trailing period) in both ViewModels
+   and in T008's assertion — plan.md currently has both spellings.
+4. **T004 — disabled-not-hidden APPROVED.** Verify on device that the explicit
+   `BackgroundColor="{DynamicResource Primary}"` / `SuccessGreen` still yields a visibly disabled
+   button; if not, add a `Disabled` VisualState using `DynamicResource` only.
+5. **T005 APPROVED** (`resume` `[QueryProperty]`, `else if` after the `reStreamSourceId` branch —
+   mutually exclusive entry points, lifecycle wiring only, Rule 3 respected). Doc debt:
+   `docs/architecture.md` Navigation rule 4 must be amended to list `resume` alongside
+   `reStreamSourceId`/`isReStreamMode`.
+6. Not starting capture from `ApplyResumeRequestAsync` is the correct invariant — no silent
+   MediaProjection re-consent. All tests remain reachable from `tests/MauiApp.Tests`; only T004's
+   visual disabled state needs device verification.
 ### 2026-09-04 — A: Output session lifecycle (#326 + #334 slice 1; #327 slice 2)
 
 **APPROVE-WITH-CHANGES (slice 1). APPROVE-WITH-CHANGES + HOLD (slice 2).**
@@ -207,6 +251,39 @@ T007–T010 AWC. #328 lands **after** A, on top of A's `HomeViewModel`.
 5. Not starting capture from `ApplyResumeRequestAsync` is the correct invariant — no silent
    MediaProjection re-consent.
 
+#### Addendum 2026-09-04 — device fit-check (2 deviations found on Galaxy Tab A9+)
+
+**1. Handoff clearing `StreamName` — APPROVE (interim).** Persist
+`new AppStateSnapshot(state.LastViewerSourceId, state.StreamName, false, state.LastSelectedSourceId)`
+at `NdiNavigationHandoffService.cs:38`. This does **not** introduce new semantics — it removes an
+outlier. The "stopped but resumable" encoding `StreamName != null && !IsOutputActive` is already the
+established idiom, written by `OutputViewModel.OnAppResumed`'s non-corroborated branch
+(`OutputViewModel.cs:119-120`) and by `ToggleReStreamModeAsync` (`:191-195`); line 38 was the only
+writer that also erased the name. Resulting invariant, now consistent:
+**`AppState.StreamName` = the name of the current or most recent *unterminated* output session;
+`null` only after a deliberate Stop.** The long-lived preferred name lives separately in
+`OutputConfiguration.PreferredStreamName`, so nothing is lost. `SaveAsync` must stay **before**
+`StopOutputAsync` (deferral-latency rule from the handoff-timing verdict). Interaction with the
+slice-1 corroborated gate is benign: `outputActive = state.IsOutputActive && IsActive` is `false`,
+so `CanResumeOutput` is `true` — the intended result. #327 deletes this whole `from == Stream`
+branch (spec.md D4), so keep the edit to the single argument and delete the paired test with the
+branch. Known consequence: `ToggleReStreamModeAsync` persists a name without a session, so Home can
+offer Resume for a never-started re-stream — bounded by the "resume only pre-fills, never starts"
+invariant; do not widen the gate to compensate.
+
+**2. Disabled quick-action buttons — APPROVE-WITH-CHANGES.** A `Disabled` VisualState is the right
+mechanism (explicit `BackgroundColor` overrides the native Android disabled `ColorStateList`), but
+**not inline in `HomePage.xaml`**. Put it in the implicit `Style TargetType="Button"` in
+`src/MauiApp/Resources/Styles/Styles.xaml:21-28`: theming is centralized there (every style in that
+file is implicit and `DynamicResource`-based), a per-page VSM block duplicates a global rule in a
+View, and any `Command`-disabled button app-wide gets the fix for free. Must include an explicit
+`Normal` state resetting `Opacity` to `1`. `Opacity` is not set locally on either button, so the
+setters apply cleanly; no colour keys added, `DynamicResource` untouched → theming rules respected.
+Acceptable narrower alternative if blast radius must stay inside #328: an `x:Key`'d style
+`BasedOn` the implicit one, applied to the two buttons.
+
+**Housekeeping:** the "B: Home quick actions (#328)" verdict is duplicated in this file (also at the
+earlier heading); collapse to one on the next edit.
 ### 2026-09-04 — #342 Viewer control deck (wireframe B) + full-screen overlay (A) — T1–T14
 
 **APPROVE-WITH-CHANGES overall (T1 gate).** No violation of Architecture Rules 1, 2, 5, 6 or

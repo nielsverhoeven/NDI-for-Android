@@ -42,6 +42,7 @@
             <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
                 <Button Text="Start Viewing Last Source"
                         Command="{Binding StartViewingLastSourceCommand}"
+                        IsEnabled="{Binding HasLastViewerSource}"
                         BackgroundColor="{DynamicResource Primary}"
                         TextColor="{DynamicResource TextOnAccent}"
                         CornerRadius="10"
@@ -50,6 +51,7 @@
                 <Button Grid.Column="1"
                         Text="Resume Output"
                         Command="{Binding ResumeOutputCommand}"
+                        IsEnabled="{Binding CanResumeOutput}"
                         BackgroundColor="{DynamicResource SuccessGreen}"
                         TextColor="{DynamicResource TextOnAccent}"
                         CornerRadius="10"

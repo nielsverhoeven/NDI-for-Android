@@ -323,4 +323,36 @@ public class OutputViewModelTests
         Assert.True(sut.IsOutputActive);
         Assert.Equal("Output active", sut.StatusMessage);
     }
+
+    [Fact]
+    public async Task ApplyResumeRequestCommand_WhenStreamNamePersisted_PrePopulatesWithoutStartingOutput()
+    {
+        _appStateRepoMock.Setup(r => r.RestoreStateAsync())
+            .ReturnsAsync(new AppStateSnapshot(null, "MyStream", true, null));
+
+        var sut = CreateSut();
+
+        await sut.ApplyResumeRequestCommand.ExecuteAsync(null);
+
+        Assert.Equal("MyStream", sut.StreamName);
+        Assert.Equal("Tap Start to resume output", sut.StatusMessage);
+        Assert.False(sut.IsOutputActive);
+        _bridgeMock.Verify(b => b.StartOutputAsync(
+            It.IsAny<string>(), It.IsAny<VideoInputKind>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task ApplyResumeRequestCommand_WhenNoPersistedStreamName_LeavesStreamNameAndStatusUnchanged()
+    {
+        var sut = CreateSut();
+        var originalStreamName = sut.StreamName;
+        var originalStatusMessage = sut.StatusMessage;
+
+        await sut.ApplyResumeRequestCommand.ExecuteAsync(null);
+
+        Assert.Equal(originalStreamName, sut.StreamName);
+        Assert.Equal(originalStatusMessage, sut.StatusMessage);
+        Assert.False(sut.IsOutputActive);
+    }
 }

@@ -5,6 +5,7 @@ namespace NdiForAndroid.Features.Output.Views;
 
 [QueryProperty(nameof(ReStreamSourceId), "reStreamSourceId")]
 [QueryProperty(nameof(IsReStreamMode), "isReStreamMode")]
+[QueryProperty(nameof(ResumeRequested), "resume")]
 public partial class OutputPage : ContentPage
 {
     private readonly OutputViewModel _viewModel;
@@ -12,6 +13,8 @@ public partial class OutputPage : ContentPage
     public string? ReStreamSourceId { get; set; }
 
     public string? IsReStreamMode { get; set; }
+
+    public string? ResumeRequested { get; set; }
 
     public OutputPage(OutputViewModel viewModel)
     {
@@ -29,5 +32,7 @@ public partial class OutputPage : ContentPage
 
         if (!string.IsNullOrEmpty(ReStreamSourceId))
             _viewModel.ApplyReStreamRequest(ReStreamSourceId, bool.TryParse(IsReStreamMode, out var b) && b);
+        else if (bool.TryParse(ResumeRequested, out var resume) && resume)
+            _viewModel.ApplyResumeRequestCommand.Execute(null);
     }
 }
