@@ -4,6 +4,7 @@ using NdiForAndroid.Features.AppState.Models;
 using NdiForAndroid.Features.AppState.Repositories;
 using NdiForAndroid.Features.Sources.Models;
 using NdiForAndroid.Features.Sources.Repositories;
+using NdiForAndroid.NdiBridge;
 using NdiForAndroid.Services;
 
 namespace NdiForAndroid.Features.Home.ViewModels;
@@ -14,6 +15,7 @@ public partial class HomeViewModel : ObservableObject, IDisposable
     private readonly ISourceRepository _sourceRepository;
     private readonly IAppStateRepository _appStateRepo;
     private readonly INavigationService _navigationService;
+    private readonly INdiOutputBridge _outputBridge;
     private readonly IMainThreadDispatcher _dispatcher;
 
     [ObservableProperty]
@@ -36,12 +38,14 @@ public partial class HomeViewModel : ObservableObject, IDisposable
         ISourceRepository sourceRepository,
         IAppStateRepository appStateRepo,
         INavigationService navigationService,
+        INdiOutputBridge outputBridge,
         IMainThreadDispatcher dispatcher)
     {
         _discoveryService = discoveryService;
         _sourceRepository = sourceRepository;
         _appStateRepo = appStateRepo;
         _navigationService = navigationService;
+        _outputBridge = outputBridge;
         _dispatcher = dispatcher;
 
         DiscoveryStatus = "Waiting for discovery...";
@@ -52,6 +56,7 @@ public partial class HomeViewModel : ObservableObject, IDisposable
 
         // Subscribe to discovery snapshots
         _discoveryService.SnapshotReady += OnDiscoverySnapshot;
+        _outputBridge.OutputStatusChanged += OnOutputStatusChanged;
 
         RefreshCommand.Execute(null);
     }
@@ -68,7 +73,7 @@ public partial class HomeViewModel : ObservableObject, IDisposable
                 ? "Idle (no source viewed yet)"
                 : $"Last viewed: {state.LastViewerSourceId}";
 
-            OutputStatus = state.IsOutputActive
+            OutputStatus = state.IsOutputActive && _outputBridge.IsActive
                 ? $"Active output to \"{state.StreamName ?? "unknown"}\""
                 : "Idle (no active output)";
 
@@ -100,6 +105,9 @@ public partial class HomeViewModel : ObservableObject, IDisposable
         });
     }
 
+    private void OnOutputStatusChanged(object? sender, EventArgs e) =>
+        _dispatcher.BeginInvokeOnMainThread(() => _ = RefreshCommand.ExecuteAsync(null));
+
     [RelayCommand]
     private async Task StartViewingLastSource()
     {
@@ -127,5 +135,6 @@ public partial class HomeViewModel : ObservableObject, IDisposable
     public void Dispose()
     {
         _discoveryService.SnapshotReady -= OnDiscoverySnapshot;
+        _outputBridge.OutputStatusChanged -= OnOutputStatusChanged;
     }
 }
