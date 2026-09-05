@@ -10,6 +10,8 @@ using NdiForAndroid.Features.Navigation.Services;
 using NdiForAndroid.Features.Navigation.ViewModels;
 using NdiForAndroid.Features.Output.Repositories;
 using NdiForAndroid.Features.Output.ViewModels;
+using NdiForAndroid.Features.Ptz.Services;
+using NdiForAndroid.Features.Ptz.ViewModels;
 using NdiForAndroid.Features.Settings.Repositories;
 using NdiForAndroid.Features.Settings.Services;
 using NdiForAndroid.Features.Settings.ViewModels;
@@ -60,6 +62,11 @@ public static class MauiProgram
         builder.Services.AddSingleton<INdiDiscoveryBridge, NdiDiscoveryBridge>();
         builder.Services.AddSingleton<INdiViewerBridge, NdiViewerBridge>();
         builder.Services.AddSingleton<INdiOutputBridge, NdiOutputBridge>();
+
+        // PTZ (VISCA) — Core-only services, no MAUI dependency.
+        builder.Services.AddSingleton<IViscaTransportFactory, ViscaTransportFactory>();
+        builder.Services.AddSingleton<IPtzControllerFactory, PtzControllerFactory>();
+        builder.Services.AddTransient<PtzEndpointFormViewModel>();
 
         // Repositories
         builder.Services.AddSingleton<ISourceRepository, SourceRepository>();

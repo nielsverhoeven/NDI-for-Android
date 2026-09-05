@@ -191,7 +191,12 @@ public class DiscoveryRefreshServiceTests
         var sut = CreateSut(pollingInterval: TimeSpan.FromMilliseconds(30));
         sut.Start();
 
-        await Task.Delay(300);
+        // Real timers: wait until the loop has demonstrably continued past the failed
+        // poll instead of a fixed delay — a fixed 300 ms window is too tight on a loaded
+        // CI runner where other test classes (e.g. loopback socket tests) run concurrently.
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(5);
+        while (Volatile.Read(ref callCount) < 2 && DateTime.UtcNow < deadline)
+            await Task.Delay(20);
         sut.Stop();
 
         Assert.True(callCount >= 2, $"Expected ≥2 calls (loop continued after failure), got {callCount}");

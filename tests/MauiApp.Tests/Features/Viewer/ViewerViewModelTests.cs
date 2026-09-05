@@ -2,6 +2,10 @@ using Moq;
 using NdiForAndroid.Features.AppState.Models;
 using NdiForAndroid.Features.AppState.Repositories;
 using NdiForAndroid.Features.ConnectionHistory.Services;
+using NdiForAndroid.Features.Ptz.Models;
+using NdiForAndroid.Features.Ptz.Services;
+using NdiForAndroid.Features.Ptz.ViewModels;
+using NdiForAndroid.Features.Sources.Models;
 using NdiForAndroid.Features.Sources.Repositories;
 using NdiForAndroid.Features.Viewer.ViewModels;
 using NdiForAndroid.NdiBridge;
@@ -19,6 +23,8 @@ public class ViewerViewModelTests
     private readonly Mock<IAppLifecycleService> _lifecycleMock = new();
     private readonly Mock<ISourceRepository> _sourceRepoMock = new();
     private readonly Mock<IConnectionHistoryService> _connectionHistoryMock = new();
+    private readonly Mock<IPtzControllerFactory> _ptzControllerFactoryMock = new();
+    private readonly Mock<IPtzController> _ptzControllerMock = new();
 
     public ViewerViewModelTests()
     {
@@ -30,10 +36,16 @@ public class ViewerViewModelTests
             .Returns(Task.CompletedTask);
         _sourceRepoMock
             .Setup(r => r.GetCachedSourcesAsync())
-            .ReturnsAsync(new List<NdiForAndroid.Features.Sources.Models.NdiSource>());
+            .ReturnsAsync(new List<NdiSource>());
+        _ptzControllerFactoryMock
+            .Setup(f => f.Create(It.IsAny<PtzEndpoint?>()))
+            .Returns(_ptzControllerMock.Object);
     }
 
-    private ViewerViewModel CreateSut() => new(_bridgeMock.Object, _timeProvider, _dispatcher, _appStateRepoMock.Object, _lifecycleMock.Object, _sourceRepoMock.Object, _connectionHistoryMock.Object);
+    private ViewerViewModel CreateSut() => new(
+        _bridgeMock.Object, _timeProvider, _dispatcher, _appStateRepoMock.Object, _lifecycleMock.Object,
+        _sourceRepoMock.Object, _connectionHistoryMock.Object,
+        _ptzControllerFactoryMock.Object, new PtzEndpointFormViewModel(_ptzControllerFactoryMock.Object));
 
     [Fact]
     public void StartCommand_WithSourceId_StartsReceiverAndSetsIsPlaying()
@@ -240,8 +252,8 @@ public class ViewerViewModelTests
 
         await sut.PtzNudgeCommand.ExecuteAsync(direction);
 
-        _bridgeMock.Verify(b => b.PtzPanTiltSpeed(expectedPan, expectedTilt), Times.Once);
-        _bridgeMock.Verify(b => b.PtzPanTiltSpeed(0f, 0f), Times.Once);
+        _ptzControllerMock.Verify(c => c.PanTiltAsync(expectedPan, expectedTilt, It.IsAny<CancellationToken>()), Times.Once);
+        _ptzControllerMock.Verify(c => c.PanTiltAsync(0f, 0f, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -251,7 +263,73 @@ public class ViewerViewModelTests
 
         await sut.PtzZoomNudgeCommand.ExecuteAsync("in");
 
-        _bridgeMock.Verify(b => b.PtzZoomSpeed(0.5f), Times.Once);
-        _bridgeMock.Verify(b => b.PtzZoomSpeed(0f), Times.Once);
+        _ptzControllerMock.Verify(c => c.ZoomAsync(0.5f, It.IsAny<CancellationToken>()), Times.Once);
+        _ptzControllerMock.Verify(c => c.ZoomAsync(0f, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Start_WithPtzOverrideConfigured_ResolvesViscaBackedController()
+    {
+        var sourceWithOverride = new NdiSource(
+            "src-1", "Cam 1", "192.168.1.10", true, 0,
+            PtzOverrideHost: "192.168.1.99", PtzOverridePort: 1234);
+        _sourceRepoMock.Setup(r => r.GetCachedSourcesAsync())
+            .ReturnsAsync(new List<NdiSource> { sourceWithOverride });
+        var sut = CreateSut();
+
+        sut.SourceId = "src-1";
+        await sut.StartCommand.ExecuteAsync(null);
+
+        _ptzControllerFactoryMock.Verify(
+            f => f.Create(It.Is<PtzEndpoint>(e => e != null && e.Host == "192.168.1.99" && e.Port == 1234)),
+            Times.AtLeastOnce);
+    }
+
+    [Fact]
+    public async Task Stop_DisposesActivePtzController()
+    {
+        var sut = CreateSut();
+        sut.SourceId = "src-1";
+        await sut.StartCommand.ExecuteAsync(null);
+
+        sut.StopCommand.Execute(null);
+
+        _ptzControllerMock.Verify(c => c.ShutdownAsync(), Times.AtLeastOnce);
+    }
+
+    [Fact]
+    public async Task OpenPtzEndpointFormCommand_PopulatesFormFromActiveSource()
+    {
+        var sourceWithOverride = new NdiSource(
+            "src-1", "Cam 1", "192.168.1.10", true, 0,
+            PtzOverrideHost: "192.168.1.99", PtzOverridePort: 1234);
+        _sourceRepoMock.Setup(r => r.GetCachedSourcesAsync())
+            .ReturnsAsync(new List<NdiSource> { sourceWithOverride });
+        var sut = CreateSut();
+        sut.SourceId = "src-1";
+        await sut.StartCommand.ExecuteAsync(null);
+
+        sut.OpenPtzEndpointFormCommand.Execute(null);
+
+        Assert.Equal("192.168.1.99", sut.PtzEndpointForm.Host);
+        Assert.Equal("1234", sut.PtzEndpointForm.PortText);
+        Assert.True(sut.PtzEndpointForm.IsOpen);
+    }
+
+    [Fact]
+    public async Task PtzEndpointForm_SaveRequested_PersistsOverrideAndRebuildsController()
+    {
+        var sut = CreateSut();
+        sut.SourceId = "src-1";
+        await sut.StartCommand.ExecuteAsync(null);
+
+        sut.PtzEndpointForm.Host = "10.0.0.5";
+        sut.PtzEndpointForm.PortText = "5678";
+        sut.PtzEndpointForm.SaveCommand.Execute(null);
+
+        _sourceRepoMock.Verify(
+            r => r.SavePtzOverrideAsync("src-1", It.Is<PtzEndpoint>(e => e != null && e.Host == "10.0.0.5" && e.Port == 5678)),
+            Times.Once);
+        _ptzControllerFactoryMock.Verify(f => f.Create(It.IsAny<PtzEndpoint?>()), Times.AtLeast(2));
     }
 }

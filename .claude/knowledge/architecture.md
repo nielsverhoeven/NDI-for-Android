@@ -104,6 +104,46 @@ Placement-change path is safe: `EnsurePrimaryDestinationVisibleAsync` keeps the 
 `from == to` short-circuits (`NdiNavigationHandoffService.cs:29`). Guard `ApplyPlacement`'s dispatched
 `GoToAsync` against landing while a deferral is pending.
 
+### 2026-09-04 — #339 PTZ over VISCA-over-IP (raw TCP) — plan.md/tasks.md T1–T26
+
+**APPROVE-WITH-CHANGES overall.** No violation of Architecture Rules 1–6 or `docs/architecture.md`
+Dependency Rules 1–6. Binding decisions:
+
+- **VISCA stack in `src/Core/Features/Ptz/`: APPROVED, and it is mandatory, not preferential.**
+  `tests/MauiApp.Tests/NdiForAndroid.Tests.csproj:27` references **only** `src/Core`, so a transport
+  in `src/MauiApp` cannot be covered by the PR CI unit-test job. Rule 2 / Dependency Rules 4–5 are
+  about **NDI SDK types and `[DllImport("ndi")]`**, not all networking. `NetworkReachability.cs`
+  sits in `src/MauiApp/NdiBridge/` because it serves the NDI discovery bridge — not a precedent
+  against Core-hosted BCL sockets. New standing rule to record in `docs/architecture.md`:
+  *Core may use BCL networking (`System.Net.Sockets`) for non-NDI device-control protocols; NDI
+  native interop stays bridge-only.*
+- **BLOCKER — discovery clobbers the persisted override.** `SourceRepository.DiscoverAsync`
+  (`src/MauiApp/Features/Sources/Repositories/SourceRepository.cs:28-34`) rebuilds `NdiSource` from
+  bridge entries with defaults and calls `NdiDatabase.UpsertSourceAsync` →
+  `InsertOrReplaceAsync` (`src/Core/Data/NdiDatabase.cs:197`), which **replaces the whole row**.
+  Every discovery poll would null `PtzOverrideHost`/`PtzOverridePort` (and already resets
+  `QualityProfile`/`PreviouslyConnected` — pre-existing bug, separate issue). The feature must add a
+  targeted `ISourceRepository.SavePtzOverrideAsync(sourceId, host, port)` +
+  `NdiDatabase` `UPDATE sources SET ...` and make `UpsertSourceAsync` carry forward the existing
+  override columns; the ViewModel persists through the repository only (Rule 1 preserved).
+- **`ViscaPtzController` must serialize commands** (`SemaphoreSlim(1,1)` over connect+send+receive,
+  `ConfigureAwait(false)` everywhere). One `NetworkStream` + concurrent `AsyncRelayCommand`
+  invocations (button mashing; two live `ViewerViewModel` instances via
+  `Func<ViewerViewModel>`, `MauiProgram.cs:129`) would interleave frames.
+- **Timeouts must be constructor-injected**, not `static readonly` — required for deterministic
+  loopback timeout tests.
+- **Per-source selection in `ViewerViewModel` (not a new service): APPROVED** — same place the
+  existing per-source `QualityProfile` restore lives (`ViewerViewModel.cs:212-222`). Reuse the
+  existing `GetCachedSourcesAsync()` fetch; do **not** add a third round-trip.
+- **Shared-file shaping (parallel #338): REQUIRED.** `ViewerViewModel` is already `partial`
+  (`src/Core/Features/Viewer/ViewModels/ViewerViewModel.cs:24`) — all PTZ members go in
+  `ViewerViewModel.Ptz.cs`, with `partial void StartPtz(NdiSource?)/StopPtz()/DisposePtz()` hooks so
+  the shared file's diff is ~6 lines. XAML extracted to `PtzPanelView.xaml` +
+  `PtzEndpointPanel.xaml` (ContentViews).
+- **Loopback integration tests are required for CI** (product-owner gate): PR job is
+  `windows-latest` (`.github/workflows/ndi-for-android-cicd.yml:21,48`); `TcpListener` on
+  `IPAddress.Loopback` port 0 is CI-safe on both hosted Windows and Ubuntu runners.
+
 ## Open questions / assumptions
 
 - Assumed this instrumentation is **permanent, low-cost diagnostics** rather than throwaway; if it

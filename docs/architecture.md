@@ -17,6 +17,7 @@ This guide defines the active MAUI architecture baseline for NDI-for-Android and
 | `src/MauiApp/Features/Settings` | Feature presentation + app orchestration | Settings persistence UI, diagnostics toggles, server config |
 | `src/Core/Features/Navigation` | Cross-feature navigation services | `WindowSizeClassService`, `NavigationPolicyService`, adaptive shell state, navigation handoff |
 | `src/MauiApp/NdiBridge` + `src/Core/NdiBridge` | Native boundary | P/Invoke wrappers (`NdiRuntime`, discovery/viewer/output bridges, interop layer) and plain C# bridge models only |
+| `src/Core/Features/Ptz` | Feature domain (Core, MAUI-free) | PTZ control seam (`IPtzController`) with two backends — `NdiPtzController` (wraps `INdiViewerBridge`, zero behavior change) and `ViscaPtzController` (raw VISCA-over-TCP via `System.Net.Sockets`, own connect/reconnect/timeout state machine). `IPtzControllerFactory` selects a backend per source's optional VISCA override endpoint; `ViewerViewModel` owns the selection (`ViewerViewModel.Ptz.cs`), same place the per-source `QualityProfile` restore lives. |
 | `src/MauiApp/Data` | Persistence infrastructure | SQLite-backed repositories and data access services |
 | `src/MauiApp/Platforms/Android` | Platform implementation | Android-only lifecycle hooks, permissions, `NsdManager` bootstrap, MediaProjection/Camera2/AudioRecord capture sources, `AudioTrack` playback sink, foreground service |
 | `tests/MauiApp.Tests` | Unit and component tests | ViewModel and repository tests with mocked bridge |
@@ -30,6 +31,7 @@ This guide defines the active MAUI architecture baseline for NDI-for-Android and
 4. `NdiBridge` is the only layer allowed to perform native interop calls.
 5. Native NDI SDK types never leave the bridge boundary; only plain C# records/classes cross layers.
 6. Android-specific APIs are isolated in `Platforms/Android` services and injected through interfaces.
+7. Core may use BCL networking (`System.Net.Sockets`) for non-NDI device-control protocols (e.g. VISCA-over-TCP PTZ); NDI native interop stays bridge-only (Rule 4 governs `[DllImport("ndi")]` and NDI SDK types, not all networking).
 
 ## Architecture Diagram
 
