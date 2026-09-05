@@ -26,13 +26,29 @@ public partial class OutputPage : ContentPage
     protected override void OnAppearing()
     {
         base.OnAppearing();
+        _ = ApplyEntryStateAsync();
+    }
 
-        // Lifecycle wiring only (no logic): load the persisted output configuration.
-        _viewModel.LoadCommand.Execute(null);
+    private async Task ApplyEntryStateAsync()
+    {
+        try
+        {
+            await _viewModel.LoadCommand.ExecuteAsync(null);
 
-        if (!string.IsNullOrEmpty(ReStreamSourceId))
-            _viewModel.ApplyReStreamRequest(ReStreamSourceId, bool.TryParse(IsReStreamMode, out var b) && b);
-        else if (bool.TryParse(ResumeRequested, out var resume) && resume)
-            _viewModel.ApplyResumeRequestCommand.Execute(null);
+            if (!string.IsNullOrEmpty(ReStreamSourceId))
+                _viewModel.ApplyReStreamRequest(ReStreamSourceId, bool.TryParse(IsReStreamMode, out var b) && b);
+            else if (bool.TryParse(ResumeRequested, out var resume) && resume)
+                await _viewModel.ApplyResumeRequestCommand.ExecuteAsync(null);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"OutputPage entry state failed: {ex}");
+        }
+        finally
+        {
+            ReStreamSourceId = null;
+            IsReStreamMode = null;
+            ResumeRequested = null;
+        }
     }
 }

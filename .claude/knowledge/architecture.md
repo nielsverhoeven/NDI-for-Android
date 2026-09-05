@@ -601,6 +601,109 @@ Dependency Rules 1–6. Binding decisions:
   `windows-latest` (`.github/workflows/ndi-for-android-cicd.yml:21,48`); `TcpListener` on
   `IPAddress.Loopback` port 0 is CI-safe on both hosted Windows and Ubuntu runners.
 
+### 2026-09-04 — A slice 2 (#327) refreshed implementation plan + #351 guard
+
+**APPROVE-WITH-CHANGES.** T013 A (hold from the slice-1 verdict is **lifted** — slice 1 is
+device-verified) · T014 AWC · T015 A · #351 guard A · docs-1 A · docs-2 AWC · docs-3 A ·
+decision-log.md REJECT (out of scope).
+
+Re-verified against the worktree code: `NdiNavigationHandoffService.cs:29-40` still has the Stream
+branch; `AppShell.RunNavigatingHandoffAsync` (`AppShell.xaml.cs:230-247`) caps the handoff at 3 s and
+completes the deferral in `finally` — after T013 the handoff returns `Task.CompletedTask`, so the
+deferral completes synchronously and the ANR/latency risk from the handoff-timing verdict disappears.
+Nothing outside DI constructs the service (`MauiProgram.cs:84`, `AppShell.xaml.cs:14` interface-typed).
+`HomeViewModel.CanResumeOutput` (`HomeViewModel.cs:91-100`) depends on `state.StreamName` +
+`_outputBridge.IsActive`, not on the removed branch. Teardown path re-checked: `StopOutputCoreAsync`
+(`NdiOutputBridge.cs:188-198`) unsubscribes `Stopped` before `StopAsync()`, `AndroidVideoCaptureSource
+.StopAsync` (`:147-155`) sends `ActionStop` only when `_startedForegroundSession` — no double-fire, no
+deadlock (all waits async, `Context.StartService` does not block on `OnStartCommand`).
+
+Binding changes:
+1. **T014 — the `ActionStopRequested` branch needs a self-stop fallback.** If
+   `IPlatformApplication.Current?.Services.GetService<INdiOutputBridge>()` returns `null`, or the
+   bridge is already inactive (double tap; a tap that lands after `ActionStop` destroyed and Android
+   re-created the service), nothing ever sends `ActionStop` — `AndroidVideoCaptureSource.StopAsync`
+   short-circuits on `_startedForegroundSession == false` — leaving an undismissable notification or a
+   started, non-foreground, never-stopped service. Required:
+   `if (bridge is null || !bridge.IsActive) { StopForeground(StopForegroundFlags.Remove); StopSelf(); }
+   else bridge.StopOutputAsync().FireAndForget();`. This does not weaken the "never stop the service
+   directly while capture is live" rule — the direct stop happens only when nothing is live.
+2. **docs-2 — factually wrong as written.** No code clears `AppState.StreamName` on a
+   notification-triggered stop: only `OutputViewModel.StopOutputCommand` (`OutputViewModel.cs:274-279`)
+   writes `StreamName = null`; the notification path reaches the ViewModel only through
+   `OnOutputStatusChanged` (`:132-147`), which mutates in-memory state and persists nothing (the
+   persisted `IsOutputActive` is corrected later by `OnAppResumed`, `:119-120`). Document the actual
+   behaviour: after a notification Stop the session stays **resumable** (`StreamName` kept,
+   `IsOutputActive` corroborated `false`), unlike the in-app Stop button.
+3. **decision-log.md is not #327's to create.** Feature rationale belongs in
+   `docs/features/output-session-state/` + the PR/issue; architect verdicts belong in this file. A
+   third, developer-written decision store in `.claude/knowledge/` will drift. Drop the step.
+
+Accepted as-is: `IPlatformApplication.Current.Services.GetService` confined to the
+`ActionStopRequested` branch (rule 5 — `MainActivity.cs:104,145` precedent, `src/MauiApp` is
+Android-only); `INdiOutputBridge` is a Core contract so no NDI type crosses the boundary (rule 2);
+`PendingIntent.GetService` + `Immutable | UpdateCurrent` is correct for API 26-35 (a running FGS keeps
+the app out of the background-start restriction, and a notification action is allowlisted anyway); no
+manifest change (the `[Service]` attribute already declares the component, `POST_NOTIFICATIONS` and
+all four `FOREGROUND_SERVICE*` permissions are present). The #351 null-intent guard is minimal and
+correct — a null `Intent` only ever arrives via sticky restart after process death, when neither the
+MediaProjection consent nor the sender survives, and a stickily restarted service is not foreground so
+there is no `startForeground` deadline to miss.
+
+Non-blocking observations (do not expand #327 scope): (a) returning `StartCommandResult.NotSticky`
+from the *start* path would remove the pointless restart entirely — the service can never resume
+anything — and is the cleaner long-term shape; (b) `StopOutputAsync().FireAndForget()` from
+`OnStartCommand` runs the teardown inline on the main thread until the first real await, exactly as the
+in-app Stop button does on the UI thread — acceptable precedent, `Task.Run(...)` if device testing ever
+shows a stall; (c) a concurrent re-stream session is not stopped by the notification action
+(`StopOutputAsync` ≠ `StopReStreamAsync`) — unreachable from today's `OutputViewModel`, note only.
+
+#### Addendum 2026-09-05 — #327 device fit-check: Stream tab does not reflect a live sender
+
+**APPROVE-WITH-CHANGES** on "extract `CorroborateWithBridgeAsync` and call it from `LoadAsync` too".
+
+**Tab-root page/VM lifetime — determined: assume RE-CREATION, never caching.** The observed
+"Tap Start to begin broadcasting from this device." is written by exactly one line, the
+`OutputViewModel` constructor (`OutputViewModel.cs:77`); nothing else in the repo writes it. Seeing
+it after Stream→View→Home→Stream therefore proves a **new** `OutputViewModel` (transient,
+`MauiProgram.cs:130`) inside a **new** `OutputPage` (transient, `:138`) was bound. Mechanism: MAUI's
+Android Shell destroys the non-current section fragment on a tab switch, which recycles the
+`ContentTemplate` cache of the `ShellContent`, so the next entry re-resolves both from DI.
+Independently, `stream-rail` (`AppShell.xaml:43`) and `stream-tab` (`:72`) are two distinct
+`ShellContent`s, i.e. two instance families across a rotation. **This falsifies the premise of the
+2026-09-04 FIX-02 verdict** ("ShellContent `ContentTemplate` target … Shell-cached for the section
+lifetime"). FIX-02's *conclusion* (don't dispose the VM from page lifecycle) is now unsupported and
+must be re-decided in the tab-root VM lifetime follow-up already owed from the slice-1 verdict
+(item 4) — the leak is **unbounded** (one live VM per Stream visit, each still subscribed to the
+singleton bridge and to `AppResumed`, each writing `SaveAsync` from `OnAppResumed`), not ≤2. Repo
+precedent for the alternative: `SourceListPage`/`SourceListViewModel` are both singletons
+(`MauiProgram.cs:124,136`, "Singleton: matches ViewModel lifetime (C1)"). Out of #327 scope.
+
+Binding changes:
+1. `LoadAsync`'s `if (config is null) return;` (`OutputViewModel.cs:88-89`) must not skip
+   corroboration — guard only the three config assignments, then always await the shared method.
+2. Resumable predicate must match Home. Replace the `!state.IsOutputActive ||` guard
+   (`:105`) with `StreamName`-only; `state.IsOutputActive` decides only whether the corrective
+   `SaveAsync` runs. Otherwise, after the first corroboration clears the flag, Output falls back to
+   the ctor default while `HomeViewModel.CanResumeOutput` (`HomeViewModel.cs:100`) still offers
+   Resume. Same rule the #328 T006 verdict already imposed on `ApplyResumeRequestAsync`.
+3. Corroborated-active branch must set `IsReStreamMode = _bridge.IsReStreamActive`
+   (`INdiBridges.cs:135`, Core contract). Without it a fresh VM over a live re-stream routes Stop to
+   `StopOutputAsync` (`OutputViewModel.cs:265`), which does not touch the re-stream path
+   (`NdiOutputBridge.cs:175-186` vs `:498-509`) — UI says stopped, sender keeps sending.
+4. **Ordering (blocking).** `OutputPage.OnAppearing` (`OutputPage.xaml.cs:26-37`) fires
+   `LoadCommand` fire-and-forget, so its post-await continuation races/overwrites
+   `ApplyReStreamRequest` and `ApplyResumeRequestCommand`. Already a live bug (`LoadAsync:92`
+   overwrites the re-stream name with `PreferredStreamName`); adding `StatusMessage` writes makes it
+   visible. Sequence them in an `async Task ApplyEntryStateAsync()` (await Load, *then* apply the
+   query intent) and null the three `[QueryProperty]` fields in `finally` — one-shot consumption is
+   what makes the fix correct under **both** lifetimes. Ordering/lifecycle wiring only; Rule 3 holds.
+5. Keep `_dispatcher.BeginInvokeOnMainThread` **inside** the extracted method, not at call sites
+   (Rule 4 for the `AppResumed` caller; free for the UI-thread `LoadAsync` caller).
+6. Message split: `LoadAsync` passes `"Output active"` (identical to `StartOutputCommand`, `:228`),
+   `OnAppResumed` keeps `"Output session restored."`. A page appearance renders state; only a resume
+   narrates a transition.
+
 ## Open questions / assumptions
 
 - ~~**PR #299 / this merge base does not contain the A+B navigation work**~~ — **resolved by
@@ -615,3 +718,13 @@ Dependency Rules 1–6. Binding decisions:
 - Assumed the soak-test instrumentation is **permanent, low-cost diagnostics** rather than throwaway;
   if it is throwaway, it should be reverted after the soak rather than documented in
   `docs/architecture.md`.
+- Assumed this instrumentation is **permanent, low-cost diagnostics** rather than throwaway; if it
+  is throwaway, it should be reverted after the soak rather than documented in `docs/architecture.md`.
+- **#327 — is a notification Stop a "deliberate stop" for `AppState.StreamName`?** The owner's
+  decision names the in-app Stop button and the notification action as the two deliberate stops, but
+  only the former clears `StreamName`, so Home keeps offering **Resume** after a notification stop and
+  `OutputViewModel` settles on "Tap Start to resume output" rather than the idle text. Harmless under
+  the "resume only pre-fills, never starts" invariant, so #327 ships as-is with docs describing the
+  real behaviour. If parity is wanted, the seam is the ViewModel/AppState layer (a user-requested vs.
+  autonomous stop distinction on `OutputStatusChanged`) — **not** `IAppStateRepository` writes from the
+  Android foreground service. Owner decision needed; follow-up issue if yes.
