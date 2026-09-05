@@ -2,11 +2,13 @@
 <ContentView xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              xmlns:vm="clr-namespace:NdiForAndroid.Features.Viewer.ViewModels;assembly=NdiForAndroid.Core"
+             xmlns:t="clr-namespace:NdiForAndroid.Testing;assembly=NdiForAndroid.Core"
              x:Class="NdiForAndroid.Features.Viewer.Views.PlaybackControlsView"
              x:DataType="vm:ViewerViewModel">
     <Grid RowDefinitions="Auto,Auto,Auto" RowSpacing="6">
         <Grid Grid.Row="0" ColumnDefinitions="*,Auto" ColumnSpacing="8">
             <Label Grid.Column="0" Text="{Binding StatusMessage}" FontSize="13"
+                   AutomationId="{x:Static t:TestIds.ViewerStatus}"
                    LineBreakMode="TailTruncation" TextColor="{DynamicResource TextPrimary}"
                    VerticalOptions="Center" />
             <Button Grid.Column="1" Text="PTZ endpoint…" FontSize="12" Padding="10,0"
@@ -18,7 +20,7 @@
         </Grid>
 
         <Grid Grid.Row="1">
-            <Grid ColumnDefinitions="*,*,*" ColumnSpacing="4" HeightRequest="40">
+            <Grid ColumnDefinitions="*,*,*" ColumnSpacing="4" HeightRequest="48">
                 <Grid.Style>
                     <Style TargetType="Grid">
                         <Setter Property="IsVisible" Value="{Binding IsPlaying}" />
@@ -30,6 +32,7 @@
                     </Style>
                 </Grid.Style>
                 <Button Grid.Column="0" Text="Smooth" Padding="4,0"
+                        AutomationId="{x:Static t:TestIds.ViewerQualitySmooth}"
                         Command="{Binding ChangeQualityProfileCommand}" CommandParameter="Smooth">
                     <Button.Triggers>
                         <DataTrigger TargetType="Button" Binding="{Binding QualityProfile}" Value="Balanced">
@@ -43,6 +46,7 @@
                     </Button.Triggers>
                 </Button>
                 <Button Grid.Column="1" Text="Balanced" Padding="4,0"
+                        AutomationId="{x:Static t:TestIds.ViewerQualityBalanced}"
                         Command="{Binding ChangeQualityProfileCommand}" CommandParameter="Balanced">
                     <Button.Triggers>
                         <DataTrigger TargetType="Button" Binding="{Binding QualityProfile}" Value="Smooth">
@@ -56,6 +60,7 @@
                     </Button.Triggers>
                 </Button>
                 <Button Grid.Column="2" Text="High" Padding="4,0"
+                        AutomationId="{x:Static t:TestIds.ViewerQualityHigh}"
                         Command="{Binding ChangeQualityProfileCommand}" CommandParameter="High">
                     <Button.Triggers>
                         <DataTrigger TargetType="Button" Binding="{Binding QualityProfile}" Value="Smooth">
@@ -73,20 +78,26 @@
             <HorizontalStackLayout Spacing="6" IsVisible="{Binding IsReconnecting}">
                 <ActivityIndicator IsRunning="{Binding IsReconnecting}" Color="{DynamicResource TextPrimary}"
                                    WidthRequest="20" HeightRequest="20" />
-                <Label Text="{Binding RetryStatusMessage}" VerticalOptions="Center" FontSize="12" />
-                <Button Text="Cancel" Command="{Binding CancelRetryCommand}" HeightRequest="32" FontSize="12" Padding="10,4" />
+                <Label Text="{Binding RetryStatusMessage}" VerticalOptions="Center" FontSize="12"
+                       AutomationId="{x:Static t:TestIds.ViewerRetryStatus}" />
+                <Button Text="Cancel" Command="{Binding CancelRetryCommand}" HeightRequest="48" FontSize="12" Padding="10,4"
+                        AutomationId="{x:Static t:TestIds.ViewerCancelRetry}" />
             </HorizontalStackLayout>
 
             <Button Text="Reconnect" Command="{Binding ReconnectCommand}"
-                    IsVisible="{Binding CanReconnect}" HeightRequest="40" />
+                    AutomationId="{x:Static t:TestIds.ViewerReconnect}"
+                    IsVisible="{Binding CanReconnect}" HeightRequest="48" />
         </Grid>
 
         <Grid Grid.Row="2" ColumnDefinitions="48,48,*" ColumnSpacing="6" HeightRequest="48"
               IsVisible="{Binding IsPlaying}">
             <Switch Grid.Column="0" IsToggled="{Binding IsAudioEnabled}"
-                    WidthRequest="48" HeightRequest="48" HorizontalOptions="Center" />
+                    AutomationId="{x:Static t:TestIds.ViewerAudioToggle}"
+                    WidthRequest="48" HeightRequest="48" HorizontalOptions="Center"
+                    SemanticProperties.Description="Audio" />
             <Button Grid.Column="1" Text="⛶" Command="{Binding ToggleFullScreenCommand}"
-                    WidthRequest="48" HeightRequest="48" Padding="0">
+                    WidthRequest="48" HeightRequest="48" Padding="0"
+                    SemanticProperties.Description="Toggle full screen">
                 <Button.Triggers>
                     <DataTrigger TargetType="Button" Binding="{Binding IsFullScreen}" Value="True">
                         <Setter Property="Text" Value="⤢" />
@@ -94,6 +105,7 @@
                 </Button.Triggers>
             </Button>
             <Button Grid.Column="2" Text="Stop" Command="{Binding StopCommand}"
+                    AutomationId="{x:Static t:TestIds.ViewerStop}"
                     HorizontalOptions="Fill" HeightRequest="48"
                     BackgroundColor="{DynamicResource ErrorRed}" TextColor="{DynamicResource White}" />
         </Grid>
