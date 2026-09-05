@@ -31,6 +31,79 @@ unconditionally. Rule 5's intent is to keep Android APIs out of **Core** and out
 
 ## Verdicts log
 
+### 2026-09-05 — #361 fit-check: main e2e failures after PR #299 (run 33954513042)
+
+**APPROVE-WITH-CHANGES.** Both root causes in the diagnosis are correct and correctly *placed*
+(one test-layer, one product-layer), and no workflow-file change is warranted. Evidence re-verified
+independently from the run artefacts, not taken from the diagnosis.
+
+**Confirmed root cause 1 — test-layer (read-back, not tap, not app).** Every `settings.theme.*`
+node reports `checkable="false" checked="false" clickable="false" selected="false"`, and so does
+every descendant, in every page-source dump captured
+(`Theme_SwitchingLightToDark_ActuallyChangesWhatIsOnScreen.xml:41,50,59` and their subtrees).
+`SettingsPage.CheckedState` (`tests/MauiApp.UITests/Pages/SettingsPage.cs:147-148`) reads
+`GetAttribute("checked")`, so `IsThemeSelected` can never return `true` — `TapUntilSet`
+(`Pages/PageObject.cs:123-154`) therefore always reaches its final throw, with `(0 tried)` because
+`FindClickableWithin` finds nothing. The screenshot shows Light *already correctly selected* at the
+moment of the throw. **`TapUntilSet`'s remarks are a recorded misdiagnosis** ("Tapping the container
+reported `checked='false'` afterwards, every time") — the tap works; the read does not. Fix belongs
+in the page object; **do not** add AutomationIds "on the clickable elements", there are none: MAUI's
+default RadioButton `ControlTemplate` exposes no clickable/checkable node at all, so that route means
+replacing the framework template — not minimal.
+
+**Confirmed root cause 2 — product-layer, and the container is the defect, not the row.**
+`SettingsPage.xaml:14` hard-codes `ColumnDefinitions="220,*"` with `Padding="16"` +
+`ColumnSpacing="16"`. On the CI device (1440x2560 @ 3.5, i.e. **411dp — Compact**) that leaves the
+detail panel **502px = 143dp**, corroborated three ways: `settings.section.*` measured at 770px =
+220dp (`accessibility-summary.txt:22-26`), the panel node bounds `[882,336][1384,2140]`
+(`…xml:36-37`), and the row's own children. The 7-column row DataTemplate
+(`SettingsPage.xaml:101-140`) then overflows: only `serverRow.down` (squeezed to **28px** wide),
+the `●` label, `serverRow.edit` and `serverRow.delete` survive; `serverRow.endpoint`,
+`serverRow.enabled` and `serverRow.up` collapse to zero area and drop out of the accessibility tree
+entirely — hence `Collection: []`. This is a **user-facing defect on every phone in portrait**, not
+a test artefact.
+
+**Architectural finding (the actual drift).** The repo's established responsive idiom is a
+size-class-aware layout applied as pure plumbing from page code-behind
+(`SourceListPage.xaml.cs:43-65`, "Layout plumbing only", Rule 3-compliant). `SettingsPage` opts out
+of it with a fixed master column, which is why a Compact window gets a 143dp detail pane. **A fixed
+`220` master column is invalid at Compact and must become size-class aware.** Fixing only the row
+template makes #361 green while leaving the Enabled switch and Up/Down unreachable on every phone —
+the vacuous-green outcome this suite exists to prevent. If the owner defers the container fix it must
+be an explicit decision plus a filed issue, not a side effect of the test going green.
+
+**Binding constraint on that fix.** `SettingsPage` is **transient** (`MauiProgram.cs:155`) while
+`IWindowSizeClassService` is a **singleton** (`:89`), and the 2026-09-05 `#327` addendum established
+that tab-root pages are re-created on every visit. Copying `SourceListPage`'s constructor
+subscription would leak one page per Settings visit — the exact shape blocked as item 4 of the #342
+verdict. Use the page's own `OnSizeAllocated(width, height)` (already device-independent units; same
+source `WindowSizeClassService` is fed from) and reuse the Material thresholds
+(`WindowSizeClassService.cs:9-10`). No new ctor parameter, no subscription, no leak.
+
+**Workflow: no change required, and the diagnosis is right about why.** `e2e-tests`' condition
+(`ndi-for-android-cicd.yml:192`) fired correctly for PR #299 and went red *before* the merge; the
+merge was not blocked because branch protection on `main` requires only `build-and-test`. That is a
+repo-settings gap, not a YAML gap — and the workflow's own comment (`:35-43`) already records the
+intent that `build-and-test`, `Build Release APK` and `Run Emulator UI Tests` all be required checks,
+so restoring it is enforcement of recorded intent rather than a new decision. **Owner call; escalate,
+do not bundle.** One minimal, justified CI addition is in scope: `build-and-test` never compiles
+`tests/MauiApp.UITests` (it restores only `tests/MauiApp.Tests`, `:65`), and that project is plain
+`net10.0` referencing only `src/Core` (`NdiForAndroid.UITests.csproj:3,13`) — so a
+`dotnet build tests/MauiApp.UITests/NdiForAndroid.UITests.csproj` step is workload-free and would
+have caught the 2026-09-04 blocking item (page object referencing deleted `TestIds`) on every PR.
+
+**Scope note:** the run failed **7** tests, not the 4 named in the issue — the two theme-persistence
+tests share the same read-back root cause. The `finally` cleanup in
+`AppLaunchTests.cs:169-174` also silently no-oped (`RemoveServer` locates rows through the very
+locator that was missing), so `10.255.255.1:45959` stayed persisted for the rest of that run.
+Cleanup must not depend on the locator it compensates for.
+
+**Not in scope, filed as follow-ups:** (a) the theme *and* accent radios announce no selection state
+to TalkBack (`checkable/checked/selected` all false) — a genuine a11y defect whose fix is a product
++ UX decision (custom `ControlTemplate` or a bound semantic description), explicitly **not** to be
+blended into #361's test fix; (b) `settings.accent.*` carries the identical read-back gap, currently
+unexercised.
+
 ### 2026-09-04 — PR #299 merge resolution (af82cc1: main → integration/watch-and-discovery)
 
 **APPROVE-WITH-CHANGES.** The five resolved files follow the agreed recipe exactly: main's f267cd2
