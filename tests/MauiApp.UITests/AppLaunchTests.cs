@@ -1,344 +1,178 @@
 using OpenQA.Selenium;
-using OpenQA.Selenium.Appium.Android;
-using OpenQA.Selenium.Support.UI;
-using OpenQA.Selenium.Appium.Enums;
+using NdiForAndroid.UITests.Pages;
 using Xunit;
 
 namespace NdiForAndroid.UITests;
 
+/// <summary>
+/// Navigation and page-content checks across the four primary destinations.
+/// </summary>
+/// <remarks>
+/// Every locator lives in a page object; nothing here knows an XPath or an element id. Assertions
+/// name the thing they are checking rather than asserting that <i>something</i> was found — the
+/// previous <c>Assert.NotNull(element)</c> style is exactly how two tests passed against the
+/// Shell page title instead of the content they claimed to verify.
+/// </remarks>
 [Collection("AppiumSession")]
-public sealed class AppLaunchTests
+public sealed class AppLaunchTests : UiTestBase
 {
-    private readonly AppiumDriverFixture _fixture;
-
-    public AppLaunchTests(AppiumDriverFixture fixture)
-    {
-        _fixture = fixture;
-    }
+    public AppLaunchTests(AppiumDriverFixture fixture) : base(fixture) { }
 
     [SkippableFact]
-    public void AppLaunches_ShowsSourceListPage()
+    public void AppLaunches_ShowsHomePageContent() => Run(app =>
     {
-        Skip.If(_fixture.SkipReason is not null, _fixture.SkipReason ?? string.Empty);
+        app.ResetToHome();
 
-        var driver = _fixture.Driver!;
-        var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(10));
+        // The page's own content, not its title. HomePage renders three status cards; asserting
+        // on those means a broken page body fails here, which the old title check did not.
+        Assert.True(app.Home.HasDiscoveryCard, "Home is missing the discovery status card");
+        Assert.True(app.Home.HasViewerCard,    "Home is missing the viewer status card");
+        Assert.True(app.Home.HasOutputCard,    "Home is missing the output status card");
+        Assert.False(string.IsNullOrWhiteSpace(app.Home.DiscoveryStatus), "Discovery status is blank");
+    });
 
-        // Home is the shell entry point after the adaptive navigation parity update.
-        var homeElement = wait.Until(d =>
+    [SkippableFact]
+    public void Navigation_ToSettingsAndBackToHome_ShowsEachPage() => Run(app =>
+    {
+        // Starts from a known page: the session is shared, so without this the test inherits
+        // whatever page and orientation the previous test left behind.
+        app.ResetToHome();
+
+        app.Navigation.GoTo(NavDestination.Settings);
+        app.Settings.WaitUntilVisible();
+
+        // Back via the Home nav item, not the system Back button — Back closes a Shell app.
+        app.Navigation.GoTo(NavDestination.Home);
+        app.Home.WaitUntilVisible();
+    });
+
+    [SkippableFact]
+    public void Navigation_WatchOnASourceRow_OpensTheViewer() => Run(app =>
+    {
+        app.ResetToHome();
+        app.Navigation.GoTo(NavDestination.View);
+        app.Sources.WaitUntilVisible();
+
+        // A genuine unmet precondition rather than a masked failure: the CI emulator has no NDI
+        // sources on its network, so the list renders its empty view and there is no row to tap.
+        // Making this journey actually execute in CI is the point of #315.
+        Skip.If(app.Sources.SourceCount == 0,
+            "No NDI sources discovered on this network; the discover-to-watch journey needs a source.");
+
+        app.Sources.WatchSource();
+
+        app.Viewer.WaitUntilVisible();
+        Assert.True(app.Viewer.HasVideoSurface, "The viewer opened without a video surface");
+    });
+
+    [SkippableFact]
+    public void AdaptiveNavigation_InPortrait_PlacesNavigationAtTheBottom() => Run(app =>
+    {
+        app.Rotate(ScreenOrientation.Portrait);
+
+        var home = app.Navigation.Item(NavDestination.Home);
+        var window = app.WindowSize;
+
+        Assert.True(home.Location.Y > window.Height * 0.70,
+            $"Expected the Home nav item near the bottom in portrait. y={home.Location.Y}, height={window.Height}");
+    });
+
+    [SkippableFact]
+    public void AdaptiveNavigation_InLandscape_PlacesNavigationInTheLeftRail() => Run(app =>
+    {
+        app.Rotate(ScreenOrientation.Landscape);
+
+        var home = app.Navigation.Item(NavDestination.Home);
+        var window = app.WindowSize;
+
+        Assert.True(home.Location.X < window.Width * 0.20,
+            $"Expected the Home nav item near the left edge in landscape. x={home.Location.X}, width={window.Width}");
+        Assert.True(home.Location.Y < window.Height * 0.60,
+            $"Expected the Home nav item in the left rail, not the bottom bar. y={home.Location.Y}, height={window.Height}");
+    });
+
+    [SkippableFact]
+    public void AdaptiveNavigation_AllFourDestinations_ShowTheirOwnPage() => Run(app =>
+    {
+        app.Rotate(ScreenOrientation.Portrait);
+
+        // Each destination is confirmed by its page's own root id, so a navigation that lands
+        // somewhere unexpected fails here rather than passing on a shared string.
+        app.Navigation.GoTo(NavDestination.Home);
+        app.Home.WaitUntilVisible();
+
+        app.Navigation.GoTo(NavDestination.Stream);
+        app.Output.WaitUntilVisible();
+
+        app.Navigation.GoTo(NavDestination.View);
+        app.Sources.WaitUntilVisible();
+
+        app.Navigation.GoTo(NavDestination.Settings);
+        app.Settings.WaitUntilVisible();
+    });
+
+    [SkippableFact]
+    public void Settings_AllFiveSections_AreReachable() => Run(app =>
+    {
+        app.ResetToHome();
+        app.Navigation.GoTo(NavDestination.Settings);
+        app.Settings.WaitUntilVisible();
+
+        // Opening each section proves more than the old "the caption is on screen" check: the
+        // panel has to actually render, which catches a section button wired to nothing.
+        foreach (var section in Enum.GetValues<SettingsSection>())
         {
-            try
-            {
-                return d.FindElement(By.XPath(
-                    "//*[@content-desc='Home' or @text='Home' or @text='NDI Sources']"));
-            }
-            catch (NoSuchElementException)
-            {
-                return null;
-            }
-        });
-
-        Assert.NotNull(homeElement);
-    }
+            app.Settings.OpenSection(section);
+            Assert.True(app.Settings.IsSectionOpen(section), $"The {section} panel did not open");
+        }
+    });
 
     [SkippableFact]
-    public void Navigation_ToSettings_AndBack()
+    public void Settings_DiscoveryHost_SurvivesAnAppRestart() => Run(app =>
     {
-        Skip.If(_fixture.SkipReason is not null, _fixture.SkipReason ?? string.Empty);
+        // Typing into the add-server Entry proves nothing: AddDiscoveryServerAsync clears it
+        // before PersistAsync, so what actually survives a restart is a row in the discovery
+        // server list. 10.255.255.1 is a non-routable address that will never collide with a
+        // real server; the unusual port keeps cleanup unambiguous.
+        const string host = "10.255.255.1";
+        const string port = "45959";
+        var endpoint = $"{host}:{port}";
 
-        var driver = _fixture.Driver!;
-        var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(10));
+        app.ResetToHome();
+        app.Navigation.GoTo(NavDestination.Settings);
+        app.Settings.WaitUntilVisible();
+        app.Settings.OpenSection(SettingsSection.Discovery);
 
-        // Tap the Settings tab/button
-        var settingsTab = wait.Until(d =>
-        {
-            try
-            {
-                return d.FindElement(By.XPath(
-                    "//*[@content-desc='Settings' or @text='Settings']"));
-            }
-            catch (NoSuchElementException)
-            {
-                return null;
-            }
-        });
+        app.Settings.AddServer(host, port);
 
-        Assert.NotNull(settingsTab);
-        settingsTab!.Click();
-
-        // Wait for Settings page content — look for a label unique to that page
-        var settingsPageWait = new WebDriverWait(driver, TimeSpan.FromSeconds(20));
-        var settingsPage = settingsPageWait.Until(d =>
-        {
-            try
-            {
-                return d.FindElement(By.XPath(
-                    "//*[@text='General' or @text='Appearance' or @text='Discovery' or @text='Apply']"));
-            }
-            catch (NoSuchElementException)
-            {
-                return null;
-            }
-        });
-
-        Assert.NotNull(settingsPage);
-
-        // Navigate back to Home by tapping the Home tab/entry (Back press closes the Shell app)
-        var homeTab = wait.Until(d =>
-        {
-            try
-            {
-                return d.FindElement(By.XPath(
-                    "//*[@content-desc='Home' or @text='Home']"));
-            }
-            catch (NoSuchElementException)
-            {
-                return null;
-            }
-        });
-
-        Assert.NotNull(homeTab);
-        homeTab!.Click();
-
-        var homeElement = wait.Until(d =>
-        {
-            try
-            {
-                return d.FindElement(By.XPath(
-                    "//*[@content-desc='Home' or @text='Home' or @text='NDI Sources']"));
-            }
-            catch (NoSuchElementException)
-            {
-                return null;
-            }
-        });
-
-        Assert.NotNull(homeElement);
-    }
-
-    [SkippableFact]
-    public void Navigation_SourcesToViewer_WhenWatchButtonPresent()
-    {
-        Skip.If(_fixture.SkipReason is not null, _fixture.SkipReason ?? string.Empty);
-
-        var driver = _fixture.Driver!;
-        var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(20));
-
-        // Ensure we are on Home tab before trying to locate a source-row action.
-        var homeTab = wait.Until(d =>
-        {
-            try
-            {
-                return d.FindElement(By.XPath("//*[@content-desc='Home' or @text='Home']"));
-            }
-            catch (NoSuchElementException)
-            {
-                return null;
-            }
-        });
-
-        Assert.NotNull(homeTab);
-        homeTab!.Click();
-
-        // Only run this check when a source row exists.
-        var watchButtons = driver.FindElements(By.XPath("//*[@text='Watch']"));
-        Skip.If(watchButtons.Count == 0, "No discovered NDI source rows available; skipping Home->Viewer smoke path.");
-
-        watchButtons[0].Click();
-
-        var viewerHeader = wait.Until(d =>
-        {
-            try
-            {
-                return d.FindElement(By.XPath("//*[@content-desc='Viewer' or @text='Viewer']"));
-            }
-            catch (NoSuchElementException)
-            {
-                return null;
-            }
-        });
-
-        Assert.NotNull(viewerHeader);
-    }
-
-    [SkippableFact]
-    public void AdaptiveNavigation_Portrait_ShowsBottomPlacement()
-    {
-        Skip.If(_fixture.SkipReason is not null, _fixture.SkipReason ?? string.Empty);
-
-        var driver = _fixture.Driver!;
-        SetOrientation(driver, ScreenOrientation.Portrait);
-
-        var home = WaitForNavElement(driver, "Home", 12);
-        Assert.NotNull(home);
-
-        var window = driver.Manage().Window.Size;
-        Assert.True(home!.Location.Y > (int)(window.Height * 0.70),
-            $"Expected Home nav element near bottom in portrait. y={home.Location.Y}, height={window.Height}");
-    }
-
-    [SkippableFact]
-    public void AdaptiveNavigation_Landscape_ShowsLeftRailPlacement()
-    {
-        Skip.If(_fixture.SkipReason is not null, _fixture.SkipReason ?? string.Empty);
-
-        var driver = _fixture.Driver!;
-        SetOrientation(driver, ScreenOrientation.Landscape);
-
-        var home = WaitForNavElement(driver, "Home", 12);
-        Assert.NotNull(home);
-
-        var window = driver.Manage().Window.Size;
-        Assert.True(home!.Location.X < (int)(window.Width * 0.20),
-            $"Expected Home nav element near left edge in landscape. x={home.Location.X}, width={window.Width}");
-        Assert.True(home.Location.Y < (int)(window.Height * 0.60),
-            $"Expected Home nav element in left rail, not bottom bar. y={home.Location.Y}, height={window.Height}");
-    }
-
-    [SkippableFact]
-    public void AdaptiveNavigation_AllFourPrimaryDestinations_AreReachable()
-    {
-        Skip.If(_fixture.SkipReason is not null, _fixture.SkipReason ?? string.Empty);
-
-        var driver = _fixture.Driver!;
-        SetOrientation(driver, ScreenOrientation.Portrait);
-
-        ClickNav(driver, "Home");
-        AssertPageVisible(driver, "//*[@content-desc='Sources' or @text='NDI Sources' or @text='Sources']");
-
-        ClickNav(driver, "Stream");
-        AssertPageVisible(driver, "//*[@text='Start Output' or @text='Stop Output' or contains(@content-desc,'Output')]", 15);
-
-        ClickNav(driver, "View");
-        // View tab now hosts SourceListPage (NDI source discovery), not ViewerPage directly
-        AssertPageVisible(driver, "//*[@text='NDI Sources' or @text='Sources' or contains(@content-desc,'Sources') or contains(@content-desc,'mDNS') or contains(@content-desc,'Discovery')]", 15);
-
-        ClickNav(driver, "Settings");
-        AssertPageVisible(driver, "//*[@text='General' or @text='Appearance' or @text='Discovery' or @text='Apply']", 15);
-    }
-
-    [SkippableFact]
-    public void Settings_RequiredSections_AreVisible()
-    {
-        Skip.If(_fixture.SkipReason is not null, _fixture.SkipReason ?? string.Empty);
-
-        var driver = _fixture.Driver!;
-
-        ClickNav(driver, "Settings");
-
-        // Section nav buttons use exact XAML text; also guard against Android all-caps button rendering
-        AssertPageVisible(driver, "//*[@text='General' or @text='GENERAL']", 15);
-        AssertPageVisible(driver, "//*[@text='Appearance' or @text='APPEARANCE']", 15);
-        AssertPageVisible(driver, "//*[@text='Discovery' or @text='DISCOVERY']", 15);
-        AssertPageVisible(driver, "//*[@text='Developer tools' or @text='DEVELOPER TOOLS']", 15);
-        AssertPageVisible(driver, "//*[@text='About' or @text='ABOUT']", 15);
-    }
-
-    [SkippableFact]
-    public void Settings_Save_PersistsDiscoveryHostAcrossRestart_WhenEnvironmentSupportsLifecycleCommands()
-    {
-        Skip.If(_fixture.SkipReason is not null, _fixture.SkipReason ?? string.Empty);
-
-        var driver = _fixture.Driver!;
-        ClickNav(driver, "Settings");
-
-        // The settings page has a left sidebar with section buttons. Discovery host/port
-        // inputs live inside the Discovery section panel which is hidden by default.
-        // Click the Discovery sidebar button first to reveal the EditText fields.
-        var discoveryNavButton = FindElement(driver, "//*[@text='Discovery' or @text='DISCOVERY']", 10);
-        Assert.NotNull(discoveryNavButton);
-        discoveryNavButton!.Click();
-
-        var hostEntry = FindElement(driver, "(//android.widget.EditText)[1]", 15);
-        Assert.NotNull(hostEntry);
-
-        hostEntry!.Clear();
-        hostEntry.SendKeys("persist.test.local");
-
-        var saveButton = FindElement(driver, "//*[@text='Apply' or @content-desc='Apply']", 10);
-        Assert.NotNull(saveButton);
-        saveButton!.Click();
-
-        AssertPageVisible(driver, "//*[@text='Settings applied.']", 10);
-
-        var packageName = "com.ndi.android";
         try
         {
-            driver.TerminateApp(packageName);
-            driver.ActivateApp(packageName);
+            // The row is added to the collection before PersistAsync is awaited, so it is not a
+            // save barrier. Leaving Settings and coming back re-runs LoadCommand from the
+            // repository, which is.
+            app.Navigation.GoTo(NavDestination.Home);
+            app.Home.WaitUntilVisible();
+            app.Navigation.GoTo(NavDestination.Settings);
+            app.Settings.WaitUntilVisible();
+            app.Settings.OpenSection(SettingsSection.Discovery);
+
+            Assert.Contains(endpoint, app.Settings.ServerRowEndpoints);
+
+            Skip.IfNot(app.TryRestart(), "App lifecycle commands are unavailable in this environment.");
+
+            app.Navigation.GoTo(NavDestination.Settings);
+            app.Settings.WaitUntilVisible();
+            app.Settings.OpenSection(SettingsSection.Discovery);
+
+            Assert.Contains(endpoint, app.Settings.ServerRowEndpoints);
         }
-        catch
+        finally
         {
-            Skip.If(true, "App lifecycle commands are not supported in this execution environment.");
+            // A persisted bogus server outlives this test and skews discovery for every test
+            // that runs after it, so it has to come out even when an assertion above throws.
+            app.Settings.RemoveServer(endpoint);
         }
-
-        ClickNav(driver, "Settings");
-        // Navigate to Discovery section again after restart to reveal EditText fields
-        var discoveryNavButtonAfterRestart = FindElement(driver, "//*[@text='Discovery' or @text='DISCOVERY']", 10);
-        Assert.NotNull(discoveryNavButtonAfterRestart);
-        discoveryNavButtonAfterRestart!.Click();
-
-        var hostEntryAfterRestart = FindElement(driver, "(//android.widget.EditText)[1]", 15);
-        Assert.NotNull(hostEntryAfterRestart);
-
-        var persistedValue = hostEntryAfterRestart!.GetAttribute("text") ?? string.Empty;
-        Assert.Equal("persist.test.local", persistedValue);
-    }
-
-    private static void SetOrientation(AndroidDriver driver, ScreenOrientation orientation)
-    {
-        driver.Orientation = orientation;
-        Thread.Sleep(1200);
-    }
-
-    private static IWebElement? WaitForNavElement(AndroidDriver driver, string label, int timeoutSeconds)
-    {
-        var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(timeoutSeconds));
-        var xpath = $"//*[@content-desc='{label}' or contains(@content-desc,'{label}') or @text='{label}']";
-
-        return wait.Until(d =>
-        {
-            try
-            {
-                return d.FindElement(By.XPath(xpath));
-            }
-            catch (NoSuchElementException)
-            {
-                return null;
-            }
-        });
-    }
-
-    private static void ClickNav(AndroidDriver driver, string label)
-    {
-        var element = WaitForNavElement(driver, label, 30);
-        Assert.NotNull(element);
-        element!.Click();
-    }
-
-    private static void AssertPageVisible(AndroidDriver driver, string xpath, int timeoutSeconds = 12)
-    {
-        var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(timeoutSeconds));
-        var found = FindElement(driver, xpath, timeoutSeconds);
-
-        Assert.NotNull(found);
-    }
-
-    private static IWebElement? FindElement(AndroidDriver driver, string xpath, int timeoutSeconds)
-    {
-        var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(timeoutSeconds));
-        return wait.Until(d =>
-        {
-            try
-            {
-                return d.FindElement(By.XPath(xpath));
-            }
-            catch (NoSuchElementException)
-            {
-                return null;
-            }
-        });
-    }
+    });
 }
 
 [CollectionDefinition("AppiumSession")]

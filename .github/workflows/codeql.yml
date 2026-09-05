@@ -8,11 +8,24 @@ on:
   schedule:
     - cron: '0 4 * * 1'
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_VERSION: '10.0.301'
+  DOTNET_CLI_TELEMETRY_OPTOUT: 1
+  DOTNET_NOLOGO: 1
+
 jobs:
   analyze:
     name: Analyze (csharp)
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
+
     permissions:
       security-events: write
       packages: read
@@ -26,7 +39,14 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '10.0.x'
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-codeql-${{ hashFiles('**/*.csproj') }}
+          restore-keys: ${{ runner.os }}-nuget-codeql-
 
       - name: Install MAUI Android workload
         run: dotnet workload install maui-android
@@ -36,12 +56,47 @@ jobs:
         with:
           languages: csharp
           build-mode: manual
+          queries: security-and-quality
 
+      # CodeQL only sees what the build compiles. This previously built src/Core alone, which
+      # left the whole of src/MauiApp unanalyzed — including NdiBridge/Interop, the P/Invoke
+      # layer where the manual marshalling and buffer handling live. Build both.
       - name: Build for CodeQL
-        run: dotnet build src/Core/NdiForAndroid.Core.csproj -c Release --no-incremental
+        run: |
+          dotnet restore NdiForAndroid.sln --ignore-failed-sources
+          dotnet build src/Core/NdiForAndroid.Core.csproj -c Release --no-restore
+          dotnet build src/MauiApp/NdiForAndroid.csproj -f net10.0-android -c Release --no-restore \
+            /p:AndroidUseToolchain=True
 
+      # upload: never is deliberate and load-bearing.
+      #
+      # This repository has code scanning **default setup** enabled, and GitHub refuses SARIF
+      # from an advanced configuration while it is on:
+      #   "CodeQL analyses from advanced configurations cannot be processed when the default
+      #    setup is enabled"
+      # Every upload from this workflow was therefore rejected. It went unnoticed because the
+      # step used wait-for-processing: false — it uploaded, never waited for the verdict, and
+      # exited 0. The workflow has never contributed a single alert.
+      #
+      # Rather than fight that, the analysis now stays local: default setup keeps populating
+      # the Security tab, and this workflow provides the PR gate over a real build — which is
+      # the part default setup cannot do, since only an explicit build reaches src/MauiApp and
+      # the NdiBridge P/Invoke layer.
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v4
         with:
           category: /language:csharp
-          wait-for-processing: false
+          output: sarif-results
+          upload: never
+
+      - name: Gate on high-severity findings
+        run: bash .github/scripts/codeql-severity-gate.sh sarif-results
+
+      - name: Upload SARIF artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: codeql-sarif
+          path: sarif-results/*.sarif
+          retention-days: 7
+          if-no-files-found: warn

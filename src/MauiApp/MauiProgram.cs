@@ -116,6 +116,7 @@ public static class MauiProgram
         builder.Services.AddSingleton<IAudioPlaybackSink, AndroidAudioPlaybackSink>();
         builder.Services.AddSingleton<IVideoCaptureSource, AndroidVideoCaptureSource>();
         builder.Services.AddSingleton<IAudioCaptureSource, AndroidMicrophoneCaptureSource>();
+        builder.Services.AddSingleton<IWindowInsetsService, AndroidWindowInsetsService>();
         builder.Services.AddSingleton<IImmersiveModeService, AndroidImmersiveModeService>();
 #else
         builder.Services.AddSingleton<IMulticastLockService, NoopMulticastLockService>();
@@ -125,6 +126,7 @@ public static class MauiProgram
         builder.Services.AddSingleton<IAudioPlaybackSink, NoopAudioPlaybackSink>();
         builder.Services.AddSingleton<IVideoCaptureSource, NoopVideoCaptureSource>();
         builder.Services.AddSingleton<IAudioCaptureSource, NoopAudioCaptureSource>();
+        builder.Services.AddSingleton<IWindowInsetsService, NoopWindowInsetsService>();
         builder.Services.AddSingleton<IImmersiveModeService, NoopImmersiveModeService>();
 #endif
 

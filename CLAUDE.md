@@ -25,14 +25,20 @@ not a stub.
   returns `false` and NDI features disable without crashing (important for emulators).
 - **Tests**: xUnit 2.x + Moq (+ `Microsoft.Extensions.TimeProvider.Testing`) — `tests/MauiApp.Tests`;
   Appium UI smoke tests — `tests/MauiApp.UITests`
-- **CI**: GitHub Actions — see `.github/workflows/` (`ndi-for-android-cicd.yml`,
-  `emulator-tests.yml`, `codeql.yml`, `copilot-setup-steps.yml`)
+- **CI**: GitHub Actions — `.github/workflows/` (`ndi-for-android-cicd.yml`, `codeql.yml`,
+  `emulator-tests.yml` — manual only). Pipeline detail, including the rules that keep the e2e
+  gate from passing vacuously, is in the **CI Pipeline** section of `KNOWLEDGE-BASE.md`.
 
 ## Build & Test Commands
 ```powershell
 dotnet build NdiForAndroid.sln        # solution is at the REPO ROOT (not under src/); run after every task
 dotnet test tests/MauiApp.Tests       # non-NDI unit tests — must pass before PR merge
 ```
+
+`tests/MauiApp.Tests` references only `src/Core`, and both target plain `net10.0` — so the unit
+tests need **no MAUI workload and no Android SDK**. Restore the test project directly
+(`dotnet restore tests/MauiApp.Tests/NdiForAndroid.Tests.csproj`) rather than the solution when
+you only want to run them; restoring the solution pulls in the Android head.
 
 ## Project Structure (feature-based / vertical slices)
 ```

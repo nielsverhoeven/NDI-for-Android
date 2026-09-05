@@ -49,3 +49,8 @@ publish-output/*
 
 # Ephemeral test runner state (evidence .md/.png files stay tracked per workflow)
 test-results/.last-run.json
+
+# Screenshots / view hierarchies captured on e2e failure (#312). CI uploads these as a build
+# artifact; a local run drops them next to the test binary and they must never be committed.
+test-results/failure-evidence/
+e2e-artifacts/

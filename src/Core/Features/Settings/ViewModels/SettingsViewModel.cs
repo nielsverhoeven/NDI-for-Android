@@ -69,11 +69,17 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty]
     private bool _developerModeEnabled;
 
+    // Nullable because the view can write null back: RadioButtonGroup.SelectedValue pushes null
+    // through its two-way binding while the Settings page's visual tree is being torn down.
+    // The change handlers below reject those writes — see _lastValid* .
     [ObservableProperty]
-    private string _selectedThemeOption = ThemeSystemLabel;
+    private string? _selectedThemeOption = ThemeSystemLabel;
 
     [ObservableProperty]
-    private string _selectedAccentColor = AccentColorOption.Blue.ToString();
+    private string? _selectedAccentColor = AccentColorOption.Blue.ToString();
+
+    private string _lastValidThemeOption = ThemeSystemLabel;
+    private string _lastValidAccentColor = AccentColorOption.Blue.ToString();
 
     // ── Add-server form ─────────────────────────────────────────────────────
 
@@ -448,24 +454,46 @@ public partial class SettingsViewModel : ObservableObject
         _ = PersistAsync();
     }
 
-    partial void OnSelectedThemeOptionChanged(string value)
+    partial void OnSelectedThemeOptionChanged(string? value)
     {
-        // Radio-group teardown pushes null/empty through the binding — never commit that.
-        if (string.IsNullOrWhiteSpace(value))
+        // Tearing the page down must not read as the user picking a theme. Without this, the
+        // null that RadioButtonGroup writes on teardown parses to the default (System) and
+        // would auto-save over the user's actual choice (#300). Restore the last real
+        // selection and stay clean.
+        if (!IsKnownOption(ThemeOptions, value))
+        {
+            var wasSuppressed = _suppressAutoSave;
+            _suppressAutoSave = true;
+            SelectedThemeOption = _lastValidThemeOption;
+            _suppressAutoSave = wasSuppressed;
             return;
+        }
 
+        _lastValidThemeOption = value!;
         _committedTheme = ParseThemeOption(value);
         _ = PersistAsync();
     }
 
-    partial void OnSelectedAccentColorChanged(string value)
+    partial void OnSelectedAccentColorChanged(string? value)
     {
-        if (string.IsNullOrWhiteSpace(value))
+        // Same teardown guard as the theme selection above.
+        if (!IsKnownOption(AccentColorOptions, value))
+        {
+            var wasSuppressed = _suppressAutoSave;
+            _suppressAutoSave = true;
+            SelectedAccentColor = _lastValidAccentColor;
+            _suppressAutoSave = wasSuppressed;
             return;
+        }
 
+        _lastValidAccentColor = value!;
         _committedAccent = ParseAccentColorOption(value);
         _ = PersistAsync();
     }
+
+    private static bool IsKnownOption(IReadOnlyList<string> options, string? value)
+        => !string.IsNullOrWhiteSpace(value)
+           && options.Contains(value, StringComparer.OrdinalIgnoreCase);
 
     private void OnDiscoveryServersCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {

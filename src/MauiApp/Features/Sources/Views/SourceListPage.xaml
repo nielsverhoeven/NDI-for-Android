@@ -4,8 +4,10 @@
              xmlns:vm="clr-namespace:NdiForAndroid.Features.Sources.ViewModels;assembly=NdiForAndroid.Core"
              xmlns:models="clr-namespace:NdiForAndroid.Features.Sources.Models;assembly=NdiForAndroid.Core"
              xmlns:viewer="clr-namespace:NdiForAndroid.Features.Viewer.Views"
+             xmlns:t="clr-namespace:NdiForAndroid.Testing;assembly=NdiForAndroid.Core"
              x:Class="NdiForAndroid.Features.Sources.Views.SourceListPage"
              x:DataType="vm:SourceListViewModel"
+             AutomationId="{x:Static t:TestIds.SourcesPage}"
              Title="NDI Sources">
 
     <!-- Compact/Medium: single column (pane column collapsed to 0).
@@ -31,26 +33,32 @@
         </VerticalStackLayout>
 
         <RefreshView Grid.Row="1" Grid.Column="0"
+                     AutomationId="{x:Static t:TestIds.SourcesRefresh}"
                      IsRefreshing="{Binding IsRefreshing}"
                      Command="{Binding RefreshCommand}">
-            <CollectionView ItemsSource="{Binding Sources}"
+            <CollectionView AutomationId="{x:Static t:TestIds.SourcesList}"
+                            ItemsSource="{Binding Sources}"
                             EmptyView="No NDI sources found. Pull to refresh.">
                 <CollectionView.ItemTemplate>
                     <DataTemplate x:DataType="models:NdiSource">
                         <Grid Padding="16,8" ColumnDefinitions="*,Auto">
                             <VerticalStackLayout>
                                 <Label Text="{Binding DisplayName}"
+                                       AutomationId="{x:Static t:TestIds.SourceRowName}"
                                        FontAttributes="Bold"
                                        FontSize="16" />
                                 <Label Text="{Binding EndpointAddress}"
+                                       AutomationId="{x:Static t:TestIds.SourceRowEndpoint}"
                                        FontSize="12"
                                        TextColor="Gray" />
                             </VerticalStackLayout>
                             <HorizontalStackLayout Grid.Column="1" Spacing="8">
                                 <Button Text="Watch"
+                                        AutomationId="{x:Static t:TestIds.SourceRowWatch}"
                                         Command="{Binding Source={RelativeSource AncestorType={x:Type vm:SourceListViewModel}}, Path=NavigateToViewerCommand}"
                                         CommandParameter="{Binding .}" />
                                 <Button Text="Output"
+                                        AutomationId="{x:Static t:TestIds.SourceRowOutput}"
                                         Command="{Binding Source={RelativeSource AncestorType={x:Type vm:SourceListViewModel}}, Path=NavigateToOutputCommand}"
                                         CommandParameter="{Binding .}" />
                             </HorizontalStackLayout>
@@ -64,6 +72,7 @@
              lazily-created PaneViewer ViewerViewModel; null until first Expanded tap. -->
         <viewer:ViewerView Grid.Row="1" Grid.Column="1"
                            x:Name="ViewerPane"
+                           AutomationId="{x:Static t:TestIds.SourcesViewerPane}"
                            IsVisible="False"
                            BindingContext="{Binding PaneViewer}" />
     </Grid>

@@ -5,6 +5,12 @@ using NdiForAndroid.Features.Settings.Services;
 using NdiForAndroid.Features.Viewer.Views;
 using NdiForAndroid.Services;
 
+// Aliased rather than importing Microsoft.Maui.Controls.Shapes wholesale: its Path would
+// collide with System.IO.Path, which the SDK's implicit usings already bring in.
+using Geometry = Microsoft.Maui.Controls.Shapes.Geometry;
+using Path = Microsoft.Maui.Controls.Shapes.Path;
+using PathGeometryConverter = Microsoft.Maui.Controls.Shapes.PathGeometryConverter;
+
 namespace NdiForAndroid;
 
 public partial class AppShell : Shell
@@ -13,13 +19,17 @@ public partial class AppShell : Shell
     private readonly IAndroidOrientationBridge _orientationBridge;
     private readonly INavigationHandoffService _handoffService;
     private readonly IWindowSizeClassService _windowSizeClassService;
+    private readonly IWindowInsetsService _windowInsetsService;
     private readonly IAppearanceService _appearanceService;
     private readonly ShellNavigationService _navigationService;
 
     private PrimaryNavDestination _currentPrimaryDestination = PrimaryNavDestination.Home;
     private bool _handoffInProgress;
 
-    private readonly Dictionary<PrimaryNavDestination, (Border Container, Label Label, Image Icon)> _railButtons = [];
+    private readonly Dictionary<PrimaryNavDestination, (Border Container, Label Label, Path Icon)> _railButtons = [];
+
+    /// <summary>Rendered edge length of a rail icon, in device-independent units.</summary>
+    private const double RailIconSize = 28d;
 
     // Rail text colors come from the shared theme palette (Colors.xaml) so the rail
     // matches the tab bar; resolved per-use so appearance/theme changes are honored.
@@ -36,6 +46,7 @@ public partial class AppShell : Shell
         IAndroidOrientationBridge orientationBridge,
         INavigationHandoffService handoffService,
         IWindowSizeClassService windowSizeClassService,
+        IWindowInsetsService windowInsetsService,
         IAppearanceService appearanceService,
         ShellNavigationService navigationService)
     {
@@ -45,6 +56,7 @@ public partial class AppShell : Shell
         _orientationBridge = orientationBridge;
         _handoffService   = handoffService;
         _windowSizeClassService = windowSizeClassService;
+        _windowInsetsService = windowInsetsService;
         _appearanceService = appearanceService;
         _navigationService = navigationService;
 
@@ -57,6 +69,10 @@ public partial class AppShell : Shell
         _stateViewModel.PropertyChanged += OnStatePropertyChanged;
         _stateViewModel.RailItemSelected += OnRailItemSelected;
         Navigated += OnShellNavigated;
+
+        // The rail is built in code, so DynamicResource cannot reach it — re-tint on every
+        // palette change instead, otherwise the icons keep the previous theme's color (#294).
+        _appearanceService.AppearanceChanged += OnAppearanceChanged;
 
         _orientationBridge.SyncFromDisplayInfo();
         ApplyPlacement();
@@ -72,6 +88,32 @@ public partial class AppShell : Shell
 
         if (width > 0)
             _windowSizeClassService.UpdateFromWidth(width);
+
+        // Insets resolve only once the window is laid out, and change on rotation or when a
+        // cutout enters/leaves the top edge — so re-read them here rather than at construction.
+        ApplyRailInset();
+    }
+
+    private void OnAppearanceChanged(object? sender, EventArgs e)
+    {
+        _ = sender;
+        _ = e;
+        UpdateRailHighlight(_currentPrimaryDestination);
+    }
+
+    /// <summary>
+    /// Pushes the rail's first item below the status bar. The window is drawn edge-to-edge, so
+    /// without this the rail's background — and its topmost item — sit under the clock (#296).
+    /// </summary>
+    private void ApplyRailInset()
+    {
+        var topInset = _windowInsetsService.GetStatusBarInset();
+        if (topInset < 0)
+            topInset = 0;
+
+        var padding = new Thickness(0, topInset, 0, 0);
+        if (RailItems.Padding != padding)
+            RailItems.Padding = padding;
     }
 
     // ── Rail construction ────────────────────────────────────────────────────
@@ -80,12 +122,16 @@ public partial class AppShell : Shell
     {
         foreach (var item in PrimaryNavigationMetadata.Items)
         {
-            var icon = new Image
+            // A vector Path rather than an Image: the bundled SVGs bake in a white fill, and
+            // MAUI's Image has no tint, so an icon built from one cannot follow the theme (#294).
+            var icon = new Path
             {
-                Source = item.IconKey,
-                HeightRequest = 28,
-                WidthRequest  = 28,
+                Data = (Geometry)new PathGeometryConverter().ConvertFromInvariantString(item.IconGeometry)!,
+                Aspect = Microsoft.Maui.Controls.Stretch.Uniform,
+                HeightRequest = RailIconSize,
+                WidthRequest  = RailIconSize,
                 HorizontalOptions = LayoutOptions.Center,
+                Fill = new SolidColorBrush(InactiveText),
             };
 
             var label = new Label
@@ -115,6 +161,17 @@ public partial class AppShell : Shell
                 HeightRequest   = 64,
             };
 
+            // The rail item is a plain Border with a tap gesture, so nothing describes it to
+            // accessibility services — a screen reader reaches it as an unlabelled container,
+            // and it surfaces in the Android view tree as a bare TextView with no
+            // contentDescription. The bottom tab bar gets this for free from Shell; the rail
+            // has to say it itself.
+            SemanticProperties.SetDescription(container, item.Label);
+
+            // Same destination, same id as the matching bottom tab — the two placements are
+            // never in the tree at once, so a test asking for the id gets whichever is live.
+            container.AutomationId = item.TestId;
+
             var destination = item.Destination;
             var tap = new TapGestureRecognizer();
             tap.Tapped += (_, _) => _stateViewModel.SelectDestination(destination);
@@ -129,50 +186,19 @@ public partial class AppShell : Shell
 
     private void UpdateRailHighlight(PrimaryNavDestination active)
     {
+        // Resolved once per pass so a theme change picks up the new palette.
+        var activeText   = ActiveText;
+        var inactiveText = InactiveText;
+
         foreach (var kvp in _railButtons)
         {
             bool isActive = kvp.Key == active;
+            var foreground = isActive ? activeText : inactiveText;
+
             kvp.Value.Container.BackgroundColor = Colors.Transparent;
-            kvp.Value.Label.TextColor = isActive ? ActiveText : InactiveText;
-            kvp.Value.Icon.Opacity    = isActive ? 1.0 : 0.62;
+            kvp.Value.Label.TextColor = foreground;
+            kvp.Value.Icon.Fill       = new SolidColorBrush(foreground);
         }
-    }
-
-    /// <summary>
-    /// Re-themes the custom rail after a light/dark switch (#294). The rail icons are
-    /// plain Images whose SVG fill is baked in at build time (no runtime tint), so a
-    /// light theme needs the dark icon variants; labels re-resolve the current palette.
-    /// Called by MauiAppearanceService.UpdateShell on every theme/accent apply.
-    /// </summary>
-    public void ApplyThemePalette(bool isLight)
-    {
-        foreach (var item in PrimaryNavigationMetadata.Items)
-        {
-            if (!_railButtons.TryGetValue(item.Destination, out var entry))
-                continue;
-
-            entry.Icon.Source = isLight ? ToDarkIconKey(item.IconKey) : item.IconKey;
-        }
-
-        UpdateRailHighlight(_currentPrimaryDestination);
-    }
-
-    private static string ToDarkIconKey(string iconKey) =>
-        iconKey.EndsWith(".svg", StringComparison.OrdinalIgnoreCase)
-            ? iconKey[..^4] + "_dark.svg"
-            : iconKey + "_dark";
-
-    /// <summary>Base top padding of the rail item stack (matches the XAML initial value).</summary>
-    private const double RailBaseTopPadding = 24;
-
-    /// <summary>
-    /// Pushes the rail items below the status-bar inset (#296). With edge-to-edge enforced
-    /// (API 35+) the flyout drawer is drawn from y=0, so without this the first rail item
-    /// interleaves with the system clock. Idempotent; called on every theme apply.
-    /// </summary>
-    public void SetRailTopInset(double insetDp)
-    {
-        RailItems.Padding = new Thickness(0, RailBaseTopPadding + Math.Max(0, insetDp), 0, 0);
     }
 
     // ── Orientation / placement ───────────────────────────────────────────────
