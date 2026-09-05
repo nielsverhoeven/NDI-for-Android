@@ -1,4 +1,5 @@
 using NdiForAndroid.Data;
+using NdiForAndroid.Features.Ptz.Models;
 using NdiForAndroid.Features.Settings.Services;
 using NdiForAndroid.Features.Sources.Models;
 using NdiForAndroid.NdiBridge;
@@ -64,4 +65,7 @@ public sealed class SourceRepository : ISourceRepository
 
     public Task<DiscoveryMode> GetActiveDiscoveryModeAsync() =>
         Task.FromResult(_orchestrator.ActiveMode);
+
+    public Task SavePtzOverrideAsync(string sourceId, PtzEndpoint? endpoint) =>
+        _db.SavePtzOverrideAsync(sourceId, endpoint?.Host, endpoint?.Port);
 }

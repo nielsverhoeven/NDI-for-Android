@@ -10,6 +10,8 @@ using NdiForAndroid.Features.Navigation.Services;
 using NdiForAndroid.Features.Navigation.ViewModels;
 using NdiForAndroid.Features.Output.Repositories;
 using NdiForAndroid.Features.Output.ViewModels;
+using NdiForAndroid.Features.Ptz.Services;
+using NdiForAndroid.Features.Ptz.ViewModels;
 using NdiForAndroid.Features.Settings.Repositories;
 using NdiForAndroid.Features.Settings.Services;
 using NdiForAndroid.Features.Settings.ViewModels;
@@ -61,6 +63,11 @@ public static class MauiProgram
         builder.Services.AddSingleton<INdiViewerBridge, NdiViewerBridge>();
         builder.Services.AddSingleton<INdiOutputBridge, NdiOutputBridge>();
 
+        // PTZ (VISCA) — Core-only services, no MAUI dependency.
+        builder.Services.AddSingleton<IViscaTransportFactory, ViscaTransportFactory>();
+        builder.Services.AddSingleton<IPtzControllerFactory, PtzControllerFactory>();
+        builder.Services.AddTransient<PtzEndpointFormViewModel>();
+
         // Repositories
         builder.Services.AddSingleton<ISourceRepository, SourceRepository>();
         builder.Services.AddSingleton<IOutputConfigurationRepository, OutputConfigurationRepository>();
@@ -109,6 +116,7 @@ public static class MauiProgram
         builder.Services.AddSingleton<IAudioPlaybackSink, AndroidAudioPlaybackSink>();
         builder.Services.AddSingleton<IVideoCaptureSource, AndroidVideoCaptureSource>();
         builder.Services.AddSingleton<IAudioCaptureSource, AndroidMicrophoneCaptureSource>();
+        builder.Services.AddSingleton<IImmersiveModeService, AndroidImmersiveModeService>();
 #else
         builder.Services.AddSingleton<IMulticastLockService, NoopMulticastLockService>();
         builder.Services.AddSingleton<IScreenSharePlatformService, NoopScreenSharePlatformService>();
@@ -117,6 +125,7 @@ public static class MauiProgram
         builder.Services.AddSingleton<IAudioPlaybackSink, NoopAudioPlaybackSink>();
         builder.Services.AddSingleton<IVideoCaptureSource, NoopVideoCaptureSource>();
         builder.Services.AddSingleton<IAudioCaptureSource, NoopAudioCaptureSource>();
+        builder.Services.AddSingleton<IImmersiveModeService, NoopImmersiveModeService>();
 #endif
 
         // ViewModels
@@ -135,6 +144,11 @@ public static class MauiProgram
         builder.Services.AddTransient<Features.Home.Views.HomePage>();
         builder.Services.AddSingleton<Features.Sources.Views.SourceListPage>();  // Singleton: matches ViewModel lifetime (C1)
         builder.Services.AddTransient<Features.Viewer.Views.ViewerPage>();
+        builder.Services.AddTransient<Features.Viewer.Views.FullScreenViewerPage>();
+        // Factory seam: ViewerView is XAML-instantiated, not DI-constructed, so it resolves the
+        // page via IPlatformApplication.Current.Services (MS.DI does not provide Func<T> automatically).
+        builder.Services.AddSingleton<Func<Features.Viewer.Views.FullScreenViewerPage>>(
+            sp => () => sp.GetRequiredService<Features.Viewer.Views.FullScreenViewerPage>());
         builder.Services.AddTransient<Features.Output.Views.OutputPage>();
         builder.Services.AddTransient<Features.Settings.Views.SettingsPage>();
 

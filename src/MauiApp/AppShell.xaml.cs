@@ -211,6 +211,11 @@ public partial class AppShell : Shell
     {
         base.OnNavigating(args);
 
+        // A modal push/pop (e.g. the full-screen viewer) does not change Shell.CurrentState and
+        // must never be misclassified as a primary-destination change by ParseDestination below.
+        if (Navigation?.ModalStack?.Count > 0)
+            return;
+
         if (args.Cancelled)
             return;
 
@@ -231,9 +236,9 @@ public partial class AppShell : Shell
     {
         try
         {
-            await _handoffService.HandlePrimaryDestinationChangeAsync(_currentPrimaryDestination, to)
+            var from = _currentPrimaryDestination;
+            await Task.Run(() => _handoffService.HandlePrimaryDestinationChangeAsync(from, to))
                 .WaitAsync(TimeSpan.FromSeconds(3));
-            _currentPrimaryDestination = to;
         }
         catch (Exception ex)
         {
@@ -241,6 +246,7 @@ public partial class AppShell : Shell
         }
         finally
         {
+            _currentPrimaryDestination = to;
             _handoffInProgress = false;
             deferral.Complete();
         }
@@ -252,8 +258,15 @@ public partial class AppShell : Shell
 
         if (to != _currentPrimaryDestination)
         {
-            await _handoffService.HandlePrimaryDestinationChangeAsync(_currentPrimaryDestination, to);
-            _currentPrimaryDestination = to;
+            try
+            {
+                await _handoffService.HandlePrimaryDestinationChangeAsync(_currentPrimaryDestination, to);
+                _currentPrimaryDestination = to;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Navigation handoff failed: {ex}");
+            }
         }
 
         _stateViewModel.SelectedDestination = to;
@@ -267,10 +280,12 @@ public partial class AppShell : Shell
     private static PrimaryNavDestination? ParseDestination(string? location)
     {
         if (string.IsNullOrWhiteSpace(location)) return null;
-        // Match on the path only — a query value (e.g. reStreamSourceId containing
-        // "stream") must never influence which destination this resolves to.
+        // Match on the last path segment only — a query value, or an ancestor
+        // segment (e.g. "stream-tab" when "viewer" is pushed on top of it),
+        // must never influence which destination this resolves to.
         var path = location.Split('?', 2)[0];
-        var s = path.ToLowerInvariant();
+        var segment = path.Split('/', StringSplitOptions.RemoveEmptyEntries).LastOrDefault() ?? string.Empty;
+        var s = segment.ToLowerInvariant();
         if (s.Contains("home")     || s.Contains("sources")) return PrimaryNavDestination.Home;
         if (s.Contains("stream")   || s.Contains("output"))  return PrimaryNavDestination.Stream;
         if (s.Contains("view")     || s.Contains("viewer"))  return PrimaryNavDestination.View;

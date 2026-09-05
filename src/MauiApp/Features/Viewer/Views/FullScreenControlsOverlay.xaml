@@ -1,0 +1,129 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentView xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:vm="clr-namespace:NdiForAndroid.Features.Viewer.ViewModels;assembly=NdiForAndroid.Core"
+             x:Class="NdiForAndroid.Features.Viewer.Views.FullScreenControlsOverlay"
+             x:DataType="vm:ViewerViewModel">
+    <Grid IsVisible="{Binding AreControlsVisible}" BackgroundColor="Transparent">
+        <HorizontalStackLayout Margin="16" Spacing="6" VerticalOptions="Start" HorizontalOptions="Start"
+                                IsVisible="{Binding IsPtzControlActive}">
+            <Button Text="1" Padding="0" WidthRequest="40" HeightRequest="40" Command="{Binding PtzRecallPresetCommand}">
+                <Button.CommandParameter><x:Int32>1</x:Int32></Button.CommandParameter>
+            </Button>
+            <Button Text="2" Padding="0" WidthRequest="40" HeightRequest="40" Command="{Binding PtzRecallPresetCommand}">
+                <Button.CommandParameter><x:Int32>2</x:Int32></Button.CommandParameter>
+            </Button>
+            <Button Text="3" Padding="0" WidthRequest="40" HeightRequest="40" Command="{Binding PtzRecallPresetCommand}">
+                <Button.CommandParameter><x:Int32>3</x:Int32></Button.CommandParameter>
+            </Button>
+            <Button Text="4" Padding="0" WidthRequest="40" HeightRequest="40" Command="{Binding PtzRecallPresetCommand}">
+                <Button.CommandParameter><x:Int32>4</x:Int32></Button.CommandParameter>
+            </Button>
+            <Button Text="5" Padding="0" WidthRequest="40" HeightRequest="40" Command="{Binding PtzRecallPresetCommand}">
+                <Button.CommandParameter><x:Int32>5</x:Int32></Button.CommandParameter>
+            </Button>
+            <Button Text="6" Padding="0" WidthRequest="40" HeightRequest="40" Command="{Binding PtzRecallPresetCommand}">
+                <Button.CommandParameter><x:Int32>6</x:Int32></Button.CommandParameter>
+            </Button>
+            <Button Text="7" Padding="0" WidthRequest="40" HeightRequest="40" Command="{Binding PtzRecallPresetCommand}">
+                <Button.CommandParameter><x:Int32>7</x:Int32></Button.CommandParameter>
+            </Button>
+            <Button Text="8" Padding="0" WidthRequest="40" HeightRequest="40" Command="{Binding PtzRecallPresetCommand}">
+                <Button.CommandParameter><x:Int32>8</x:Int32></Button.CommandParameter>
+            </Button>
+        </HorizontalStackLayout>
+
+        <Border Margin="16" HorizontalOptions="Start" VerticalOptions="End"
+                BackgroundColor="{DynamicResource ScrimBackground}" StrokeShape="RoundRectangle 8"
+                IsVisible="{Binding IsPtzControlActive}">
+            <Grid RowDefinitions="48,48,48" ColumnDefinitions="48,48,48" RowSpacing="8" ColumnSpacing="8" Padding="8">
+                <Button Grid.Row="0" Grid.Column="1" Text="▲" WidthRequest="48" HeightRequest="48" Padding="0"
+                        Command="{Binding PtzNudgeCommand}" CommandParameter="up" />
+                <Button Grid.Row="1" Grid.Column="0" Text="◄" WidthRequest="48" HeightRequest="48" Padding="0"
+                        Command="{Binding PtzNudgeCommand}" CommandParameter="left" />
+                <Button Grid.Row="1" Grid.Column="1" Text="AF" WidthRequest="48" HeightRequest="48" Padding="0"
+                        Command="{Binding PtzAutoFocusCommand}" />
+                <Button Grid.Row="1" Grid.Column="2" Text="►" WidthRequest="48" HeightRequest="48" Padding="0"
+                        Command="{Binding PtzNudgeCommand}" CommandParameter="right" />
+                <Button Grid.Row="2" Grid.Column="1" Text="▼" WidthRequest="48" HeightRequest="48" Padding="0"
+                        Command="{Binding PtzNudgeCommand}" CommandParameter="down" />
+            </Grid>
+        </Border>
+
+        <Border Margin="16" HorizontalOptions="End" VerticalOptions="End"
+                BackgroundColor="{DynamicResource ScrimBackground}" StrokeShape="RoundRectangle 8"
+                IsVisible="{Binding IsPtzControlActive}">
+            <VerticalStackLayout Spacing="8" Padding="8">
+                <Button Text="T" WidthRequest="48" HeightRequest="48" Padding="0"
+                        Command="{Binding PtzZoomNudgeCommand}" CommandParameter="in" />
+                <Button Text="W" WidthRequest="48" HeightRequest="48" Padding="0"
+                        Command="{Binding PtzZoomNudgeCommand}" CommandParameter="out" />
+            </VerticalStackLayout>
+        </Border>
+
+        <Grid VerticalOptions="End" HeightRequest="48" ColumnDefinitions="Auto,152,48,48,Auto,48"
+              ColumnSpacing="8" Padding="8,0" BackgroundColor="{DynamicResource ScrimBackground}">
+            <Border Grid.Column="0" Padding="8,3" StrokeShape="RoundRectangle 10"
+                    BackgroundColor="{DynamicResource CardBackground}"
+                    VerticalOptions="Center"
+                    IsVisible="{Binding IsPtzControlActive}">
+                <Border.GestureRecognizers>
+                    <TapGestureRecognizer Command="{Binding OpenPtzEndpointFormCommand}" />
+                </Border.GestureRecognizers>
+                <Label Text="{Binding PtzStatusText}" FontSize="11" />
+            </Border>
+
+            <Grid Grid.Column="1" ColumnDefinitions="*,*,*" ColumnSpacing="4">
+                <Button Grid.Column="0" Text="S" Padding="0" FontSize="12" Command="{Binding ChangeQualityProfileCommand}" CommandParameter="Smooth">
+                    <Button.Triggers>
+                        <DataTrigger TargetType="Button" Binding="{Binding QualityProfile}" Value="Balanced">
+                            <Setter Property="BackgroundColor" Value="{DynamicResource ControlBackground}" />
+                            <Setter Property="TextColor" Value="{DynamicResource TextPrimary}" />
+                        </DataTrigger>
+                        <DataTrigger TargetType="Button" Binding="{Binding QualityProfile}" Value="High">
+                            <Setter Property="BackgroundColor" Value="{DynamicResource ControlBackground}" />
+                            <Setter Property="TextColor" Value="{DynamicResource TextPrimary}" />
+                        </DataTrigger>
+                    </Button.Triggers>
+                </Button>
+                <Button Grid.Column="1" Text="B" Padding="0" FontSize="12" Command="{Binding ChangeQualityProfileCommand}" CommandParameter="Balanced">
+                    <Button.Triggers>
+                        <DataTrigger TargetType="Button" Binding="{Binding QualityProfile}" Value="Smooth">
+                            <Setter Property="BackgroundColor" Value="{DynamicResource ControlBackground}" />
+                            <Setter Property="TextColor" Value="{DynamicResource TextPrimary}" />
+                        </DataTrigger>
+                        <DataTrigger TargetType="Button" Binding="{Binding QualityProfile}" Value="High">
+                            <Setter Property="BackgroundColor" Value="{DynamicResource ControlBackground}" />
+                            <Setter Property="TextColor" Value="{DynamicResource TextPrimary}" />
+                        </DataTrigger>
+                    </Button.Triggers>
+                </Button>
+                <Button Grid.Column="2" Text="H" Padding="0" FontSize="12" Command="{Binding ChangeQualityProfileCommand}" CommandParameter="High">
+                    <Button.Triggers>
+                        <DataTrigger TargetType="Button" Binding="{Binding QualityProfile}" Value="Smooth">
+                            <Setter Property="BackgroundColor" Value="{DynamicResource ControlBackground}" />
+                            <Setter Property="TextColor" Value="{DynamicResource TextPrimary}" />
+                        </DataTrigger>
+                        <DataTrigger TargetType="Button" Binding="{Binding QualityProfile}" Value="Balanced">
+                            <Setter Property="BackgroundColor" Value="{DynamicResource ControlBackground}" />
+                            <Setter Property="TextColor" Value="{DynamicResource TextPrimary}" />
+                        </DataTrigger>
+                    </Button.Triggers>
+                </Button>
+            </Grid>
+
+            <Switch Grid.Column="2" IsToggled="{Binding IsAudioEnabled}" WidthRequest="48" HeightRequest="48" />
+            <Button Grid.Column="3" Text="⛶" Command="{Binding ToggleFullScreenCommand}" WidthRequest="48" HeightRequest="48" Padding="0">
+                <Button.Triggers>
+                    <DataTrigger TargetType="Button" Binding="{Binding IsFullScreen}" Value="True">
+                        <Setter Property="Text" Value="⤢" />
+                    </DataTrigger>
+                </Button.Triggers>
+            </Button>
+            <Button Grid.Column="4" Text="Stop" Command="{Binding StopCommand}" FontSize="12" Padding="10,4"
+                    VerticalOptions="Center"
+                    BackgroundColor="{DynamicResource ErrorRed}" TextColor="{DynamicResource White}" />
+            <Button Grid.Column="5" Text="⋮" Command="{Binding OpenPtzEndpointFormCommand}" WidthRequest="48" HeightRequest="48" Padding="0" />
+        </Grid>
+    </Grid>
+</ContentView>

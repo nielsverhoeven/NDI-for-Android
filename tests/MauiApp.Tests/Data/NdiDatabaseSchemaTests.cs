@@ -1,5 +1,6 @@
 using NdiForAndroid.Data;
 using NdiForAndroid.Features.Settings.Models;
+using NdiForAndroid.Features.Sources.Models;
 using Xunit;
 
 namespace NdiForAndroid.Tests.Data;
@@ -97,6 +98,60 @@ public class NdiDatabaseSchemaTests
             await db.DeleteSourceServerCrossrefAsync("src-1", "srv-A");
             var afterDelete = await db.GetSourceServerCrossrefsAsync("src-1");
             Assert.Equal("srv-B", Assert.Single(afterDelete).ServerId);
+        }
+        finally
+        {
+            db?.Dispose();
+            if (File.Exists(dbPath)) File.Delete(dbPath);
+        }
+    }
+
+    [Fact]
+    public async Task SavePtzOverrideAsync_RoundTrips_AndSurvivesDiscoveryUpsert()
+    {
+        var dbPath = TempDbPath();
+        NdiDatabase? db = null;
+        try
+        {
+            db = new NdiDatabase(dbPath);
+            var source = new NdiSource("src-1", "Cam 1", "192.168.1.10", true, 1000);
+            await db.UpsertSourceAsync(source);
+
+            await db.SavePtzOverrideAsync("src-1", "192.168.1.99", 1234);
+
+            var afterSave = Assert.Single(await db.GetSourcesAsync());
+            Assert.Equal("192.168.1.99", afterSave.PtzOverrideHost);
+            Assert.Equal(1234, afterSave.PtzOverridePort);
+
+            // Simulate a later discovery poll rebuilding the same source with the PTZ fields left null.
+            await db.UpsertSourceAsync(source with { IsAvailable = false });
+
+            var afterDiscovery = Assert.Single(await db.GetSourcesAsync());
+            Assert.Equal("192.168.1.99", afterDiscovery.PtzOverrideHost);
+            Assert.Equal(1234, afterDiscovery.PtzOverridePort);
+        }
+        finally
+        {
+            db?.Dispose();
+            if (File.Exists(dbPath)) File.Delete(dbPath);
+        }
+    }
+
+    [Fact]
+    public async Task UpsertSourceAsync_WithoutPtzOverride_DefaultsToNull()
+    {
+        var dbPath = TempDbPath();
+        NdiDatabase? db = null;
+        try
+        {
+            db = new NdiDatabase(dbPath);
+            var source = new NdiSource("src-2", "Cam 2", "192.168.1.11", true, 2000);
+
+            await db.UpsertSourceAsync(source);
+
+            var saved = Assert.Single(await db.GetSourcesAsync());
+            Assert.Null(saved.PtzOverrideHost);
+            Assert.Null(saved.PtzOverridePort);
         }
         finally
         {

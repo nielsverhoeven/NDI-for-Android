@@ -1,3 +1,4 @@
+using NdiForAndroid.Features.Ptz.Models;
 using NdiForAndroid.Features.Sources.Models;
 using NdiForAndroid.NdiBridge;
 
@@ -10,4 +11,7 @@ public interface ISourceRepository
     Task SaveSourceAsync(NdiSource source);
     Task RemoveSourceAsync(string sourceId);
     Task<DiscoveryMode> GetActiveDiscoveryModeAsync();
+
+    /// <summary>Persists (or clears, when <paramref name="endpoint"/> is null) just the PTZ override for a source, without touching any other column.</summary>
+    Task SavePtzOverrideAsync(string sourceId, PtzEndpoint? endpoint);
 }
