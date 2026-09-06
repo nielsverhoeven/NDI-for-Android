@@ -13,6 +13,12 @@ internal sealed class NoopVideoCaptureSource : IVideoCaptureSource
         remove { }
     }
 
+    public event EventHandler<CaptureStoppedEventArgs>? Stopped
+    {
+        add { }
+        remove { }
+    }
+
     public bool IsActive => false;
 
     public Task StartAsync(VideoInputKind kind, CancellationToken cancellationToken = default) => Task.CompletedTask;

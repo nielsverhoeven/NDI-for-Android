@@ -10,6 +10,8 @@ using NdiForAndroid.Features.Navigation.Services;
 using NdiForAndroid.Features.Navigation.ViewModels;
 using NdiForAndroid.Features.Output.Repositories;
 using NdiForAndroid.Features.Output.ViewModels;
+using NdiForAndroid.Features.Ptz.Services;
+using NdiForAndroid.Features.Ptz.ViewModels;
 using NdiForAndroid.Features.Settings.Repositories;
 using NdiForAndroid.Features.Settings.Services;
 using NdiForAndroid.Features.Settings.ViewModels;
@@ -49,6 +51,10 @@ public static class MauiProgram
         // Android app-data path so the same ndi.db3 file backs both it and AppStateRepository.
         var ndiDbPath = Path.Combine(FileSystem.AppDataDirectory, "ndi.db3");
         builder.Services.AddSingleton<NdiDatabase>(sp => new NdiDatabase(ndiDbPath));
+        // ConnectionHistoryService depends on the raw SQLiteAsyncConnection — share the one
+        // NdiDatabase owns (so the connection_history table it creates in InitAsync is present)
+        // rather than opening a second handle to the same file.
+        builder.Services.AddSingleton<SQLite.SQLiteAsyncConnection>(sp => sp.GetRequiredService<NdiDatabase>().Connection);
 
         // NDI Bridge
         builder.Services.AddSingleton<NdiRuntime>();
@@ -56,6 +62,11 @@ public static class MauiProgram
         builder.Services.AddSingleton<INdiDiscoveryBridge, NdiDiscoveryBridge>();
         builder.Services.AddSingleton<INdiViewerBridge, NdiViewerBridge>();
         builder.Services.AddSingleton<INdiOutputBridge, NdiOutputBridge>();
+
+        // PTZ (VISCA) — Core-only services, no MAUI dependency.
+        builder.Services.AddSingleton<IViscaTransportFactory, ViscaTransportFactory>();
+        builder.Services.AddSingleton<IPtzControllerFactory, PtzControllerFactory>();
+        builder.Services.AddTransient<PtzEndpointFormViewModel>();
 
         // Repositories
         builder.Services.AddSingleton<ISourceRepository, SourceRepository>();
@@ -71,7 +82,8 @@ public static class MauiProgram
         builder.Services.AddSingleton<IConnectionHistoryService, ConnectionHistoryService>();
         builder.Services.AddSingleton<IDeepLinkService, DeepLinkService>();
         builder.Services.AddSingleton<ITelemetryService, TelemetryService>();
-        builder.Services.AddSingleton<INavigationService, ShellNavigationService>();
+        builder.Services.AddSingleton<ShellNavigationService>();
+        builder.Services.AddSingleton<INavigationService>(sp => sp.GetRequiredService<ShellNavigationService>());
         // Window width size classes (#279): fed by AppShell.OnSizeAllocated; consumed by
         // the navigation policy (rail on Expanded) and the two-pane SourceListPage.
         builder.Services.AddSingleton<IWindowSizeClassService, WindowSizeClassService>();
@@ -105,6 +117,7 @@ public static class MauiProgram
         builder.Services.AddSingleton<IVideoCaptureSource, AndroidVideoCaptureSource>();
         builder.Services.AddSingleton<IAudioCaptureSource, AndroidMicrophoneCaptureSource>();
         builder.Services.AddSingleton<IWindowInsetsService, AndroidWindowInsetsService>();
+        builder.Services.AddSingleton<IImmersiveModeService, AndroidImmersiveModeService>();
 #else
         builder.Services.AddSingleton<IMulticastLockService, NoopMulticastLockService>();
         builder.Services.AddSingleton<IScreenSharePlatformService, NoopScreenSharePlatformService>();
@@ -114,6 +127,7 @@ public static class MauiProgram
         builder.Services.AddSingleton<IVideoCaptureSource, NoopVideoCaptureSource>();
         builder.Services.AddSingleton<IAudioCaptureSource, NoopAudioCaptureSource>();
         builder.Services.AddSingleton<IWindowInsetsService, NoopWindowInsetsService>();
+        builder.Services.AddSingleton<IImmersiveModeService, NoopImmersiveModeService>();
 #endif
 
         // ViewModels
@@ -132,6 +146,11 @@ public static class MauiProgram
         builder.Services.AddTransient<Features.Home.Views.HomePage>();
         builder.Services.AddSingleton<Features.Sources.Views.SourceListPage>();  // Singleton: matches ViewModel lifetime (C1)
         builder.Services.AddTransient<Features.Viewer.Views.ViewerPage>();
+        builder.Services.AddTransient<Features.Viewer.Views.FullScreenViewerPage>();
+        // Factory seam: ViewerView is XAML-instantiated, not DI-constructed, so it resolves the
+        // page via IPlatformApplication.Current.Services (MS.DI does not provide Func<T> automatically).
+        builder.Services.AddSingleton<Func<Features.Viewer.Views.FullScreenViewerPage>>(
+            sp => () => sp.GetRequiredService<Features.Viewer.Views.FullScreenViewerPage>());
         builder.Services.AddTransient<Features.Output.Views.OutputPage>();
         builder.Services.AddTransient<Features.Settings.Views.SettingsPage>();
 

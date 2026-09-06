@@ -1,8 +1,6 @@
 using NdiForAndroid.Features.Settings.Models;
-using NdiForAndroid.Features.Settings.Services;
 
 #if ANDROID
-using Android.Views;
 using AndroidX.Core.View;
 #endif
 
@@ -11,12 +9,17 @@ namespace NdiForAndroid.Features.Settings.Services;
 /// <summary>
 /// Single source of truth for all runtime color values.
 /// Updates the application resource dictionary, Shell chrome, and the
-/// Android status bar immediately when Apply is tapped — no navigation required.
+/// Android status bar immediately when a theme/accent setting changes — no navigation required.
 /// All XAML must reference the semantic keys via DynamicResource.
 /// </summary>
 public sealed class MauiAppearanceService : IAppearanceService
 {
     public event EventHandler? AppearanceChanged;
+
+    // Last applied chrome state, so ReapplyChrome can restore it after Shell navigation
+    // re-applies per-page toolbar appearance (resets the AppBarLayout background, #296).
+    private static Palette? _lastPalette;
+    private static bool _lastIsLight;
 
     public void Apply(ThemeMode theme, AccentColorOption accentColor)
     {
@@ -24,6 +27,27 @@ public sealed class MauiAppearanceService : IAppearanceService
             ApplyCore(theme, accentColor);
         else
             MainThread.BeginInvokeOnMainThread(() => ApplyCore(theme, accentColor));
+    }
+
+    public void ReapplyChrome()
+    {
+        if (_lastPalette is not { } palette)
+            return;
+
+        // Always queue (never run inline): the toolbar appearance tracker that resets the
+        // AppBarLayout background runs synchronously during navigation, and freshly created
+        // pages apply theirs once more after the Navigated event — a second, delayed pass
+        // wins that race without visible flicker.
+        MainThread.BeginInvokeOnMainThread(() => UpdateAndroidStatusBar(palette, _lastIsLight));
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(250).ConfigureAwait(false);
+            MainThread.BeginInvokeOnMainThread(() =>
+            {
+                if (_lastPalette is { } latestPalette)
+                    UpdateAndroidStatusBar(latestPalette, _lastIsLight);
+            });
+        });
     }
 
     private void ApplyCore(ThemeMode theme, AccentColorOption accentColor)
@@ -50,6 +74,9 @@ public sealed class MauiAppearanceService : IAppearanceService
         UpdateShell(palette);
         UpdateAndroidStatusBar(palette, isLight);
 
+        _lastPalette = palette;
+        _lastIsLight = isLight;
+
         // Fires last: subscribers re-read the resource dictionary this call just rewrote.
         AppearanceChanged?.Invoke(this, EventArgs.Empty);
     }
@@ -60,6 +87,7 @@ public sealed class MauiAppearanceService : IAppearanceService
         Color PageBackground,
         Color CardBackground,
         Color InputBackground,
+        Color ScrimBackground,
         Color ShellBackground,
         Color ShellForeground,
         Color ShellTitleColor,
@@ -75,6 +103,7 @@ public sealed class MauiAppearanceService : IAppearanceService
         PageBackground:     Color.FromArgb("#1E1E2E"),
         CardBackground:     Color.FromArgb("#2A2A3E"),
         InputBackground:    Color.FromArgb("#33334A"),
+        ScrimBackground:    Color.FromArgb("#99000000"),
         ShellBackground:    Color.FromArgb("#1C1C1E"),
         ShellForeground:    Color.FromArgb("#FFFFFF"),
         ShellTitleColor:    Color.FromArgb("#FFFFFF"),
@@ -90,6 +119,7 @@ public sealed class MauiAppearanceService : IAppearanceService
         PageBackground:     Color.FromArgb("#F2F2F7"),
         CardBackground:     Color.FromArgb("#FFFFFF"),
         InputBackground:    Color.FromArgb("#E8E8ED"),
+        ScrimBackground:    Color.FromArgb("#66000000"),
         ShellBackground:    Color.FromArgb("#E5E5EA"),
         ShellForeground:    Color.FromArgb("#1C1C1E"),
         ShellTitleColor:    Color.FromArgb("#1C1C1E"),
@@ -128,6 +158,7 @@ public sealed class MauiAppearanceService : IAppearanceService
         res["CardBackground"]     = p.CardBackground;
         res["InputBackground"]    = p.InputBackground;
         res["ControlBackground"]  = Colors.Transparent;
+        res["ScrimBackground"]    = p.ScrimBackground;
         res["ShellBackground"]    = p.ShellBackground;
         res["ShellForeground"]    = p.ShellForeground;
         res["ShellTitleColor"]    = p.ShellTitleColor;
@@ -195,6 +226,40 @@ public sealed class MauiAppearanceService : IAppearanceService
             if (controller is not null)
                 controller.AppearanceLightStatusBars = isLight;
         }
+
+        // From API 35 nothing paints a themed status bar anymore; the strip shows whatever
+        // the app draws underneath it. Two views own that region and both default to MAUI
+        // template colors (#2C3E50): the Shell DrawerLayout's statusBarBackground and the
+        // AppBarLayout background (its Toolbar child is inset below the status bar, but its
+        // own background extends to y=0). Recolor both to the theme chrome (#296).
+        var decor = activity.Window.DecorView;
+        var chrome = new Android.Graphics.Color(
+            (byte)(p.ShellBackground.Red   * 255),
+            (byte)(p.ShellBackground.Green * 255),
+            (byte)(p.ShellBackground.Blue  * 255),
+            (byte)(p.ShellBackground.Alpha * 255));
+
+        FindView<AndroidX.DrawerLayout.Widget.DrawerLayout>(decor)?.SetStatusBarBackgroundColor(chrome);
+        FindView<Google.Android.Material.AppBar.AppBarLayout>(decor)?.SetBackgroundColor(chrome);
 #endif
     }
+
+#if ANDROID
+    private static T? FindView<T>(Android.Views.View? view) where T : Android.Views.View
+    {
+        if (view is T match)
+            return match;
+
+        if (view is not Android.Views.ViewGroup group)
+            return null;
+
+        for (var i = 0; i < group.ChildCount; i++)
+        {
+            if (FindView<T>(group.GetChildAt(i)) is { } found)
+                return found;
+        }
+
+        return null;
+    }
+#endif
 }

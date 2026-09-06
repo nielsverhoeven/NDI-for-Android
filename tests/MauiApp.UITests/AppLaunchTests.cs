@@ -1,4 +1,6 @@
 using OpenQA.Selenium;
+using NdiForAndroid.Testing;
+using NdiForAndroid.UITests.Infrastructure;
 using NdiForAndroid.UITests.Pages;
 using Xunit;
 
@@ -130,24 +132,116 @@ public sealed class AppLaunchTests : UiTestBase
     [SkippableFact]
     public void Settings_DiscoveryHost_SurvivesAnAppRestart() => Run(app =>
     {
-        const string host = "persist.test.local";
+        // Typing into the add-server Entry proves nothing: AddDiscoveryServerAsync clears it
+        // before PersistAsync, so what actually survives a restart is a row in the discovery
+        // server list. 10.255.255.1 is a non-routable address that will never collide with a
+        // real server; the unusual port keeps cleanup unambiguous.
+        const string host = "10.255.255.1";
+        const string port = "45959";
+        var endpoint = $"{host}:{port}";
 
         app.ResetToHome();
         app.Navigation.GoTo(NavDestination.Settings);
         app.Settings.WaitUntilVisible();
-
         app.Settings.OpenSection(SettingsSection.Discovery);
-        app.Settings.DiscoveryHost = host;
-        app.Settings.Apply();
-        app.Settings.WaitForApplied();
 
-        Skip.IfNot(app.TryRestart(), "App lifecycle commands are unavailable in this environment.");
+        var baseline = app.Settings.ServerRowCount;
+        app.Settings.AddServer(host, port);
 
+        try
+        {
+            // The row is added to the collection before PersistAsync is awaited, so it is not a
+            // save barrier. Leaving Settings and coming back re-runs LoadCommand from the
+            // repository, which is.
+            app.Navigation.GoTo(NavDestination.Home);
+            app.Home.WaitUntilVisible();
+            app.Navigation.GoTo(NavDestination.Settings);
+            app.Settings.WaitUntilVisible();
+            app.Settings.OpenSection(SettingsSection.Discovery);
+
+            Assert.Contains(endpoint, app.Settings.ServerRowEndpoints);
+
+            Skip.IfNot(app.TryRestart(), "App lifecycle commands are unavailable in this environment.");
+
+            app.Navigation.GoTo(NavDestination.Settings);
+            app.Settings.WaitUntilVisible();
+            app.Settings.OpenSection(SettingsSection.Discovery);
+
+            Assert.Contains(endpoint, app.Settings.ServerRowEndpoints);
+        }
+        finally
+        {
+            // Cleanup by endpoint text depends on the very row locator a row template overflowing
+            // its container can make disappear, which silently no-oped and left this test's bogus
+            // server persisted. Counting rows down to the pre-test baseline does not depend on the
+            // row's content rendering at all.
+            app.Settings.RemoveServersDownTo(baseline);
+        }
+    });
+
+    [SkippableFact]
+    public void Settings_DiscoveryServerRow_RendersEveryControl() => Run(app =>
+    {
+        // Regression guard for a row template overflowing its container: on a narrow detail panel
+        // the endpoint, Enabled switch and Up button dropped out of the accessibility tree
+        // entirely (Android omits zero-area nodes rather than reporting them as present-but-tiny).
+        // This is the one assertion that would have caught that directly instead of surfacing as
+        // an opaque "Collection: []" three steps downstream.
+        const string host = "10.255.255.2";
+        const string port = "45960";
+
+        app.ResetToHome();
         app.Navigation.GoTo(NavDestination.Settings);
         app.Settings.WaitUntilVisible();
         app.Settings.OpenSection(SettingsSection.Discovery);
 
-        Assert.Equal(host, app.Settings.DiscoveryHost);
+        var baseline = app.Settings.ServerRowCount;
+        app.Settings.AddServer(host, port);
+
+        try
+        {
+            string[] everyControl =
+            [
+                TestIds.SettingsServerRowEndpoint,
+                TestIds.SettingsServerRowEnabled,
+                TestIds.SettingsServerRowUp,
+                TestIds.SettingsServerRowDown,
+                TestIds.SettingsServerRowEdit,
+                TestIds.SettingsServerRowDelete,
+            ];
+
+            foreach (var id in everyControl)
+            {
+                var size = app.Settings.LastServerRowControlSize(id);
+                Assert.True(size is { Width: > 0, Height: > 0 },
+                    $"'{id}' is missing from the discovery server row or has zero area — the row " +
+                    "template is overflowing its container.");
+            }
+
+            string[] clickableControls =
+            [
+                TestIds.SettingsServerRowEnabled,
+                TestIds.SettingsServerRowUp,
+                TestIds.SettingsServerRowDown,
+                TestIds.SettingsServerRowEdit,
+                TestIds.SettingsServerRowDelete,
+            ];
+
+            var minTouchTargetPx = app.Metrics.ToPixels(AccessibilityAudit.MinTouchTargetDp);
+
+            foreach (var id in clickableControls)
+            {
+                var size = app.Settings.LastServerRowControlSize(id);
+                Assert.True(size.Width >= minTouchTargetPx && size.Height >= minTouchTargetPx,
+                    $"'{id}' is {size.Width}x{size.Height}px, below the " +
+                    $"{AccessibilityAudit.MinTouchTargetDp}dp ({minTouchTargetPx}x{minTouchTargetPx}px) " +
+                    "minimum touch target.");
+            }
+        }
+        finally
+        {
+            app.Settings.RemoveServersDownTo(baseline);
+        }
     });
 }
 

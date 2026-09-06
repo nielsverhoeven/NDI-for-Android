@@ -179,8 +179,6 @@ public static class TestIds
     public const string SettingsNdiSdkVersion = "settings.ndiSdkVersion";
 
     public const string SettingsValidationError = "settings.validationError";
-    public const string SettingsApply           = "settings.apply";
-    public const string SettingsAppliedNotice   = "settings.appliedNotice";
 
     // ── DiagnosticLogPage: the in-memory log buffer view ─────────────────────
 

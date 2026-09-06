@@ -9,9 +9,52 @@
              x:DataType="vm:SettingsViewModel"
              AutomationId="{x:Static t:TestIds.SettingsPage}"
              Title="Settings">
-    <ScrollView>
-              <Grid Padding="16" ColumnDefinitions="220,*" ColumnSpacing="16">
-                     <VerticalStackLayout Grid.Column="0" Spacing="10">
+    <Grid>
+        <ScrollView>
+              <!-- Medium/Expanded: 220dp vertical rail beside the panel (RailColumn width 220,
+                   VerticalRail visible). Compact: RailColumn collapses to 0 and the same five
+                   section buttons render as a wrapping selector in CompactRail above the panel
+                   instead — a fixed 220dp rail leaves too little width for the detail panel on a
+                   phone, and a horizontally-scrolling rail leaves later buttons scrolled off
+                   screen. SettingsPage.xaml.cs's OnSizeAllocated toggles between the two; both
+                   button sets share their AutomationIds, the same pattern already used for the
+                   bottom tab bar vs. the landscape nav rail. -->
+              <Grid x:Name="SectionsGrid" Padding="16" RowSpacing="12" ColumnSpacing="16">
+                     <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                     </Grid.RowDefinitions>
+                     <Grid.ColumnDefinitions>
+                            <ColumnDefinition x:Name="RailColumn" Width="220" />
+                            <ColumnDefinition Width="*" />
+                     </Grid.ColumnDefinitions>
+
+                     <FlexLayout x:Name="CompactRail" Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2"
+                                       Wrap="Wrap" Direction="Row" JustifyContent="Start" AlignItems="Start"
+                                       IsVisible="False">
+                            <Button Text="General" HeightRequest="48" Margin="0,0,10,10"
+                                   AutomationId="{x:Static t:TestIds.SettingsSectionGeneral}"
+                                          Command="{Binding SelectSectionCommand}"
+                                   CommandParameter="{x:Static vm:SettingsSection.General}" />
+                            <Button Text="Appearance" HeightRequest="48" Margin="0,0,10,10"
+                                   AutomationId="{x:Static t:TestIds.SettingsSectionAppearance}"
+                                          Command="{Binding SelectSectionCommand}"
+                                   CommandParameter="{x:Static vm:SettingsSection.Appearance}" />
+                            <Button Text="Discovery" HeightRequest="48" Margin="0,0,10,10"
+                                   AutomationId="{x:Static t:TestIds.SettingsSectionDiscovery}"
+                                          Command="{Binding SelectSectionCommand}"
+                                   CommandParameter="{x:Static vm:SettingsSection.Discovery}" />
+                            <Button Text="Developer tools" HeightRequest="48" Margin="0,0,10,10"
+                                   AutomationId="{x:Static t:TestIds.SettingsSectionDeveloperTools}"
+                                          Command="{Binding SelectSectionCommand}"
+                                   CommandParameter="{x:Static vm:SettingsSection.DeveloperTools}" />
+                            <Button Text="About" HeightRequest="48" Margin="0,0,10,10"
+                                   AutomationId="{x:Static t:TestIds.SettingsSectionAbout}"
+                                          Command="{Binding SelectSectionCommand}"
+                                   CommandParameter="{x:Static vm:SettingsSection.About}" />
+                     </FlexLayout>
+
+                     <VerticalStackLayout x:Name="VerticalRail" Grid.Row="1" Grid.Column="0" Spacing="10">
                             <Button Text="General"
                                    AutomationId="{x:Static t:TestIds.SettingsSectionGeneral}"
                                           Command="{Binding SelectSectionCommand}"
@@ -34,7 +77,7 @@
                                    CommandParameter="{x:Static vm:SettingsSection.About}" />
                      </VerticalStackLayout>
 
-                     <VerticalStackLayout Grid.Column="1" Spacing="12">
+                     <VerticalStackLayout Grid.Row="1" Grid.Column="1" Spacing="12">
                             <VerticalStackLayout AutomationId="{x:Static t:TestIds.SettingsPanelGeneral}" IsVisible="{Binding IsGeneralSectionSelected}" Spacing="8">
                                    <Label Text="General Settings" FontAttributes="Bold" FontSize="20" />
                                    <Label Text="{Binding GeneralGuidanceText}" />
@@ -71,59 +114,84 @@
                             <VerticalStackLayout AutomationId="{x:Static t:TestIds.SettingsPanelDiscovery}" IsVisible="{Binding IsDiscoverySectionSelected}" Spacing="10">
                                    <Label Text="Discovery Settings" FontAttributes="Bold" FontSize="20" />
 
-                                   <Entry Placeholder="Host or IP"
+                                   <Label Text="Add discovery server" FontAttributes="Bold" />
+                                   <Entry Placeholder="Display name (optional)"
+                                             Text="{Binding NewServerDisplayName}" />
+                                   <Entry Placeholder="Hostname or IP"
                                              AutomationId="{x:Static t:TestIds.SettingsDiscoveryHost}"
-                                             Text="{Binding DiscoveryHost}"
+                                             Text="{Binding NewServerHost}"
                                              Keyboard="Url" />
-                                   <Entry Placeholder="Port (default 5959)"
-                                             AutomationId="{x:Static t:TestIds.SettingsDiscoveryPort}"
-                                             Text="{Binding DiscoveryPort}"
-                                             Keyboard="Numeric" />
-
                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
                                           <Entry Grid.Column="0"
-                                                    AutomationId="{x:Static t:TestIds.SettingsDiscoveryServerEndpoint}"
-                                                    Placeholder="Host or IP:port (default 5959)"
-                                                    Keyboard="Text"
-                                                    Text="{Binding DiscoveryServerEndpointInput}" />
+                                                    AutomationId="{x:Static t:TestIds.SettingsDiscoveryPort}"
+                                                    Placeholder="Port (default 5959)"
+                                                    Text="{Binding NewServerPort}"
+                                                    Keyboard="Numeric" />
                                           <Button Grid.Column="1"
                                                         AutomationId="{x:Static t:TestIds.SettingsDiscoveryServerAction}"
-                                                        Text="{Binding DiscoveryServerActionText}"
-                                                        Command="{Binding AddOrUpdateDiscoveryServerCommand}" />
+                                                        Text="Add Server"
+                                                        Command="{Binding AddDiscoveryServerCommand}" />
                                    </Grid>
 
-                                   <Label Text="{Binding DiscoveryServersValidationMessage}" AutomationId="{x:Static t:TestIds.SettingsDiscoveryServersError}" TextColor="Red" />
+                                   <Label Text="{Binding DiscoveryServersValidationMessage}"
+                                             AutomationId="{x:Static t:TestIds.SettingsDiscoveryServersError}"
+                                             TextColor="{DynamicResource ErrorRed}" />
 
-                                   <CollectionView AutomationId="{x:Static t:TestIds.SettingsDiscoveryServerList}" ItemsSource="{Binding DiscoveryServers}">
-                                          <CollectionView.ItemTemplate>
+                                   <!-- BindableLayout, not CollectionView: this list sits inside the page's own
+                                        outer ScrollView, and a CollectionView added there does not re-measure its
+                                        Auto-height ancestors when items are added after the initial layout pass —
+                                        the row stays present in the ItemsSource but never gets an on-screen area. -->
+                                   <VerticalStackLayout AutomationId="{x:Static t:TestIds.SettingsDiscoveryServerList}" BindableLayout.ItemsSource="{Binding DiscoveryServers}">
+                                          <BindableLayout.ItemTemplate>
                                                  <DataTemplate x:DataType="vm:DiscoveryServerItem">
-                                                        <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto,Auto" RowDefinitions="Auto" ColumnSpacing="8" Padding="0,4">
-                                                               <Label Grid.Column="0" Text="{Binding EndpointDisplay}" AutomationId="{x:Static t:TestIds.SettingsServerRowEndpoint}" VerticalOptions="Center" />
-                                                               <Switch Grid.Column="1" IsToggled="{Binding Enabled}" AutomationId="{x:Static t:TestIds.SettingsServerRowEnabled}" />
-                                                               <Button Grid.Column="2"
-                                                                             Text="Up"
-                                                                             AutomationId="{x:Static t:TestIds.SettingsServerRowUp}"
-                                                                             Command="{Binding Source={x:Reference SettingsRoot}, Path=BindingContext.MoveDiscoveryServerUpCommand}"
-                                                                             CommandParameter="{Binding .}" />
-                                                               <Button Grid.Column="3"
-                                                                             Text="Down"
-                                                                             AutomationId="{x:Static t:TestIds.SettingsServerRowDown}"
-                                                                             Command="{Binding Source={x:Reference SettingsRoot}, Path=BindingContext.MoveDiscoveryServerDownCommand}"
-                                                                             CommandParameter="{Binding .}" />
-                                                               <Button Grid.Column="4"
-                                                                             Text="Edit"
-                                                                             AutomationId="{x:Static t:TestIds.SettingsServerRowEdit}"
-                                                                             Command="{Binding Source={x:Reference SettingsRoot}, Path=BindingContext.EditDiscoveryServerCommand}"
-                                                                             CommandParameter="{Binding .}" />
-                                                               <Button Grid.Column="5"
-                                                                             Text="Delete"
-                                                                             AutomationId="{x:Static t:TestIds.SettingsServerRowDelete}"
-                                                                             Command="{Binding Source={x:Reference SettingsRoot}, Path=BindingContext.RemoveDiscoveryServerCommand}"
-                                                                             CommandParameter="{Binding .}" />
+                                                        <!-- Two rows: identity, then actions. A single seven-column row does not
+                                                             fit a Switch plus four >=48dp action buttons in the detail panel's
+                                                             width at Compact. -->
+                                                        <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="Auto,*" ColumnSpacing="8" RowSpacing="6" Padding="0,6">
+                                                               <Label Grid.Row="0" Grid.Column="0"
+                                                                          Text="●"
+                                                                          FontSize="18"
+                                                                          VerticalOptions="Center"
+                                                                          TextColor="{Binding ConnectionState, Converter={StaticResource DiscoveryServerStateColorConverter}}" />
+                                                               <VerticalStackLayout Grid.Row="0" Grid.Column="1" Spacing="2" VerticalOptions="Center">
+                                                                      <Label Text="{Binding NameDisplay}" FontAttributes="Bold" />
+                                                                      <HorizontalStackLayout Spacing="8">
+                                                                             <Label Text="{Binding EndpointDisplay}"
+                                                                                       AutomationId="{x:Static t:TestIds.SettingsServerRowEndpoint}"
+                                                                                       FontSize="12"
+                                                                                       TextColor="{DynamicResource TextSecondary}" />
+                                                                             <Label Text="{Binding ConnectionStateDisplay}"
+                                                                                       FontSize="12"
+                                                                                       TextColor="{DynamicResource TextSecondary}" />
+                                                                      </HorizontalStackLayout>
+                                                               </VerticalStackLayout>
+                                                               <HorizontalStackLayout Grid.Row="1" Grid.ColumnSpan="2" Spacing="8">
+                                                                      <Switch IsToggled="{Binding Enabled}" AutomationId="{x:Static t:TestIds.SettingsServerRowEnabled}" VerticalOptions="Center" />
+                                                                      <Button Text="▲"
+                                                                                    WidthRequest="48" HeightRequest="48" Padding="0"
+                                                                                    AutomationId="{x:Static t:TestIds.SettingsServerRowUp}"
+                                                                                    Command="{Binding Source={x:Reference SettingsRoot}, Path=BindingContext.MoveDiscoveryServerUpCommand}"
+                                                                                    CommandParameter="{Binding .}" />
+                                                                      <Button Text="▼"
+                                                                                    WidthRequest="48" HeightRequest="48" Padding="0"
+                                                                                    AutomationId="{x:Static t:TestIds.SettingsServerRowDown}"
+                                                                                    Command="{Binding Source={x:Reference SettingsRoot}, Path=BindingContext.MoveDiscoveryServerDownCommand}"
+                                                                                    CommandParameter="{Binding .}" />
+                                                                      <Button Text="✎"
+                                                                                    WidthRequest="48" HeightRequest="48" Padding="0"
+                                                                                    AutomationId="{x:Static t:TestIds.SettingsServerRowEdit}"
+                                                                                    Command="{Binding Source={x:Reference SettingsRoot}, Path=BindingContext.EditDiscoveryServerCommand}"
+                                                                                    CommandParameter="{Binding .}" />
+                                                                      <Button Text="✕"
+                                                                                    WidthRequest="48" HeightRequest="48" Padding="0"
+                                                                                    AutomationId="{x:Static t:TestIds.SettingsServerRowDelete}"
+                                                                                    Command="{Binding Source={x:Reference SettingsRoot}, Path=BindingContext.RemoveDiscoveryServerCommand}"
+                                                                                    CommandParameter="{Binding .}" />
+                                                               </HorizontalStackLayout>
                                                         </Grid>
                                                  </DataTemplate>
-                                          </CollectionView.ItemTemplate>
-                                   </CollectionView>
+                                          </BindableLayout.ItemTemplate>
+                                   </VerticalStackLayout>
                             </VerticalStackLayout>
 
                             <VerticalStackLayout AutomationId="{x:Static t:TestIds.SettingsPanelDeveloperTools}" IsVisible="{Binding IsDeveloperToolsSectionSelected}" Spacing="10">
@@ -156,19 +224,38 @@
                                    <Label Text="{Binding AppVersionBuild}" AutomationId="{x:Static t:TestIds.SettingsAppVersion}" />
                                    <Label Text="{Binding NdiSdkVersion}" AutomationId="{x:Static t:TestIds.SettingsNdiSdkVersion}" TextColor="{DynamicResource TextSecondary}" />
                             </VerticalStackLayout>
-
-                            <Label Text="{Binding ValidationError}" AutomationId="{x:Static t:TestIds.SettingsValidationError}" TextColor="Red" />
-
-                            <Button Text="Apply"
-                                          AutomationId="{x:Static t:TestIds.SettingsApply}"
-                                          Command="{Binding ApplyCommand}"
-                                          HorizontalOptions="Center" />
-
-                            <Label Text="Settings applied."
-                                      AutomationId="{x:Static t:TestIds.SettingsAppliedNotice}"
-                                      TextColor="Green"
-                                      IsVisible="{Binding IsApplied}" />
                      </VerticalStackLayout>
               </Grid>
-    </ScrollView>
+        </ScrollView>
+
+        <!-- Edit-server modal overlay (#292): dialog over a dimmed scrim; state lives in the ViewModel. -->
+        <Grid IsVisible="{Binding IsEditServerDialogOpen}"
+                 BackgroundColor="{DynamicResource ScrimBackground}">
+               <Border BackgroundColor="{DynamicResource CardBackground}"
+                          Stroke="{DynamicResource BorderColor}"
+                          StrokeShape="RoundRectangle 12"
+                          Padding="20"
+                          WidthRequest="420"
+                          HorizontalOptions="Center"
+                          VerticalOptions="Center">
+                      <VerticalStackLayout Spacing="10">
+                             <Label Text="Edit discovery server" FontAttributes="Bold" FontSize="18" />
+                             <Entry Placeholder="Display name (optional)"
+                                       Text="{Binding EditServerDisplayName}" />
+                             <Entry Placeholder="Hostname or IP"
+                                       Text="{Binding EditServerHost}"
+                                       Keyboard="Url" />
+                             <Entry Placeholder="Port (default 5959)"
+                                       Text="{Binding EditServerPort}"
+                                       Keyboard="Numeric" />
+                             <Label Text="{Binding EditServerValidationMessage}"
+                                       TextColor="{DynamicResource ErrorRed}" />
+                             <HorizontalStackLayout Spacing="8" HorizontalOptions="End">
+                                    <Button Text="Cancel" Command="{Binding CancelEditDiscoveryServerCommand}" />
+                                    <Button Text="Save" Command="{Binding SaveEditedDiscoveryServerCommand}" />
+                             </HorizontalStackLayout>
+                      </VerticalStackLayout>
+               </Border>
+        </Grid>
+    </Grid>
 </ContentPage>
