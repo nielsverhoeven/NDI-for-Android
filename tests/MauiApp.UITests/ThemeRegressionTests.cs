@@ -92,6 +92,7 @@ public sealed class ThemeRegressionTests : UiTestBase
         // appeared once the user left the page. Selecting and asserting without leaving — which is
         // all a naive test would do — passes against the bug.
         ApplyTheme(app, ThemeOption.Dark);
+        _output.WriteLine($"theme tap strategy: {app.Settings.LastThemeTapStrategy}");
 
         app.Navigation.GoTo(NavDestination.Home);
         app.Home.WaitUntilVisible();
@@ -106,12 +107,32 @@ public sealed class ThemeRegressionTests : UiTestBase
             "The Dark theme was applied, but after navigating away and back Settings no longer " +
             "reports it as selected. This is the #300 failure mode — the selection is lost when " +
             "the page is torn down.");
+
+        // Negative control: without this, a read-back regressed to "always true" would make
+        // every persistence assertion in this file pass silently.
+        Assert.False(app.Settings.IsThemeSelected(ThemeOption.Light),
+            "Settings reports both Dark and Light as selected — the read-back is not distinguishing them.");
+        Assert.False(app.Settings.IsThemeSelected(ThemeOption.System),
+            "Settings reports both Dark and System as selected — the read-back is not distinguishing them.");
     });
 
     [SkippableFact]
     public void Theme_SelectedInSettings_SurvivesAnAppRestart() => Run(app =>
     {
         ApplyTheme(app, ThemeOption.Dark);
+
+        // PersistAsync is fire-and-forget, so without a save barrier the restart below can race
+        // it. Leaving Settings and coming back forces a fresh SettingsViewModel to load from the
+        // repository; only once that reads back as Dark has the save actually landed.
+        app.Navigation.GoTo(NavDestination.Home);
+        app.Home.WaitUntilVisible();
+        app.Navigation.GoTo(NavDestination.Settings);
+        app.Settings.WaitUntilVisible();
+        app.Settings.OpenSection(SettingsSection.Appearance);
+
+        Assert.True(app.Settings.WaitUntilThemeReads(ThemeOption.Dark),
+            "The Dark theme was not read back as selected after navigating away and back, so " +
+            "the restart below would not be testing persistence at all.");
 
         Skip.IfNot(app.TryRestart(), "App lifecycle commands are unavailable in this environment.");
 
@@ -160,7 +181,9 @@ public sealed class ThemeRegressionTests : UiTestBase
     }
 
     /// <summary>
-    /// Selects a theme through Settings and applies it, leaving the app on a known page.
+    /// Selects a theme through Settings, leaving the app on a known page. Settings auto-save, so
+    /// <see cref="SettingsPage.SelectTheme"/> confirming the radio button actually toggled is the
+    /// whole action — there is no separate Apply step to wait on.
     /// </summary>
     private static void ApplyTheme(NdiApp app, ThemeOption theme)
     {
@@ -170,7 +193,5 @@ public sealed class ThemeRegressionTests : UiTestBase
 
         app.Settings.OpenSection(SettingsSection.Appearance);
         app.Settings.SelectTheme(theme);
-        app.Settings.Apply();
-        app.Settings.WaitForApplied();
     }
 }

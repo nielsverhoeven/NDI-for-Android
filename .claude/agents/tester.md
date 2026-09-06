@@ -57,12 +57,55 @@ dotnet test tests/<Module>.Tests/
 dotnet test --filter "Category=Integration"
 ```
 
-### Stage 4 — MAUI UI Tests (if UI test project exists)
-```powershell
-dotnet test tests/<App>.UITests/ --filter "Category=UI"
-```
+### Stage 4 — Appium UI e2e Tests (`tests/MauiApp.UITests`)
 
-Before or alongside this stage, use `/android-build-install-run` when the UI verification depends on observing the current build on a connected device.
+**Mandatory, not optional, for any branch that will be merged into `main`.** This is the gate
+issue #362 exists to enforce: the suite was adapted three times without being executed, feature
+PRs targeted a non-`main` base so the emulator job never ran, and PR #299 was merged while its own
+run was still pending — the run then failed and blocked the release (#361). Do not report Stage 4
+as done on the strength of a build succeeding; a run must actually have executed and its link must
+be recorded in the PR.
+
+Two ways to get a green run — pick whichever fits the branch's state:
+
+**A. Dispatch on CI (preferred for a branch without a device attached):**
+```powershell
+gh workflow run emulator-tests.yml --repo nielsverhoeven/NDI-for-Android --ref <branch> -f app_ref=<branch-or-sha> -f test_filter="<dotnet test filter or blank>"
+gh run watch <run-id>                          # block until it finishes
+gh run view <run-id> --log-failed              # on failure: print only the failing steps' logs
+gh run download <run-id>                       # evidence: emulator-test-results (TRX), emulator-diagnostics (logs + FailureEvidence screenshots/page-source under test-results/failure-evidence)
+```
+`app_ref` builds the APK from any commit while the tests always come from the dispatched branch —
+leave it blank to build from the branch itself. `test_filter` is a `dotnet test --filter`
+expression; leave it blank to run everything.
+
+**B. The PR's own check** — every PR whose base is `main` automatically runs the `e2e-tests` job
+("Run Emulator UI Tests") in `ndi-for-android-cicd.yml`. Wait for it (`gh pr checks <PR> --watch`
+or `gh run watch`) rather than dispatching a duplicate run.
+
+**Local alternative** (fastest inner loop, needs a connected device/emulator and Appium):
+```powershell
+npm install -g appium               # one-time
+appium driver install uiautomator2  # one-time
+appium                              # start the server in its own terminal (default port 4723, matches APPIUM_SERVER_URL's default)
+$env:ANDROID_APK_PATH = "src/MauiApp/bin/Debug/net10.0-android/com.ndi.android-Signed.apk"   # NOT the unsigned variant
+dotnet test tests/MauiApp.UITests
+```
+Set `E2E_REQUIRE_DEVICE=true` locally only if you want a missing device to fail instead of skip
+(CI always sets it). `E2E_ARTIFACT_DIR` (default `./e2e-artifacts`) is where failure screenshots +
+page source land; `A11Y_MAX_VIOLATIONS` (default 200) is the accessibility ratchet — lower it as
+violations are fixed, never raise it to turn a red run green.
+
+**Reading a failure**: start with the TRX/console failure message, then the `FailureEvidence`
+screenshot + view-hierarchy dump for that test (CI: download `emulator-diagnostics`; local:
+`E2E_ARTIFACT_DIR`). A locator timeout also inlines every automation id that *was* on screen at
+failure time — check that list before assuming the test is wrong. Two causes dominate: a page
+object's locator drifted, or a `TestIds` AutomationId was dropped/renamed during an XAML
+restructure without updating the page object (#360). Fix test-project code yourself for the
+former; delegate the latter's production fix to `implementer` if the id needs restoring in XAML.
+
+Before or alongside this stage, use `/android-build-install-run` when the UI verification depends
+on observing the current build on a connected device.
 
 ### Stage 5 — NDI E2E Validation (dual-emulator harness)
 Run the NDI end-to-end harness if it exists:
@@ -194,6 +237,14 @@ After every test run, update `test-results/test-results.md`:
 | Release build | ✅/❌ |
 | Device install / launch smoke check | ✅/❌ |
 ```
+
+---
+
+## Definition of Done
+
+- Every stage above ran and its result is recorded — a skipped or unexecuted stage is not "done".
+- For any branch bound for `main`: **e2e run link recorded in the PR** (dispatched `emulator-tests.yml`
+  run or the PR's own "Run Emulator UI Tests" check) — this is what issue #362 made a hard gate.
 
 ---
 

@@ -64,6 +64,14 @@ jobs:
       - name: Restore test project
         run: dotnet restore tests/MauiApp.Tests/NdiForAndroid.Tests.csproj
 
+      # Compile-only: tests/MauiApp.UITests references only src/Core (no MAUI, no Android SDK),
+      # so this catches drift such as a page object referencing a removed TestIds constant
+      # without waiting on the emulator job.
+      - name: Build UI test project
+        run: |
+          dotnet restore tests/MauiApp.UITests/NdiForAndroid.UITests.csproj
+          dotnet build tests/MauiApp.UITests/NdiForAndroid.UITests.csproj -c Release --no-restore
+
       - name: Run unit tests with coverage
         run: >
           dotnet test tests/MauiApp.Tests/NdiForAndroid.Tests.csproj

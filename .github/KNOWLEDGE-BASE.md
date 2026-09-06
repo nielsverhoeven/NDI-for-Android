@@ -35,6 +35,8 @@ dotnet test tests/MauiApp.Tests             # Non-NDI unit tests — must pass b
 | Capture source contracts | `src/Core/Services/ICaptureSources.cs`, `IAudioPlaybackSink.cs`, `INdiPlatformBootstrap.cs` |
 | Android capture/audio/NSD services | `src/MauiApp/Platforms/Android/Services/` (`AndroidVideoCaptureSource`, `AndroidMicrophoneCaptureSource`, `AndroidAudioPlaybackSink`, `AndroidNsdBootstrap`, `ScreenShareForegroundService`) |
 | Reusable NDI render surface | `src/MauiApp/Features/Viewer/Views/ViewerView.xaml(.cs)` (SkiaSharp, ~30 fps pull loop) |
+| Viewer control deck / sheet / overlay (#342) | `src/MauiApp/Features/Viewer/Views/PlaybackControlsView.xaml(.cs)`, `CameraControlsView.xaml(.cs)`, `ViewerControlDeck.xaml(.cs)`, `ViewerControlSheet.xaml(.cs)`, `FullScreenControlsOverlay.xaml(.cs)` — `PtzPanelView` removed, superseded by `CameraControlsView` |
+| Viewer control layout policy (Core, unit-tested) | `src/Core/Features/Viewer/ViewerControlLayout.cs` (`Choose(widthDp, heightDp)` → Deck when width ≥ 640dp and height ≥ 470dp, else Sheet; `ShouldStackCameraPresets`, `ChooseSheetExpandedHeightDp`/`ChooseSheetPeekHeightDp`, `ChooseVideoHeightDp` added for #370 — video height and the sheet's expanded/peek heights are derived from the same Core policy; 240dp video / 440dp expanded / 320dp peek remain the values for a portrait phone and for the deck) |
 | Window size class + nav policy | `src/Core/Features/Navigation/Services/` (`WindowSizeClassService`, `NavigationPolicyService`) |
 | SQLite/Data layer | `src/MauiApp/Data/` |
 | Android platform services | `src/MauiApp/Platforms/Android/` |
@@ -71,6 +73,7 @@ tests/
 3. **No business logic in Views** — Views are pure XAML + bindings
 4. **NDI threading**: bridge events (`ConnectionStateChanged`, `TallyEchoChanged`, `OutputStatusChanged`) are raised on pump/background threads — subscribers marshal to the UI thread (`IMainThreadDispatcher` in Core, `MainThread.BeginInvokeOnMainThread` in MauiApp)
 5. **Android APIs** isolated in `Platforms/Android/` behind interfaces
+6. **No root `IsVisible` binding on a reusable `ContentView`** — a `View.SetValue` from host code-behind clears an active one-way binding on that same property, so a `ContentView` reused across multiple hosts (e.g. `CameraControlsView` inside both `ViewerControlDeck` and `ViewerControlSheet`) must bind visibility on an *inner* element and leave its own root free for the host to toggle imperatively (`.IsVisible = ...`) without side effects. See #342 (`ViewerControlDeck`/`ViewerControlSheet`/`FullScreenControlsOverlay`).
 
 ## Shell Routes
 
@@ -89,12 +92,19 @@ Left navigation rail placement: same pages on `//home-rail`, `//stream-rail`, `/
 
 **Placement policy (#279)**: `WindowSizeClass` = Compact (<600dp) / Medium (600–840dp) / Expanded (>840dp), fed from `AppShell.OnSizeAllocated`. `NavigationPolicyService`: **rail when landscape OR Expanded, bottom tabs otherwise**. `AppShell` selects `-rail` vs `-tab` routes from `AdaptiveShellStateViewModel.IsLeftRailNavigationVisible`.
 
+## Output Session State + Home Quick Actions (#326 / #334 / #328 — branches feature/326-output-session-state, feature/328-home-quick-actions)
+- `INdiOutputBridge.IsActive` (lock-free `Volatile.Read` of the sender handle or the re-stream flag) is the only truth for "output is running"; the persisted `IsOutputActive` flag is a hint that must be corroborated. `OutputStatusChanged` is raised on every start/stop transition.
+- `IVideoCaptureSource`/`IAudioCaptureSource.Stopped` (`CaptureStoppedEventArgs.Reason`) fires only for autonomous stops (MediaProjection revoked, camera lost, mic loop error); `NdiOutputBridge` then stops the sender itself. Never raised for a caller-requested stop.
+- `OutputViewModel`: "Output session restored." only when the bridge corroborates; otherwise "Tap Start to resume output" (no period) and the persisted flag is cleared; "Output stopped" on an autonomous stop. `OutputPage` accepts `resume=true` (query) → `ApplyResumeRequestCommand` pre-fills the stream name and never starts capture.
+- `HomeViewModel` takes `INdiOutputBridge`; Output status and `CanResumeOutput` derive from `state.IsOutputActive && _outputBridge.IsActive`; quick actions are disabled (not hidden) when unavailable. Start Viewing Last Source calls `NavigateToPrimaryAsync(View)` BEFORE pushing `viewer?sourceId=` so the push lands under the View tab/rail (otherwise the handoff never stops the receiver).
+- Background streaming (#327): an active output keeps running across tab switches and app backgrounding under `ScreenShareForegroundService`; `NdiNavigationHandoffService` only stops the viewer receiver when leaving View (constructor: `INdiViewerBridge` only). The persistent notification has a **Stop** action (`ActionStopRequested` → `INdiOutputBridge.StopOutputAsync()`; if the bridge is null or inactive the service stops itself). A sticky restart with a null intent stops the service (#351). A notification stop keeps `AppState.StreamName`, so Home offers Resume; only the in-app Stop button clears the name.
+
 ## Settings Feature (Issue #142 — MERGED to main, PR #211)
 - **ViewModel**: `SettingsViewModel` — 5 sections: General, Appearance, Discovery, DeveloperTools, About
 - **Model**: `NdiSettingsSnapshot` — holds all persisted settings as immutable record
 - **Sections**: `SettingsSection` enum drives `IsXxxSectionSelected` properties
-- **Apply flow**: user stages changes → clicks Apply → `ApplyAsync()` validates → saves via `ISettingsRepository`
-- **Pending state**: `HasPendingChanges` tracked by comparing current state to `_baselineSnapshot`
+- **Auto-save (#292)**: no Apply button — every change (theme/accent/dev-mode, discovery-server add/edit/delete/toggle/reorder) persists immediately via `PersistAsync()` → `ISettingsRepository.SaveSettingsAsync`
+- **Discovery servers (#292)**: three add fields (optional display name, hostname, port); rows show display name (hostname fallback), endpoint, and live connection state (`DiscoveryServerConnectionState`, 10 s TCP probe via `INdiDiscoveryBridge.IsDiscoveryServerReachableAsync`, started/stopped from page `OnAppearing`/`OnDisappearing`); editing opens an in-page modal overlay (scrim + dialog) driven by `IsEditServerDialogOpen`. Legacy single `DiscoveryHost`/`DiscoveryPort` fields removed (columns remain unmapped in SQLite).
 - **Platform info**: `ISettingsPlatformService.GetAppInfo()` → `SettingsAppInfo(AppName, Version, Build)`
 - **Cached sources**: loaded from `ISourceRepository.GetCachedSourcesAsync()`
 - **Appearance service**: `IAppearanceService` / `MauiAppearanceService` — central runtime color application
@@ -385,6 +395,70 @@ Two mechanisms keep it honest; do not remove either:
 - **CodeQL must build `src/MauiApp`, not just `src/Core`.** Building Core alone left the entire
   P/Invoke interop layer unanalyzed. `wait-for-processing: true` is required — the severity gate
   reads alerts that do not exist until SARIF processing finishes.
+
+## UI e2e tests (Appium)
+
+**Hard gate**: before opening or merging a PR whose base is `main`, this suite must be green —
+either a dispatched `emulator-tests.yml` run on the branch (link it in the PR) or the PR's own
+`e2e-tests` job ("Run Emulator UI Tests" in `ndi-for-android-cicd.yml`). Never merge while that
+check (or any check) is pending or failing. See `CLAUDE.md` Workflow Reliability Rules and
+`.claude/agents/tester.md` Stage 4 for the full procedure; `.claude/skills/android-ui-tests/` has
+the step-by-step recipe.
+
+- **Location**: `tests/MauiApp.UITests` — xUnit 2.x + `Appium.WebDriver` + `xunit.skippablefact`.
+  References only `src/Core` (`NdiForAndroid.UITests.csproj`), so restoring/building the test
+  project needs no MAUI workload or Android SDK; only *running* it needs a device/emulator + Appium.
+- **`TestIds` convention**: flat `public const string` members in `src/Core/Testing/TestIds.cs`,
+  applied in XAML as `AutomationId="{x:Static t:TestIds.X}"` and referenced from page objects in
+  `tests/MauiApp.UITests/Pages/` (one class per screen, the only place that calls `FindElement`).
+  Renaming a member is a compile error in both places rather than a locator that quietly stops
+  matching — so when a control moves or is renamed during a restructure, its `TestIds` member
+  moves with it in the same change.
+- **Environment variables** (`AppiumDriverFixture`, `FailureEvidence`, `AccessibilityTests`):
+
+  | Variable | Default | Notes |
+  |---|---|---|
+  | `ANDROID_APK_PATH` | *(none — required)* | Path to the APK under test; resolved with `Path.GetFullPath` against the test host's working directory (the project's output directory, not the repo root). |
+  | `APPIUM_SERVER_URL` | `http://127.0.0.1:4723/` | Appium server URL. |
+  | `E2E_REQUIRE_DEVICE` | unset (skip mode) | `true` makes an unavailable Appium session **throw** instead of setting `SkipReason` — set in CI so a broken device fails the run instead of vacuously skipping; leave unset locally. |
+  | `E2E_ARTIFACT_DIR` | `./e2e-artifacts` | Where `FailureEvidence` writes `<test>.png` / `.xml` / `.txt` per failure. |
+  | `A11Y_MAX_VIOLATIONS` | `200` | Accessibility violation budget (ratchet — lower as violations are fixed, never raise to turn a red run green). |
+
+- **Local run recipe** (against a connected device/emulator):
+  ```powershell
+  npm install -g appium                 # one-time
+  appium driver install uiautomator2    # one-time
+  appium                                # start the server in its own terminal
+  $env:ANDROID_APK_PATH = "src/MauiApp/bin/Debug/net10.0-android/com.ndi.android-Signed.apk"
+  dotnet test tests/MauiApp.UITests
+  ```
+  The Debug APK embeds its managed assemblies (`EmbedAssembliesIntoApk=true`,
+  `src/MauiApp/NdiForAndroid.csproj`), so a plain `dotnet build -c Debug` is enough for the app
+  code to be current — always install the `-Signed.apk`, never the unsigned variant. On a machine
+  whose installed .NET SDK does not expose the `maui-android` workload to MSBuild, building
+  `src/MauiApp` needs `DOTNETSDK_WORKLOAD_MANIFEST_ROOTS` pointed at a manifest set that does.
+- **CI dispatch recipe** (`.github/workflows/emulator-tests.yml`, manual only):
+  ```powershell
+  gh workflow run emulator-tests.yml --repo nielsverhoeven/NDI-for-Android --ref <branch> -f app_ref=<branch-or-sha> -f test_filter="<dotnet test filter or blank>"
+  gh run watch <run-id>                     # or: gh run view <run-id> --log-failed
+  gh run download <run-id>                  # evidence artifacts
+  ```
+  `app_ref` builds the APK from any commit while the tests always come from the dispatched branch
+  (blank = build from the branch itself); this is also how a regression test proves it would have
+  caught its bug (`expect_failure: true` inverts the result — the run is green only when the test
+  *fails* against a pre-fix `app_ref`). Installs `appium` + `uiautomator2` via
+  `npm install -g appium` / `appium driver install uiautomator2` on an `api-level: 35` x86_64 AVD.
+- **Evidence artifacts**: `emulator-test-results` (the TRX) and `emulator-diagnostics` (Appium/logcat
+  logs, plus `FailureEvidence`'s per-failure screenshot + page source under
+  `test-results/failure-evidence/`) — both uploaded by every run of either workflow.
+
+**Lesson (2026-09-05, issue #362)**: the suite was adapted three times across recent feature work
+without ever being executed — feature PRs targeted a non-`main` base, so the `e2e-tests` job never
+ran (it is gated on `github.ref == 'refs/heads/main' || github.base_ref == 'main'`). PR #299 was
+merged while its own "Run Emulator UI Tests" run was still pending; that run then failed and
+blocked the next release (#361). Separately, #342 restructured the viewer's controls into new
+views without carrying their `TestIds` AutomationIds along, and the gap was only found later, in
+#360. Both are now closed by the hard gate above, not by remembering to run the suite.
 
 ## Emulator Test Patterns
 

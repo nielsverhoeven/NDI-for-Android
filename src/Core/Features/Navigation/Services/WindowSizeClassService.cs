@@ -23,7 +23,9 @@ public sealed class WindowSizeClassService : IWindowSizeClassService
         Changed?.Invoke(this, next);
     }
 
-    private static WindowSizeClass Classify(double widthDp) => widthDp switch
+    /// <summary>Shared with callers that classify a width without a live service instance
+    /// (e.g. a transient page's own OnSizeAllocated).</summary>
+    public static WindowSizeClass Classify(double widthDp) => widthDp switch
     {
         < MediumMinWidthDp => WindowSizeClass.Compact,
         <= MediumMaxWidthDp => WindowSizeClass.Medium,
