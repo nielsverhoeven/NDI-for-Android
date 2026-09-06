@@ -31,6 +31,452 @@ unconditionally. Rule 5's intent is to keep Android APIs out of **Core** and out
 
 ## Verdicts log
 
+### 2026-09-06 — #384 slice 2 plan ("retire the modal; full screen in place")
+
+**REVISE — design unchanged and correctly implemented in shape; six required changes, four blocking.**
+Do not re-open (a)/(d)/(e)/(g).2. The mechanism swap is faithful: `ViewerView.xaml.cs`,
+`AdaptiveShellStateViewModel.cs`, `AndroidImmersiveModeService.cs`, `MauiProgram.cs:149-153`, both
+XAML id additions and the `docs/architecture.md:137-138` correction were checked against the live
+files and every "replace whole file" snippet carries namespace, usings and surviving XML docs — the
+2026-09-06 self-containment rule is met. `ApplyPlacement(ensureDestination)` is behaviour-identical
+when unsuppressed, and the slice-1 interaction is clean in both directions: a suppression toggle
+raises no Shell navigation (so the `Navigated` hook cannot fire from it) and the hook calls
+`EnsurePrimaryDestinationVisibleAsync`, never `ApplyPlacement`, so it cannot un-suppress chrome.
+
+**Blocking.** (1) `Detach()` must force `_viewModel.IsFullScreen = false`. The plan deletes
+`FullScreenViewerPage.OnAppPaused` (`:72-77`, "never restored on resume") and replaces it with
+nothing, then books the loss as a decision-log entry — that is a behaviour regression inside a
+"no new behaviour" slice, and design (b) requires the force-exit. Put it in `Detach`, not in an
+`AppPaused` subscription: the ordering of `OnDisappearing` vs `AppPaused` is not guaranteed.
+(2) `PrimaryTabBar` is the `<TabBar>` Shell item (`AppShell.xaml:73`); suppression sets
+`IsVisible=false` on `Shell.CurrentItem` in the *primary* phone-portrait path while four rail
+`FlyoutItem`s stay visible. The slice-1 verdict recorded this as device-verify when it only hit the
+rotation path; it is now the default path, and a `CurrentItem` re-point destroys the pushed
+`ViewerPage`. Add the page-scoped `Shell.SetTabBarIsVisible(_page, !isFullScreen)` in `ApplyChrome`
+(+ restore in `Detach`) as the tab-bar mechanism; `IsChromeSuppressed` keeps driving the rail, which
+the attached property cannot reach. (3) The tablet pane does not go full *window*:
+`SourceListPage.xaml:25-33` is a `ColumnSpan=2` header row above the pane, so collapsing `ListColumn`
+alone leaves a band over the video — needs an `x:Name` + `IsVisible` toggle, i.e. the XAML edit the
+plan rules out. (4) The e2e races the 3 s auto-hide (`ViewerViewModel.FullScreen.cs:10,35-41`;
+`FullScreenControlsOverlay.xaml:7`): `IsFullScreen => IsPresent(ViewerFullScreenExit)` reports false
+while still full screen, so `ExitFullScreen()` times out and every `Assert.False(... IsFullScreen)`
+passes vacuously. Read full screen from the absence of `viewer.stop`, and re-show the overlay
+(`TapVideo()`) before touching it.
+
+**Required, not design-blocking.** (5) `PressKeyCode(4)` must be shown to compile against
+`Appium.WebDriver 5.*`; prefer `_driver.Navigate().Back()`. (6) Drop the proposed new
+`.claude/knowledge/decision-log.md` — `.claude/knowledge/` is agent-owned; its item 1 disappears with
+required change 1 and its item 2 is recorded here.
+
+**Recorded, verified, no change needed:** the exit-button defect is genuinely fixed by construction
+(overlay and command are now the same VM instance; `ToggleFullScreen` guards only the enter
+direction). No `NotifyControlInteraction()` replacement is needed for the deleted `Loaded` hook —
+`OnIsFullScreenChanged(true)` already arms the timer, and in-place entry has no modal-construction
+latency. The render timer now runs continuously (`StopRendering()` dies with `PresentFullScreenAsync`).
+`AppPaused` keeps a subscriber (`DiscoveryRefreshService.cs:57`). `Shell.SetNavBarIsVisible(page,true)`
+on Detach is safe — neither host page sets `Shell.NavBarIsVisible`. The "leave Expanded while
+pane-full-screen" case converges with no extra code via `SourceListViewModel.cs:76-77` →
+`ViewerViewModel.cs:271`. With change 1 the two-live-`ViewerViewModel` race is closed by
+construction rather than by lifecycle luck. Rules 1-6 hold; no slice-3 leakage.
+
+### 2026-09-06 — #386 slice 1 plan, revision 3 (addendum to the revision-2 verdict below)
+
+**REVISE — design APPROVED, plan text not yet developer-ready.** Four of the five required changes
+land correctly and the code shape is now right; do **not** re-open the design.
+
+**Satisfied.** (1) `LastSegment(string?)` + `route.Trim('/')` comparison — verified it converges in
+**both** families and in one hop either way the ancestor-route question resolves on device: rail
+`//view-rail-item/view-rail` → `view-rail` == `"//view-rail".Trim('/')`, tab `//view-tab` →
+`view-tab`. The first-landscape-launch case (`CurrentItem` = `HomeRailItem`, `AppShell.xaml:32`) now
+short-circuits instead of looping. (2) `try`/`catch` + `Debug.WriteLine` placed **inside**
+`EnsurePrimaryDestinationVisibleAsync` around `GoToAsync`, so it also covers the pre-existing
+`ApplyPlacement:225` dispatch — the preferred option, and nothing else in the method can throw, so the
+`async void` lambda is de-fanged in practice. (3) `if (Navigation?.ModalStack?.Count > 0) return;`
+inside the method, mirroring `OnNavigating:242`. (5) Device check A now asserts the app **settles** at
+a section root in landscape (no repeating `OnAppearing`, no flicker) before the rail→push→rotate→Back
+sequence. Guard polarity re-checked at both sites: `Count <= 1` at the hook is `false` when
+`Navigation` is null (don't dispatch), `Count > 1` inside `Ensure` is `false` when null (do reconcile)
+— correct in both directions. `ApplyPlacement` (`:212-226`) still byte-identical; still exactly the
+5 (g).1 files; no slice 2/3 leakage.
+
+**Not satisfied — required change 4.** The `IAppLifecycleService.cs` snippet is still marked *"replace
+whole file"* and **still omits** the `<summary>` docs on `AppResumed`/`AppPaused`
+(`IAppLifecycleService.cs:9,12`) — and it now omits the `namespace NdiForAndroid.Services;` line too.
+The plan's prose claims the docs were preserved, which is worse than silence: a reviewer will believe
+it is done and a Sonnet developer will apply the snippet literally. Also: `SyncNavigationOrientation`
+is described as *"unchanged from prior revision"* but its body is not restated, and it does **not**
+call `NotifyConfigurationChanged` today at all (`MainActivity.cs:151-158`) — that is a **new** call
+site, and it is the piece that makes `IsLandscape`/`SmallestWidthDp` correct at startup and after a
+backgrounded rotation. Cross-revision references are not actionable for a stateless developer.
+`ParseDestination`'s rewrite is likewise described but not given, and it has a real trap: the current
+body relies on `?? string.Empty` (`:313`), so `LastSegment(location)!.ToLowerInvariant()` would NRE
+and violates the no-bare-`!` rule; the load-bearing comment at `:309-311` must survive.
+
+**Rule for this repo, recorded:** a plan handed to a Sonnet developer must be **self-contained** —
+every "replace whole file" snippet carries its namespace, its usings and its existing XML docs, and
+every method the plan says it modifies appears verbatim. "Unchanged from the prior revision" is not a
+snippet.
+
+### 2026-09-06 — #386 slice 1 plan, revision 2 (adds the `OnShellNavigated` reconciliation)
+
+**REVISE.** The revision closes the blocking stranding gap from revision 1 in the right place and in
+the right shape — reconcile on `Navigated` when the section stack is back at its root, dispatched the
+same way `ApplyPlacement` already does (`AppShell.xaml.cs:225`). Slice boundary still clean (the same
+5 files from (g).1), `ApplyPlacement` (`:212-226`) still byte-identical so the `FlyoutBehavior` /
+`PrimaryTabBar` swap still runs unguarded, `NotifyConfigurationChanged` fed from **both**
+`OnConfigurationChanged` (`MainActivity.cs:142-149`) and `SyncNavigationOrientation` (`:151-158`,
+reached from `OnCreate:63` + `OnResume:132`), `OrientationChanged` raised only on an actual change
+with `SmallestWidthDp`/`IsLandscape` written first. **But the new call site turns a comparison that
+was previously only a cheap optimisation into the loop guard for a hot path, and that comparison is
+wrong for the rail family.** Three blocking changes.
+
+1. **`string.Equals(currentLocation, route)` (`:334`) cannot converge on the `-rail` family →
+   unbounded navigation loop.** Every rail `FlyoutItem` carries an **explicit** `Route="*-rail-item"`
+   (`AppShell.xaml:33,42,51,60`); the `TabBar` (`:73`) carries none. Shell builds
+   `CurrentState.Location` from shellItem/shellSection/shellContent routes and strips only implicit
+   (`IMPL_`) and default (`D_FAULT_`) segments, so the rail location is `//view-rail-item/view-rail`
+   while the route table (`ShellNavigationService.cs:20-24`) holds `//view-rail` — never equal. The
+   file's own `ParseDestination` comment (`:309-311`) already documents multi-segment locations.
+   Today that costs one redundant `GoToAsync` per placement change; with the new hook it is
+   Navigated → Ensure → `GoToAsync` → Navigated → … forever, and it fires on the **first landscape
+   launch** (Shell's default `CurrentItem` is `HomeRailItem`, `AppShell.xaml:32`), i.e. it breaks
+   `AdaptiveNavigation_InLandscape_PlacesNavigationInTheLeftRail`. Required: compare the **last path
+   segment**, reusing the idiom already in `ParseDestination` (extract a private
+   `static string? LastSegment(string?)` and use it in both). Correct in both families whichever way
+   the ancestor-route question resolves on device. Do **not** instead strip the `*-rail-item` routes —
+   that is a fifth file and Shell needs unique item routes.
+2. **The dispatched lambda is `async void` with no guard.** An exception out of `GoToAsync` kills the
+   process. Same defect class as the 2026-09-04 follow-up item 3, which this file now honours at
+   `:292-295`. Required: `try`/`catch` + `Debug.WriteLine` inside the lambda, or around the
+   `GoToAsync` in `EnsurePrimaryDestinationVisibleAsync` (which also covers `:225`).
+3. **Add a `ModalStack` guard to `EnsurePrimaryDestinationVisibleAsync`.** In slice 1
+   `FullScreenViewerPage` is still live and is pushed through `Shell.Current.Navigation.PushModalAsync`
+   (`ViewerView.xaml.cs:167`); Shell routes modal pushes through `GoToAsync`, so `Navigated` fires,
+   and `Shell.Navigation.NavigationStack` reports the **section** stack. On the tablet two-pane path
+   (full screen entered from `SourceListPage`, section stack == 1) both the new hook and the existing
+   `:225` dispatch can `GoToAsync` while a modal is up and pop it — the same "rotation destroys the
+   page" class this slice exists to remove. One line, protects both call sites, mirrors
+   `OnNavigating:242-243`, the invariant decision (a) says must survive.
+
+**Confirmed, no change needed:** the escape route from the chrome-less window is real — only
+`FullScreenViewerPage` overrides `OnBackButtonPressed` (`:65`) and it is a modal, so a pushed
+`ViewerPage`/`DiagnosticLogPage` always pops and the new hook then reconciles in one hop;
+`ParseDestination` resolves both `//view-rail-item/view-rail` and `//view-rail-item/view-rail/viewer`
+to `View`, so the pop raises **no** handoff and the reconciling `GoToAsync` is a no-op in
+`OnNavigating` (`to == _currentPrimaryDestination`) — no `StopReceiver` on a family swap;
+`Navigation?.NavigationStack?.Count <= 1` is null-safe in the correct direction at both sites;
+`Configuration.SmallestScreenWidthDp` is `int` and widens, and `ConfigChanges.SmallestScreenSize` is
+already declared (`MainActivity.cs:24-25`); exactly one `IAppLifecycleService` implementation and five
+`Mock<>` fixtures that compile unchanged; no slice 2/3 leakage (`OnStatePropertyChanged` still listens
+only to `PlacementMode`, `ApplyPlacement` gains no `ensureDestination` parameter, nothing touches
+`ViewerViewModel`/`ViewerControlLayout`/`ViewerView`). `OrientationChanged` having no subscriber until
+slice 3 is the accepted (g).1 boundary, not dead-code drift.
+
+**Recorded, accepted with a known cosmetic gap:** while a detail page is pushed on the `-rail` family
+in portrait the app has **no** navigation chrome at all (a single-`ShellContent` `FlyoutItem` renders
+no bottom bar and the flyout is `Disabled`) — not merely a "stale route family". Escapable with one
+Back, reconciled there. Device check A must assert exactly that.
+
+**Non-blocking:** the interface replacement snippet silently drops the existing `<summary>` docs on
+`AppResumed`/`AppPaused` (`IAppLifecycleService.cs:9,12`) — keep them; the new hook's `<= 1` condition
+is a *reconciliation trigger*, not a visibility check, and deserves one terse comment (owner's style
+call).
+
+### 2026-09-06 — #386 slice 1 implementation plan (rotation must not destroy the pushed page)
+
+**REVISE.** The plan is faithful to the (g)-slice-1 boundary — 4 production files + 1 test file, no
+slice 2/3 leakage, `ApplyPlacement` (`AppShell.xaml.cs:212-226`) left byte-identical so the
+`FlyoutBehavior`/`PrimaryTabBar` chrome swap still runs on every placement change,
+`NotifyConfigurationChanged` fed from **both** `OnConfigurationChanged` and
+`SyncNavigationOrientation` (the latter reached from `OnCreate:63` and `OnResume:132`, so startup
+and backgrounded-rotation are both covered), and `OrientationChanged` raised only on an actual
+change with `IsLandscape`/`SmallestWidthDp` written before the invoke. One blocking gap.
+
+**Blocking — the guard's early return can strand the app with no navigation chrome.** The `-rail`
+family is four separate single-`ShellContent` `FlyoutItem`s (`AppShell.xaml:32-66`); the `-tab`
+family is one `TabBar` (`:73-94`). Sequence: landscape → `//view-rail` → push `viewer` → rotate to
+portrait. `ApplyPlacement` sets `FlyoutBehavior = Disabled` + `PrimaryTabBar.IsVisible = true`, the
+new guard suppresses `GoToAsync("//view-tab")`, but `Shell.CurrentItem` is still `ViewRailItem` — a
+single-section `ShellItem` renders **no** bottom bar, and the flyout is now disabled, so there is no
+rail either. Pressing Back pops to `//view-rail` and **nothing re-runs
+`EnsurePrimaryDestinationVisibleAsync`** — its only caller is `ApplyPlacement`
+(`AppShell.xaml.cs:225`), which only fires on a `PlacementMode` change. The user is left on a
+chrome-less `SourceListPage` with no route to Home/Stream/Settings until they rotate to landscape and
+back. The 2026-09-06 (g)/slice-1 verdict accepted a stale route family only *"until the user pops
+back to a section root"*; the plan never implements that reconciliation. Required: re-run the check
+when the section stack returns to its root (dispatched, e.g. at the end of `OnShellNavigated` when
+`Navigation?.NavigationStack?.Count <= 1`). It converges in one hop — the second pass finds
+`currentLocation == route` and returns — and `ParseDestination` already resolves `//view-rail` →
+`View` from the last segment (`:313-317`).
+
+**Device-verify, not code-fixable: `PrimaryTabBar.IsVisible = false` becomes load-bearing.** Today
+it is always followed by a `GoToAsync` that moves `CurrentItem` off the `TabBar`, so its real effect
+is masked. With the guard it is the *only* mechanism hiding the bottom bar in landscape while the
+`TabBar` is still `CurrentItem`. If MAUI instead re-points `CurrentItem` at another visible item, the
+pushed page is popped and the slice fails at its own goal. Contingency if the device check fails:
+`Shell.SetTabBarIsVisible(currentPage, false)`, not reverting the guard.
+
+**Confirmed, no change needed:** exactly one `IAppLifecycleService` implementation and no `Noop` twin
+(it holds in-memory state, not an Android API); `FullScreenViewerPage.xaml.cs:41,92` uses only
+`AppPaused`; all five `Mock<IAppLifecycleService>` fixtures compile unchanged against the extended
+interface; `Configuration.SmallestScreenWidthDp` is read in `Platforms/Android` and crosses into Core
+as a `double`, so Rule 5 holds; Rules 1–4 and 6 untouched; `Shell.Navigation.NavigationStack`
+`Count > 1` is the established in-repo idiom for "a detail page is pushed"
+(`ViewerPage.xaml.cs:44`).
+
+**Recorded invariant for slice 3:** `OnResume` calls `SyncNavigationOrientation()` **before**
+`NotifyResumed()` (`MainActivity.cs:132-133`), so `OrientationChanged` fires while `IsInForeground`
+is still `false`. Keep that order — it is what makes `IsLandscape` correct at resume — and make
+slice 3's handler tolerate it. Also: `SmallestWidthDp` defaults to `0` before the first
+configuration report, and `IsCompactDevice(0)` would classify as compact; slice 3 must decide
+whether `0` means "unknown".
+
+### 2026-09-06 — #384/#383 YouTube-style in-place full screen (up-front design consult)
+
+**APPROVE-B-WITH-CONSTRAINTS.** Approach B (retire `FullScreenViewerPage`; full screen becomes an
+in-place state of the single `ViewerView`) is approved and **supersedes the 2026-09-04 #338 verdict's
+third-host decision**. The #338 verdict chose the modal page explicitly to avoid a new
+`AppShell`/`AdaptiveShellStateViewModel` seam; that seam is now opened deliberately, because the
+modal design cannot express "landscape *is* the viewer layout" (#383) and cannot avoid a page
+transition (#384). Approach A is rejected as a fallback: it keeps two `ViewerView` instances, two
+render timers and the per-entry teardown discipline, and leaves #383 routed through the same
+push/pop machinery.
+
+**Findings that change the plan (verified in code, not taken from the research map):**
+
+- **BLOCKER, and it is a prerequisite, not a consequence: rotation currently destroys the pushed
+  `ViewerPage`.** On a phone, rotating to landscape flips `NavigationPolicyService.ResolvePlacement`
+  (`src/Core/Features/Navigation/Services/NavigationPolicyService.cs:25-28`) Bottom→LeftRail →
+  `AdaptiveShellStateViewModel.PlacementMode` → `AppShell.OnStatePropertyChanged` → `ApplyPlacement`
+  (`src/MauiApp/AppShell.xaml.cs:212-226`) → `Dispatcher.Dispatch(EnsurePrimaryDestinationVisibleAsync)`
+  → `GoToAsync("//view-rail")`. An absolute Shell route **resets the section stack**, so the pushed
+  `viewer` page is popped, `ViewerPage.OnDisappearing` (`ViewerPage.xaml.cs:37-49`) sees it off the
+  `NavigationStack` and calls `_viewModel.Dispose()` — which does **not** call `StopReceiver()`, so the
+  native receiver is left running while its page is gone. This is exactly the "Shell navigation reset
+  to the Home tab/root route on every rotation, discarding the live Viewer page and its connection"
+  behaviour the device analysis recorded, and it is corroborated by the 2026-09-05 #327 addendum
+  (`-tab` and `-rail` are two distinct `ShellContent` instance families). **"Rotate to landscape
+  enters full screen in place, no navigation, no reconnect" is unachievable until this is fixed**, and
+  no ordering trick between the placement change and the orientation callback is a sound fix (both are
+  queued onto the same main-thread dispatcher). Fix in **slice 1**: `EnsurePrimaryDestinationVisibleAsync`
+  must return early when a detail page is pushed (`Navigation?.NavigationStack?.Count > 1`).
+  `ApplyPlacement`'s chrome assignments still run, so the rail/tab swap still happens; only the
+  stack-resetting `GoToAsync` is suppressed. Accepted consequence: the route *family* stays stale
+  (`//view-tab/viewer` while the rail is shown) until the user pops back to a section root — visually
+  correct, and strictly better than losing the page. This has app-wide effect (Home→viewer,
+  Stream→diagnostic-log) and deserves its own reviewable slice + device check.
+
+- **The orientation seam is already in Core and already in the right place — do not add one to
+  `INavigationPolicyService`.** `IAppLifecycleService` (`src/Core/Services/IAppLifecycleService.cs:6,17`)
+  already carries `bool IsLandscape` and `NotifyConfigurationChanged(bool)`, already called from
+  `MainActivity.OnConfigurationChanged` (`MainActivity.cs:147-148`) **after**
+  `bridge.UpdateFromConfiguration`, and `ViewerViewModel` already depends on it (`_lifecycle`,
+  ctor `:112`, `AppResumed` subscription `:133`, unsubscribe in `Dispose` `:297`). `IsLandscape` is
+  currently dead state with no event. Required: add `event Action<bool>? OrientationChanged`
+  (raised inside `NotifyConfigurationChanged` **only on an actual change**), and fix
+  `MainActivity.SyncNavigationOrientation` (`:151-158`) to feed it too — today it only calls the
+  orientation bridge, so `IsLandscape` is wrong at startup and after a rotation performed while
+  backgrounded. This gives **zero** new `ViewerViewModel` constructor parameters for the orientation
+  signal and avoids a Viewer→Navigation feature coupling. `INavigationPolicyService.OrientationChanged`
+  and an `IWindowSizeClassService` height signal are both **rejected** as unnecessary.
+
+- **The phone/tablet discriminator is the device's short edge (sw), not a height class.**
+  `IWindowSizeClassService` is width-only, and width misclassifies: a Galaxy Tab A9+ in **portrait**
+  is ~600 dp wide = Medium, not Expanded, so "`Current != Expanded` ⇒ phone" would treat a portrait
+  tablet as a phone. A *height* class is correct but is only knowable post-rotation, while the decision
+  must be taken at the orientation edge. Android's own canonical discriminator —
+  `Configuration.SmallestScreenWidthDp` (sw600dp) — is orientation-invariant, available directly in
+  `MainActivity.OnConfigurationChanged(newConfig)` (the activity already declares
+  `ConfigChanges.SmallestScreenSize`, `MainActivity.cs:24-25`), and gives S21 = 360 (phone) and
+  Tab A9+ = 600 (tablet) with a wide margin. Required: `NotifyConfigurationChanged(bool isLandscape,
+  double smallestWidthDp)`; the predicate is a pure Core function
+  `ViewerControlLayout.IsCompactDevice(smallestWidthDp)` (`< 600`), unit-tested alongside the existing
+  layout policy per the standing #342 item 3 / #370 rule. **`MinDeckWidthDp=640` / `MinDeckHeightDp=470`
+  and every existing sheet/video formula stay byte-identical** — the new policy is purely additive, and
+  the slice must carry an explicit "unchanged" regression test.
+
+**Design decisions (a)–(g), binding:**
+
+**(a) Chrome seam — an override on `AdaptiveShellStateViewModel`, not per-page Shell attached
+properties.** `Shell.SetTabBarIsVisible`/`SetNavBarIsVisible` alone is **insufficient and therefore
+rejected as the primary mechanism**: the rail is not Shell's TabBar, it is a custom `RailItems`
+container rendered through `FlyoutBehavior.Locked` (`AppShell.xaml.cs:212-223`), and the phone-landscape
+case — the whole point of #383 — *is* the rail case. Required shape: `AdaptiveShellStateViewModel`
+gains `[ObservableProperty] bool _isChromeSuppressed` (name it for chrome, not "immersive" — immersive
+is `IImmersiveModeService`'s system-bar concept); `IsBottomNavigationVisible` and
+`IsLeftRailNavigationVisible` both `&& !IsChromeSuppressed`; `OnIsChromeSuppressedChanged` re-raises
+both. `AppShell.ApplyPlacement` must read those two computed properties instead of `PlacementMode`
+directly, `AppShell.OnStatePropertyChanged` must also fire on `IsChromeSuppressed`, and
+`ApplyPlacement` gains an `ensureDestination` parameter so a suppression toggle never calls
+`EnsurePrimaryDestinationVisibleAsync`. `PlacementMode` itself is never touched, so it snaps back
+correctly. The page-local nav bar stays page-local: the host page sets
+`Shell.SetNavBarIsVisible(this, !isFullScreen)`. **The `ModalStack` guard in `OnNavigating`
+(`:242-243`) and last-segment `ParseDestination` (`:306-320`) must both survive unchanged** — they
+protect ordinary Stream/View/Home/Settings handoffs, not just the retired modal, and full screen now
+raises no Shell navigation at all, which *strengthens* the invariant rather than replacing it. The
+`ModalStack.Count is not > 0` condition in `ViewerPage.OnDisappearing` (`:45`) stays as defence but
+its comment must stop referring to the deleted full-screen modal.
+
+**(b) Orientation.** New Core contract `src/Core/Services/IOrientationLockService.cs` mirroring
+`IImmersiveModeService`: `void RequestLandscape(); void RequestPortrait(); void Release();`.
+`Platforms/Android/Services/AndroidOrientationLockService` sets
+`Platform.CurrentActivity.RequestedOrientation` to `SensorLandscape` / `Portrait`, self-marshalling
+every member through `MainThread.BeginInvokeOnMainThread` exactly as `AndroidImmersiveModeService`
+does; `Services/NoopOrientationLockService` is the twin; both registered in the existing
+`#if ANDROID/#else` block (`MauiProgram.cs:111-131`). **`Release()` must set
+`ScreenOrientation.Unspecified`, not `FullSensor`** — the research plan's `FullSensor` overrides the
+user's system auto-rotate lock, which is a behavioural regression the app has never had (no
+`RequestedOrientation` and no manifest `screenOrientation` exist today). **The 400 ms
+`Task.Delay`-then-release heuristic is rejected**: release is event-driven — the ViewModel keeps a
+`_pendingOrientation` (None/Landscape/Portrait) and calls `Release()` when the matching
+`OrientationChanged` arrives, with a `TimeProvider`-driven 3 s timeout as the only fallback (testable
+with `FakeTimeProvider`, no wall-clock delay).
+
+Transitions, exhaustive. Let `compact = ViewerControlLayout.IsCompactDevice(_lifecycle.SmallestWidthDp)`:
+- rotate → landscape, `compact && IsPlaying` ⇒ `IsFullScreen = true`.
+- rotate → portrait, `compact` ⇒ `IsFullScreen = false`.
+- full-screen button, not full screen, `compact && !IsLandscape` ⇒ `RequestLandscape()`, pending =
+  Landscape; **full screen is entered by the resulting config change, not by the button** (one code
+  path). On timeout, enter full screen in portrait anyway — that is YouTube's documented behaviour
+  ("in portrait, entering full screen keeps the device in portrait and re-flows the overlay"), so the
+  fallback is a feature, not a hack.
+- full-screen button, not full screen, `!compact` (tablet) ⇒ `IsFullScreen = true` directly, **no
+  orientation request ever** — tablets keep the two-pane layout and free rotation.
+- exit button / Back / `Stop()` while full screen, `compact && IsLandscape` ⇒ `RequestPortrait()`,
+  pending = Portrait; full screen ends when portrait arrives. Otherwise `IsFullScreen = false`.
+- app pause / `Dispose()` ⇒ force `IsFullScreen = false` **and** `Release()` unconditionally; never
+  request a rotation while backgrounding, never leave the device pinned.
+- The resulting invariant on a compact device: **`IsFullScreen` ⟺ landscape** (while playing). That
+  is what makes #383 disappear rather than be patched: `ViewerControlLayout.Choose` is never asked to
+  return `Sheet` at 800×360 while playing.
+- Handler body wraps its state mutations in `_dispatcher.BeginInvokeOnMainThread` (Rule 4). This is
+  safe **only** because slice 1 removed the ordering dependency on `EnsurePrimaryDestinationVisibleAsync`.
+- Auto-enter requires `IsPlaying`: a chromeless empty screen with no visible exit is a trap.
+
+**(c) Overlay state machine (Core, `ViewerViewModel.FullScreen.cs`, `TimeProvider`-driven).**
+`ToggleControlsOverlayCommand` replaces `ShowControlsOverlayCommand` on the single-tap gesture:
+no-op when not full screen; visible ⇒ dispose the timer and hide immediately; hidden ⇒ show and re-arm.
+`NotifyControlInteraction()` stays as the reset used by PTZ/quality/audio commands (#342 item 9).
+Auto-hide: **2.5 s** for the minimal overlay — measurably faster than today's 3 s and consistent with
+the "already hidden by t=2 s" YouTube sample once screenshot latency is accounted for, while staying
+above the ~2 s floor where a reaching finger loses the target — and **5 s while the PTZ layer is
+open**, because camera aiming is a sustained interaction with visual pauses longer than 2.5 s between
+nudges. Both constants live in Core and are asserted with `FakeTimeProvider`. PTZ layer: new
+`[ObservableProperty] bool _isPtzLayerVisible` (default **false**) + `TogglePtzLayerCommand` behind a
+new camera button; the overlay's preset grid, d-pad and zoom borders rebind from `IsPtzControlActive`
+to a computed `IsFullScreenPtzVisible => IsPtzControlActive && IsPtzLayerVisible` (the root Grid's
+`AreControlsVisible` binding already gates them for auto-hide, so no third term). Reset to false on
+leaving full screen and on `Stop()`. Back: PTZ layer open ⇒ close it, stay full screen, consume;
+full screen (any overlay state) ⇒ the exit path in (b), consume; otherwise ⇒ default. A second Back
+during a pending portrait request must be swallowed by the pending flag.
+**Double-tap-to-toggle-full-screen is removed** (`ViewerView.xaml:46`). Reasons: two tap recognizers on
+one element force MAUI to delay the single tap while it disambiguates, which directly fights the
+"tap toggles the overlay immediately, no delay" behaviour the owner is asking for; rotation plus an
+explicit, now-`AutomationId`'d button make it redundant; and double-tap means seek in the app being
+imitated. Owner may veto — it is a user-visible removal.
+
+**(d) The single `ViewerView`.** No new layout policy is needed for the fill: the full-screen path
+already exists and is what the modal instance uses — `ChooseVideoHeightDp(..., isFullScreen: true)`
+returns `-1` (`ViewerControlLayout.cs:57`), the root `Grid` `DataTrigger` drops padding/row spacing to
+0 (`ViewerView.xaml:15-19`) and the video `Border` takes `Grid.RowSpan=2` (`:38-40`). Only
+`Overlay.IsVisible = isFullScreen && IsModalHost` (`ViewerView.xaml.cs:119`) becomes
+`= isFullScreen`. Deck and Sheet already collapse on `!isFullScreen` (`:120-121`); verify on device
+that `ViewerControlSheet` returns to its peek state after an exit (its `TranslationY` survives
+hiding). **The tablet pane goes full *window*, not full *pane*** — a chromeless overlay confined to
+3/5 of the width is not full screen. `SourceListPage` collapses `ListColumn` to 0 and restores it, and
+`ApplySizeClass` (`SourceListPage.xaml.cs:47-65`) must consult the current full-screen state so a
+size-class change mid-full-screen cannot restore `2*` underneath the video. **The SkiaSharp render
+timer is never stopped or restarted on a full-screen transition**: `StopRendering()` in
+`PresentFullScreenAsync` (`ViewerView.xaml.cs:157`) is deleted with the method; `OnPaintSurface`
+re-reads `e.Info` every paint and the existing `SizeChanged` → `UpdateLayoutVisibility` change-guard
+(`:125-126`) covers the resize. One instance, one timer, one `SKBitmap`, for the whole session.
+
+**(e) Removal plan.** Delete `FullScreenViewerPage.xaml(.cs)`; drop
+`AddTransient<FullScreenViewerPage>()` (`MauiProgram.cs:149`) and the `Func<FullScreenViewerPage>`
+factory (`:152-153`); delete `IsModalHostProperty`/`IsModalHost` (`ViewerView.xaml.cs:24-31`),
+`_presentingFullScreen` (`:42`), `PresentFullScreenAsync` (`:155-168`) and the modal branch of
+`OnViewModelPropertyChanged` (`:134-153`), which becomes a synchronous one-liner (drop `async void`).
+The page's real responsibilities — immersive enter/exit, back handling, chrome, teardown — move to a
+new non-visual **`src/MauiApp/Features/Viewer/Services/ViewerFullScreenChromeController`** (transient),
+with `Attach(Page host, ViewerViewModel vm)` / `Detach()` / `bool HandleBackButton()`, so
+`ViewerPage` and `SourceListPage` share one correct implementation instead of two symmetric copies —
+this is the direct mitigation for the "#296-class chrome-not-reset" risk that doubling the host count
+would otherwise create. Attach on `OnAppearing`, Detach on `OnDisappearing`, and Detach must
+unconditionally clear `IsChromeSuppressed`, call `ExitImmersive()` and `Release()` — only the visible
+host may own global chrome, which also settles the two-live-`ViewerViewModel` case (pane + pushed page).
+`Viewer.Teardown()` loses its only caller; instead call it from `ViewerPage.OnDisappearing` in the same
+branch that disposes the ViewModel (before `Dispose()`), turning dead code into deterministic
+`SKBitmap` release. **Delete `AndroidImmersiveModeService.FindTopModalDialogWindow` and the second
+`yield` (`:61-62, :65-81`)** — it exists solely because the full-screen page was a `DialogFragment`,
+and once nothing pushes modals it can only mis-target an unrelated dialog. `KeepScreenOn` is
+**unchanged**: it stays driven by `IsPlaying` (`ViewerViewModel.FullScreen.cs:29-32`) and released in
+`Dispose()` (`ViewerViewModel.cs:295`) — it must not be re-scoped to the full-screen state, or the
+screen sleeps during normal playback. `docs/architecture.md:137` ("three hosts … chromeless
+`FullScreenViewerPage` modal") and `:138` must be corrected **in the same PR as the deletion**, not
+deferred to a documenter pass: it reverses a decision that file currently records.
+
+**(f) Tests.** Unit (`tests/MauiApp.Tests`, Core-only reference): `ViewerControlLayoutTests` gains
+`IsCompactDevice` boundaries (0/359/360/599/600/601/800) **plus an explicit "existing Choose /
+sheet / video formulas unchanged" regression block**; `ViewerViewModelFullScreenTests` gains
+orientation-driven enter/exit gated on `IsCompactDevice`, the not-playing and tablet no-ops, the
+button-in-portrait path (`RequestLandscape` exactly once, `IsFullScreen` **not** set synchronously),
+event-driven release, the 3 s timeout fallback, exit-requests-portrait, app-pause force-exit +
+release, `Dispose` release + unsubscribe, overlay toggle hide/show semantics, 2.5 s / 5 s timings, PTZ
+layer toggle + reset, and an extension of the existing `NeverCallsStopReceiver` guard to every new
+path; new `AdaptiveShellStateViewModel` tests for `IsChromeSuppressed` forcing both visibility
+properties false regardless of `PlacementMode` and restoring on clear. **Known coverage gap:**
+`AppShell.EnsurePrimaryDestinationVisibleAsync` and the chrome controller live in `src/MauiApp`,
+which `tests/MauiApp.Tests` does not reference — slice 1's guard and the chrome restore are
+**device/e2e-verified only** (same gap recorded as item 9 of the 2026-09-04 follow-up verdict).
+Appium: the overlay currently has **no `AutomationId` anywhere** (`FullScreenControlsOverlay.xaml`),
+so once full screen becomes the only landscape layout on a phone, the suite is blind in landscape.
+Required: reuse the existing ids (`viewer.stop`, `viewer.audioToggle`, `viewer.quality.*`,
+`viewer.ptz.*`) on the overlay's equivalents — they are never in the tree simultaneously with the
+deck/sheet, and duplicate-id-across-hosts is already the accepted precedent (`TestIds.cs:96`) — plus
+new `viewer.fullScreenToggle`, `viewer.fullScreen.exit`, `viewer.fullScreen.overlay`,
+`viewer.fullScreen.camera`. `Pages/ViewerPage.cs` gains `EnterFullScreen()`, `ExitFullScreen()`,
+`IsFullScreen`, `ToggleCameraLayer()`, `TapVideo()`. Tests to re-run on device before any PR into
+`main`: `AppLaunchTests.AdaptiveNavigation_InLandscape_PlacesNavigationInTheLeftRail` (must still
+pass — proof that chrome suppression is scoped to full screen), `AccessibilityTests` (its
+portrait/landscape audit now reaches the overlay's controls), `SystemBarInsetTests`,
+`ThemeRegressionTests`, plus one new `[SkippableFact]` `Viewer_RotatedToLandscape_EntersFullScreenInPlace`
+(Skip.If no source, mirroring `Navigation_WatchOnASourceRow_OpensTheViewer`).
+Galaxy S21 device checklist: (1) on-screen exit button actually exits — the defect the device analysis
+found; (2) tap on video hides the overlay immediately, tap again shows it; (3) auto-hide at ~2.5 s,
+~5 s with the PTZ layer open, and every control interaction re-arms it; (4) rotate portrait→landscape
+enters full screen with **no** page transition, and portrait→landscape→portrait returns to the
+embedded viewer; (5) `pidof` identical and logcat free of `onCreate`/`onDestroy` across the whole
+cycle (no activity restart); (6) the NDI connection never drops — no `StopReceiver`, no reconnect
+banner, frame timestamps continuous; (7) the Shell no longer resets to a tab root on rotation (slice 1);
+(8) camera button reveals pad/presets/zoom, pan-down fully tappable at 48 dp, Back closes the layer
+before exiting; (9) Back exits full screen, second Back leaves the viewer; (10) chrome (tab bar, rail,
+nav bar, system bars) fully restored after every exit path including app pause/resume and tab switch;
+(11) with system auto-rotate **off**, the button still forces landscape and exit still returns to
+portrait; (12) Tab A9+: the button gives whole-window full screen from the two-pane page, the source
+list is restored on exit, and rotation never auto-enters full screen.
+
+**(g) Slices — three, ordered, each independently reviewable and device-verifiable.**
+1. *Rotation must not destroy the pushed page* — the prerequisite bugfix (also fixes a live defect on
+   `main`). `AppShell.xaml.cs`, `MainActivity.cs`, `IAppLifecycleService.cs`, `AppLifecycleService.cs`
+   + unit tests. Could even ship straight to `main` ahead of the feature.
+2. *Retire the modal; full screen in place* — mechanism swap, no new behaviour. Deletion +
+   `ViewerFullScreenChromeController` + `IsChromeSuppressed` + `AppShell.ApplyPlacement` + host wiring
+   + pane collapse + `docs/architecture.md`. Already fixes the "exit button does nothing" defect.
+3. *Orientation-driven full screen + overlay* — `IOrientationLockService` (+ impls + DI),
+   `ViewerControlLayout.IsCompactDevice`, the ViewModel state machine, toggle-to-hide, PTZ layer +
+   camera button, `TestIds`, page objects, new e2e.
+
+**Standing rules re-checked and preserved:** Rules 1/2/6 untouched (no bridge, DB or frame-lifetime
+code in scope); Rule 3 holds — all numeric and state logic lands in Core (`ViewerControlLayout`,
+`ViewerViewModel.FullScreen.cs`), views keep only `SizeChanged`/`PropertyChanged` plumbing, and the
+one new MauiApp class is Shell/Page chrome plumbing that cannot live in Core; Rule 4 holds — the new
+orientation callback marshals through `IMainThreadDispatcher`, the Android services self-marshal;
+Rule 5 holds — `IOrientationLockService` is a Core contract with an Android impl and a `Noop` twin in
+the existing `#if ANDROID` block; #342 item 5 holds — the overlay keeps binding `IsVisible` on inner
+elements while the host sets the root from code-behind; theming holds — every new brush must be
+`DynamicResource`; the #360 item 4 semantics idiom (description on the tap target) applies to the new
+camera and exit buttons.
+
 ### 2026-09-05 — #361 fit-check: main e2e failures after PR #299 (run 33954513042)
 
 **APPROVE-WITH-CHANGES.** Both root causes in the diagnosis are correct and correctly *placed*
