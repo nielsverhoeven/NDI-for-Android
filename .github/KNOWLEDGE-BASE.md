@@ -396,6 +396,18 @@ Two mechanisms keep it honest; do not remove either:
   P/Invoke interop layer unanalyzed. `wait-for-processing: true` is required — the severity gate
   reads alerts that do not exist until SARIF processing finishes.
 
+- **Release signing uses the four repository secrets** `RELEASE_KEYSTORE_BASE64`,
+  `RELEASE_KEYSTORE_PASSWORD`, `RELEASE_KEY_ALIAS`, `RELEASE_KEY_PASSWORD` (issue #385). The
+  `build-android` job decodes the keystore into `$RUNNER_TEMP`, passes the `AndroidSigning*`
+  properties to `dotnet publish` (passwords via the `env:` prefix, never inline), verifies the
+  result with `apksigner verify --print-certs` (fails on `CN=Android Debug`) and deletes the
+  keystore. Runs without the secrets (Dependabot, forks) build debug-signed with a warning.
+  Expected certificate: `CN=NDI for Android, OU=Mobile, O=NDI, L=Gouda, ST=Zuid-Holland, C=NL`,
+  SHA-256 `fcf1b453b782a0b9bbae3d48f8612b8ad3f78565af85864b18aa0b071cc84271`. Before this fix
+  every release was signed with the runner's ephemeral debug key, so updates failed with
+  `INSTALL_FAILED_UPDATE_INCOMPATIBLE` ("App niet geïnstalleerd"); devices carrying such a build
+  must uninstall once before the first release-signed install.
+
 ## UI e2e tests (Appium)
 
 **Hard gate**: before opening or merging a PR whose base is `main`, this suite must be green —

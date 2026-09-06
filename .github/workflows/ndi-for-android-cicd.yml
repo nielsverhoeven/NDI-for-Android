@@ -154,16 +154,53 @@ jobs:
       - name: Restore dependencies
         run: dotnet restore NdiForAndroid.sln --ignore-failed-sources
 
+      # Decodes the release keystore, when the secret is available, for the publish step below.
+      - name: Decode release keystore
+        id: keystore
+        shell: bash
+        env:
+          KEYSTORE_B64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$KEYSTORE_B64" ]; then
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::RELEASE_KEYSTORE_BASE64 is not available in this run; the APK will be debug-signed"
+            exit 0
+          fi
+          printf '%s' "$KEYSTORE_B64" | tr -d '\n\r ' | base64 -d > "$RUNNER_TEMP/release.keystore"
+          test -s "$RUNNER_TEMP/release.keystore"
+          echo "available=true" >> "$GITHUB_OUTPUT"
+
       # Stamps the computed version into the APK. Without this the package ships the csproj
       # defaults (1 / 1.0.0) regardless of the release it is published under.
       - name: Publish Release APK
-        run: >
-          dotnet publish src/MauiApp/NdiForAndroid.csproj
-          -f net10.0-android -c Release -o publish-output --no-restore
-          /p:AndroidPackageFormat=apk
-          /p:AndroidUseToolchain=True
-          /p:ApplicationDisplayVersion=${{ needs.version.outputs.version_name }}
-          /p:ApplicationVersion=${{ needs.version.outputs.version_code }}
+        shell: bash
+        env:
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+          RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+        run: |
+          # Signs the release APK with the stable release key when the keystore secret was
+          # available above. Without these properties .NET Android signs with the runner's
+          # ephemeral debug keystore, so every release carried a different certificate and
+          # updates failed with INSTALL_FAILED_UPDATE_INCOMPATIBLE.
+          SIGN_ARGS=()
+          if [ "${{ steps.keystore.outputs.available }}" = "true" ]; then
+            SIGN_ARGS+=(
+              /p:AndroidKeyStore=true
+              "/p:AndroidSigningKeyStore=$RUNNER_TEMP/release.keystore"
+              "/p:AndroidSigningKeyAlias=$RELEASE_KEY_ALIAS"
+              /p:AndroidSigningKeyPass=env:RELEASE_KEY_PASSWORD
+              /p:AndroidSigningStorePass=env:RELEASE_KEYSTORE_PASSWORD
+            )
+          fi
+
+          dotnet publish src/MauiApp/NdiForAndroid.csproj \
+            -f net10.0-android -c Release -o publish-output --no-restore \
+            /p:AndroidPackageFormat=apk \
+            /p:AndroidUseToolchain=True \
+            /p:ApplicationDisplayVersion=${{ needs.version.outputs.version_name }} \
+            /p:ApplicationVersion=${{ needs.version.outputs.version_code }} \
+            "${SIGN_ARGS[@]}"
 
       # The signed variant is the only installable one — the unsigned APK fails with
       # INSTALL_PARSE_FAILED_NO_CERTIFICATES on device and in CI.
@@ -178,12 +215,28 @@ jobs:
           echo "APK_PATH=$APK_PATH" >> "$GITHUB_ENV"
           echo "Built $(basename "$APK_PATH")"
 
+      - name: Verify release signature
+        if: steps.keystore.outputs.available == 'true'
+        shell: bash
+        run: |
+          APKSIGNER=$(ls -d "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
+          "$APKSIGNER" verify --print-certs "$APK_PATH" | tee "$RUNNER_TEMP/certs.txt"
+          if grep -q "CN=Android Debug" "$RUNNER_TEMP/certs.txt"; then
+            echo "::error::The release APK is debug-signed; the signing properties were not applied"
+            exit 1
+          fi
+
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: release-apk
           path: ${{ env.APK_PATH }}
           retention-days: 7
+
+      - name: Remove keystore
+        if: always()
+        shell: bash
+        run: rm -f "$RUNNER_TEMP/release.keystore" "$RUNNER_TEMP/certs.txt"
 
   # ════════════════════════════════════════════════════════════════════════════
   # E2E — runs on PRs into main and on main itself.
