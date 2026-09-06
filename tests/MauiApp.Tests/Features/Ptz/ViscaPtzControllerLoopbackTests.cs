@@ -9,7 +9,9 @@ namespace NdiForAndroid.Tests.Features.Ptz;
 public class ViscaPtzControllerLoopbackTests : IAsyncLifetime
 {
     private static readonly TimeSpan ShortTimeout = TimeSpan.FromMilliseconds(300);
-    private static readonly TimeSpan DefaultTimeout = TimeSpan.FromSeconds(5);
+
+    // Deliberately larger than ViscaPtzController's production defaults (3 s connect / 2 s command): these tests do not test timing.
+    private static readonly TimeSpan GenerousTimeout = TimeSpan.FromSeconds(5);
 
     private readonly LoopbackViscaCamera _camera = new();
 
@@ -21,8 +23,8 @@ public class ViscaPtzControllerLoopbackTests : IAsyncLifetime
         new(
             new ViscaTcpTransport(),
             new PtzEndpoint("127.0.0.1", _camera.Port),
-            connectTimeout ?? DefaultTimeout,
-            commandTimeout ?? DefaultTimeout);
+            connectTimeout ?? GenerousTimeout,
+            commandTimeout ?? GenerousTimeout);
 
     [Fact]
     public async Task PanTiltAsync_RespondMode_ReturnsTrue()
@@ -53,7 +55,7 @@ public class ViscaPtzControllerLoopbackTests : IAsyncLifetime
     public async Task PanTiltAsync_SilentMode_TimesOutWithoutHanging()
     {
         _camera.Mode = LoopbackViscaCameraMode.Silent;
-        var sut = CreateSut(ShortTimeout, ShortTimeout);
+        var sut = CreateSut(GenerousTimeout, ShortTimeout);
         var stopwatch = Stopwatch.StartNew();
 
         var result = await sut.PanTiltAsync(1f, 0f);
