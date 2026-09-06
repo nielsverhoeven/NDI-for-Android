@@ -154,6 +154,15 @@ jobs:
       - name: Restore dependencies
         run: dotnet restore NdiForAndroid.sln --ignore-failed-sources
 
+      # Signs the release APK with the stable release key (issue #385). Without these properties
+      # .NET Android signs with the runner's ephemeral debug keystore, so every release carried a
+      # different certificate and updates failed with INSTALL_FAILED_UPDATE_INCOMPATIBLE.
+      - name: Decode release keystore
+        shell: bash
+        run: |
+          echo "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" | base64 -d > "$RUNNER_TEMP/release.keystore"
+          test -s "$RUNNER_TEMP/release.keystore"
+
       # Stamps the computed version into the APK. Without this the package ships the csproj
       # defaults (1 / 1.0.0) regardless of the release it is published under.
       - name: Publish Release APK
@@ -164,6 +173,11 @@ jobs:
           /p:AndroidUseToolchain=True
           /p:ApplicationDisplayVersion=${{ needs.version.outputs.version_name }}
           /p:ApplicationVersion=${{ needs.version.outputs.version_code }}
+          /p:AndroidKeyStore=true
+          /p:AndroidSigningKeyStore=$RUNNER_TEMP/release.keystore
+          /p:AndroidSigningKeyAlias="${{ secrets.RELEASE_KEY_ALIAS }}"
+          /p:AndroidSigningKeyPass="${{ secrets.RELEASE_KEY_PASSWORD }}"
+          /p:AndroidSigningStorePass="${{ secrets.RELEASE_KEYSTORE_PASSWORD }}"
 
       # The signed variant is the only installable one — the unsigned APK fails with
       # INSTALL_PARSE_FAILED_NO_CERTIFICATES on device and in CI.
