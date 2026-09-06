@@ -36,7 +36,7 @@ unconditionally. Rule 5's intent is to keep Android APIs out of **Core** and out
 **APPROVE-WITH-CHANGES.** Test-project-only change; no production code, no fake change. The plan is
 the correct idiom and is a direct application of a rule this log already recorded: *"Timeouts must be
 constructor-injected, not `static readonly` — required for deterministic loopback timeout tests"*
-(#339 verdict, this file `:791-792`). `CreateSut()` currently applies the **timeout test's** budget to
+(#339 verdict, later in this log). `CreateSut()` currently applies the **timeout test's** budget to
 **every** test in the class (`ViscaPtzControllerLoopbackTests.cs:11,19-20`); giving each test the
 budget its own intent requires is what that rule was for.
 
@@ -45,7 +45,7 @@ budget its own intent requires is what that rule was for.
 rule is scoped to the #233 viewer reconnection **state machine** — pure logic, no I/O.
 `ViscaPtzController` is recorded at `docs/architecture.md:20` as owning a real
 "connect/reconnect/timeout state machine" over `System.Net.Sockets` (Dependency Rule 7), and the
-loopback suites are, by recorded decision (this file `:801-803`), **real-socket integration tests**.
+loopback suites are, by recorded decision (#339 verdict, later in this log), **real-socket integration tests**.
 Four concrete reasons against a virtual clock: (1) it needs a new `TimeProvider` ctor parameter on
 `ViscaPtzController` — a production change to fix a test flake; (2) `CancelAfter` would then never
 fire on its own, so the non-timeout tests get an *unbounded* budget with no fail-fast guard (there is
