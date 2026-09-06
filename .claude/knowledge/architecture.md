@@ -31,6 +31,89 @@ unconditionally. Rule 5's intent is to keep Android APIs out of **Core** and out
 
 ## Verdicts log
 
+### 2026-09-06 — #380 flaky `ViscaPtzControllerLoopbackTests` (per-test timeout budgets)
+
+**APPROVE-WITH-CHANGES.** Test-project-only change; no production code, no fake change. The plan is
+the correct idiom and is a direct application of a rule this log already recorded: *"Timeouts must be
+constructor-injected, not `static readonly` — required for deterministic loopback timeout tests"*
+(#339 verdict, this file `:791-792`). `CreateSut()` currently applies the **timeout test's** budget to
+**every** test in the class (`ViscaPtzControllerLoopbackTests.cs:11,19-20`); giving each test the
+budget its own intent requires is what that rule was for.
+
+**(a) Budgets, not `TimeProvider` — `TimeProvider` is the wrong tool here.**
+`docs/architecture.md:238`'s "no wall-clock in testable logic, tests advance a `FakeTimeProvider`"
+rule is scoped to the #233 viewer reconnection **state machine** — pure logic, no I/O.
+`ViscaPtzController` is recorded at `docs/architecture.md:20` as owning a real
+"connect/reconnect/timeout state machine" over `System.Net.Sockets` (Dependency Rule 7), and the
+loopback suites are, by recorded decision (this file `:801-803`), **real-socket integration tests**.
+Four concrete reasons against a virtual clock: (1) it needs a new `TimeProvider` ctor parameter on
+`ViscaPtzController` — a production change to fix a test flake; (2) `CancelAfter` would then never
+fire on its own, so the non-timeout tests get an *unbounded* budget with no fail-fast guard (there is
+no `xunit.runner.json` and no `[Fact(Timeout=)]` in this project) — strictly worse than a finite
+generous budget; (3) `PanTiltAsync_SilentMode_TimesOutWithoutHanging` would have to `Advance()` from
+the test thread with no signal for "the receive is now pending", and advancing before the linked CTS
+is created (`ViscaPtzController.cs:111-112`) means nothing ever cancels — a new, worse race, and its
+`Stopwatch` assertion measures real wall-clock anyway; (4) the repo's own
+`src/Core/Services/FakeTimeProvider.cs:38-43` creates a **real** `System.Threading.Timer`, so it
+could not drive a `TimeProvider`-backed CTS deterministically regardless. Rejected alternatives:
+disabling xUnit parallelisation (slows the whole suite, does not address cold-JIT), a retry
+attribute (hides flakes), bulk reads in the fake (reduces continuations, does not remove the race).
+
+**(b) Intent is preserved, including the retry test.** The retry in
+`SendCommandAsync` (`ViscaPtzController.cs:87-91`) is gated on `wasAlreadyConnected` and on attempt 1
+failing, and attempt 1 fails because the fake closed the socket (`LoopbackViscaCamera.cs:88-93`
+→ EOF/RST → `ViscaTcpTransport.cs:63`), **not** because a timer fired. Widening the budget cannot
+change which branch runs; it only stops an unrelated clock from pre-empting it. Note the deterministic
+proof of the reconnect already lives in the mock suite —
+`ViscaPtzControllerTests.PanTiltAsync_FailsOnOpenConnection_RetriesOnceAndReconnects:92-105` asserts
+`ConnectCount == 2` / `DisconnectCount == 1`, and `:108-118` covers the no-retry-on-fresh-connection
+case — so the loopback test's unique job is proving the same thing against a real peer close. That
+job survives the change intact.
+
+**(c) No `LoopbackViscaCamera` change is proposed, and that is the right call.** Behaviour-preservation
+is trivially satisfied. The byte-at-a-time reads (`:114-137`) are an efficiency smell, not a defect.
+
+**(d) No deviation from `docs/architecture.md`, `docs/constitution.md` or this file.** Core stays
+MAUI-free; the change is confined to `tests/MauiApp.Tests`, which references only `src/Core`.
+
+**Required changes:**
+
+1. **Do not name the new constant `DefaultTimeout`.** `ViscaPtzController.cs:12-13` already defines
+   the *actual* defaults (3 s connect / 2 s command) and they are what production
+   (`PtzControllerFactory.cs:23`) and the mock suite (`ViscaPtzControllerTests.cs:16`) use. A 5 s
+   test constant called `DefaultTimeout` misstates that and invites a future "consistency" edit that
+   reintroduces the flake. Use `GenerousTimeout` (or similar) with a one-line comment: *deliberately
+   larger than the production defaults; these tests do not test timing.*
+2. **`PanTiltAsync_SilentMode_TimesOutWithoutHanging` must keep the short budget on the *command*
+   only: `CreateSut(GenerousTimeout, ShortTimeout)`.** The `Stopwatch` window spans connect **and**
+   command, so with a 300 ms connect budget a starved runner can fail in `ConnectAsync` while all
+   three assertions (`false`, `Error`, `< 1500 ms`) still pass — a vacuous green in the one test that
+   exists to prove the command timeout fires. Tightening only the budget under test removes that path
+   and shrinks the residual flake the plan itself lists.
+3. **Verification must include unfiltered repeat runs.** `--filter "FullyQualifiedName~Loopback"`
+   removes the cross-collection parallelism that is the hypothesised trigger (no `CollectionBehavior`
+   attribute exists, so every class is its own collection and runs concurrently up to
+   `ProcessorCount`). Run at least part of the repeat loop on the full suite, and state plainly that
+   N green local runs is a smoke check — the acceptance signal is CI `build-and-test` staying green
+   over subsequent runs.
+
+**Mechanism note (do not over-index on the plan's decomposition of the 894 ms).** Attempt 1 of the
+second command almost always fails *fast* on EOF/RST, not by consuming its 300 ms. The dominant
+exposure is attempt 2: reconnect (300 ms) plus a fresh command (300 ms) racing the fake's accept-loop
+continuation and ~12 byte-wise continuations. Same conclusion, different arithmetic — worth knowing
+if the flake recurs.
+
+**Non-blocking / out of scope for #380:** (i) the loopback drop test asserts only "the second call
+returned true", not "a reconnect happened" — an optional connection counter on `LoopbackViscaCamera`
+would close that, though the mock suite already proves it; (ii) `LoopbackViscaCamera.Mode:32` is a
+plain auto-property written on the test thread and read on pool threads with no barrier (benign on
+x64 CI); (iii) neither loopback class carries `[Trait("Category","Integration")]` although
+`.claude/knowledge/testing.md:25` defines a stage by that filter; (iv) **drift**:
+`src/Core/Services/FakeTimeProvider.cs` is a hand-rolled `TimeProvider` sitting in **production
+Core** whose `CreateTimer` ignores its own fake clock, while the #338 verdict (item 6) already
+directs new work at `Microsoft.Extensions.Time.Testing.FakeTimeProvider` — it should eventually leave
+`src/Core` or be deleted, under its own ticket.
+
 ### 2026-09-05 — #361 fit-check: main e2e failures after PR #299 (run 33954513042)
 
 **APPROVE-WITH-CHANGES.** Both root causes in the diagnosis are correct and correctly *placed*
