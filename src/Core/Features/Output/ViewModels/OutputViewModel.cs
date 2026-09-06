@@ -85,25 +85,61 @@ public partial class OutputViewModel : ObservableObject, IDisposable
     private async Task LoadAsync()
     {
         var config = await _configRepo.GetAsync();
-        if (config is null)
-            return;
+        if (config is not null)
+        {
+            if (!string.IsNullOrWhiteSpace(config.PreferredStreamName))
+                StreamName = config.PreferredStreamName;
 
-        if (!string.IsNullOrWhiteSpace(config.PreferredStreamName))
-            StreamName = config.PreferredStreamName;
+            SelectedInputKind = config.InputKind;
+            CaptureMicrophone = config.CaptureMicrophone;
+        }
 
-        SelectedInputKind = config.InputKind;
-        CaptureMicrophone = config.CaptureMicrophone;
+        await CorroborateWithBridgeAsync("Output active");
     }
 
     private async void OnAppResumed()
     {
-        // Re-attach output session on resume if there was an active stream
+        await CorroborateWithBridgeAsync("Output session restored.");
+    }
+
+    /// <summary>
+    /// Reconciles observable state against the persisted snapshot and the live bridge — only
+    /// claim an active/restored session when the bridge corroborates it. A stale persisted flag
+    /// (process death, revoked permission, camera/mic loss while backgrounded) must not lie to
+    /// the user.
+    /// </summary>
+    private async Task CorroborateWithBridgeAsync(string activeStatusMessage)
+    {
         var state = await _appStateRepo.RestoreStateAsync();
-        if (state.IsOutputActive && !string.IsNullOrEmpty(state.StreamName))
+        if (string.IsNullOrWhiteSpace(state.StreamName))
+            return;
+
+        if (_bridge.IsActive)
         {
-            IsOutputActive = true;
-            StatusMessage = "Output session restored.";
-            StreamName = state.StreamName;
+            _dispatcher.BeginInvokeOnMainThread(() =>
+            {
+                IsOutputActive = true;
+                StreamName = state.StreamName;
+                IsReStreamMode = _bridge.IsReStreamActive;
+                ConnectionCount = _bridge.ConnectionCount;
+                IsOnProgramTally = _bridge.IsOnProgramTally;
+                StatusMessage = activeStatusMessage;
+            });
+        }
+        else
+        {
+            if (state.IsOutputActive)
+            {
+                await _appStateRepo.SaveAsync(new AppStateSnapshot(
+                    state.LastViewerSourceId, state.StreamName, false, state.LastSelectedSourceId));
+            }
+
+            _dispatcher.BeginInvokeOnMainThread(() =>
+            {
+                IsOutputActive = false;
+                StreamName = state.StreamName;
+                StatusMessage = "Tap Start to resume output";
+            });
         }
     }
 
@@ -114,7 +150,39 @@ public partial class OutputViewModel : ObservableObject, IDisposable
         {
             IsOnProgramTally = _bridge.IsOnProgramTally;
             ConnectionCount = _bridge.ConnectionCount;
+
+            // The bridge stopped itself (autonomous capture loss, or the notification
+            // Stop action) — correct local state to match.
+            if (IsOutputActive && !_bridge.IsActive)
+            {
+                IsOutputActive = false;
+                StatusMessage = "Output stopped";
+            }
         });
+    }
+
+    /// <summary>Pre-populates the stream name for a resume request without starting output.</summary>
+    [RelayCommand]
+    private async Task ApplyResumeRequestAsync()
+    {
+        var state = await _appStateRepo.RestoreStateAsync();
+        if (string.IsNullOrWhiteSpace(state.StreamName))
+            return;
+
+        StreamName = state.StreamName;
+        StatusMessage = "Tap Start to resume output";
+    }
+
+    /// <summary>Applies an inbound re-stream request from a deep link or the Sources page.</summary>
+    public void ApplyReStreamRequest(string? sourceId, bool isReStreamMode)
+    {
+        if (string.IsNullOrWhiteSpace(sourceId))
+            return;
+
+        ReStreamSourceId = sourceId;
+        IsReStreamMode = isReStreamMode;
+        StreamName = "NDI-" + new string(sourceId.Where(char.IsLetterOrDigit).Take(32).ToArray());
+        StatusMessage = "Re-stream mode: ready — tap Start to begin.";
     }
 
     [RelayCommand]
@@ -125,7 +193,7 @@ public partial class OutputViewModel : ObservableObject, IDisposable
         if (IsReStreamMode)
         {
             // When switching to re-stream mode, default stream name uses the source identifier.
-            StreamName = $"NDI-{string.Concat(ReStreamSourceId!.TakeWhile(char.IsLetterOrDigit)).Take(32)}";
+            StreamName = "NDI-" + new string(ReStreamSourceId!.Where(char.IsLetterOrDigit).Take(32).ToArray());
             StatusMessage = "Re-stream mode: select a discovered source on the Sources page.";
         }
         else

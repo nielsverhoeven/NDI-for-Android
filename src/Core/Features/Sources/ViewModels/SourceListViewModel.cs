@@ -2,6 +2,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using NdiForAndroid.Features.AppState.Models;
 using NdiForAndroid.Features.AppState.Repositories;
+using NdiForAndroid.Features.Navigation.Models;
 using NdiForAndroid.Features.Navigation.Services;
 using NdiForAndroid.Features.Settings.Services;
 using NdiForAndroid.Features.Sources.Models;
@@ -21,6 +22,7 @@ public partial class SourceListViewModel : ObservableObject
     private readonly IAppStateRepository _appStateRepo;
     private readonly IWindowSizeClassService _windowSizeClassService;
     private readonly Func<ViewerViewModel> _viewerViewModelFactory;
+    private readonly IMainThreadDispatcher _dispatcher;
 
     [ObservableProperty]
     private IReadOnlyList<NdiSource> _sources = Array.Empty<NdiSource>();
@@ -50,7 +52,8 @@ public partial class SourceListViewModel : ObservableObject
         IDiscoveryRefreshService refreshService,
         IAppStateRepository appStateRepo,
         IWindowSizeClassService windowSizeClassService,
-        Func<ViewerViewModel> viewerViewModelFactory)
+        Func<ViewerViewModel> viewerViewModelFactory,
+        IMainThreadDispatcher dispatcher)
     {
         _repository     = repository;
         _navigation     = navigation;
@@ -59,6 +62,7 @@ public partial class SourceListViewModel : ObservableObject
         _appStateRepo   = appStateRepo;
         _windowSizeClassService = windowSizeClassService;
         _viewerViewModelFactory = viewerViewModelFactory;
+        _dispatcher     = dispatcher;
 
         _refreshService.SnapshotReady += OnSnapshotReady;
         _windowSizeClassService.Changed += OnWindowSizeClassChanged;
@@ -75,12 +79,15 @@ public partial class SourceListViewModel : ObservableObject
 
     private void OnSnapshotReady(object? sender, DiscoverySnapshot snapshot)
     {
-        // MAUI's binding infrastructure dispatches ObservableProperty change notifications
-        // to the UI thread automatically; no explicit MainThread.Invoke needed in Core layer.
-        Sources      = snapshot.Sources;
-        ErrorMessage = snapshot.Status == DiscoveryStatus.Failure ? snapshot.ErrorMessage : null;
-        IsRefreshing = false;
-        UpdateDiscoveryModeLabel();
+        // Raised on a background/pump thread — marshal to the UI thread before touching
+        // bound state (Architecture Rule 4).
+        _dispatcher.BeginInvokeOnMainThread(() =>
+        {
+            Sources      = snapshot.Sources;
+            ErrorMessage = snapshot.Status == DiscoveryStatus.Failure ? snapshot.ErrorMessage : null;
+            IsRefreshing = false;
+            UpdateDiscoveryModeLabel();
+        });
     }
 
     [RelayCommand]
@@ -121,6 +128,25 @@ public partial class SourceListViewModel : ObservableObject
 
         // Navigate (fire and forget in ViewModel — Shell handles result)
         try { await _navigation.NavigateToAsync($"viewer?sourceId={Uri.EscapeDataString(source.SourceId)}"); } catch { /* Navigation failures are handled by Shell */ }
+    }
+
+    [RelayCommand]
+    private async Task NavigateToOutputAsync(NdiSource source)
+    {
+        var snapshot = await _appStateRepo.RestoreStateAsync();
+        await _appStateRepo.SaveAsync(new AppStateSnapshot(
+            snapshot.LastViewerSourceId,
+            snapshot.StreamName,
+            snapshot.IsOutputActive,
+            source.SourceId));
+
+        try
+        {
+            await _navigation.NavigateToPrimaryAsync(
+                PrimaryNavDestination.Stream,
+                $"reStreamSourceId={Uri.EscapeDataString(source.SourceId)}&isReStreamMode=true");
+        }
+        catch { /* Navigation failures are handled by Shell */ }
     }
 
     private void UpdateDiscoveryModeLabel()

@@ -47,7 +47,11 @@ When intent is ambiguous, ask the user to confirm before creating a branch or st
    after each task. For device-visible work, require `/android-build-install-run` evidence.
 10. **Validate CI** → `github-action-manager`. On failure, classify and delegate the fix to
     `implementer` / `tester` before advancing.
-11. **Test** → `tester`. Exit: all stages pass; `test-results/` report updated.
+11. **Test** → `tester`. Exit: all stages pass; `test-results/` report updated. **If the target
+    branch is (or will become) a PR into `main`**, this includes the Appium UI e2e suite
+    (`tests/MauiApp.UITests` — see `.claude/skills/android-ui-tests/SKILL.md`): dispatch
+    `emulator-tests.yml` or wait for the PR's own "Run Emulator UI Tests" check, and record the run
+    link as part of this stage's exit — a pending or unexecuted e2e run is not an exit.
 12. **Document** → `documenter`. Exit: `docs/` reflects the feature, no stale references.
 13. **Close** → `github-issues-manager`. Exit: issue updated with summary + PR link. Never close an
     issue before a PR exists for the work.

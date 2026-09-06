@@ -47,4 +47,10 @@ public static class Timeouts
     /// reason.
     /// </summary>
     public static readonly TimeSpan OrientationSettle = TimeSpan.FromMilliseconds(1200);
+
+    /// <summary>
+    /// A control's own state reflecting a tap that already landed — a VSM transition or an
+    /// auto-save round trip, not a page load.
+    /// </summary>
+    public static readonly TimeSpan StateChange = TimeSpan.FromSeconds(2);
 }
