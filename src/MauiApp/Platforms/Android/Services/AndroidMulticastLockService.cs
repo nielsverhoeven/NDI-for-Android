@@ -20,8 +20,11 @@ public sealed class AndroidMulticastLockService : IMulticastLockService
 
         if (_lock is null)
         {
-            var wifiManager = (WifiManager)global::Android.App.Application.Context
-                .GetSystemService(Context.WifiService)!;
+            var wifiManager = global::Android.App.Application.Context
+                .GetSystemService(Context.WifiService) as WifiManager;
+            if (wifiManager is null)
+                return Task.CompletedTask; // WifiManager unavailable — degrade silently, matching NoopMulticastLockService.
+
             _lock = wifiManager.CreateMulticastLock("ndi_mdns")!;
             _lock.SetReferenceCounted(false);
         }

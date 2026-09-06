@@ -102,25 +102,31 @@ public abstract class PageObject
     /// </summary>
     /// <remarks>
     /// <para>
-    /// A plain <c>Click()</c> on the element is not enough for this app's radio buttons. They use
-    /// a MAUI <c>ControlTemplate</c> rather than the native Android control — the repo's theming
-    /// rules require it, because <c>MaterialRadioButton</c> ignores <c>DynamicResource</c> — so
-    /// the automation id lands on a container while the node that actually responds to touch is
-    /// somewhere else in the subtree. Tapping the container reported <c>checked='false'</c>
-    /// afterwards, every time.
+    /// A plain <c>Click()</c> on the element is not always enough for this app's radio buttons.
+    /// They use a MAUI <c>ControlTemplate</c> rather than the native Android control — the repo's
+    /// theming rules require it, because <c>MaterialRadioButton</c> ignores
+    /// <c>DynamicResource</c> — so the automation id can land on a container rather than the node
+    /// that owns the touch handler. In practice Appium's UiAutomator2 <c>Click()</c> taps the
+    /// element's visible centre regardless of the <c>clickable</c> flag, so the direct tap
+    /// usually lands; the remaining strategies are belt-and-braces for a template where it does
+    /// not, and the one that actually worked is returned so a run records which input path this
+    /// control responds to.
     /// </para>
     /// <para>
-    /// Rather than guess which node is the right one, this tries the plausible targets in order
-    /// and stops at the first that changes the state. The strategy that worked is returned so the
-    /// caller can report it: if the direct tap ever starts working, that tells us the template
-    /// changed, and if the list is ever exhausted the failure names everything that was tried
-    /// instead of just saying the control did not respond.
+    /// Each strategy is followed by a bounded poll rather than a single immediate read: the
+    /// selection's VSM transition plus this page's auto-save mean a tap that landed can still read
+    /// back as unset for a short moment afterwards, and a single read would misreport that as the
+    /// strategy having failed.
     /// </para>
     /// </remarks>
     /// <param name="id">Automation id of the control.</param>
     /// <param name="isSet">Reads the control's current state.</param>
+    /// <param name="describeState">
+    /// Optional: describes what <paramref name="isSet"/> observes, included in the failure message
+    /// once every strategy is exhausted.
+    /// </param>
     /// <returns>Name of the strategy that worked.</returns>
-    protected string TapUntilSet(string id, Func<bool> isSet)
+    protected string TapUntilSet(string id, Func<bool> isSet, Func<string>? describeState = null)
     {
         var element = WaitFor(id);
 
@@ -129,28 +135,57 @@ public abstract class PageObject
 
         // 1. The element itself — correct for a native control, and the cheapest.
         element.Click();
-        if (isSet())
+        if (PollFor(isSet))
             return "direct tap";
 
         // 2. The nearest clickable node at or below the id. A templated control puts the touch
         //    handler on an inner view, so this is the one most likely to work here.
-        foreach (var descendant in FindClickableWithin(id))
+        var descendants = FindClickableWithin(id);
+        foreach (var descendant in descendants)
         {
             descendant.Click();
-            if (isSet())
+            if (PollFor(isSet))
                 return "tap on clickable descendant";
         }
 
         // 3. The element's centre as a raw pointer gesture. Bypasses the view tree entirely, so
         //    it works when the handler is on a node the tree does not expose as clickable.
         TapAtCentre(element);
-        if (isSet())
+        if (PollFor(isSet))
             return "pointer tap at centre";
 
+        var state = describeState is null ? string.Empty : $" Observed state: {describeState()}.";
         throw new InvalidOperationException(
             $"'{id}' did not change state after a direct tap, a tap on each clickable node " +
-            $"beneath it ({FindClickableWithin(id).Count} tried), and a pointer tap at its " +
-            "centre. The control is not responding to synthetic input at all.");
+            $"beneath it ({descendants.Count} tried), and a pointer tap at its centre. The " +
+            $"control is not responding to synthetic input at all.{state}");
+    }
+
+    /// <summary>
+    /// Polls <paramref name="isSet"/> for up to <see cref="Timeouts.StateChange"/>. An exception
+    /// mid-poll is tolerated (a templated control can briefly fail a read while it is still
+    /// transitioning) but propagates from the final attempt, so a genuine infrastructure failure
+    /// is never read back as "the tap did not take".
+    /// </summary>
+    private static bool PollFor(Func<bool> isSet)
+    {
+        var deadline = DateTime.UtcNow + Timeouts.StateChange;
+        while (DateTime.UtcNow < deadline)
+        {
+            try
+            {
+                if (isSet())
+                    return true;
+            }
+            catch
+            {
+                // Tolerated — the unguarded read after the loop is what surfaces a real failure.
+            }
+
+            Thread.Sleep(250);
+        }
+
+        return isSet();
     }
 
     /// <summary>True when any view in the tree belongs to our package.</summary>

@@ -13,6 +13,12 @@ internal sealed class NoopAudioCaptureSource : IAudioCaptureSource
         remove { }
     }
 
+    public event EventHandler<CaptureStoppedEventArgs>? Stopped
+    {
+        add { }
+        remove { }
+    }
+
     public bool IsActive => false;
 
     public Task StartAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;

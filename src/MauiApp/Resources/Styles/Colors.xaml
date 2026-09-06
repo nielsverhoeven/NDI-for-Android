@@ -28,6 +28,7 @@
     <Color x:Key="CardBackground">#2A2A3E</Color>
     <Color x:Key="InputBackground">#33334A</Color>
     <Color x:Key="ControlBackground">Transparent</Color>
+    <Color x:Key="ScrimBackground">#99000000</Color>
 
     <!-- Shell chrome -->
     <Color x:Key="ShellBackground">#1C1C1E</Color>
