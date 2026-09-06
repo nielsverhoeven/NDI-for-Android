@@ -66,7 +66,18 @@ public sealed class AndroidVideoCaptureSource : IVideoCaptureSource
 
     public event EventHandler<CapturedVideoFrame>? FrameReady;
 
+    public event EventHandler<CaptureStoppedEventArgs>? Stopped;
+
     public bool IsActive => _isActive;
+
+    private void RaiseStopped(CaptureStopReason reason, string? message = null)
+    {
+        if (!_isActive)
+            return;
+
+        try { Stopped?.Invoke(this, new CaptureStoppedEventArgs(reason, message)); }
+        catch { /* subscriber failures must never break capture teardown */ }
+    }
 
     /// <summary>
     /// Called by <c>MainActivity.OnActivityResult</c> to complete the pending
@@ -166,14 +177,23 @@ public sealed class AndroidVideoCaptureSource : IVideoCaptureSource
             activity.StartActivityForResult(manager.CreateScreenCaptureIntent(), ScreenCaptureRequestCode))
             .ConfigureAwait(false);
 
-        var (resultCode, data) = await consent.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
-        _consentTcs = null;
+        Result resultCode;
+        Intent? data;
+        try
+        {
+            (resultCode, data) = await consent.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            Interlocked.CompareExchange(ref _consentTcs, null, consent);
+        }
+
         if (resultCode != Result.Ok || data is null)
             throw new OperationCanceledException("Screen capture consent was declined.");
 
         // 2. The mediaProjection-typed foreground service must be RUNNING before
         //    GetMediaProjection on API 34+.
-        await _screenShareService.StartForegroundSessionAsync("NDI-Android", cancellationToken).ConfigureAwait(false);
+        await _screenShareService.StartForegroundSessionAsync("NDI-Android", VideoInputKind.Screen, cancellationToken).ConfigureAwait(false);
         _startedForegroundSession = true;
 
         // StartForegroundService completes asynchronously; until the service has
@@ -311,6 +331,9 @@ public sealed class AndroidVideoCaptureSource : IVideoCaptureSource
         if (status != PermissionStatus.Granted)
             throw new OperationCanceledException("Camera permission was denied.");
         cancellationToken.ThrowIfCancellationRequested();
+
+        await _screenShareService.StartForegroundSessionAsync("NDI-Android", kind, cancellationToken).ConfigureAwait(false);
+        _startedForegroundSession = true;
 
         var context = global::Android.App.Application.Context;
         var manager = (CameraManager?)context.GetSystemService(Context.CameraService)
@@ -577,7 +600,12 @@ public sealed class AndroidVideoCaptureSource : IVideoCaptureSource
 
         public ProjectionCallback(AndroidVideoCaptureSource owner) => _owner = owner;
 
-        public override void OnStop() => _owner.StopAsync().FireAndForget();
+        public override void OnStop()
+        {
+            _owner.RaiseStopped(CaptureStopReason.ProjectionStopped,
+                "Screen capture was stopped (system revoked or the user ended it from the share indicator).");
+            _owner.StopAsync().FireAndForget();
+        }
     }
 
     private sealed class CameraStateCallback : CameraDevice.StateCallback
@@ -594,18 +622,21 @@ public sealed class AndroidVideoCaptureSource : IVideoCaptureSource
         public override void OnOpened(CameraDevice camera) => _opened.TrySetResult(camera);
 
         public override void OnDisconnected(CameraDevice camera) =>
-            HandleLoss(camera, new InvalidOperationException("Camera was disconnected."));
+            HandleLoss(camera, CaptureStopReason.CameraDisconnected, new InvalidOperationException("Camera was disconnected."));
 
         public override void OnError(CameraDevice camera, CameraError error) =>
-            HandleLoss(camera, new InvalidOperationException($"Camera reported error '{error}'."));
+            HandleLoss(camera, CaptureStopReason.CameraError, new InvalidOperationException($"Camera reported error '{error}'."));
 
-        private void HandleLoss(CameraDevice camera, Exception error)
+        private void HandleLoss(CameraDevice camera, CaptureStopReason reason, Exception error)
         {
             try
             {
                 // During open: fault the awaiter. After open: stop the whole source cleanly.
                 if (!_opened.TrySetException(error))
+                {
+                    _owner.RaiseStopped(reason, error.Message);
                     _owner.StopAsync().FireAndForget();
+                }
                 camera.Close();
             }
             catch

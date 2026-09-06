@@ -206,6 +206,79 @@ public class OutputViewModelTests
     }
 
     [Fact]
+    public async Task LoadCommand_WhenBridgeActive_ReflectsRunningOutput()
+    {
+        _appStateRepoMock.Setup(r => r.RestoreStateAsync())
+            .ReturnsAsync(new AppStateSnapshot(null, "X", true, null));
+        _bridgeMock.SetupGet(b => b.IsActive).Returns(true);
+        _bridgeMock.SetupGet(b => b.ConnectionCount).Returns(2);
+
+        var sut = CreateSut();
+        await sut.LoadCommand.ExecuteAsync(null);
+
+        Assert.True(sut.IsOutputActive);
+        Assert.Equal("X", sut.StreamName);
+        Assert.Equal("Output active", sut.StatusMessage);
+        Assert.Equal(2, sut.ConnectionCount);
+    }
+
+    [Fact]
+    public async Task LoadCommand_WhenBridgeActiveWithReStream_RestoresReStreamMode()
+    {
+        _appStateRepoMock.Setup(r => r.RestoreStateAsync())
+            .ReturnsAsync(new AppStateSnapshot(null, "X", true, null));
+        _bridgeMock.SetupGet(b => b.IsActive).Returns(true);
+        _bridgeMock.SetupGet(b => b.IsReStreamActive).Returns(true);
+
+        var sut = CreateSut();
+        await sut.LoadCommand.ExecuteAsync(null);
+
+        Assert.True(sut.IsOutputActive);
+        Assert.True(sut.IsReStreamMode);
+    }
+
+    [Fact]
+    public async Task LoadCommand_WhenPersistedActiveButBridgeInactive_ShowsResumeHint()
+    {
+        _appStateRepoMock.Setup(r => r.RestoreStateAsync())
+            .ReturnsAsync(new AppStateSnapshot(null, "X", true, null));
+        _bridgeMock.SetupGet(b => b.IsActive).Returns(false);
+
+        var sut = CreateSut();
+        await sut.LoadCommand.ExecuteAsync(null);
+
+        Assert.False(sut.IsOutputActive);
+        Assert.Equal("Tap Start to resume output", sut.StatusMessage);
+        _appStateRepoMock.Verify(r => r.SaveAsync(It.Is<AppStateSnapshot>(
+            s => s.IsOutputActive == false && s.StreamName == "X")), Times.Once);
+    }
+
+    [Fact]
+    public async Task LoadCommand_WhenStreamNamePersistedAndFlagAlreadyFalse_ShowsResumeHintWithoutWriting()
+    {
+        _appStateRepoMock.Setup(r => r.RestoreStateAsync())
+            .ReturnsAsync(new AppStateSnapshot(null, "X", false, null));
+        _bridgeMock.SetupGet(b => b.IsActive).Returns(false);
+
+        var sut = CreateSut();
+        await sut.LoadCommand.ExecuteAsync(null);
+
+        Assert.False(sut.IsOutputActive);
+        Assert.Equal("Tap Start to resume output", sut.StatusMessage);
+        _appStateRepoMock.Verify(r => r.SaveAsync(It.IsAny<AppStateSnapshot>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task LoadCommand_WhenNothingPersisted_KeepsDefault()
+    {
+        var sut = CreateSut();
+        await sut.LoadCommand.ExecuteAsync(null);
+
+        Assert.Equal("Tap Start to begin broadcasting from this device.", sut.StatusMessage);
+        Assert.False(sut.IsOutputActive);
+    }
+
+    [Fact]
     public async Task StartOutputCommand_InReStreamMode_StartsReStreamFromSource()
     {
         _bridgeMock.Setup(b => b.StartReStreamFromSourceAsync(
@@ -253,5 +326,106 @@ public class OutputViewModelTests
         var type = sut.GetType();
         var prop = type.GetProperty("SourceId");
         Assert.Null(prop);
+    }
+
+    [Fact]
+    public void ApplyReStreamRequest_SetsReStreamSourceIdAndModeAndDefaultStreamName()
+    {
+        var sut = CreateSut();
+
+        sut.ApplyReStreamRequest("abc123", true);
+
+        Assert.Equal("abc123", sut.ReStreamSourceId);
+        Assert.True(sut.IsReStreamMode);
+        Assert.StartsWith("NDI-", sut.StreamName);
+    }
+
+    [Fact]
+    public void OnAppResumed_WhenBridgeCorroboratesActive_ShowsRestoredMessage()
+    {
+        _appStateRepoMock.Setup(r => r.RestoreStateAsync())
+            .ReturnsAsync(new AppStateSnapshot(null, "X", true, null));
+        _bridgeMock.SetupGet(b => b.IsActive).Returns(true);
+        var sut = CreateSut();
+
+        _lifecycleMock.Raise(l => l.AppResumed += null);
+
+        Assert.True(sut.IsOutputActive);
+        Assert.Equal("Output session restored.", sut.StatusMessage);
+        Assert.Equal("X", sut.StreamName);
+    }
+
+    [Fact]
+    public void OnAppResumed_WhenBridgeDoesNotCorroborate_ShowsTapStartAndClearsPersistedFlag()
+    {
+        _appStateRepoMock.Setup(r => r.RestoreStateAsync())
+            .ReturnsAsync(new AppStateSnapshot(null, "X", true, null));
+        _bridgeMock.SetupGet(b => b.IsActive).Returns(false);
+        var sut = CreateSut();
+
+        _lifecycleMock.Raise(l => l.AppResumed += null);
+
+        Assert.False(sut.IsOutputActive);
+        Assert.Equal("Tap Start to resume output", sut.StatusMessage);
+        _appStateRepoMock.Verify(r => r.SaveAsync(It.Is<AppStateSnapshot>(
+            s => s.IsOutputActive == false && s.StreamName == "X")), Times.Once);
+    }
+
+    [Fact]
+    public async Task OutputStatusChanged_WhenBridgeReportsInactive_CorrectsIsOutputActiveAndStatusMessage()
+    {
+        var sut = CreateSut();
+        await sut.StartOutputCommand.ExecuteAsync(null);
+        _bridgeMock.SetupGet(b => b.IsActive).Returns(false);
+
+        _bridgeMock.Raise(b => b.OutputStatusChanged += null, EventArgs.Empty);
+
+        Assert.False(sut.IsOutputActive);
+        Assert.Equal("Output stopped", sut.StatusMessage);
+    }
+
+    [Fact]
+    public async Task OutputStatusChanged_WhenBridgeStillActive_DoesNotChangeIsOutputActiveOrStatusMessage()
+    {
+        var sut = CreateSut();
+        await sut.StartOutputCommand.ExecuteAsync(null);
+        _bridgeMock.SetupGet(b => b.IsActive).Returns(true);
+
+        _bridgeMock.Raise(b => b.OutputStatusChanged += null, EventArgs.Empty);
+
+        Assert.True(sut.IsOutputActive);
+        Assert.Equal("Output active", sut.StatusMessage);
+    }
+
+    [Fact]
+    public async Task ApplyResumeRequestCommand_WhenStreamNamePersisted_PrePopulatesWithoutStartingOutput()
+    {
+        _appStateRepoMock.Setup(r => r.RestoreStateAsync())
+            .ReturnsAsync(new AppStateSnapshot(null, "MyStream", true, null));
+
+        var sut = CreateSut();
+
+        await sut.ApplyResumeRequestCommand.ExecuteAsync(null);
+
+        Assert.Equal("MyStream", sut.StreamName);
+        Assert.Equal("Tap Start to resume output", sut.StatusMessage);
+        Assert.False(sut.IsOutputActive);
+        _bridgeMock.Verify(b => b.StartOutputAsync(
+            It.IsAny<string>(), It.IsAny<VideoInputKind>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task ApplyResumeRequestCommand_WhenNoPersistedStreamName_LeavesStreamNameAndStatusUnchanged()
+    {
+        var sut = CreateSut();
+        var originalStreamName = sut.StreamName;
+        var originalStatusMessage = sut.StatusMessage;
+
+        await sut.ApplyResumeRequestCommand.ExecuteAsync(null);
+
+        Assert.Equal(originalStreamName, sut.StreamName);
+        Assert.Equal(originalStatusMessage, sut.StatusMessage);
+        Assert.False(sut.IsOutputActive);
     }
 }

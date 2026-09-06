@@ -17,6 +17,7 @@ This guide defines the active MAUI architecture baseline for NDI-for-Android and
 | `src/MauiApp/Features/Settings` | Feature presentation + app orchestration | Settings persistence UI, diagnostics toggles, server config |
 | `src/Core/Features/Navigation` | Cross-feature navigation services | `WindowSizeClassService`, `NavigationPolicyService`, adaptive shell state, navigation handoff |
 | `src/MauiApp/NdiBridge` + `src/Core/NdiBridge` | Native boundary | P/Invoke wrappers (`NdiRuntime`, discovery/viewer/output bridges, interop layer) and plain C# bridge models only |
+| `src/Core/Features/Ptz` | Feature domain (Core, MAUI-free) | PTZ control seam (`IPtzController`) with two backends — `NdiPtzController` (wraps `INdiViewerBridge`, zero behavior change) and `ViscaPtzController` (raw VISCA-over-TCP via `System.Net.Sockets`, own connect/reconnect/timeout state machine). `IPtzControllerFactory` selects a backend per source's optional VISCA override endpoint; `ViewerViewModel` owns the selection (`ViewerViewModel.Ptz.cs`), same place the per-source `QualityProfile` restore lives. |
 | `src/MauiApp/Data` | Persistence infrastructure | SQLite-backed repositories and data access services |
 | `src/MauiApp/Platforms/Android` | Platform implementation | Android-only lifecycle hooks, permissions, `NsdManager` bootstrap, MediaProjection/Camera2/AudioRecord capture sources, `AudioTrack` playback sink, foreground service |
 | `tests/MauiApp.Tests` | Unit and component tests | ViewModel and repository tests with mocked bridge |
@@ -30,6 +31,7 @@ This guide defines the active MAUI architecture baseline for NDI-for-Android and
 4. `NdiBridge` is the only layer allowed to perform native interop calls.
 5. Native NDI SDK types never leave the bridge boundary; only plain C# records/classes cross layers.
 6. Android-specific APIs are isolated in `Platforms/Android` services and injected through interfaces.
+7. Core may use BCL networking (`System.Net.Sockets`) for non-NDI device-control protocols (e.g. VISCA-over-TCP PTZ); NDI native interop stays bridge-only (Rule 4 governs `[DllImport("ndi")]` and NDI SDK types, not all networking).
 
 ## Architecture Diagram
 
@@ -116,15 +118,24 @@ Rules:
 1. Register non-tab pushed routes in `AppShell.xaml.cs` using `Routing.RegisterRoute`.
 2. ViewModels initiate navigation through the injected `INavigationService` abstraction.
 3. Route parameters are validated before bridge session creation.
-4. `OutputPage` is a top-level tab and does not accept or require a `sourceId` query parameter.
-5. Placement-adaptive routing is handled by `AppShell` reading `AdaptiveShellStateViewModel.IsLeftRailNavigationVisible`; rail placement uses `//xxx-rail` routes, bottom-tab placement uses `//xxx-tab` routes.
+4. `OutputPage` is a top-level tab and does not accept or require a `sourceId` query parameter, but
+   does accept the re-stream query parameters `reStreamSourceId` and `isReStreamMode`, and the
+   `resume` query parameter (bound via `[QueryProperty]` on `OutputPage`). On every appearance
+   `OutputPage` awaits `OutputViewModel.LoadCommand`, which corroborates observable state against
+   `INdiOutputBridge` before applying any one-shot query-parameter intent, since the page and its
+   ViewModel are re-created (not cached) on each tab entry. Primary destinations
+   (Home/Stream/View/Settings) must be navigated through
+   `INavigationService.NavigateToPrimaryAsync(PrimaryNavDestination, string? queryString)` —
+   placement-aware — never a hard-coded `//x-tab`/`//x-rail` route string.
+5. Placement-adaptive routing is handled by `ShellNavigationService` reading `AdaptiveShellStateViewModel.IsLeftRailNavigationVisible`; rail placement uses `//xxx-rail` routes, bottom-tab placement uses `//xxx-tab` routes.
 
 ### Window size classes and navigation placement (#279)
 
 - `IWindowSizeClassService` / `WindowSizeClassService` (`src/Core/Features/Navigation/Services/`) tracks the Material window width size class — **Compact** (< 600dp), **Medium** (600–840dp), **Expanded** (> 840dp). `AppShell.OnSizeAllocated` feeds the window width (device-independent units) into `UpdateFromWidth`, so the `Changed` event is always raised on the UI thread and only on class transitions.
 - `INavigationPolicyService` / `NavigationPolicyService` combines size class and device orientation: **left rail when landscape OR Expanded; bottom tabs otherwise.** Compact/Medium portrait phones keep tabs; 10" tablets get the rail in both orientations.
 - **Two-pane View tab**: `SourceListPage` (`src/MauiApp/Features/Sources/Views/SourceListPage.xaml.cs`) subscribes to size-class changes and switches to a 2*/3* two-column layout with an embedded `ViewerView` pane on Expanded, collapsing back to a single column otherwise. The pane's render loop is started/stopped with page visibility and size-class transitions.
-- `ViewerView` (`src/MauiApp/Features/Viewer/Views/ViewerView.xaml`) is the reusable SkiaSharp render surface shared by `ViewerPage` and the embedded pane: a ~30 fps dispatcher-timer pull loop invalidates the canvas only when the bridge has produced a newer frame, blitting the ARGB `int[]` into a reused `SKBitmap`.
+- `ViewerView` (`src/MauiApp/Features/Viewer/Views/ViewerView.xaml`) is the reusable SkiaSharp render surface shared by three hosts — `ViewerPage`, the embedded pane, and the chromeless `FullScreenViewerPage` modal (`IsModalHost="True"`) presented over either of the first two: a ~30 fps dispatcher-timer pull loop invalidates the canvas only when the bridge has produced a newer frame, blitting the ARGB `int[]` into a reused `SKBitmap`.
+- **Viewer control deck / sheet / full-screen overlay (#342)**: below the video surface, `ViewerView` switches between three `ContentView`s — `ViewerControlDeck` (fixed-height two-column deck: `PlaybackControlsView` + `CameraControlsView`), `ViewerControlSheet` (hand-built draggable bottom sheet, no `CommunityToolkit.Maui` dependency, tabbed Playback/PTZ), and `FullScreenControlsOverlay` (wireframe-A overlay reusing the #338 auto-hide `AreControlsVisible` state) — all under `src/MauiApp/Features/Viewer/Views/`. The deck-vs-sheet choice is a pure Core policy, `ViewerControlLayout.Choose(widthDp, heightDp)` (`src/Core/Features/Viewer/ViewerControlLayout.cs`, unit-tested): Deck only when the host's own measured width ≥ 640dp **and** height ≥ 470dp, else Sheet. The same class carries the sibling layout policies added for phone validation (#370) — `ShouldStackCameraPresets` (wraps the PTZ presets to a second row below 440dp of camera-controls width), `ChooseSheetExpandedHeightDp`/`ChooseSheetPeekHeightDp` (sheet expanded/peek heights from the padded host height), and `ChooseVideoHeightDp` (video surface height for Deck/Sheet/full-screen) — all pure and unit-tested. The rule: all viewer layout numbers live in `src/Core/Features/Viewer/ViewerControlLayout.cs` and are unit-tested; views only wire `SizeChanged`. `ViewerView.xaml.cs` computes the deck/sheet choice from its own `SizeChanged` (no `IWindowSizeClassService` subscription — that would leak on the transient `ViewerPage`/`FullScreenViewerPage` hosts) and sets `.IsVisible` directly on the three named hosts (no `BindableProperty` + `{x:Reference Root}` — a reusable `ContentView` must never bind its own root `IsVisible`, since an external host later assigning `.IsVisible` on that same instance — e.g. `ViewerControlSheet`'s tab switch — would silently clear the binding; visibility gating for reused content lives on an *inner* element instead). `PtzPanelView` is retired, superseded by `CameraControlsView`.
 
 ## NDI Bridge
 
@@ -135,7 +146,7 @@ Standard bridge pattern:
 1. Define discovery/viewer/output bridge interfaces in `src/Core/NdiBridge/INdiBridges.cs`; plain C# models in `src/Core/NdiBridge/NdiBridgeModels.cs` and `QualityProfile.cs`.
 2. Implement bridge classes in `src/MauiApp/NdiBridge/` (file split below). All `[DllImport("ndi")]` declarations live in the interop layer only.
 3. Bridge events (`ConnectionStateChanged`, `TallyEchoChanged`, `OutputStatusChanged`) are raised on pump/background threads — subscribers marshal to the UI thread (`IMainThreadDispatcher` in Core ViewModels).
-4. Stop or transfer active native sessions during route transitions or app suspend events (`INavigationHandoffService`).
+4. `INavigationHandoffService` stops the **viewer** receiver (`StopReceiver()`) when leaving the View tab. It does **not** touch the output sender: once started, `INdiOutputBridge` output keeps streaming across tab switches and app backgrounding via `ScreenShareForegroundService`, and stops only via the in-app Stop button or the persistent notification's Stop action.
 
 ### Bridge file layout (`src/MauiApp/NdiBridge/`)
 
@@ -169,7 +180,7 @@ The output bridge consumes platform capture through Core interfaces (`src/Core/S
 | `IAudioPlaybackSink` | `AndroidAudioPlaybackSink` | AudioTrack float PCM output for received NDI audio |
 | `INdiPlatformBootstrap` | `AndroidNsdBootstrap` | Holds `NsdManager` for the SDK's mDNS machinery |
 
-Non-Android targets register `Noop*` implementations (`src/MauiApp/Services/`). Sending runs under `ScreenShareForegroundService` (`foregroundServiceType="mediaProjection|camera|microphone"`, granted types only on API 34+).
+Non-Android targets register `Noop*` implementations (`src/MauiApp/Services/`). Sending runs under `ScreenShareForegroundService` (`foregroundServiceType="mediaProjection|camera|microphone"`, granted types only on API 34+); its persistent notification carries a Stop action that resolves `INdiOutputBridge` from the MAUI service provider and calls `StopOutputAsync()`, and a null `Intent` (Android's sticky-restart redelivery after process death) stops the service immediately instead of starting foreground with no live capture session.
 
 ### Discovery mode API (`INdiDiscoveryBridge`)
 
@@ -203,6 +214,8 @@ The bridge also exposes:
 - **Re-stream**: `StartReStreamFromSourceAsync(sourceId, qualityProfile)` / `StopReStreamAsync` / `IsReStreamActive` — a dedicated receiver+sender pair pumps frames from a remote source into a new sender named `"Re-stream of {sourceId}"`, forwarding the recv-owned native buffer zero-copy. Independent of the viewer bridge's connection.
 
 The last-used output configuration (`PreferredStreamName`, `InputKind`, `CaptureMicrophone`) is persisted via `IOutputConfigurationRepository` (`src/MauiApp/Features/Output/Repositories/OutputConfigurationRepository.cs`).
+
+Session state (`AppStateSnapshot.StreamName`/`IsOutputActive`, `src/Core/Features/AppState/Models/AppStateSnapshot.cs`, persisted via `IAppStateRepository`) is a separate, shorter-lived record: `StreamName` names the current or most recent **unterminated** output session, and is cleared to `null` only by the in-app Stop button (`OutputViewModel.StopOutputCommand`) — never by navigation or backgrounding. A stop triggered from the notification action goes through `INdiOutputBridge.StopOutputAsync()` only, so it leaves `StreamName` set: the session stays resumable (`IsOutputActive` corroborated `false`, `HomeViewModel.CanResumeOutput` true). `IsOutputActive` is a hint only; it is trusted for the UI's "restored" vs. "tap Start to resume" distinction only when corroborated live by `INdiOutputBridge.IsActive` (see `OutputViewModel.OnAppResumed` and `HomeViewModel.RefreshAsync`).
 
 ### INdiViewerBridge connection state
 

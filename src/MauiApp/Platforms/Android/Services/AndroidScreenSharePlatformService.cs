@@ -15,13 +15,14 @@ public sealed class AndroidScreenSharePlatformService : IScreenSharePlatformServ
 
     public bool IsForegroundServiceActive { get; private set; }
 
-    public Task StartForegroundSessionAsync(string streamName, CancellationToken cancellationToken = default)
+    public Task StartForegroundSessionAsync(string streamName, VideoInputKind kind, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
         var intent = new Intent(_context, typeof(ScreenShareForegroundService));
         intent.SetAction(ScreenShareForegroundService.ActionStart);
         intent.PutExtra(ScreenShareForegroundService.ExtraStreamName, streamName);
+        intent.PutExtra(ScreenShareForegroundService.ExtraCaptureKind, (int)kind);
 
         if (Build.VERSION.SdkInt >= BuildVersionCodes.O)
             _context.StartForegroundService(intent);

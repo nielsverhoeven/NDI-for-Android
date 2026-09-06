@@ -2,8 +2,10 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using NdiForAndroid.Features.AppState.Models;
 using NdiForAndroid.Features.AppState.Repositories;
+using NdiForAndroid.Features.Navigation.Models;
 using NdiForAndroid.Features.Sources.Models;
 using NdiForAndroid.Features.Sources.Repositories;
+using NdiForAndroid.NdiBridge;
 using NdiForAndroid.Services;
 
 namespace NdiForAndroid.Features.Home.ViewModels;
@@ -14,6 +16,7 @@ public partial class HomeViewModel : ObservableObject, IDisposable
     private readonly ISourceRepository _sourceRepository;
     private readonly IAppStateRepository _appStateRepo;
     private readonly INavigationService _navigationService;
+    private readonly INdiOutputBridge _outputBridge;
     private readonly IMainThreadDispatcher _dispatcher;
 
     [ObservableProperty]
@@ -31,17 +34,33 @@ public partial class HomeViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private string? _outputStatus;
 
+    [ObservableProperty]
+    private string? _lastViewerSourceId;
+
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(StartViewingLastSourceCommand))]
+    private bool _hasLastViewerSource;
+
+    [ObservableProperty]
+    private string? _lastOutputStreamName;
+
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(ResumeOutputCommand))]
+    private bool _canResumeOutput;
+
     public HomeViewModel(
         IDiscoveryRefreshService discoveryService,
         ISourceRepository sourceRepository,
         IAppStateRepository appStateRepo,
         INavigationService navigationService,
+        INdiOutputBridge outputBridge,
         IMainThreadDispatcher dispatcher)
     {
         _discoveryService = discoveryService;
         _sourceRepository = sourceRepository;
         _appStateRepo = appStateRepo;
         _navigationService = navigationService;
+        _outputBridge = outputBridge;
         _dispatcher = dispatcher;
 
         DiscoveryStatus = "Waiting for discovery...";
@@ -52,23 +71,39 @@ public partial class HomeViewModel : ObservableObject, IDisposable
 
         // Subscribe to discovery snapshots
         _discoveryService.SnapshotReady += OnDiscoverySnapshot;
+        _outputBridge.OutputStatusChanged += OnOutputStatusChanged;
 
-        LoadAsync();
+        RefreshCommand.Execute(null);
     }
 
-    private async void LoadAsync()
+    [RelayCommand]
+    private async Task RefreshAsync()
     {
         var state = await _appStateRepo.RestoreStateAsync();
-        
+        var cachedSources = await _sourceRepository.GetCachedSourcesAsync();
+
         _dispatcher.BeginInvokeOnMainThread(() =>
         {
             ViewerStatus = string.IsNullOrWhiteSpace(state.LastViewerSourceId)
                 ? "Idle (no source viewed yet)"
                 : $"Last viewed: {state.LastViewerSourceId}";
 
-            OutputStatus = state.IsOutputActive
+            var outputActive = state.IsOutputActive && _outputBridge.IsActive;
+            OutputStatus = outputActive
                 ? $"Active output to \"{state.StreamName ?? "unknown"}\""
                 : "Idle (no active output)";
+
+            LastViewerSourceId = state.LastViewerSourceId;
+            HasLastViewerSource = !string.IsNullOrWhiteSpace(state.LastViewerSourceId);
+
+            LastOutputStreamName = state.StreamName;
+            CanResumeOutput = !outputActive && !string.IsNullOrWhiteSpace(state.StreamName);
+
+            if (cachedSources.Count > 0)
+            {
+                SourceCount = cachedSources.Count;
+                DiscoveryStatus = "Connected to NDI network";
+            }
         });
     }
 
@@ -92,32 +127,31 @@ public partial class HomeViewModel : ObservableObject, IDisposable
         });
     }
 
-    [RelayCommand]
-    private async Task StartViewingLastSource()
+    private void OnOutputStatusChanged(object? sender, EventArgs e) =>
+        _dispatcher.BeginInvokeOnMainThread(() => _ = RefreshCommand.ExecuteAsync(null));
+
+    [RelayCommand(CanExecute = nameof(HasLastViewerSource))]
+    private async Task StartViewingLastSourceAsync()
     {
-        var state = await _appStateRepo.RestoreStateAsync();
-        
-        if (!string.IsNullOrWhiteSpace(state.LastViewerSourceId))
-        {
-            // Navigate to View tab with the last source
-            await _navigationService.NavigateToAsync($"view-tab?sourceId={state.LastViewerSourceId}");
-        }
+        if (string.IsNullOrWhiteSpace(LastViewerSourceId))
+            return;
+
+        await _navigationService.NavigateToPrimaryAsync(PrimaryNavDestination.View);
+        await _navigationService.NavigateToAsync($"viewer?sourceId={Uri.EscapeDataString(LastViewerSourceId)}");
     }
 
-    [RelayCommand]
-    private async Task ResumeOutput()
+    [RelayCommand(CanExecute = nameof(CanResumeOutput))]
+    private async Task ResumeOutputAsync()
     {
-        var state = await _appStateRepo.RestoreStateAsync();
-        
-        if (state.IsOutputActive && !string.IsNullOrWhiteSpace(state.StreamName))
-        {
-            // Navigate to Stream tab to resume output
-            await _navigationService.NavigateToAsync($"stream-tab?streamName={state.StreamName}");
-        }
+        if (!CanResumeOutput)
+            return;
+
+        await _navigationService.NavigateToPrimaryAsync(PrimaryNavDestination.Stream, "resume=true");
     }
 
     public void Dispose()
     {
         _discoveryService.SnapshotReady -= OnDiscoverySnapshot;
+        _outputBridge.OutputStatusChanged -= OnOutputStatusChanged;
     }
 }
