@@ -44,7 +44,7 @@
     <PackageReference Include="Microsoft.Maui.Controls" Version="10.*" />
     <!-- 1.11.x: moves to SQLitePCLRaw 3.x chain, fixing NU1903 (GHSA-2m69-gcr7-jv3q) in the retired bundle_green 2.1.11 line. -->
     <PackageReference Include="sqlite-net-pcl" Version="1.11.284-beta" />
-    <PackageReference Include="Microsoft.Extensions.Logging.Debug" Version="9.*" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Debug" Version="10.*" />
     <!-- Video rendering surface for received NDI frames (#277). -->
     <PackageReference Include="SkiaSharp.Views.Maui.Controls" Version="4.*" />
   </ItemGroup>
