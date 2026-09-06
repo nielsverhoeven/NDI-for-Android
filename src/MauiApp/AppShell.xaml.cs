@@ -301,17 +301,24 @@ public partial class AppShell : Shell
         // MAUI re-applies per-page toolbar appearance on navigation, resetting the
         // AppBarLayout background to template defaults — restore the themed chrome (#296).
         _appearanceService.ReapplyChrome();
+
+        if (Navigation?.NavigationStack?.Count <= 1)
+            Dispatcher.Dispatch(async () => await EnsurePrimaryDestinationVisibleAsync());
+    }
+
+    private static string? LastSegment(string? location)
+    {
+        if (string.IsNullOrWhiteSpace(location)) return null;
+        return location.Split('?', 2)[0].Split('/', StringSplitOptions.RemoveEmptyEntries).LastOrDefault();
     }
 
     private static PrimaryNavDestination? ParseDestination(string? location)
     {
-        if (string.IsNullOrWhiteSpace(location)) return null;
         // Match on the last path segment only — a query value, or an ancestor
         // segment (e.g. "stream-tab" when "viewer" is pushed on top of it),
         // must never influence which destination this resolves to.
-        var path = location.Split('?', 2)[0];
-        var segment = path.Split('/', StringSplitOptions.RemoveEmptyEntries).LastOrDefault() ?? string.Empty;
-        var s = segment.ToLowerInvariant();
+        var s = LastSegment(location)?.ToLowerInvariant();
+        if (string.IsNullOrEmpty(s)) return null;
         if (s.Contains("home")     || s.Contains("sources")) return PrimaryNavDestination.Home;
         if (s.Contains("stream")   || s.Contains("output"))  return PrimaryNavDestination.Stream;
         if (s.Contains("view")     || s.Contains("viewer"))  return PrimaryNavDestination.View;
@@ -324,16 +331,15 @@ public partial class AppShell : Shell
 
     private async Task EnsurePrimaryDestinationVisibleAsync()
     {
-        if (_handoffInProgress)
-            return;
+        if (_handoffInProgress) return;
+        if (Navigation?.NavigationStack?.Count > 1) return;
+        if (Navigation?.ModalStack?.Count > 0) return;
+        if (!TryGetRouteForCurrentPlacement(_stateViewModel.SelectedDestination, out var route)) return;
 
-        if (!TryGetRouteForCurrentPlacement(_stateViewModel.SelectedDestination, out var route))
-            return;
+        var currentSegment = LastSegment(CurrentState?.Location?.OriginalString);
+        if (string.Equals(currentSegment, route.Trim('/'), StringComparison.OrdinalIgnoreCase)) return;
 
-        var currentLocation = CurrentState?.Location?.OriginalString;
-        if (string.Equals(currentLocation, route, StringComparison.OrdinalIgnoreCase))
-            return;
-
-        await GoToAsync(route);
+        try { await GoToAsync(route); }
+        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"Placement reconciliation failed: {ex}"); }
     }
 }
