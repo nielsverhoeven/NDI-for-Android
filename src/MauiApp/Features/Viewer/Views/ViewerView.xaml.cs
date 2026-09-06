@@ -209,6 +209,8 @@ public partial class ViewerView : ContentView
         float h = frame.Height * scale;
         var dest = SKRect.Create((info.Width - w) / 2f, (info.Height - h) / 2f, w, h);
 
-        canvas.DrawBitmap(_frameBitmap, dest);
+        // SkiaSharp 4 retires the paint-only DrawBitmap overload; Default sampling (nearest
+        // neighbour, no mipmaps) is what that overload used, so the output is unchanged.
+        canvas.DrawBitmap(_frameBitmap, dest, SKSamplingOptions.Default);
     }
 }
