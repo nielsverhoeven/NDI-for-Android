@@ -2,12 +2,14 @@
 <ContentView xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              xmlns:vm="clr-namespace:NdiForAndroid.Features.Viewer.ViewModels;assembly=NdiForAndroid.Core"
+             xmlns:t="clr-namespace:NdiForAndroid.Testing;assembly=NdiForAndroid.Core"
              x:Class="NdiForAndroid.Features.Viewer.Views.CameraControlsView"
              x:DataType="vm:ViewerViewModel">
     <VerticalStackLayout Spacing="4" IsVisible="{Binding IsPtzControlActive}">
         <Border Padding="8,3" StrokeShape="RoundRectangle 10"
                 BackgroundColor="{DynamicResource CardBackground}"
-                Stroke="{DynamicResource BorderColor}">
+                Stroke="{DynamicResource BorderColor}"
+                SemanticProperties.Description="PTZ endpoint settings">
             <Border.GestureRecognizers>
                 <TapGestureRecognizer Command="{Binding OpenPtzEndpointFormCommand}" />
             </Border.GestureRecognizers>
@@ -28,38 +30,59 @@
             </Label>
         </Border>
 
-        <Grid ColumnDefinitions="Auto,Auto,Auto" ColumnSpacing="8">
-            <Grid Grid.Column="0" RowDefinitions="48,48,48" ColumnDefinitions="48,48,48"
+        <Grid x:Name="ControlsGrid" RowDefinitions="Auto,Auto" ColumnDefinitions="Auto,Auto,Auto" RowSpacing="0" ColumnSpacing="8">
+            <Grid x:Name="PadGrid" Grid.Row="0" Grid.Column="0" RowDefinitions="48,48,48" ColumnDefinitions="48,48,48"
                   RowSpacing="8" ColumnSpacing="8">
                 <Button Grid.Row="0" Grid.Column="1" Text="▲" WidthRequest="48" HeightRequest="48" Padding="0"
-                        Command="{Binding PtzNudgeCommand}" CommandParameter="up" />
+                        AutomationId="{x:Static t:TestIds.ViewerPtzUp}"
+                        Command="{Binding PtzNudgeCommand}" CommandParameter="up"
+                        SemanticProperties.Description="Pan up" />
                 <Button Grid.Row="1" Grid.Column="0" Text="◄" WidthRequest="48" HeightRequest="48" Padding="0"
-                        Command="{Binding PtzNudgeCommand}" CommandParameter="left" />
+                        AutomationId="{x:Static t:TestIds.ViewerPtzLeft}"
+                        Command="{Binding PtzNudgeCommand}" CommandParameter="left"
+                        SemanticProperties.Description="Pan left" />
                 <Button Grid.Row="1" Grid.Column="1" Text="AF" WidthRequest="48" HeightRequest="48" Padding="0"
-                        Command="{Binding PtzAutoFocusCommand}" />
+                        AutomationId="{x:Static t:TestIds.ViewerPtzAutoFocus}"
+                        Command="{Binding PtzAutoFocusCommand}" SemanticProperties.Description="Autofocus" />
                 <Button Grid.Row="1" Grid.Column="2" Text="►" WidthRequest="48" HeightRequest="48" Padding="0"
-                        Command="{Binding PtzNudgeCommand}" CommandParameter="right" />
+                        AutomationId="{x:Static t:TestIds.ViewerPtzRight}"
+                        Command="{Binding PtzNudgeCommand}" CommandParameter="right"
+                        SemanticProperties.Description="Pan right" />
                 <Button Grid.Row="2" Grid.Column="1" Text="▼" WidthRequest="48" HeightRequest="48" Padding="0"
-                        Command="{Binding PtzNudgeCommand}" CommandParameter="down" />
+                        AutomationId="{x:Static t:TestIds.ViewerPtzDown}"
+                        Command="{Binding PtzNudgeCommand}" CommandParameter="down"
+                        SemanticProperties.Description="Pan down" />
             </Grid>
 
-            <VerticalStackLayout Grid.Column="1" Spacing="8" VerticalOptions="Center">
+            <VerticalStackLayout x:Name="ZoomStack" Grid.Row="0" Grid.Column="1" Spacing="8" VerticalOptions="Center">
                 <Button Text="T" WidthRequest="48" HeightRequest="48" Padding="0"
-                        Command="{Binding PtzZoomNudgeCommand}" CommandParameter="in" />
+                        AutomationId="{x:Static t:TestIds.ViewerPtzZoomIn}"
+                        Command="{Binding PtzZoomNudgeCommand}" CommandParameter="in"
+                        SemanticProperties.Description="Zoom in" />
                 <Button Text="W" WidthRequest="48" HeightRequest="48" Padding="0"
-                        Command="{Binding PtzZoomNudgeCommand}" CommandParameter="out" />
+                        AutomationId="{x:Static t:TestIds.ViewerPtzZoomOut}"
+                        Command="{Binding PtzZoomNudgeCommand}" CommandParameter="out"
+                        SemanticProperties.Description="Zoom out" />
             </VerticalStackLayout>
 
-            <Grid Grid.Column="2" RowDefinitions="48,48" ColumnDefinitions="48,48,48,48"
+            <Grid x:Name="PresetGrid" Grid.Row="0" Grid.Column="2" RowDefinitions="48,48" ColumnDefinitions="48,48,48,48"
                   RowSpacing="8" ColumnSpacing="8" VerticalOptions="Center">
-                <Button x:Name="Preset1Button" Grid.Row="0" Grid.Column="0" Text="1" WidthRequest="48" HeightRequest="48" Padding="0" />
-                <Button x:Name="Preset2Button" Grid.Row="0" Grid.Column="1" Text="2" WidthRequest="48" HeightRequest="48" Padding="0" />
-                <Button x:Name="Preset3Button" Grid.Row="0" Grid.Column="2" Text="3" WidthRequest="48" HeightRequest="48" Padding="0" />
-                <Button x:Name="Preset4Button" Grid.Row="0" Grid.Column="3" Text="4" WidthRequest="48" HeightRequest="48" Padding="0" />
-                <Button x:Name="Preset5Button" Grid.Row="1" Grid.Column="0" Text="5" WidthRequest="48" HeightRequest="48" Padding="0" />
-                <Button x:Name="Preset6Button" Grid.Row="1" Grid.Column="1" Text="6" WidthRequest="48" HeightRequest="48" Padding="0" />
-                <Button x:Name="Preset7Button" Grid.Row="1" Grid.Column="2" Text="7" WidthRequest="48" HeightRequest="48" Padding="0" />
-                <Button x:Name="Preset8Button" Grid.Row="1" Grid.Column="3" Text="8" WidthRequest="48" HeightRequest="48" Padding="0" />
+                <Button x:Name="Preset1Button" Grid.Row="0" Grid.Column="0" Text="1" WidthRequest="48" HeightRequest="48" Padding="0"
+                        SemanticProperties.Description="Preset 1" />
+                <Button x:Name="Preset2Button" Grid.Row="0" Grid.Column="1" Text="2" WidthRequest="48" HeightRequest="48" Padding="0"
+                        SemanticProperties.Description="Preset 2" />
+                <Button x:Name="Preset3Button" Grid.Row="0" Grid.Column="2" Text="3" WidthRequest="48" HeightRequest="48" Padding="0"
+                        SemanticProperties.Description="Preset 3" />
+                <Button x:Name="Preset4Button" Grid.Row="0" Grid.Column="3" Text="4" WidthRequest="48" HeightRequest="48" Padding="0"
+                        SemanticProperties.Description="Preset 4" />
+                <Button x:Name="Preset5Button" Grid.Row="1" Grid.Column="0" Text="5" WidthRequest="48" HeightRequest="48" Padding="0"
+                        SemanticProperties.Description="Preset 5" />
+                <Button x:Name="Preset6Button" Grid.Row="1" Grid.Column="1" Text="6" WidthRequest="48" HeightRequest="48" Padding="0"
+                        SemanticProperties.Description="Preset 6" />
+                <Button x:Name="Preset7Button" Grid.Row="1" Grid.Column="2" Text="7" WidthRequest="48" HeightRequest="48" Padding="0"
+                        SemanticProperties.Description="Preset 7" />
+                <Button x:Name="Preset8Button" Grid.Row="1" Grid.Column="3" Text="8" WidthRequest="48" HeightRequest="48" Padding="0"
+                        SemanticProperties.Description="Preset 8" />
             </Grid>
         </Grid>
 
