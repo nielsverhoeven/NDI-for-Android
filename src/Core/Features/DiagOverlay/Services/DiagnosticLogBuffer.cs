@@ -10,6 +10,12 @@ public sealed class DiagnosticLogBuffer
     private readonly object _lock = new();
     private readonly Queue<LogEntry> _entries = new(200);
     private const int MaxCapacity = 200;
+    private readonly TimeProvider _timeProvider;
+
+    public DiagnosticLogBuffer(TimeProvider? timeProvider = null)
+    {
+        _timeProvider = timeProvider ?? TimeProvider.System;
+    }
 
     public IReadOnlyList<LogEntry> GetEntries(int count = 200)
     {
@@ -23,7 +29,7 @@ public sealed class DiagnosticLogBuffer
     public void Add(string category, string message, LogLevel level = LogLevel.Info)
     {
         var entry = new LogEntry(
-            DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+            _timeProvider.GetUtcNow().ToUnixTimeMilliseconds(),
             RedactSensitiveData(category),
             RedactSensitiveData(message),
             level);

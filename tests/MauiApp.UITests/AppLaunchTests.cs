@@ -114,6 +114,27 @@ public sealed class AppLaunchTests : UiTestBase
     });
 
     [SkippableFact]
+    public void Stream_TypedStreamName_SurvivesATabSwitch() => Run(app =>
+    {
+        app.ResetToHome();
+
+        app.Navigation.GoTo(NavDestination.Stream);
+        app.Output.WaitUntilVisible();
+        app.Output.StreamName = "E2E-Keep-Me";
+
+        // Leaving and re-entering the tab used to bind a brand-new OutputViewModel (#352/#359):
+        // the constructor default "NDI-Android" came back and the typed name was lost. Nothing in
+        // this suite ever starts output, so no PreferredStreamName is persisted that LoadCommand
+        // could legitimately apply on re-entry.
+        app.Navigation.GoTo(NavDestination.Home);
+        app.Home.WaitUntilVisible();
+        app.Navigation.GoTo(NavDestination.Stream);
+        app.Output.WaitUntilVisible();
+
+        Assert.Equal("E2E-Keep-Me", app.Output.StreamName);
+    });
+
+    [SkippableFact]
     public void Settings_AllFiveSections_AreReachable() => Run(app =>
     {
         app.ResetToHome();

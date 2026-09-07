@@ -38,6 +38,7 @@ dotnet test tests/MauiApp.Tests             # Non-NDI unit tests — must pass b
 | Viewer control deck / sheet / overlay (#342) | `src/MauiApp/Features/Viewer/Views/PlaybackControlsView.xaml(.cs)`, `CameraControlsView.xaml(.cs)`, `ViewerControlDeck.xaml(.cs)`, `ViewerControlSheet.xaml(.cs)`, `FullScreenControlsOverlay.xaml(.cs)` — `PtzPanelView` removed, superseded by `CameraControlsView` |
 | Viewer control layout policy (Core, unit-tested) | `src/Core/Features/Viewer/ViewerControlLayout.cs` (`Choose(widthDp, heightDp)` → Deck when width ≥ 640dp and height ≥ 470dp, else Sheet; `ShouldStackCameraPresets`, `ChooseSheetExpandedHeightDp`/`ChooseSheetPeekHeightDp`, `ChooseVideoHeightDp` added for #370 — video height and the sheet's expanded/peek heights are derived from the same Core policy; 240dp video / 440dp expanded / 320dp peek remain the values for a portrait phone and for the deck) |
 | Window size class + nav policy | `src/Core/Features/Navigation/Services/` (`WindowSizeClassService`, `NavigationPolicyService`) |
+| Developer-mode diagnostics state (Core, unit-tested, #333) | `src/Core/Features/DiagOverlay/Services/` (`IDiagnosticOverlayService`, `DiagnosticOverlayService`, `DiagnosticLogBuffer`, `IDiagnosticLogSink`); logcat mirror = `src/MauiApp/Platforms/Android/Services/AndroidLogcatDiagnosticSink.cs` (Noop twin in `src/MauiApp/Services/`) |
 | SQLite/Data layer | `src/MauiApp/Data/` |
 | Android platform services | `src/MauiApp/Platforms/Android/` |
 | Unit tests | `tests/MauiApp.Tests/` |
@@ -74,6 +75,7 @@ tests/
 4. **NDI threading**: bridge events (`ConnectionStateChanged`, `TallyEchoChanged`, `OutputStatusChanged`) are raised on pump/background threads — subscribers marshal to the UI thread (`IMainThreadDispatcher` in Core, `MainThread.BeginInvokeOnMainThread` in MauiApp)
 5. **Android APIs** isolated in `Platforms/Android/` behind interfaces
 6. **No root `IsVisible` binding on a reusable `ContentView`** — a `View.SetValue` from host code-behind clears an active one-way binding on that same property, so a `ContentView` reused across multiple hosts (e.g. `CameraControlsView` inside both `ViewerControlDeck` and `ViewerControlSheet`) must bind visibility on an *inner* element and leave its own root free for the host to toggle imperatively (`.IsVisible = ...`) without side effects. See #342 (`ViewerControlDeck`/`ViewerControlSheet`/`FullScreenControlsOverlay`).
+7. **Tab-root lifetime rule (#352/#359)** — ShellContent-hosted pages are re-resolved from DI on every tab entry/placement change and never dispose their ViewModel; a ViewModel subscribing to a singleton event is registered **Singleton together with its page** (`SourceListViewModel`/`SourceListPage`, `HomeViewModel`/`HomePage`, `OutputViewModel`/`OutputPage`). Guarded by `tests/MauiApp.Tests/Composition/TabRootLifetimeRegistrationTests.cs`. Only push-navigated pages (`ViewerPage`) dispose a Transient ViewModel, and only after leaving the nav stack.
 
 ## Shell Routes
 
@@ -98,6 +100,7 @@ Left navigation rail placement: same pages on `//home-rail`, `//stream-rail`, `/
 - `OutputViewModel`: "Output session restored." only when the bridge corroborates; otherwise "Tap Start to resume output" (no period) and the persisted flag is cleared; "Output stopped" on an autonomous stop. `OutputPage` accepts `resume=true` (query) → `ApplyResumeRequestCommand` pre-fills the stream name and never starts capture.
 - `HomeViewModel` takes `INdiOutputBridge`; Output status and `CanResumeOutput` derive from `state.IsOutputActive && _outputBridge.IsActive`; quick actions are disabled (not hidden) when unavailable. Start Viewing Last Source calls `NavigateToPrimaryAsync(View)` BEFORE pushing `viewer?sourceId=` so the push lands under the View tab/rail (otherwise the handoff never stops the receiver).
 - Background streaming (#327): an active output keeps running across tab switches and app backgrounding under `ScreenShareForegroundService`; `NdiNavigationHandoffService` only stops the viewer receiver when leaving View (constructor: `INdiViewerBridge` only). The persistent notification has a **Stop** action (`ActionStopRequested` → `INdiOutputBridge.StopOutputAsync()`; if the bridge is null or inactive the service stops itself). A sticky restart with a null intent stops the service (#351). A notification stop keeps `AppState.StreamName`, so Home offers Resume; only the in-app Stop button clears the name.
+- Lifetime (#352/#359): `OutputViewModel`/`OutputPage` and `HomeViewModel`/`HomePage` are Singletons, so the Stream tab keeps its typed stream name / input kind / mode across tab switches and rotation; `LoadCommand` re-corroborates with the bridge on every appearance and `OutputPage` consumes its query intents one-shot. e2e: `AppLaunchTests.Stream_TypedStreamName_SurvivesATabSwitch`.
 
 ## Settings Feature (Issue #142 — MERGED to main, PR #211)
 - **ViewModel**: `SettingsViewModel` — 5 sections: General, Appearance, Discovery, DeveloperTools, About
@@ -170,6 +173,12 @@ builder.Services.AddSingleton<IDiscoveryRefreshService, DiscoveryRefreshService>
 // SourceListViewModel + SourceListPage are Singleton (subscribes to singleton refresh service)
 builder.Services.AddSingleton<SourceListViewModel>();
 builder.Services.AddSingleton<Features.Sources.Views.SourceListPage>();
+
+// Tab-root pages + ViewModels that subscribe to singleton events are Singleton pairs (#352/#359)
+builder.Services.AddSingleton<HomeViewModel>();
+builder.Services.AddSingleton<Features.Home.Views.HomePage>();
+builder.Services.AddSingleton<OutputViewModel>();
+builder.Services.AddSingleton<Features.Output.Views.OutputPage>();
 ```
 
 ### New/changed files for #213

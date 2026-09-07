@@ -373,7 +373,7 @@ logging must never throw into the pump loop.
 
 **APPROVE-WITH-CHANGES overall.** Verdicts per fix in the session report. Binding decisions:
 
-- **FIX-02 (OutputPage half): REJECTED.** `OutputPage` is a `ShellContent` `ContentTemplate` target
+- **[SUPERSEDED 2026-09-07 — see the #352/#359 verdict below]** **FIX-02 (OutputPage half): REJECTED.** `OutputPage` is a `ShellContent` `ContentTemplate` target
   (`src/MauiApp/AppShell.xaml:43,72`), i.e. Shell-cached for the section lifetime — identical to the
   `HomePage` disposal bug FIX-03 removes. Disposing its transient `OutputViewModel` in
   `OnDisappearing` would permanently kill `OutputStatusChanged` + `AppResumed` after the first tab
@@ -496,7 +496,8 @@ Binding changes:
    (`MauiProgram.cs:125`) and `HomePage` must not dispose it (ShellContent tab root — FIX-02 rule),
    so the `Dispose()` unsubscribe is dead code and ≤2 stale VMs stay subscribed to the singleton
    bridge. Same shape as `OutputViewModel` today; accepted, follow-up issue owed for tab-root VM
-   lifetime. Use `_ = RefreshCommand.ExecuteAsync(null)` (AsyncRelayCommand suppresses concurrent
+   lifetime. **Resolved 2026-09-07 by #352/#359 (Singleton pair).** Use
+   `_ = RefreshCommand.ExecuteAsync(null)` (AsyncRelayCommand suppresses concurrent
    executions).
 5. **T013 must not merge before slice 1 is device-verified.** It removes the only code that clears
    persisted `IsOutputActive` on leaving Stream; the corroboration path replaces it.
@@ -904,6 +905,31 @@ Binding changes:
 6. Message split: `LoadAsync` passes `"Output active"` (identical to `StartOutputCommand`, `:228`),
    `OnAppResumed` keeps `"Output session restored."`. A page appearance renders state; only a resume
    narrates a transition.
+
+### 2026-09-07 — #352/#359 tab-root ViewModel lifetime (amends FIX-02)
+
+**DECIDED: option 1, Singleton pair.** `HomeViewModel`+`HomePage` and `OutputViewModel`+`OutputPage`
+are registered Singleton (`src/MauiApp/MauiProgram.cs`), matching `SourceListViewModel`/`SourceListPage`
+(C1). Rationale: the 2026-09-05 addendum proved re-creation per tab entry (so the FIX-02 rule 'tab roots
+must not dispose' was right for the wrong reason and left an unbounded leak); an OnAppearing/OnDisappearing
+attach/detach (option 2) would unsubscribe `OutputViewModel` from `AppResumed` exactly while the app is
+backgrounded (OnDisappearing fires on sleep and on modal push — `ViewerPage.xaml.cs:40-46`) and would
+need catch-up logic for Home's discovery status; the singleton page is already proven to re-parent
+across `-tab`/`-rail` ShellContents by the e2e orientation loops (`AccessibilityTests.cs:91-99`,
+`ThemeRegressionTests.cs:56-64`). No captive dependency: both pages depend only on their ViewModel and
+every ViewModel dependency is a Singleton.
+
+**Rule (replaces FIX-02):** a ShellContent-hosted tab root whose ViewModel subscribes to a singleton event
+is a Singleton pair (page + ViewModel); `Dispose()` on such a ViewModel is container-owned and is never
+called from page lifecycle; per-visit work goes through the appearance command (`RefreshCommand` /
+`LoadCommand`), which must re-corroborate against the bridge; query intents on a singleton page are
+consumed one-shot (`OutputPage.ApplyEntryStateAsync` nulls them in `finally`). Push-navigated pages
+(`ViewerPage`) keep the Transient + dispose-after-leaving-the-stack pattern. `SettingsViewModel` stays
+Transient (no singleton subscriptions). Documented in `docs/architecture.md` Dependency Rule 8 and
+`KNOWLEDGE-BASE.md` Architecture Rule 7; guarded by `TabRootLifetimeRegistrationTests`.
+
+Accepted behaviour change: Stream-tab state (typed name, input kind, mic, re-stream mode, status text)
+now persists across tab visits/rotation — the symptom the #327 fit-check observed is gone by design.
 
 ## Open questions / assumptions
 

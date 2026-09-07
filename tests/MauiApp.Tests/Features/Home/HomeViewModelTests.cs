@@ -138,6 +138,48 @@ public class HomeViewModelTests
         Assert.Equal("Idle (no active output)", sut.OutputStatus);
     }
 
+    // ── Lifetime contract (#352/#359): one subscription per event for the app lifetime ─────────
+
+    [Fact]
+    public void Constructor_SubscribesToEachSingletonEventExactlyOnce()
+    {
+        _ = CreateSut();
+
+        _discoveryServiceMock.VerifyAdd(d => d.SnapshotReady += It.IsAny<EventHandler<DiscoverySnapshot>>(), Times.Once);
+        _outputBridgeMock.VerifyAdd(b => b.OutputStatusChanged += It.IsAny<EventHandler>(), Times.Once);
+    }
+
+    [Fact]
+    public void RepeatedAppearances_OnTheSameInstance_DoNotAddSubscriptions()
+    {
+        var sut = CreateSut();
+
+        // HomePage.OnAppearing re-runs RefreshCommand on every tab entry; under the singleton
+        // lifetime that is the only per-visit work and it must leave the event wiring alone.
+        sut.RefreshCommand.Execute(null);
+        sut.RefreshCommand.Execute(null);
+        sut.RefreshCommand.Execute(null);
+
+        _discoveryServiceMock.VerifyAdd(d => d.SnapshotReady += It.IsAny<EventHandler<DiscoverySnapshot>>(), Times.Once);
+        _outputBridgeMock.VerifyAdd(b => b.OutputStatusChanged += It.IsAny<EventHandler>(), Times.Once);
+    }
+
+    [Fact]
+    public void Dispose_RemovesEverySubscriptionItAdded()
+    {
+        var sut = CreateSut();
+
+        sut.Dispose();
+
+        _discoveryServiceMock.VerifyRemove(d => d.SnapshotReady -= It.IsAny<EventHandler<DiscoverySnapshot>>(), Times.Once);
+        _outputBridgeMock.VerifyRemove(b => b.OutputStatusChanged -= It.IsAny<EventHandler>(), Times.Once);
+
+        // A snapshot after teardown must not reach the (disposed) instance.
+        _discoveryServiceMock.Raise(d => d.SnapshotReady += null, sut, new DiscoverySnapshot(
+            "snap-after-dispose", DiscoveryStatus.Empty, Array.Empty<NdiSource>(), DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()));
+        Assert.Equal("Waiting for discovery...", sut.DiscoveryStatus);
+    }
+
     [Fact]
     public async Task StartViewingLastSourceCommand_WhenLastSourcePersisted_NavigatesToViewThenViewer()
     {

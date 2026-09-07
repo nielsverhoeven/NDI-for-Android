@@ -3,6 +3,14 @@ using NdiForAndroid.Features.Output.ViewModels;
 
 namespace NdiForAndroid.Features.Output.Views;
 
+/// <summary>Stream tab root. Singleton (matches <see cref="OutputViewModel"/>, #352/#359).</summary>
+/// <remarks>
+/// Hosted by two <c>ShellContent</c>s (<c>stream-tab</c> and <c>stream-rail</c>); Shell re-parents this
+/// single instance between them. Because the instance lives for the app lifetime, the three query
+/// properties are one-shot: <see cref="ApplyEntryStateAsync"/> nulls them in <c>finally</c> so an old
+/// <c>resume=true</c> / re-stream intent is never re-applied on a later plain tab entry. Never dispose the
+/// ViewModel from page lifecycle.
+/// </remarks>
 [QueryProperty(nameof(ReStreamSourceId), "reStreamSourceId")]
 [QueryProperty(nameof(IsReStreamMode), "isReStreamMode")]
 [QueryProperty(nameof(ResumeRequested), "resume")]
