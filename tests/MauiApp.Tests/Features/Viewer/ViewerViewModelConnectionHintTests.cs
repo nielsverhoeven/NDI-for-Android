@@ -28,6 +28,7 @@ public class ViewerViewModelConnectionHintTests
     private readonly Mock<IPtzControllerFactory> _ptzControllerFactoryMock = new();
     private readonly Mock<IPtzController> _ptzControllerMock = new();
     private readonly Mock<IImmersiveModeService> _immersiveModeMock = new();
+    private readonly Mock<IAccessibilityAnnouncer> _announcerMock = new();
 
     public ViewerViewModelConnectionHintTests()
     {
@@ -42,7 +43,7 @@ public class ViewerViewModelConnectionHintTests
         _bridgeMock.Object, _timeProvider, _dispatcher, _appStateRepoMock.Object, _lifecycleMock.Object,
         _sourceRepoMock.Object, _connectionHistoryMock.Object,
         _ptzControllerFactoryMock.Object, new PtzEndpointFormViewModel(_ptzControllerFactoryMock.Object),
-        _immersiveModeMock.Object);
+        _immersiveModeMock.Object, _announcerMock.Object);
 
     private ViewerViewModel CreatePlayingSut()
     {

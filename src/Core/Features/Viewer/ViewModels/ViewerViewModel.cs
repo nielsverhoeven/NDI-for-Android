@@ -38,6 +38,7 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
     private readonly IConnectionHistoryService _connectionHistory;
     private readonly IPtzControllerFactory _ptzControllerFactory;
     private readonly IImmersiveModeService _immersiveMode;
+    private readonly IAccessibilityAnnouncer _announcer;
 
     [ObservableProperty]
     private string? _sourceId;
@@ -131,7 +132,8 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
         IConnectionHistoryService connectionHistory,
         IPtzControllerFactory ptzControllerFactory,
         PtzEndpointFormViewModel ptzEndpointForm,
-        IImmersiveModeService immersiveMode)
+        IImmersiveModeService immersiveMode,
+        IAccessibilityAnnouncer announcer)
     {
         _bridge = bridge;
         _timeProvider = timeProvider;
@@ -143,6 +145,7 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
         _ptzControllerFactory = ptzControllerFactory;
         PtzEndpointForm = ptzEndpointForm;
         _immersiveMode = immersiveMode;
+        _announcer = announcer;
         RetryRemainingSeconds = ReconnectConstants.RetryWindowSeconds;
         StatusMessage = "Select a source on Home to start viewing.";
         _isAudioEnabled = bridge.IsAudioEnabled; // backing field: don't push the default back to the bridge
@@ -224,6 +227,27 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
     {
         _wasPlayingBeforeResume = value;
         if (value) StartStatsWatchdog(); else StopStatsWatchdog();
+    }
+
+    /// <summary>What TalkBack speaks when the source starts echoing program tally (#350).</summary>
+    public const string TallyOnProgramAnnouncement = "On program";
+
+    /// <summary>What TalkBack speaks when program tally clears while still playing (#350).</summary>
+    public const string TallyOffProgramAnnouncement = "Off program";
+
+    /// <summary>
+    /// Redundant non-visual tally cue (WCAG 1.4.1, #350). Runs on the UI thread because
+    /// <see cref="OnBridgeTallyEchoChanged"/> marshals through <see cref="IMainThreadDispatcher"/>
+    /// before assigning <see cref="IsTallyProgram"/>. Gated on <see cref="IsPlaying"/>: Stop()
+    /// clears IsPlaying before IsTallyProgram, so the user's own stop never triggers an
+    /// "Off program" announcement.
+    /// </summary>
+    partial void OnIsTallyProgramChanged(bool value)
+    {
+        if (!IsPlaying)
+            return;
+
+        _announcer.Announce(value ? TallyOnProgramAnnouncement : TallyOffProgramAnnouncement);
     }
 
     partial void OnSourceIdChanged(string? value)

@@ -27,6 +27,7 @@ public class ViewerViewModelTests
     private readonly Mock<IPtzControllerFactory> _ptzControllerFactoryMock = new();
     private readonly Mock<IPtzController> _ptzControllerMock = new();
     private readonly Mock<IImmersiveModeService> _immersiveModeMock = new();
+    private readonly Mock<IAccessibilityAnnouncer> _announcerMock = new();
 
     public ViewerViewModelTests()
     {
@@ -48,7 +49,7 @@ public class ViewerViewModelTests
         _bridgeMock.Object, _timeProvider, _dispatcher, _appStateRepoMock.Object, _lifecycleMock.Object,
         _sourceRepoMock.Object, _connectionHistoryMock.Object,
         _ptzControllerFactoryMock.Object, new PtzEndpointFormViewModel(_ptzControllerFactoryMock.Object),
-        _immersiveModeMock.Object);
+        _immersiveModeMock.Object, _announcerMock.Object);
 
     /// <summary>Started on "src-1" (all mocked awaits complete synchronously); bridge call log
     /// cleared so tests count only the traffic they generate from here.</summary>
@@ -243,6 +244,70 @@ public class ViewerViewModelTests
         _bridgeMock.Verify(b => b.SetTally(false, false), Times.AtLeastOnce);
         Assert.False(sut.IsTallyProgram);
         Assert.False(sut.IsPtzSupported);
+    }
+
+    // ── #350: TalkBack announcement redundant with the "ON PROGRAM" badge ──────
+
+    [Fact]
+    public void TallyEcho_ProgramOn_WhilePlaying_AnnouncesOnProgram()
+    {
+        var sut = CreateSut();
+        sut.IsPlaying = true;
+
+        _bridgeMock.Raise(b => b.TallyEchoChanged += null, _bridgeMock.Object, new NdiTallyEcho(OnProgram: true, OnPreview: false));
+
+        _announcerMock.Verify(a => a.Announce(ViewerViewModel.TallyOnProgramAnnouncement), Times.Once);
+        Assert.True(sut.IsTallyProgram);
+    }
+
+    [Fact]
+    public void TallyEcho_ProgramOff_WhilePlaying_AnnouncesOffProgram()
+    {
+        var sut = CreateSut();
+        sut.IsPlaying = true;
+
+        _bridgeMock.Raise(b => b.TallyEchoChanged += null, _bridgeMock.Object, new NdiTallyEcho(OnProgram: true, OnPreview: false));
+        _bridgeMock.Raise(b => b.TallyEchoChanged += null, _bridgeMock.Object, new NdiTallyEcho(OnProgram: false, OnPreview: false));
+
+        _announcerMock.Verify(a => a.Announce(ViewerViewModel.TallyOffProgramAnnouncement), Times.Once);
+        Assert.False(sut.IsTallyProgram);
+    }
+
+    [Fact]
+    public void TallyEcho_RepeatedSameState_AnnouncesOnce()
+    {
+        var sut = CreateSut();
+        sut.IsPlaying = true;
+
+        _bridgeMock.Raise(b => b.TallyEchoChanged += null, _bridgeMock.Object, new NdiTallyEcho(OnProgram: true, OnPreview: false));
+        _bridgeMock.Raise(b => b.TallyEchoChanged += null, _bridgeMock.Object, new NdiTallyEcho(OnProgram: true, OnPreview: false));
+
+        _announcerMock.Verify(a => a.Announce(It.IsAny<string>()), Times.Once);
+    }
+
+    [Fact]
+    public void TallyEcho_WhenNotPlaying_DoesNotAnnounce()
+    {
+        var sut = CreateSut();
+
+        _bridgeMock.Raise(b => b.TallyEchoChanged += null, _bridgeMock.Object, new NdiTallyEcho(OnProgram: true, OnPreview: false));
+
+        Assert.True(sut.IsTallyProgram);
+        _announcerMock.Verify(a => a.Announce(It.IsAny<string>()), Times.Never);
+    }
+
+    [Fact]
+    public void StopCommand_DoesNotAnnounceOffProgram()
+    {
+        var sut = CreateSut();
+        sut.SourceId = "192.168.1.10:5961";
+        _bridgeMock.Raise(b => b.TallyEchoChanged += null, _bridgeMock.Object, new NdiTallyEcho(OnProgram: true, OnPreview: false));
+        _announcerMock.Invocations.Clear();
+
+        sut.StopCommand.Execute(null);
+
+        Assert.False(sut.IsTallyProgram);
+        _announcerMock.Verify(a => a.Announce(It.IsAny<string>()), Times.Never);
     }
 
     [Fact]

@@ -28,6 +28,13 @@ public sealed class ViewerPage : PageObject
     public bool HasVideoSurface => IsPresent(TestIds.ViewerVideoCanvas);
 
     /// <summary>
+    /// True while the source echoes program tally and the "ON PROGRAM" badge is showing (#350).
+    /// Never true on the CI emulator (x86_64 has no NDI runtime, so nothing ever plays) — this is
+    /// for device runs against a real switcher/sender; do not write an emulator test around it.
+    /// </summary>
+    public bool IsOnProgram => IsPresent(TestIds.ViewerTallyProgramBadge);
+
+    /// <summary>
     /// True while a stream is playing — inferred from the Stop button, which is bound to
     /// <c>IsPlaying</c>.
     /// </summary>

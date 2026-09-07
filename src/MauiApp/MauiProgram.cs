@@ -101,6 +101,9 @@ public static class MauiProgram
         );
         builder.Services.AddSingleton<TimeProvider>(TimeProvider.System);
 
+        // Screen-reader announcements (#350): the viewer speaks program-tally changes to TalkBack.
+        builder.Services.AddSingleton<IAccessibilityAnnouncer, MauiAccessibilityAnnouncer>();
+
         // Developer-mode diagnostics (#241): overlay service + log page. The FPS/discovery
         // producers hook in with the real NDI bridge stats (#277).
         builder.Services.AddSingleton<Features.DiagOverlay.Services.IDiagnosticOverlayService,
