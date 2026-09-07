@@ -91,10 +91,14 @@
                     SemanticProperties.Description="Audio" />
             <Button Grid.Column="1" Text="⛶" Command="{Binding ToggleFullScreenCommand}"
                     WidthRequest="48" HeightRequest="48" MinimumHeightRequest="48" Padding="0"
-                    SemanticProperties.Description="Toggle full screen">
+                    AutomationId="{x:Static t:TestIds.ViewerFullScreenToggle}"
+                    SemanticProperties.Description="Enter full screen">
+                <!-- State-dependent name (#343/#345): announces what tapping it will do next,
+                     not a static label that stays the same in both states. -->
                 <Button.Triggers>
                     <DataTrigger TargetType="Button" Binding="{Binding IsFullScreen}" Value="True">
                         <Setter Property="Text" Value="⤢" />
+                        <Setter Property="SemanticProperties.Description" Value="Exit full screen" />
                     </DataTrigger>
                 </Button.Triggers>
             </Button>

@@ -6,8 +6,9 @@
              x:Class="NdiForAndroid.Features.Viewer.Views.FullScreenControlsOverlay"
              x:DataType="vm:ViewerViewModel">
     <Grid IsVisible="{Binding AreControlsVisible}" BackgroundColor="Transparent">
+        <!-- 8dp spacing matches the d-pad/zoom clusters below (#370 fullscreen-stream-settings-02). -->
         <Grid Margin="16" VerticalOptions="Start" HorizontalOptions="Start"
-              RowDefinitions="48,48" ColumnDefinitions="48,48,48,48" RowSpacing="6" ColumnSpacing="6"
+              RowDefinitions="48,48" ColumnDefinitions="48,48,48,48" RowSpacing="8" ColumnSpacing="8"
               IsVisible="{Binding IsPtzControlActive}">
             <Button Grid.Row="0" Grid.Column="0" Text="1" Padding="0" WidthRequest="48" HeightRequest="48"
                     Command="{Binding PtzRecallPresetCommand}" SemanticProperties.Description="Preset 1">
@@ -111,10 +112,14 @@
             <Switch Grid.Column="2" IsToggled="{Binding IsAudioEnabled}" WidthRequest="48" HeightRequest="48"
                     SemanticProperties.Description="Audio" />
             <Button Grid.Column="3" Text="⛶" Command="{Binding ToggleFullScreenCommand}" WidthRequest="48" HeightRequest="48" Padding="0"
-                    SemanticProperties.Description="Toggle full screen">
+                    AutomationId="{x:Static t:TestIds.ViewerFullScreenToggle}"
+                    SemanticProperties.Description="Enter full screen">
+                <!-- State-dependent name (#343/#345): announces what tapping it will do next,
+                     not a static label that stays the same in both states. -->
                 <Button.Triggers>
                     <DataTrigger TargetType="Button" Binding="{Binding IsFullScreen}" Value="True">
                         <Setter Property="Text" Value="⤢" />
+                        <Setter Property="SemanticProperties.Description" Value="Exit full screen" />
                     </DataTrigger>
                 </Button.Triggers>
             </Button>
