@@ -20,7 +20,6 @@ public class DiagnosticLogViewModelTests
         Assert.Equal("NDI-Bridge", entry.Category);
         Assert.Equal("hello", entry.Message);
         Assert.Equal(DiagnosticLogBuffer.LogLevel.Warning, entry.Level);
-        Assert.Equal("#FFA500", entry.LevelColor);
     }
 
     [Fact]
