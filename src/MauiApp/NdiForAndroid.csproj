@@ -38,6 +38,8 @@
 
   <ItemGroup>
     <AndroidResource Include="Platforms\Android\Resources\drawable\ndi_logo.png" />
+    <!-- Neutral status-bar icon for the output foreground notification (#370 home-nav-06). -->
+    <AndroidResource Include="Platforms\Android\Resources\drawable\ic_stat_ndi.xml" />
   </ItemGroup>
 
   <ItemGroup>

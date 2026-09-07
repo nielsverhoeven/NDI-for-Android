@@ -102,6 +102,10 @@ public static class MauiProgram
 #endif
         );
         builder.Services.AddSingleton<TimeProvider>(TimeProvider.System);
+        // #345: proactive TalkBack announcements for OutputViewModel status transitions.
+        // SemanticScreenReader is MAUI-wide (not Android-specific), so this is registered
+        // unconditionally rather than inside the #if ANDROID block below.
+        builder.Services.AddSingleton<IScreenReaderAnnouncer, MauiScreenReaderAnnouncer>();
 
         // Developer-mode diagnostics (#241): Core overlay state (#333, unit-tested) + log page. The
         // FPS/discovery producers hook in with the real NDI bridge stats (#277); the logcat mirror is
