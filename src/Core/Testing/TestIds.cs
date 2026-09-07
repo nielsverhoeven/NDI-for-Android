@@ -192,6 +192,20 @@ public static class TestIds
     public const string SettingsAppVersion    = "settings.appVersion";
     public const string SettingsNdiSdkVersion = "settings.ndiSdkVersion";
 
+    // ── SettingsPage additions (#347, #370, #345, #355) ──────────────────────
+
+    /// <summary>Discovery panel empty-state label, shown while <c>DiscoveryServers</c> is empty (#370).</summary>
+    public const string SettingsDiscoveryEmptyState = "settings.discoveryEmptyState";
+
+    public const string SettingsEditServerCancel = "settings.editServer.cancel";
+    public const string SettingsEditServerSave   = "settings.editServer.save";
+
+    /// <summary>Tap target for the whole Developer Mode row's caption (#343 SET-8).</summary>
+    public const string SettingsDeveloperModeLabel = "settings.developerModeLabel";
+
+    /// <summary>Section-agnostic save-failure banner — visible regardless of which section is open (#355).</summary>
+    public const string SettingsSaveError = "settings.saveError";
+
     // ── DiagnosticLogPage: the in-memory log buffer view ─────────────────────
 
     public const string DiagnosticLogPage     = "diagnosticLog.page";

@@ -126,6 +126,7 @@ public static class MauiProgram
         builder.Services.AddSingleton<IWindowInsetsService, AndroidWindowInsetsService>();
         builder.Services.AddSingleton<IImmersiveModeService, AndroidImmersiveModeService>();
         builder.Services.AddSingleton<Features.DiagOverlay.Services.IDiagnosticLogSink, AndroidLogcatDiagnosticSink>();
+        builder.Services.AddSingleton<IUserPromptService, MauiUserPromptService>();
 #else
         builder.Services.AddSingleton<IMulticastLockService, NoopMulticastLockService>();
         builder.Services.AddSingleton<IScreenSharePlatformService, NoopScreenSharePlatformService>();
@@ -137,6 +138,7 @@ public static class MauiProgram
         builder.Services.AddSingleton<IWindowInsetsService, NoopWindowInsetsService>();
         builder.Services.AddSingleton<IImmersiveModeService, NoopImmersiveModeService>();
         builder.Services.AddSingleton<Features.DiagOverlay.Services.IDiagnosticLogSink, NoopDiagnosticLogSink>();
+        builder.Services.AddSingleton<IUserPromptService, NoopUserPromptService>();
 #endif
 
         // ViewModels

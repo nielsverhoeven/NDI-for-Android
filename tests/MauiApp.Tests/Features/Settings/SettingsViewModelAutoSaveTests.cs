@@ -22,6 +22,7 @@ public sealed class SettingsViewModelAutoSaveTests
     private readonly Mock<ISettingsPlatformService> _platformServiceMock = new();
     private readonly Mock<ISourceRepository> _sourceRepositoryMock = new();
     private readonly Mock<INdiDiscoveryBridge> _discoveryBridgeMock = new();
+    private readonly FakeUserPromptService _userPromptService = new();
 
     private SettingsViewModel CreateSut()
     {
@@ -44,7 +45,8 @@ public sealed class SettingsViewModelAutoSaveTests
             _sourceRepositoryMock.Object,
             new Mock<INdiVersionInfo>().Object,
             _discoveryBridgeMock.Object,
-            new FakeMainThreadDispatcher());
+            new FakeMainThreadDispatcher(),
+            _userPromptService);
     }
 
     private void SetupDefaultRepository() =>
@@ -322,6 +324,143 @@ public sealed class SettingsViewModelAutoSaveTests
 
         Assert.False(sut.IsEditServerDialogOpen);
         Assert.Empty(sut.DiscoveryServers);
+    }
+
+    // ─── RemoveDiscoveryServer confirmation (#347 SET-2) ────────────────────────
+
+    [Fact]
+    public async Task RemoveDiscoveryServerCommand_WhenUserConfirms_RemovesAndPersists()
+    {
+        var sut = await CreateLoadedSutAsync();
+        sut.NewServerHost = "10.0.0.5";
+        sut.NewServerDisplayName = "Studio server";
+        await sut.AddDiscoveryServerCommand.ExecuteAsync(null);
+        _repositoryMock.Invocations.Clear();
+        _userPromptService.NextResult = true;
+
+        await sut.RemoveDiscoveryServerCommand.ExecuteAsync(sut.DiscoveryServers[0]);
+
+        Assert.Empty(sut.DiscoveryServers);
+        Assert.Single(_userPromptService.Requests);
+        Assert.Contains("Studio server", _userPromptService.Requests[0].Message);
+        _repositoryMock.Verify(r => r.SaveSettingsAsync(
+            It.Is<NdiSettingsSnapshot>(s => s.DiscoveryServers.Count == 0)), Times.Once);
+    }
+
+    [Fact]
+    public async Task RemoveDiscoveryServerCommand_WhenUserDeclines_LeavesTheServerListUnchanged()
+    {
+        var sut = await CreateLoadedSutAsync();
+        sut.NewServerHost = "10.0.0.5";
+        await sut.AddDiscoveryServerCommand.ExecuteAsync(null);
+        _repositoryMock.Invocations.Clear();
+        _userPromptService.NextResult = false;
+
+        await sut.RemoveDiscoveryServerCommand.ExecuteAsync(sut.DiscoveryServers[0]);
+
+        Assert.Single(sut.DiscoveryServers);
+        _repositoryMock.Verify(r => r.SaveSettingsAsync(It.IsAny<NdiSettingsSnapshot>()), Times.Never);
+    }
+
+    // ─── Discovery empty state (#370) ────────────────────────────────────────────
+
+    [Fact]
+    public async Task HasNoDiscoveryServers_IsTrueWhenEmpty_AndFlipsWhenAServerIsAddedOrRemoved()
+    {
+        var sut = CreateSut();
+        Assert.True(sut.HasNoDiscoveryServers);
+
+        var raised = new List<string?>();
+        sut.PropertyChanged += (_, e) => raised.Add(e.PropertyName);
+
+        sut.NewServerHost = "10.0.0.5";
+        await sut.AddDiscoveryServerCommand.ExecuteAsync(null);
+
+        Assert.False(sut.HasNoDiscoveryServers);
+        Assert.Contains(nameof(SettingsViewModel.HasNoDiscoveryServers), raised);
+
+        _userPromptService.NextResult = true;
+        await sut.RemoveDiscoveryServerCommand.ExecuteAsync(sut.DiscoveryServers[0]);
+
+        Assert.True(sut.HasNoDiscoveryServers);
+    }
+
+    [Fact]
+    public async Task LoadCommand_WithPersistedServers_ClearsEmptyState()
+    {
+        _repositoryMock.Setup(r => r.GetSettingsAsync())
+            .ReturnsAsync(NdiSettingsSnapshot.CreateDefault() with
+            {
+                DiscoveryServers = [new DiscoveryServerPreference("10.0.0.5", 5959, true, 0, null)],
+            });
+
+        var sut = CreateSut();
+        await sut.LoadCommand.ExecuteAsync(null);
+
+        Assert.False(sut.HasNoDiscoveryServers);
+    }
+
+    // ─── Developer Mode row tap (#343 SET-8) ─────────────────────────────────────
+
+    [Fact]
+    public async Task ToggleDeveloperModeCommand_FlipsAndPersists()
+    {
+        var sut = await CreateLoadedSutAsync();
+
+        sut.ToggleDeveloperModeCommand.Execute(null);
+        Assert.True(sut.DeveloperModeEnabled);
+        _repositoryMock.Verify(r => r.SaveSettingsAsync(
+            It.Is<NdiSettingsSnapshot>(s => s.DeveloperModeEnabled)), Times.Once);
+
+        sut.ToggleDeveloperModeCommand.Execute(null);
+        Assert.False(sut.DeveloperModeEnabled);
+        _repositoryMock.Verify(r => r.SaveSettingsAsync(
+            It.Is<NdiSettingsSnapshot>(s => !s.DeveloperModeEnabled)), Times.Once);
+    }
+
+    [Fact]
+    public void ToggleDeveloperModeCommand_WhenNotLoaded_StillGoesThroughAutoSave()
+    {
+        // Not loaded — auto-save is suppressed only inside LoadAsync itself, so this pins that
+        // the command goes through the same OnDeveloperModeEnabledChanged path as the Switch
+        // rather than bypassing the guard.
+        var sut = CreateSut();
+
+        sut.ToggleDeveloperModeCommand.Execute(null);
+
+        _repositoryMock.Verify(r => r.SaveSettingsAsync(It.IsAny<NdiSettingsSnapshot>()), Times.Once);
+    }
+
+    // ─── Section-agnostic save-failure banner (#355 item 4) ─────────────────────
+
+    [Fact]
+    public async Task PersistAsync_WhenSaveThrows_SetsSectionAgnosticStatus()
+    {
+        var sut = await CreateLoadedSutAsync();
+        _repositoryMock.Setup(r => r.SaveSettingsAsync(It.IsAny<NdiSettingsSnapshot>()))
+            .ThrowsAsync(new InvalidOperationException("disk full"));
+
+        sut.ToggleDeveloperModeCommand.Execute(null);
+
+        Assert.True(sut.HasSettingsSaveError);
+        Assert.Contains("disk full", sut.SettingsSaveErrorMessage);
+    }
+
+    [Fact]
+    public async Task PersistAsync_WhenSaveSucceedsAfterAFailure_ClearsTheSectionAgnosticStatus()
+    {
+        var sut = await CreateLoadedSutAsync();
+        _repositoryMock.Setup(r => r.SaveSettingsAsync(It.IsAny<NdiSettingsSnapshot>()))
+            .ThrowsAsync(new InvalidOperationException("disk full"));
+        sut.ToggleDeveloperModeCommand.Execute(null);
+        Assert.True(sut.HasSettingsSaveError);
+
+        _repositoryMock.Setup(r => r.SaveSettingsAsync(It.IsAny<NdiSettingsSnapshot>()))
+            .Returns(Task.CompletedTask);
+        sut.ToggleDeveloperModeCommand.Execute(null);
+
+        Assert.False(sut.HasSettingsSaveError);
+        Assert.Equal(string.Empty, sut.SettingsSaveErrorMessage);
     }
 
     [Fact]

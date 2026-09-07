@@ -22,7 +22,9 @@ public sealed record ThemePalette(
     string SuccessText,
     string WarningText,
     string BorderColor,
-    string DividerColor);
+    string DividerColor,
+    string ShellRailActiveIndicator,
+    string StatusMuted);
 
 /// <summary>
 /// Single source of truth for every runtime colour value the app applies. Lives in Core (MAUI-free,
@@ -56,7 +58,11 @@ public static class AppearancePalette
         SuccessText:        "#66BB6A", // 6.94:1 page, 5.92:1 card
         WarningText:        "#FFA726", // 8.44:1 page, 7.21:1 card (#329 — diagnostic log Warning level)
         BorderColor:        "#3A3A5C",
-        DividerColor:       "#2E2E4A");
+        DividerColor:       "#2E2E4A",
+        // Rail active-item indicator pill; not a text/status colour so the 3:1 non-text bar applies,
+        // and the pill is not the sole state cue (label colour + bold weight also carry it) (#343 home-nav-05).
+        ShellRailActiveIndicator: "#45455F",
+        StatusMuted:              "#80809E"); // 4.30:1 on PageBackground (#343 SET-3)
 
     public static readonly ThemePalette Light = new(
         PageBackground:     "#F2F2F7",
@@ -75,7 +81,9 @@ public static class AppearancePalette
         SuccessText:        "#2E7D32", // 4.60:1 page, 5.13:1 card (was SuccessGreen: 2.49 / 2.78)
         WarningText:        "#A64B00", // 5.19:1 page, 5.79:1 card (#329 — diagnostic log Warning level)
         BorderColor:        "#C6C6C8",
-        DividerColor:       "#D1D1D6");
+        DividerColor:       "#D1D1D6",
+        ShellRailActiveIndicator: "#C4C4CF",
+        StatusMuted:              "#6E6E73"); // 4.54:1 on PageBackground (#343 SET-3)
 
     /// <summary>
     /// Accent (Primary) per user option. Each value sits in the luminance band 0.142..0.183 so that

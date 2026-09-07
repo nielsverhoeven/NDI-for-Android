@@ -1,6 +1,7 @@
 using Moq;
 using NdiForAndroid.Features.AppState.Models;
 using NdiForAndroid.Features.AppState.Repositories;
+using NdiForAndroid.Features.Home.Models;
 using NdiForAndroid.Features.Home.ViewModels;
 using NdiForAndroid.Features.Navigation.Models;
 using NdiForAndroid.Features.Navigation.Services;
@@ -269,5 +270,88 @@ public class HomeViewModelTests
 
         _navigationServiceMock.Verify(
             n => n.NavigateToPrimaryAsync(It.IsAny<PrimaryNavDestination>(), It.IsAny<string>()), Times.Never);
+    }
+
+    // ── Status-card colour by state (#370 home-nav-08) and friendly viewer name (home-nav-03) ───
+
+    [Fact]
+    public void RefreshCommand_WhenLastViewerSourceIsCached_ShowsItsDisplayName()
+    {
+        _appStateRepoMock.Setup(r => r.RestoreStateAsync())
+            .ReturnsAsync(new AppStateSnapshot("src-1", null, false, null));
+        _sourceRepositoryMock.Setup(r => r.GetCachedSourcesAsync())
+            .ReturnsAsync(new List<NdiSource> { new("src-1", "Camera 1", "192.168.1.10", true, 1000) });
+
+        var sut = CreateSut();
+
+        Assert.Equal("Last viewed: Camera 1", sut.ViewerStatus);
+    }
+
+    [Fact]
+    public void RefreshCommand_WhenLastViewerSourceIsNotCached_FallsBackToTheRawId()
+    {
+        _appStateRepoMock.Setup(r => r.RestoreStateAsync())
+            .ReturnsAsync(new AppStateSnapshot("src-9", null, false, null));
+
+        var sut = CreateSut();
+
+        Assert.Equal("Last viewed: src-9", sut.ViewerStatus);
+    }
+
+    [Fact]
+    public void Constructed_WithNoCachedSources_DiscoveryStatusKindIsIdle()
+    {
+        var sut = CreateSut();
+
+        Assert.Equal(HomeStatusKind.Idle, sut.DiscoveryStatusKind);
+    }
+
+    [Fact]
+    public void Constructed_WithCachedSources_DiscoveryStatusKindIsActive()
+    {
+        _sourceRepositoryMock.Setup(r => r.GetCachedSourcesAsync())
+            .ReturnsAsync(new List<NdiSource> { new("src-1", "Camera 1", "192.168.1.10", true, 1000) });
+
+        var sut = CreateSut();
+
+        Assert.Equal(HomeStatusKind.Active, sut.DiscoveryStatusKind);
+    }
+
+    [Theory]
+    [InlineData(DiscoveryStatus.Success, HomeStatusKind.Active)]
+    [InlineData(DiscoveryStatus.Failure, HomeStatusKind.Failure)]
+    [InlineData(DiscoveryStatus.Empty, HomeStatusKind.Idle)]
+    public void DiscoverySnapshot_SetsDiscoveryStatusKindFromStatus(DiscoveryStatus status, HomeStatusKind expected)
+    {
+        var sut = CreateSut();
+
+        _discoveryServiceMock.Raise(d => d.SnapshotReady += null, sut, new DiscoverySnapshot(
+            "snap-1", status, Array.Empty<NdiSource>(), DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), "boom"));
+
+        Assert.Equal(expected, sut.DiscoveryStatusKind);
+    }
+
+    [Fact]
+    public void RefreshCommand_WhenOutputActive_SetsOutputStatusKindActive()
+    {
+        _appStateRepoMock.Setup(r => r.RestoreStateAsync())
+            .ReturnsAsync(new AppStateSnapshot(null, "X", true, null));
+        _outputBridgeMock.SetupGet(b => b.IsActive).Returns(true);
+
+        var sut = CreateSut();
+
+        Assert.Equal(HomeStatusKind.Active, sut.OutputStatusKind);
+    }
+
+    [Fact]
+    public void RefreshCommand_WhenBridgeInactive_OutputStatusKindIsIdle()
+    {
+        _appStateRepoMock.Setup(r => r.RestoreStateAsync())
+            .ReturnsAsync(new AppStateSnapshot(null, "X", true, null));
+        _outputBridgeMock.SetupGet(b => b.IsActive).Returns(false);
+
+        var sut = CreateSut();
+
+        Assert.Equal(HomeStatusKind.Idle, sut.OutputStatusKind);
     }
 }

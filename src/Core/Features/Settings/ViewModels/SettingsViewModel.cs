@@ -37,6 +37,7 @@ public partial class SettingsViewModel : ObservableObject
     private readonly ISourceRepository _sourceRepository;
     private readonly INdiDiscoveryBridge _discoveryBridge;
     private readonly IMainThreadDispatcher _dispatcher;
+    private readonly IUserPromptService _userPromptService;
     private readonly TimeProvider _timeProvider;
 
     private DiscoveryServerItem? _editingDiscoveryServer;
@@ -92,6 +93,10 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty]
     private string _discoveryServersValidationMessage = string.Empty;
 
+    /// <summary>True while no discovery server is configured — drives the Discovery panel's
+    /// empty-state label (#370).</summary>
+    public bool HasNoDiscoveryServers => DiscoveryServers.Count == 0;
+
     // ── Edit-server dialog ──────────────────────────────────────────────────
 
     [ObservableProperty]
@@ -115,6 +120,18 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty]
     private string _appVersionBuild = string.Empty;
 
+    // ── Section-agnostic save status (#355 item 4) ──────────────────────────
+    //
+    // DiscoveryServersValidationMessage above renders only inside the Discovery panel, so a
+    // PersistAsync failure triggered by a theme/accent/developer-mode change (all sections)
+    // was previously invisible. This mirrors it onto a banner shown regardless of which section
+    // is open.
+
+    [ObservableProperty]
+    private string _settingsSaveErrorMessage = string.Empty;
+
+    public bool HasSettingsSaveError => !string.IsNullOrWhiteSpace(SettingsSaveErrorMessage);
+
     public ObservableCollection<DiscoveryServerItem> DiscoveryServers { get; } = [];
 
     public ObservableCollection<CachedSourceRegistryEntry> CachedSourceRegistry { get; } = [];
@@ -133,6 +150,7 @@ public partial class SettingsViewModel : ObservableObject
         INdiVersionInfo ndiVersionInfo,
         INdiDiscoveryBridge discoveryBridge,
         IMainThreadDispatcher dispatcher,
+        IUserPromptService userPromptService,
         TimeProvider? timeProvider = null)
     {
         _repository = repository;
@@ -141,6 +159,7 @@ public partial class SettingsViewModel : ObservableObject
         _sourceRepository = sourceRepository;
         _discoveryBridge = discoveryBridge;
         _dispatcher = dispatcher;
+        _userPromptService = userPromptService;
         _timeProvider = timeProvider ?? TimeProvider.System;
 
         var info = _platformService.GetAppInfo();
@@ -200,6 +219,11 @@ public partial class SettingsViewModel : ObservableObject
     {
         SelectedSection = section;
     }
+
+    /// <summary>Row-tap affordance for the Developer Mode switch: the label toggles the same
+    /// setting (#343 SET-8). Persistence rides on OnDeveloperModeEnabledChanged.</summary>
+    [RelayCommand]
+    private void ToggleDeveloperMode() => DeveloperModeEnabled = !DeveloperModeEnabled;
 
     // ── Discovery server commands ───────────────────────────────────────────
 
@@ -278,6 +302,17 @@ public partial class SettingsViewModel : ObservableObject
     private async Task RemoveDiscoveryServerAsync(DiscoveryServerItem? item)
     {
         if (item is null)
+            return;
+
+        // Nielsen #5 Error Prevention (#347 SET-2): deleting a server is immediate and
+        // irreversible (no Apply/staging step, no undo), so confirm before it commits.
+        var confirmed = await _userPromptService.ConfirmAsync(
+            "Delete server?",
+            $"Delete '{item.NameDisplay}'? This cannot be undone.",
+            "Delete",
+            "Cancel");
+
+        if (!confirmed)
             return;
 
         if (ReferenceEquals(item, _editingDiscoveryServer))
@@ -459,6 +494,12 @@ public partial class SettingsViewModel : ObservableObject
         _ = PersistAsync();
     }
 
+    partial void OnSettingsSaveErrorMessageChanged(string value)
+    {
+        _ = value;
+        OnPropertyChanged(nameof(HasSettingsSaveError));
+    }
+
     partial void OnSelectedThemeOptionChanged(string? value)
     {
         // Tearing the page down must not read as the user picking a theme. Without this, the
@@ -515,6 +556,10 @@ public partial class SettingsViewModel : ObservableObject
         }
 
         _statusTargets = DiscoveryServers.ToList();
+
+        // Covers add/remove/Clear (LoadAsync) alike — every path that changes the collection
+        // routes through here (#370 fullscreen-stream-settings-07).
+        OnPropertyChanged(nameof(HasNoDiscoveryServers));
     }
 
     private void OnDiscoveryServerItemPropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -548,9 +593,15 @@ public partial class SettingsViewModel : ObservableObject
             _committedAccent,
             discoveryServers));
 
+        SettingsSaveErrorMessage = string.Empty;
+
         if (!_validationService.TryValidateForSave(snapshot, out var error))
         {
-            DiscoveryServersValidationMessage = error ?? "The settings are invalid.";
+            var message = error ?? "The settings are invalid.";
+            DiscoveryServersValidationMessage = message;
+            // #355 item 4: a failure here can be triggered by a theme/accent/developer-mode change
+            // just as easily as by the Discovery panel, so it must not be visible only there.
+            SettingsSaveErrorMessage = message;
             return;
         }
 
@@ -560,7 +611,9 @@ public partial class SettingsViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            DiscoveryServersValidationMessage = $"Saving settings failed: {ex.Message}";
+            var message = $"Saving settings failed: {ex.Message}";
+            DiscoveryServersValidationMessage = message;
+            SettingsSaveErrorMessage = message;
         }
     }
 

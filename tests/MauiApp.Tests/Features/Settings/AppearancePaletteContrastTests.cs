@@ -104,6 +104,13 @@ public class AppearancePaletteContrastTests
         AssertAtLeast(NormalText, p.WarningText, p.CardBackground, $"{name} WarningText on card");
     }
 
+    [Theory]
+    [MemberData(nameof(Palettes))]
+    public void StatusMuted_OnPageBackground_MeetsNonText(string name, ThemePalette p) =>
+        // #343 SET-3: disabled/unknown discovery-server dots must clear the 3:1 non-text bar.
+        // TextPlaceholder fails this (2.95:1 dark / 2.92:1 light) — it is a text-only colour.
+        AssertAtLeast(NonText, p.StatusMuted, p.PageBackground, $"{name} StatusMuted on page");
+
     [Fact]
     public void ErrorAndSuccessFill_CarryWhiteText()
     {
@@ -162,6 +169,8 @@ public class AppearancePaletteContrastTests
         Assert.Equal(AppearancePalette.SuccessFill, keys["SuccessFill"]);
         Assert.Equal(d.BorderColor, keys["BorderColor"]);
         Assert.Equal(d.DividerColor, keys["DividerColor"]);
+        Assert.Equal(d.ShellRailActiveIndicator, keys["ShellRailActiveIndicator"]);
+        Assert.Equal(d.StatusMuted, keys["StatusMuted"]);
     }
 
     private static void AssertAtLeast(double min, string fg, string bg, string what)

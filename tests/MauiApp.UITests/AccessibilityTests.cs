@@ -118,6 +118,32 @@ public sealed class AccessibilityTests : UiTestBase
     });
 
     [SkippableFact]
+    public void Accessibility_RailItems_AnnounceSelectedDestination() => Run(app =>
+    {
+        // The rail only exists in landscape/Expanded; the bottom tab bar (portrait) is untouched
+        // by this change and carries its own native selected state (#345 home-nav-06).
+        app.Rotate(ScreenOrientation.Landscape);
+
+        try
+        {
+            app.Navigation.GoTo(NavDestination.Home);
+            app.Home.WaitUntilVisible();
+            Assert.True(app.Navigation.AnnouncesSelected(NavDestination.Home));
+            Assert.False(app.Navigation.AnnouncesSelected(NavDestination.Settings));
+
+            app.Navigation.GoTo(NavDestination.Settings);
+            app.Settings.WaitUntilVisible();
+            Assert.True(app.Navigation.AnnouncesSelected(NavDestination.Settings));
+            Assert.False(app.Navigation.AnnouncesSelected(NavDestination.Home));
+        }
+        finally
+        {
+            // Other tests in this suite assume portrait.
+            app.Rotate(ScreenOrientation.Portrait);
+        }
+    });
+
+    [SkippableFact]
     public void Accessibility_AutomationIds_AreNotUsedAsScreenReaderLabels() => Run(app =>
     {
         // Phase 1 added 99 AutomationIds. If MAUI were to surface those as contentDescription,

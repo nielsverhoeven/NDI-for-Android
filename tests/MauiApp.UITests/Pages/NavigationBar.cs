@@ -145,6 +145,18 @@ public sealed class NavigationBar
     public bool IsPresent(NavDestination destination) =>
         Resolve(IdFor(destination), LabelFor(destination)) is not null;
 
+    /// <summary>
+    /// True when the destination's live navigation item announces a selected state — the rail's
+    /// content-desc carries a ", selected" suffix (#345 home-nav-06; there is no native "selected"
+    /// state to read since the rail is a plain Border, not a checkable widget).
+    /// </summary>
+    public bool AnnouncesSelected(NavDestination destination)
+    {
+        var item = Resolve(IdFor(destination), LabelFor(destination));
+        var description = item?.GetAttribute("content-desc") ?? string.Empty;
+        return description.EndsWith(", selected", StringComparison.Ordinal);
+    }
+
     private IWebElement? Resolve(string id, string label)
     {
         try

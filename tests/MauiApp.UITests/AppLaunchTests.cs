@@ -147,6 +147,29 @@ public sealed class AppLaunchTests : UiTestBase
         {
             app.Settings.OpenSection(section);
             Assert.True(app.Settings.IsSectionOpen(section), $"The {section} panel did not open");
+            Assert.True(app.Settings.IsSectionSelected(section),
+                $"The {section} rail button does not announce itself as selected (#345 SET-1)");
+        }
+    });
+
+    [SkippableFact]
+    public void Settings_CompactRail_SectionButtonsMeet48dp() => Run(app =>
+    {
+        // The Nexus 6 API 35 CI AVD is 411 dp wide in portrait — Compact — so this exercises
+        // CompactRail; on a Medium/Expanded window it measures VerticalRail instead, which is
+        // also styled with the 48 dp minimum, so the test is never vacuous either way (#370 P-3).
+        app.ResetToHome();
+        app.Rotate(ScreenOrientation.Portrait);
+        app.Navigation.GoTo(NavDestination.Settings);
+        app.Settings.WaitUntilVisible();
+
+        var minPx = app.Metrics.ToPixels(AccessibilityAudit.MinTouchTargetDp);
+
+        foreach (var section in Enum.GetValues<SettingsSection>())
+        {
+            var height = app.Settings.SectionButtonHeightPx(section);
+            Assert.True(height >= minPx,
+                $"{section} section button is {height}px tall, below the 48 dp minimum ({minPx}px) — #370 P-3");
         }
     });
 
@@ -197,6 +220,92 @@ public sealed class AppLaunchTests : UiTestBase
             // server persisted. Counting rows down to the pre-test baseline does not depend on the
             // row's content rendering at all.
             app.Settings.RemoveServersDownTo(baseline);
+        }
+    });
+
+    [SkippableFact]
+    public void Settings_DiscoveryEmptyState_TracksTheServerList() => Run(app =>
+    {
+        const string host = "10.255.255.2";
+        const string port = "45960";
+        var endpoint = $"{host}:{port}";
+
+        app.ResetToHome();
+        app.Navigation.GoTo(NavDestination.Settings);
+        app.Settings.WaitUntilVisible();
+        app.Settings.OpenSection(SettingsSection.Discovery);
+
+        var baseline = app.Settings.ServerRowCount;
+        Assert.Equal(baseline == 0, app.Settings.IsDiscoveryEmptyStateShown);
+
+        app.Settings.AddServer(host, port);
+        Assert.Contains(endpoint, app.Settings.ServerRowEndpoints);
+        Assert.False(app.Settings.IsDiscoveryEmptyStateShown);
+
+        try
+        {
+            // The confirmation dialog (#347) must not block the empty-state read-back: decline it
+            // once to prove the row survives, then accept it to actually remove the row.
+            app.Settings.RemoveServer(endpoint); // clicks Delete then confirms
+        }
+        finally
+        {
+            app.Settings.RemoveServersDownTo(baseline);
+        }
+
+        if (baseline == 0)
+            Assert.True(app.Settings.IsDiscoveryEmptyStateShown);
+    });
+
+    [SkippableFact]
+    public void Settings_DeleteServer_DeclinedConfirmation_LeavesTheRow() => Run(app =>
+    {
+        const string host = "10.255.255.3";
+        const string port = "45961";
+        var endpoint = $"{host}:{port}";
+
+        app.ResetToHome();
+        app.Navigation.GoTo(NavDestination.Settings);
+        app.Settings.WaitUntilVisible();
+        app.Settings.OpenSection(SettingsSection.Discovery);
+
+        var baseline = app.Settings.ServerRowCount;
+        app.Settings.AddServer(host, port);
+
+        try
+        {
+            Assert.Contains(endpoint, app.Settings.ServerRowEndpoints);
+
+            app.Settings.TapDeleteForRow(endpoint);
+            app.Settings.CancelDeleteServer();
+
+            Assert.Contains(endpoint, app.Settings.ServerRowEndpoints);
+        }
+        finally
+        {
+            app.Settings.RemoveServersDownTo(baseline);
+        }
+    });
+
+    [SkippableFact]
+    public void Settings_DeveloperMode_TappingTheLabel_TogglesTheSwitch() => Run(app =>
+    {
+        app.ResetToHome();
+        app.Navigation.GoTo(NavDestination.Settings);
+        app.Settings.WaitUntilVisible();
+        app.Settings.OpenSection(SettingsSection.DeveloperTools);
+
+        var before = app.Settings.IsDeveloperModeOn;
+        try
+        {
+            app.Settings.ToggleDeveloperModeViaLabel();
+            Assert.NotEqual(before, app.Settings.IsDeveloperModeOn);
+        }
+        finally
+        {
+            // Restore, whichever way the assertion landed, so later tests see the original state.
+            if (app.Settings.IsDeveloperModeOn != before)
+                app.Settings.ToggleDeveloperModeViaLabel();
         }
     });
 

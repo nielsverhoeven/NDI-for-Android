@@ -40,12 +40,18 @@
     <Color x:Key="ShellTitleColor">#FFFFFF</Color>
     <Color x:Key="ShellTabSelected">#FFFFFF</Color>
     <Color x:Key="ShellTabUnselected">#8E8E93</Color>
+    <!-- Rail active-item indicator pill (M3 navigation-rail active indicator). Neutral, not
+         accent-tinted, so it matches the tab bar, whose selected item is also neutral (#343 home-nav-05). -->
+    <Color x:Key="ShellRailActiveIndicator">#45455F</Color>
 
     <!-- Text -->
     <Color x:Key="TextPrimary">#FFFFFF</Color>
     <Color x:Key="TextSecondary">#AAAACC</Color>
     <Color x:Key="TextPlaceholder">#9E9EBC</Color>
     <Color x:Key="TextOnAccent">#FFFFFF</Color>
+    <!-- Muted status indicator (disabled/unknown state dots). Tuned per theme for >=3:1 non-text
+         contrast on PageBackground; TextPlaceholder is text-only and fails that bar (#343 SET-3). -->
+    <Color x:Key="StatusMuted">#80809E</Color>
 
     <!-- Status text (theme-aware, >= 4.5:1 on Page/Card backgrounds in both palettes).
          Use these for any Label that reports an error, success or warning state; ErrorRed/
