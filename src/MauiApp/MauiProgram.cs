@@ -80,6 +80,8 @@ public static class MauiProgram
         builder.Services.AddSingleton<IAppStateRepository>(sp =>
             new AppStateRepository(ndiDbPath));
         builder.Services.AddSingleton<IConnectionHistoryService, ConnectionHistoryService>();
+        builder.Services.AddSingleton<Features.DeepLinking.Services.IDeepLinkRouteResolver,
+            Features.DeepLinking.Services.DeepLinkRouteResolver>();  // Core, unit-tested (#335)
         builder.Services.AddSingleton<IDeepLinkService, DeepLinkService>();
         builder.Services.AddSingleton<ITelemetryService, TelemetryService>();
         builder.Services.AddSingleton<ShellNavigationService>();

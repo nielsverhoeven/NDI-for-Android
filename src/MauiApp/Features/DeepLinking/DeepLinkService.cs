@@ -7,18 +7,22 @@ using NdiForAndroid.Services;
 namespace NdiForAndroid.Features.DeepLinking;
 
 /// <summary>
-/// Deep link handler that parses ndi:// URIs and routes to the appropriate feature.
+/// Thin MauiApp adapter (#335): all URI parsing/validation is delegated to the Core, unit-tested
+/// <see cref="IDeepLinkRouteResolver"/>. This class only does what needs a MAUI/DI context —
+/// resolving the cached source list and driving <see cref="INavigationService"/>.
 /// </summary>
 public sealed class DeepLinkService : IDeepLinkService
 {
+    private readonly IDeepLinkRouteResolver _resolver;
     private readonly INavigationService _navigation;
     private readonly IServiceProvider _serviceProvider;
     private string? _lastErrorMessage;
 
     public string? LastErrorMessage => _lastErrorMessage;
 
-    public DeepLinkService(INavigationService navigation, IServiceProvider serviceProvider)
+    public DeepLinkService(IDeepLinkRouteResolver resolver, INavigationService navigation, IServiceProvider serviceProvider)
     {
+        _resolver = resolver;
         _navigation = navigation;
         _serviceProvider = serviceProvider;
     }
@@ -27,33 +31,20 @@ public sealed class DeepLinkService : IDeepLinkService
     {
         _lastErrorMessage = null;
 
-        if (string.IsNullOrWhiteSpace(uriString))
+        var route = _resolver.Resolve(uriString, out var parseError);
+        if (route is null)
         {
-            _lastErrorMessage = "Invalid deep link: empty URI.";
+            _lastErrorMessage = parseError;
             return false;
         }
 
         try
         {
-            var uri = new Uri(uriString);
+            var sourceId = route.SourceId;
 
-            if (!string.Equals(uri.Scheme, "ndi", StringComparison.OrdinalIgnoreCase))
-            {
-                _lastErrorMessage = $"Unsupported scheme '{uri.Scheme}'. Expected 'ndi://'.";
-                return false;
-            }
-
-            var action = string.IsNullOrEmpty(uri.Host) ? uri.AbsolutePath.Trim('/') : uri.Host;
-            var query = uri.Query.TrimStart('?');
-            var sourceId = ParseQueryString(query, "sourceId");
-
-            if (string.IsNullOrWhiteSpace(sourceId))
-            {
-                _lastErrorMessage = "Invalid deep link: missing 'sourceId' parameter.";
-                return false;
-            }
-
-            // Check that the source exists in our cached discovery list
+            // Check that the source exists in our cached discovery list. Unknown sources keep the
+            // current behaviour (toast via LastErrorMessage) rather than failing navigation — the
+            // sourceId is still forwarded as-is (#335 open question, resolved as "no change yet").
             var sourceRepo = _serviceProvider.GetService<NdiForAndroid.Features.Sources.Repositories.ISourceRepository>();
             if (sourceRepo != null)
             {
@@ -71,26 +62,20 @@ public sealed class DeepLinkService : IDeepLinkService
                 }
             }
 
-            // Route based on the action derived from the host (or path fallback)
-            switch (action.ToLowerInvariant())
+            switch (route.Type)
             {
-                case "view":
+                case DeepLinkType.View:
                     await NavigateToViewerAsync(sourceId);
                     return true;
 
-                case "stream":
+                case DeepLinkType.Stream:
                     await NavigateToOutputForReStreamAsync(sourceId);
                     return true;
 
                 default:
-                    _lastErrorMessage = $"Unknown action '{action}'. Use 'view' or 'stream'.";
+                    _lastErrorMessage = $"Unknown action '{route.Type}'. Use 'view' or 'stream'.";
                     return false;
             }
-        }
-        catch (UriFormatException)
-        {
-            _lastErrorMessage = "Invalid deep link: malformed URI.";
-            return false;
         }
         catch (Exception ex)
         {
@@ -110,18 +95,5 @@ public sealed class DeepLinkService : IDeepLinkService
         await _navigation.NavigateToPrimaryAsync(
             PrimaryNavDestination.Stream,
             $"reStreamSourceId={Uri.EscapeDataString(sourceId)}&isReStreamMode=true");
-    }
-
-    private static string? ParseQueryString(string query, string key)
-    {
-        if (string.IsNullOrEmpty(query)) return null;
-
-        foreach (var pair in query.Split('&'))
-        {
-            var parts = pair.Split('=', 2);
-            if (parts.Length == 2 && parts[0] == key)
-                return Uri.UnescapeDataString(parts[1]);
-        }
-        return null;
     }
 }
