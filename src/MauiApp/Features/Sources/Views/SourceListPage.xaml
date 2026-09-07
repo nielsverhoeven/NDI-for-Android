@@ -52,12 +52,14 @@
                                        FontSize="12"
                                        TextColor="{DynamicResource TextSecondary}" />
                             </VerticalStackLayout>
-                            <HorizontalStackLayout Grid.Column="1" Spacing="8">
+                            <HorizontalStackLayout Grid.Column="1" Spacing="8" VerticalOptions="Center">
                                 <Button Text="Watch"
+                                        MinimumHeightRequest="48"
                                         AutomationId="{x:Static t:TestIds.SourceRowWatch}"
                                         Command="{Binding Source={RelativeSource AncestorType={x:Type vm:SourceListViewModel}}, Path=NavigateToViewerCommand}"
                                         CommandParameter="{Binding .}" />
                                 <Button Text="Output"
+                                        MinimumHeightRequest="48"
                                         AutomationId="{x:Static t:TestIds.SourceRowOutput}"
                                         Command="{Binding Source={RelativeSource AncestorType={x:Type vm:SourceListViewModel}}, Path=NavigateToOutputCommand}"
                                         CommandParameter="{Binding .}" />
