@@ -105,7 +105,9 @@ public sealed class MauiAppearanceService : IAppearanceService
         Color SuccessText,
         Color WarningText,
         Color BorderColor,
-        Color DividerColor)
+        Color DividerColor,
+        Color ShellRailActiveIndicator,
+        Color StatusMuted)
     {
         public static Palette FromHex(ThemePalette p) => new(
             Color.FromArgb(p.PageBackground),
@@ -124,13 +126,17 @@ public sealed class MauiAppearanceService : IAppearanceService
             Color.FromArgb(p.SuccessText),
             Color.FromArgb(p.WarningText),
             Color.FromArgb(p.BorderColor),
-            Color.FromArgb(p.DividerColor));
+            Color.FromArgb(p.DividerColor),
+            Color.FromArgb(p.ShellRailActiveIndicator),
+            Color.FromArgb(p.StatusMuted));
     }
 
     private static readonly Palette DarkPalette  = Palette.FromHex(AppearancePalette.Dark);
     private static readonly Palette LightPalette = Palette.FromHex(AppearancePalette.Light);
 
-    private static Color ResolveAccent(AccentColorOption accent) =>
+    /// <summary>Fixed accent colour for an option; the Settings accent swatches (#370) read this same
+    /// table so the two can never drift.</summary>
+    public static Color ResolveAccent(AccentColorOption accent) =>
         Color.FromArgb(AppearancePalette.Accent(accent));
 
     // ── Resource dictionary ─────────────────────────────────────────
@@ -163,6 +169,8 @@ public sealed class MauiAppearanceService : IAppearanceService
         res["SuccessFill"]        = Color.FromArgb(AppearancePalette.SuccessFill);
         res["BorderColor"]        = p.BorderColor;
         res["DividerColor"]       = p.DividerColor;
+        res["ShellRailActiveIndicator"] = p.ShellRailActiveIndicator;
+        res["StatusMuted"]              = p.StatusMuted;
     }
 
     // ── Shell chrome ────────────────────────────────────────────────
