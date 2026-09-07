@@ -8,6 +8,16 @@ using NdiForAndroid.Services;
 
 namespace NdiForAndroid.Features.Output.ViewModels;
 
+/// <summary>Stream tab: outgoing NDI output (capture or re-stream) configuration and start/stop.</summary>
+/// <remarks>
+/// Registered as a DI <b>Singleton</b> together with <c>OutputPage</c> (#352/#359): it subscribes here to the
+/// singleton bridge's <c>OutputStatusChanged</c> and to <c>IAppLifecycleService.AppResumed</c>, while MAUI's
+/// Android Shell re-resolves the tab-root page on every tab entry and placement change. A Transient lifetime
+/// leaked one subscribed instance per visit, each still running <see cref="CorroborateWithBridgeAsync"/> on
+/// resume. Consequently the observable state persists across tab visits; truthfulness comes from
+/// <see cref="LoadCommand"/>, which <c>OutputPage.OnAppearing</c> awaits on every appearance and which
+/// corroborates against the live bridge. <see cref="Dispose"/> is container-owned — pages must not call it.
+/// </remarks>
 public partial class OutputViewModel : ObservableObject, IDisposable
 {
     private readonly INdiOutputBridge _bridge;
@@ -294,6 +304,7 @@ public partial class OutputViewModel : ObservableObject, IDisposable
             snapshot.LastSelectedSourceId));
     }
 
+    /// <summary>Container-owned teardown only (singleton lifetime) — never called from page lifecycle.</summary>
     public void Dispose()
     {
         _lifecycle.AppResumed -= OnAppResumed;

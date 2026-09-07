@@ -80,6 +80,8 @@ public static class MauiProgram
         builder.Services.AddSingleton<IAppStateRepository>(sp =>
             new AppStateRepository(ndiDbPath));
         builder.Services.AddSingleton<IConnectionHistoryService, ConnectionHistoryService>();
+        builder.Services.AddSingleton<Features.DeepLinking.Services.IDeepLinkRouteResolver,
+            Features.DeepLinking.Services.DeepLinkRouteResolver>();  // Core, unit-tested (#335)
         builder.Services.AddSingleton<IDeepLinkService, DeepLinkService>();
         builder.Services.AddSingleton<ITelemetryService, TelemetryService>();
         builder.Services.AddSingleton<ShellNavigationService>();
@@ -101,10 +103,11 @@ public static class MauiProgram
         );
         builder.Services.AddSingleton<TimeProvider>(TimeProvider.System);
 
-        // Developer-mode diagnostics (#241): overlay service + log page. The FPS/discovery
-        // producers hook in with the real NDI bridge stats (#277).
+        // Developer-mode diagnostics (#241): Core overlay state (#333, unit-tested) + log page. The
+        // FPS/discovery producers hook in with the real NDI bridge stats (#277); the logcat mirror is
+        // the platform IDiagnosticLogSink registered in the #if ANDROID block below.
         builder.Services.AddSingleton<Features.DiagOverlay.Services.IDiagnosticOverlayService,
-            Features.DiagOverlay.DiagnosticOverlayService>();
+            Features.DiagOverlay.Services.DiagnosticOverlayService>();
         builder.Services.AddTransient<Features.DiagOverlay.ViewModels.DiagnosticLogViewModel>();
         builder.Services.AddTransient<Features.DiagOverlay.Views.DiagnosticLogPage>();
 
@@ -118,6 +121,7 @@ public static class MauiProgram
         builder.Services.AddSingleton<IAudioCaptureSource, AndroidMicrophoneCaptureSource>();
         builder.Services.AddSingleton<IWindowInsetsService, AndroidWindowInsetsService>();
         builder.Services.AddSingleton<IImmersiveModeService, AndroidImmersiveModeService>();
+        builder.Services.AddSingleton<Features.DiagOverlay.Services.IDiagnosticLogSink, AndroidLogcatDiagnosticSink>();
 #else
         builder.Services.AddSingleton<IMulticastLockService, NoopMulticastLockService>();
         builder.Services.AddSingleton<IScreenSharePlatformService, NoopScreenSharePlatformService>();
@@ -128,22 +132,30 @@ public static class MauiProgram
         builder.Services.AddSingleton<IAudioCaptureSource, NoopAudioCaptureSource>();
         builder.Services.AddSingleton<IWindowInsetsService, NoopWindowInsetsService>();
         builder.Services.AddSingleton<IImmersiveModeService, NoopImmersiveModeService>();
+        builder.Services.AddSingleton<Features.DiagOverlay.Services.IDiagnosticLogSink, NoopDiagnosticLogSink>();
 #endif
 
         // ViewModels
         builder.Services.AddSingleton<AdaptiveShellStateViewModel>();
         builder.Services.AddSingleton<SourceListViewModel>();  // Singleton: subscribes to singleton IDiscoveryRefreshService
-        builder.Services.AddTransient<HomeViewModel>();
+        // Tab-root ViewModels (#352/#359): Singleton, like SourceListViewModel above. They subscribe
+        // in their constructors to singleton events (SnapshotReady / OutputStatusChanged / AppResumed)
+        // and MAUI's Android Shell re-resolves the ShellContent page — and with it the ViewModel — on
+        // every tab entry and on every -tab/-rail placement change, so a Transient here leaks one
+        // subscribed instance per visit. Their Dispose() is container-owned (app teardown), never
+        // page-owned; every appearance re-corroborates state instead (HomePage.OnAppearing -> Refresh,
+        // OutputPage.OnAppearing -> LoadCommand).
+        builder.Services.AddSingleton<HomeViewModel>();
         builder.Services.AddTransient<ViewerViewModel>();
         // Factory seam for the Singleton SourceListViewModel to lazily resolve a Transient
         // ViewerViewModel for its embedded pane (MS.DI does not provide Func<T> automatically).
         builder.Services.AddSingleton<Func<ViewerViewModel>>(sp => () => sp.GetRequiredService<ViewerViewModel>());
-        builder.Services.AddTransient<OutputViewModel>();
+        builder.Services.AddSingleton<OutputViewModel>();  // Singleton: see HomeViewModel note (#352/#359)
         builder.Services.AddTransient<SettingsViewModel>();
 
         // Views
         builder.Services.AddSingleton<AppShell>();
-        builder.Services.AddTransient<Features.Home.Views.HomePage>();
+        builder.Services.AddSingleton<Features.Home.Views.HomePage>();      // Singleton: matches ViewModel lifetime (#352/#359)
         builder.Services.AddSingleton<Features.Sources.Views.SourceListPage>();  // Singleton: matches ViewModel lifetime (C1)
         builder.Services.AddTransient<Features.Viewer.Views.ViewerPage>();
         builder.Services.AddTransient<Features.Viewer.Views.FullScreenViewerPage>();
@@ -151,7 +163,7 @@ public static class MauiProgram
         // page via IPlatformApplication.Current.Services (MS.DI does not provide Func<T> automatically).
         builder.Services.AddSingleton<Func<Features.Viewer.Views.FullScreenViewerPage>>(
             sp => () => sp.GetRequiredService<Features.Viewer.Views.FullScreenViewerPage>());
-        builder.Services.AddTransient<Features.Output.Views.OutputPage>();
+        builder.Services.AddSingleton<Features.Output.Views.OutputPage>();  // Singleton: matches ViewModel lifetime (#352/#359)
         builder.Services.AddTransient<Features.Settings.Views.SettingsPage>();
 
         return builder.Build();

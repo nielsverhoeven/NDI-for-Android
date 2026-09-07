@@ -180,6 +180,61 @@ public class OutputViewModelTests
         Assert.Equal(0, sut.ConnectionCount);
     }
 
+    // ── Lifetime contract (#352/#359): one subscription per event for the app lifetime ─────────
+
+    [Fact]
+    public void Constructor_SubscribesToEachSingletonEventExactlyOnce()
+    {
+        _ = CreateSut();
+
+        _bridgeMock.VerifyAdd(b => b.OutputStatusChanged += It.IsAny<EventHandler>(), Times.Once);
+        _lifecycleMock.VerifyAdd(l => l.AppResumed += It.IsAny<Action>(), Times.Once);
+    }
+
+    [Fact]
+    public async Task LoadCommand_RepeatedAppearances_DoNotAddSubscriptions()
+    {
+        var sut = CreateSut();
+
+        // OutputPage.OnAppearing awaits LoadCommand on every tab entry.
+        await sut.LoadCommand.ExecuteAsync(null);
+        await sut.LoadCommand.ExecuteAsync(null);
+        await sut.LoadCommand.ExecuteAsync(null);
+
+        _bridgeMock.VerifyAdd(b => b.OutputStatusChanged += It.IsAny<EventHandler>(), Times.Once);
+        _lifecycleMock.VerifyAdd(l => l.AppResumed += It.IsAny<Action>(), Times.Once);
+    }
+
+    [Fact]
+    public void Dispose_RemovesEverySubscriptionItAdded()
+    {
+        var sut = CreateSut();
+
+        sut.Dispose();
+        _appStateRepoMock.Invocations.Clear();
+
+        _bridgeMock.VerifyRemove(b => b.OutputStatusChanged -= It.IsAny<EventHandler>(), Times.Once);
+        _lifecycleMock.VerifyRemove(l => l.AppResumed -= It.IsAny<Action>(), Times.Once);
+
+        // A resume after teardown must not run the corroboration (and its SaveAsync) any more.
+        _lifecycleMock.Raise(l => l.AppResumed += null);
+        _appStateRepoMock.Verify(r => r.RestoreStateAsync(), Times.Never);
+    }
+
+    [Fact]
+    public async Task LoadCommand_WhenNothingPersisted_KeepsTheStreamNameTypedBeforeTheTabSwitch()
+    {
+        // Unit twin of the e2e Stream_TypedStreamName_SurvivesATabSwitch: with no persisted
+        // configuration and no persisted session, re-entering the tab (LoadCommand) must not
+        // reset what the user typed on the singleton instance.
+        var sut = CreateSut();
+        sut.StreamName = "Typed-Before-Leaving";
+
+        await sut.LoadCommand.ExecuteAsync(null);
+
+        Assert.Equal("Typed-Before-Leaving", sut.StreamName);
+    }
+
     [Fact]
     public async Task LoadCommand_AppliesPersistedConfiguration()
     {

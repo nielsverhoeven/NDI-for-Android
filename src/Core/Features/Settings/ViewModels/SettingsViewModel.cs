@@ -71,15 +71,12 @@ public partial class SettingsViewModel : ObservableObject
 
     // Nullable because the view can write null back: RadioButtonGroup.SelectedValue pushes null
     // through its two-way binding while the Settings page's visual tree is being torn down.
-    // The change handlers below reject those writes — see _lastValid* .
+    // The change handlers below reject those writes, restoring from _committedTheme/_committedAccent.
     [ObservableProperty]
     private string? _selectedThemeOption = ThemeSystemLabel;
 
     [ObservableProperty]
     private string? _selectedAccentColor = AccentColorOption.Blue.ToString();
-
-    private string _lastValidThemeOption = ThemeSystemLabel;
-    private string _lastValidAccentColor = AccentColorOption.Blue.ToString();
 
     // ── Add-server form ─────────────────────────────────────────────────────
 
@@ -337,6 +334,14 @@ public partial class SettingsViewModel : ObservableObject
         _statusMonitorCts?.Cancel();
         _statusMonitorCts?.Dispose();
         _statusMonitorCts = null;
+
+        // #355 follow-up to #300: a discovery row's Enabled switch is bound TwoWay inside a
+        // CollectionView row template, so cell recycling / page teardown can write it back the
+        // same way RadioButtonGroup writes null through the theme/accent bindings on teardown.
+        // Suppress auto-save from here so a value the user never chose is never persisted.
+        // SettingsViewModel is Transient (#352/#359), so a fresh instance with a clean
+        // _suppressAutoSave is created for the next Settings visit.
+        _suppressAutoSave = true;
     }
 
     /// <summary>Runs one out-of-band probe pass (after add/edit/toggle) without waiting for the next tick.</summary>
@@ -458,18 +463,17 @@ public partial class SettingsViewModel : ObservableObject
     {
         // Tearing the page down must not read as the user picking a theme. Without this, the
         // null that RadioButtonGroup writes on teardown parses to the default (System) and
-        // would auto-save over the user's actual choice (#300). Restore the last real
-        // selection and stay clean.
+        // would auto-save over the user's actual choice (#300). Restore the committed selection
+        // (#355: derived from _committedTheme rather than a second, hand-kept field) and stay clean.
         if (!IsKnownOption(ThemeOptions, value))
         {
             var wasSuppressed = _suppressAutoSave;
             _suppressAutoSave = true;
-            SelectedThemeOption = _lastValidThemeOption;
+            SelectedThemeOption = ToThemeOption(_committedTheme);
             _suppressAutoSave = wasSuppressed;
             return;
         }
 
-        _lastValidThemeOption = value!;
         _committedTheme = ParseThemeOption(value);
         _ = PersistAsync();
     }
@@ -481,12 +485,11 @@ public partial class SettingsViewModel : ObservableObject
         {
             var wasSuppressed = _suppressAutoSave;
             _suppressAutoSave = true;
-            SelectedAccentColor = _lastValidAccentColor;
+            SelectedAccentColor = _committedAccent.ToString();
             _suppressAutoSave = wasSuppressed;
             return;
         }
 
-        _lastValidAccentColor = value!;
         _committedAccent = ParseAccentColorOption(value);
         _ = PersistAsync();
     }

@@ -160,7 +160,6 @@ public static class TestIds
 
     public const string SettingsDiscoveryHost           = "settings.discoveryHost";
     public const string SettingsDiscoveryPort           = "settings.discoveryPort";
-    public const string SettingsDiscoveryServerEndpoint = "settings.discoveryServerEndpoint";
     public const string SettingsDiscoveryServerAction   = "settings.discoveryServerAction";
     public const string SettingsDiscoveryServersError   = "settings.discoveryServersError";
     public const string SettingsDiscoveryServerList     = "settings.discoveryServerList";
@@ -177,8 +176,6 @@ public static class TestIds
     public const string SettingsAppName       = "settings.appName";
     public const string SettingsAppVersion    = "settings.appVersion";
     public const string SettingsNdiSdkVersion = "settings.ndiSdkVersion";
-
-    public const string SettingsValidationError = "settings.validationError";
 
     // ── DiagnosticLogPage: the in-memory log buffer view ─────────────────────
 
