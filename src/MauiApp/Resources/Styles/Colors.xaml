@@ -9,6 +9,7 @@
     <Color x:Key="PrimaryLight">#5BA3D9</Color>
     <Color x:Key="White">White</Color>
     <Color x:Key="Black">Black</Color>
+    <!-- Non-text indicators only (tally border, discovery-state dot is now SuccessText/ErrorText). Never use as a text or button-text colour: 3.68:1 / 2.78:1 against white. -->
     <Color x:Key="ErrorRed">#F44336</Color>
     <Color x:Key="SuccessGreen">#4CAF50</Color>
 
@@ -20,8 +21,11 @@
          ═══════════════════════════════════════════════════════════════ -->
 
     <!-- Accent (changes with AccentColorOption) -->
-    <Color x:Key="Primary">#2B7CB8</Color>
+    <Color x:Key="Primary">#2272AC</Color>
     <Color x:Key="OnPrimary">#FFFFFF</Color>
+    <!-- Non-text accent (radio ring/dot, Switch track, spinners, sheet tab indicator): brighter
+         than Primary on dark surfaces, where the darker Primary drops under the 3:1 graphical bar. -->
+    <Color x:Key="AccentGraphic">#2B7CB8</Color>
 
     <!-- Page / surface -->
     <Color x:Key="PageBackground">#1E1E2E</Color>
@@ -36,12 +40,29 @@
     <Color x:Key="ShellTitleColor">#FFFFFF</Color>
     <Color x:Key="ShellTabSelected">#FFFFFF</Color>
     <Color x:Key="ShellTabUnselected">#8E8E93</Color>
+    <!-- Rail active-item indicator pill (M3 navigation-rail active indicator). Neutral, not
+         accent-tinted, so it matches the tab bar, whose selected item is also neutral (#343 home-nav-05). -->
+    <Color x:Key="ShellRailActiveIndicator">#45455F</Color>
 
     <!-- Text -->
     <Color x:Key="TextPrimary">#FFFFFF</Color>
     <Color x:Key="TextSecondary">#AAAACC</Color>
-    <Color x:Key="TextPlaceholder">#666680</Color>
+    <Color x:Key="TextPlaceholder">#9E9EBC</Color>
     <Color x:Key="TextOnAccent">#FFFFFF</Color>
+    <!-- Muted status indicator (disabled/unknown state dots). Tuned per theme for >=3:1 non-text
+         contrast on PageBackground; TextPlaceholder is text-only and fails that bar (#343 SET-3). -->
+    <Color x:Key="StatusMuted">#80809E</Color>
+
+    <!-- Status text (theme-aware, >= 4.5:1 on Page/Card backgrounds in both palettes).
+         Use these for any Label that reports an error, success or warning state; ErrorRed/
+         SuccessGreen above are for non-text indicators only (tally border) where the 3:1
+         graphical-object bar applies. -->
+    <Color x:Key="ErrorText">#FF7B72</Color>
+    <Color x:Key="SuccessText">#66BB6A</Color>
+    <Color x:Key="WarningText">#FFA726</Color>
+    <!-- Button fills that carry white (TextOnAccent) text — Stop, Resume Output. -->
+    <Color x:Key="ErrorFill">#D32F2F</Color>
+    <Color x:Key="SuccessFill">#2E7D32</Color>
 
     <!-- Borders / dividers -->
     <Color x:Key="BorderColor">#3A3A5C</Color>

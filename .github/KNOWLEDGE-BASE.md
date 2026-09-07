@@ -1,5 +1,5 @@
 # NDI-for-Android — Agent Knowledge Base
-<!-- Last updated: 2026-07-07 | Read this INSTEAD of re-reading constitution.md + architecture.md for implementation tasks -->
+<!-- Last updated: 2026-09-07 | Read this INSTEAD of re-reading constitution.md + architecture.md for implementation tasks -->
 
 ## Tech Stack (authoritative)
 - **Platform**: .NET MAUI `net10.0-android` | **Language**: C# 12, nullable enabled
@@ -38,12 +38,22 @@ dotnet test tests/MauiApp.Tests             # Non-NDI unit tests — must pass b
 | Viewer control deck / sheet / overlay (#342) | `src/MauiApp/Features/Viewer/Views/PlaybackControlsView.xaml(.cs)`, `CameraControlsView.xaml(.cs)`, `ViewerControlDeck.xaml(.cs)`, `ViewerControlSheet.xaml(.cs)`, `FullScreenControlsOverlay.xaml(.cs)` — `PtzPanelView` removed, superseded by `CameraControlsView` |
 | Viewer control layout policy (Core, unit-tested) | `src/Core/Features/Viewer/ViewerControlLayout.cs` (`Choose(widthDp, heightDp)` → Deck when width ≥ 640dp and height ≥ 470dp, else Sheet; `ShouldStackCameraPresets`, `ChooseSheetExpandedHeightDp`/`ChooseSheetPeekHeightDp`, `ChooseVideoHeightDp` added for #370 — video height and the sheet's expanded/peek heights are derived from the same Core policy; 240dp video / 440dp expanded / 320dp peek remain the values for a portrait phone and for the deck) |
 | Window size class + nav policy | `src/Core/Features/Navigation/Services/` (`WindowSizeClassService`, `NavigationPolicyService`) |
+| Developer-mode diagnostics state (Core, unit-tested, #333) | `src/Core/Features/DiagOverlay/Services/` (`IDiagnosticOverlayService`, `DiagnosticOverlayService`, `DiagnosticLogBuffer`, `IDiagnosticLogSink`); logcat mirror = `src/MauiApp/Platforms/Android/Services/AndroidLogcatDiagnosticSink.cs` (Noop twin in `src/MauiApp/Services/`) |
 | SQLite/Data layer | `src/MauiApp/Data/` |
 | Android platform services | `src/MauiApp/Platforms/Android/` |
 | Unit tests | `tests/MauiApp.Tests/` |
 | NDI SDK coverage matrix | `docs/ndi-sdk-coverage.md` |
 | Constitution (full detail) | `docs/constitution.md` |
 | Architecture (full detail) | `docs/architecture.md` |
+| Screen reader announcer (#345) | `src/Core/Services/IScreenReaderAnnouncer.cs` (+ `FakeScreenReaderAnnouncer` for tests); Maui impl `src/MauiApp/Services/MauiScreenReaderAnnouncer.cs` (wraps `SemanticScreenReader`, marshals to main thread) |
+| Destructive-action confirm prompt (#347) | `src/Core/Services/IUserPromptService.cs` (+ `FakeUserPromptService`); Maui impl `src/MauiApp/Services/MauiUserPromptService.cs` (`Page.DisplayAlert` on `Shell.Current.CurrentPage`), Noop twin `src/MauiApp/Services/NoopUserPromptService.cs` (auto-accepts) |
+| Developer-mode diagnostics (Core, #333) | `src/Core/Features/DiagOverlay/Services/` (`IDiagnosticOverlayService`, `DiagnosticOverlayService`, `DiagnosticLogBuffer`, `IDiagnosticLogSink`); Android mirror `src/MauiApp/Platforms/Android/Services/AndroidLogcatDiagnosticSink.cs`, Noop twin `src/MauiApp/Services/NoopDiagnosticLogSink.cs` |
+| Deep-link route resolver (Core, #335) | `src/Core/Features/DeepLinking/Services/IDeepLinkRouteResolver.cs` / `DeepLinkRouteResolver.cs` — pure `ndi://` URI parser; MauiApp adapter (navigation + source-cache lookup) `src/MauiApp/Features/DeepLinking/DeepLinkService.cs` |
+| Appearance palette tokens (Core, #344/#372/#373) | `src/Core/Features/Settings/Models/AppearancePalette.cs` (`ThemePalette` record + `Dark`/`Light` statics, hex strings, WCAG-asserted by `AppearancePaletteContrastTests`); consumed by `src/MauiApp/Features/Settings/Services/MauiAppearanceService.cs` |
+| Camera orientation compensation (#284) | `src/Core/Services/CameraFrameOrientation.cs` (`ComputeRotationDegrees` — pure Camera2 sensor/display rotation policy) + `src/Core/Services/Nv12FrameRotator.cs` (pure NV12 90°-multiple rotator); wired into `src/MauiApp/Platforms/Android/Services/AndroidVideoCaptureSource.cs` (also migrated to `SessionConfiguration` on API 28+, Handler-based fallback on API 26-27) |
+| Viewer quality profile options (#330) | `src/Core/Features/Viewer/Models/QualityProfileOption.cs` — data-driven from `QualityProfile`, built by `ViewerViewModel.AvailableProfiles` |
+| Viewer connection hint (#331) | `src/Core/Features/Viewer/ConnectionHintPolicy.cs` (pure hysteresis policy over fps/dropped%) + `src/Core/Features/Viewer/ViewModels/ViewerViewModel.ConnectionHint.cs` (1 s stats watchdog, advisory `ConnectionHint` string — never auto-switches profile) |
+| PTZ endpoint form ViewModel | `src/Core/Features/Ptz/ViewModels/PtzEndpointFormViewModel.cs` — Save/Clear/Test semantics (#374): Clear only resets the two fields (never closes the dialog or raises `EndpointSaved`); Save commits a blank host as "no override" (`endpoint = null`); Save is disabled (not just validated) while the port is out of range |
 
 ## Module Structure
 ```
@@ -74,6 +84,7 @@ tests/
 4. **NDI threading**: bridge events (`ConnectionStateChanged`, `TallyEchoChanged`, `OutputStatusChanged`) are raised on pump/background threads — subscribers marshal to the UI thread (`IMainThreadDispatcher` in Core, `MainThread.BeginInvokeOnMainThread` in MauiApp)
 5. **Android APIs** isolated in `Platforms/Android/` behind interfaces
 6. **No root `IsVisible` binding on a reusable `ContentView`** — a `View.SetValue` from host code-behind clears an active one-way binding on that same property, so a `ContentView` reused across multiple hosts (e.g. `CameraControlsView` inside both `ViewerControlDeck` and `ViewerControlSheet`) must bind visibility on an *inner* element and leave its own root free for the host to toggle imperatively (`.IsVisible = ...`) without side effects. See #342 (`ViewerControlDeck`/`ViewerControlSheet`/`FullScreenControlsOverlay`).
+7. **Tab-root lifetime rule (#352/#359)** — ShellContent-hosted pages are re-resolved from DI on every tab entry/placement change and never dispose their ViewModel; a ViewModel subscribing to a singleton event is registered **Singleton together with its page** (`SourceListViewModel`/`SourceListPage`, `HomeViewModel`/`HomePage`, `OutputViewModel`/`OutputPage`). Guarded by `tests/MauiApp.Tests/Composition/TabRootLifetimeRegistrationTests.cs`. Only push-navigated pages (`ViewerPage`) dispose a Transient ViewModel, and only after leaving the nav stack.
 
 ## Shell Routes
 
@@ -98,6 +109,7 @@ Left navigation rail placement: same pages on `//home-rail`, `//stream-rail`, `/
 - `OutputViewModel`: "Output session restored." only when the bridge corroborates; otherwise "Tap Start to resume output" (no period) and the persisted flag is cleared; "Output stopped" on an autonomous stop. `OutputPage` accepts `resume=true` (query) → `ApplyResumeRequestCommand` pre-fills the stream name and never starts capture.
 - `HomeViewModel` takes `INdiOutputBridge`; Output status and `CanResumeOutput` derive from `state.IsOutputActive && _outputBridge.IsActive`; quick actions are disabled (not hidden) when unavailable. Start Viewing Last Source calls `NavigateToPrimaryAsync(View)` BEFORE pushing `viewer?sourceId=` so the push lands under the View tab/rail (otherwise the handoff never stops the receiver).
 - Background streaming (#327): an active output keeps running across tab switches and app backgrounding under `ScreenShareForegroundService`; `NdiNavigationHandoffService` only stops the viewer receiver when leaving View (constructor: `INdiViewerBridge` only). The persistent notification has a **Stop** action (`ActionStopRequested` → `INdiOutputBridge.StopOutputAsync()`; if the bridge is null or inactive the service stops itself). A sticky restart with a null intent stops the service (#351). A notification stop keeps `AppState.StreamName`, so Home offers Resume; only the in-app Stop button clears the name.
+- Lifetime (#352/#359): `OutputViewModel`/`OutputPage` and `HomeViewModel`/`HomePage` are Singletons, so the Stream tab keeps its typed stream name / input kind / mode across tab switches and rotation; `LoadCommand` re-corroborates with the bridge on every appearance and `OutputPage` consumes its query intents one-shot. e2e: `AppLaunchTests.Stream_TypedStreamName_SurvivesATabSwitch`.
 
 ## Settings Feature (Issue #142 — MERGED to main, PR #211)
 - **ViewModel**: `SettingsViewModel` — 5 sections: General, Appearance, Discovery, DeveloperTools, About
@@ -108,11 +120,12 @@ Left navigation rail placement: same pages on `//home-rail`, `//stream-rail`, `/
 - **Platform info**: `ISettingsPlatformService.GetAppInfo()` → `SettingsAppInfo(AppName, Version, Build)`
 - **Cached sources**: loaded from `ISourceRepository.GetCachedSourcesAsync()`
 - **Appearance service**: `IAppearanceService` / `MauiAppearanceService` — central runtime color application
-  - `DarkPalette` / `LightPalette` records hold all 16 semantic color values
+  - `Palette` (private record) is built from `AppearancePalette.Dark`/`.Light` (Core, hex strings — see MAUI Theming Rules) via `Palette.FromHex`
   - `UpdateResources()` writes to `Application.Current.Resources` (DynamicResource triggers)
   - `UpdateShell()` sets Shell tab bar, title, foreground via `SetValue()`
   - `UpdateAndroidStatusBar()` — `#if ANDROID` guard — sets status bar color via `WindowCompat`
-- **Color system**: `Colors.xaml` defines 16 semantic keys (e.g. `PageBackground`, `ShellBackground`, `Primary`). ALL elements must use `DynamicResource` — never `StaticResource` or hardcoded hex.
+  - `ReapplyChrome()` re-applies the last-applied palette's status-bar/chrome colors after Shell navigation resets a page's `AppBarLayout` background (#296) — queued via `MainThread.BeginInvokeOnMainThread` plus a delayed second pass, never inline
+- **Color system**: `Colors.xaml` defines the semantic keys (e.g. `PageBackground`, `ShellBackground`, `Primary`, `ErrorText`/`SuccessText`/`WarningText`, `ErrorFill`/`SuccessFill`, `AccentGraphic`, `StatusMuted`, `ShellRailActiveIndicator`). ALL elements must use `DynamicResource` — never `StaticResource` or hardcoded hex. See MAUI Theming Rules below for what each token is for and where its value is single-sourced.
 - **RadioButton**: uses pure MAUI `ControlTemplate` (two `Ellipse` elements) — native Android `MaterialRadioButton` ignores `DynamicResource`.
 
 ## NDI Bridge — Real P/Invoke Implementation (#277 receive / #278 send, MERGED)
@@ -170,6 +183,12 @@ builder.Services.AddSingleton<IDiscoveryRefreshService, DiscoveryRefreshService>
 // SourceListViewModel + SourceListPage are Singleton (subscribes to singleton refresh service)
 builder.Services.AddSingleton<SourceListViewModel>();
 builder.Services.AddSingleton<Features.Sources.Views.SourceListPage>();
+
+// Tab-root pages + ViewModels that subscribe to singleton events are Singleton pairs (#352/#359)
+builder.Services.AddSingleton<HomeViewModel>();
+builder.Services.AddSingleton<Features.Home.Views.HomePage>();
+builder.Services.AddSingleton<OutputViewModel>();
+builder.Services.AddSingleton<Features.Output.Views.OutputPage>();
 ```
 
 ### New/changed files for #213
@@ -276,6 +295,22 @@ Terminal message constant: `"Connection lost. Reconnection failed."` Drop while 
 UI: `src/MauiApp/Features/Viewer/Views/ViewerPage.xaml` — retry-status label, Cancel button (visible while `IsReconnecting`), Reconnect button (visible while `CanReconnect`).
 
 See `docs/architecture.md` for the canonical module/threading diagram (already updated by architect — do not duplicate here).
+
+## Viewer: Quality Strip, Connection Hint, Stopped State, ON PROGRAM Badge (#330/#331/#348/#329)
+
+- **Data-driven quality strip (#330)**: `ViewerViewModel.AvailableProfiles` (`IReadOnlyList<QualityProfileOption>`) is built once from `Enum.GetValues<QualityProfile>()` — adding or renaming a `QualityProfile` value can no longer desynchronise the UI from the enum. Each `QualityProfileOption` (`src/Core/Features/Viewer/Models/QualityProfileOption.cs`) carries its own `Label`, accessibility `Description`, and `AutomationId` (falls back to a stable `"viewer.quality.<name>"` id for a future enum value with no `TestIds` constant yet). Profile choice stays **manual** — no auto-selection of Smooth for high-resolution sources.
+- **Advisory connection hint, no auto-degradation (#331 decision 2026-09-04)**: `ViewerViewModel.ConnectionHint.cs` samples the bridge's fps/dropped% once per second (`StatsSampleInterval`, matching `NdiViewerBridge`'s own stats refresh) and feeds `ConnectionHintPolicy.Next` (`src/Core/Features/Viewer/ConnectionHintPolicy.cs`) — a pure hysteresis state machine (5 consecutive weak samples to show the hint, 5 consecutive good samples to clear it) that decides only whether to show `"Connection weak"` / `"Connection weak — try Smooth"` next to the status line. **Nothing in this path ever calls `SetQualityProfile`** — the watchdog only feeds the hint text; the user always picks the profile.
+- **Explicit Stopped state (#348)**: `IsStopped` drives a "Stopped." treatment of the video surface after `Stop` instead of leaving the last frame frozen on screen; a fresh Start/Reconnect clears it.
+- **ON PROGRAM badge + TalkBack announcement**: the viewer shows an "ON PROGRAM" badge when the sender's tally reports this receiver live, and announces it via `IScreenReaderAnnouncer` (see Key File Paths) so TalkBack users get the same signal non-visually.
+- **Reconnect timers and PTZ nudge on `TimeProvider`**: the 15 s auto-reconnect window (above) and the PTZ pan/tilt "nudge" debounce both go through the injected `TimeProvider`, not wall-clock/`Task.Delay` — kept unit-testable with `Microsoft.Extensions.TimeProvider.Testing`'s `FakeTimeProvider` (the old hand-rolled `FakeTimeProvider` in Core was removed once the NuGet package's version was adopted everywhere).
+
+## Deep Linking (#335 — decision 2026-09-04)
+
+`ndi://` deep links support **two forms**, both normalized by the pure `IDeepLinkRouteResolver`/`DeepLinkRouteResolver` (Core, see Key File Paths) into `(DeepLinkType, sourceId)`:
+- **Query form**: `ndi://view?sourceId=<id>` / `ndi://stream?sourceId=<id>`
+- **Path form** (QR/NFC): `ndi://view/<host:port>` / `ndi://stream/<host:port>` — the path segment is used directly as the source id
+
+The MauiApp `DeepLinkService` adapter consumes the resolved route for navigation and source-cache lookups; an unknown/unresolvable source keeps the existing toast behaviour (unchanged by this decision).
 
 ## Conventional Commits
 ```
@@ -396,6 +431,18 @@ Two mechanisms keep it honest; do not remove either:
   P/Invoke interop layer unanalyzed. `wait-for-processing: true` is required — the severity gate
   reads alerts that do not exist until SARIF processing finishes.
 
+- **Release signing uses the four repository secrets** `RELEASE_KEYSTORE_BASE64`,
+  `RELEASE_KEYSTORE_PASSWORD`, `RELEASE_KEY_ALIAS`, `RELEASE_KEY_PASSWORD` (issue #385). The
+  `build-android` job decodes the keystore into `$RUNNER_TEMP`, passes the `AndroidSigning*`
+  properties to `dotnet publish` (passwords via the `env:` prefix, never inline), verifies the
+  result with `apksigner verify --print-certs` (fails on `CN=Android Debug`) and deletes the
+  keystore. Runs without the secrets (Dependabot, forks) build debug-signed with a warning.
+  Expected certificate: `CN=NDI for Android, OU=Mobile, O=NDI, L=Gouda, ST=Zuid-Holland, C=NL`,
+  SHA-256 `fcf1b453b782a0b9bbae3d48f8612b8ad3f78565af85864b18aa0b071cc84271`. Before this fix
+  every release was signed with the runner's ephemeral debug key, so updates failed with
+  `INSTALL_FAILED_UPDATE_INCOMPATIBLE` ("App niet geïnstalleerd"); devices carrying such a build
+  must uninstall once before the first release-signed install.
+
 ## UI e2e tests (Appium)
 
 **Hard gate**: before opening or merging a PR whose base is `main`, this suite must be green —
@@ -422,7 +469,7 @@ the step-by-step recipe.
   | `APPIUM_SERVER_URL` | `http://127.0.0.1:4723/` | Appium server URL. |
   | `E2E_REQUIRE_DEVICE` | unset (skip mode) | `true` makes an unavailable Appium session **throw** instead of setting `SkipReason` — set in CI so a broken device fails the run instead of vacuously skipping; leave unset locally. |
   | `E2E_ARTIFACT_DIR` | `./e2e-artifacts` | Where `FailureEvidence` writes `<test>.png` / `.xml` / `.txt` per failure. |
-  | `A11Y_MAX_VIOLATIONS` | `200` | Accessibility violation budget (ratchet — lower as violations are fixed, never raise to turn a red run green). |
+  | `A11Y_MAX_VIOLATIONS` | `12` | Accessibility violation budget (ratchet — lower as violations are fixed, never raise to turn a red run green). Measured on this branch's dispatched run 34155799008: 10 violations (8 structural missing-label on `RecyclerView`/`ScrollView` containers, 2 touch-target on the Output tab's Entry/Picker); the default carries a small margin above the measured count so an unrelated transient does not immediately go red. |
 
 - **Local run recipe** (against a connected device/emulator):
   ```powershell
@@ -529,10 +576,11 @@ views without carrying their `TestIds` AutomationIds along, and the gap was only
   changes at all, so `Theme_SwitchingLightToDark_ActuallyChangesWhatIsOnScreen` compares the two
   themes' real background pixels. Without it every other assertion in that file could pass on an
   app whose theme switch was completely broken.
-- **The accessibility gate is a ratchet**, `A11Y_MAX_VIOLATIONS` (same pattern as `COVERAGE_MIN`).
-  Lower it as violations are fixed; never raise it to turn a red run green. Two checks sit
-  *outside* the ratchet and may not regress at all: navigation items must announce a destination,
-  and no element may announce an automation id as its label.
+- **The accessibility gate is a ratchet**, `A11Y_MAX_VIOLATIONS` (same pattern as `COVERAGE_MIN`) —
+  currently **12** (measured 10 on run 34155799008: 8 structural missing-label + 2 touch-target,
+  see the env-var table above). Lower it as violations are fixed; never raise it to turn a red run
+  green. Two checks sit *outside* the ratchet and may not regress at all: navigation items must
+  announce a destination, and no element may announce an automation id as its label.
 - **`AutomationId` ≠ `SemanticProperties.Description`.** One is a machine hook, the other is what
   TalkBack reads aloud. `Accessibility_AutomationIds_AreNotUsedAsScreenReaderLabels` asserts the
   two never collide — a guard against the 99 ids added in #311 leaking into announcements.
@@ -583,6 +631,9 @@ without this nothing establishes that it would have caught it.
 - **Android status bar**: `WindowCompat.SetDecorFitsSystemWindows(Window, false)` + `Window.AddFlags(DrawsSystemBarBackgrounds)` in `MainActivity.OnCreate()`. Call `UpdateAndroidStatusBar()` from `MauiAppearanceService` on every theme change.
 - **`Color.ToAndroid()` unavailable**: use `new Android.Graphics.Color((byte)(r*255), (byte)(g*255), (byte)(b*255), (byte)(a*255))` instead.
 - **RadioButton**: native Android `MaterialRadioButton` ignores `DynamicResource` — use pure MAUI `ControlTemplate` with two `Ellipse` elements.
+- **Colour tokens are single-sourced in Core** (`AppearancePalette` in `src/Core/Features/Settings/Models/AppearancePalette.cs`, hex strings only) — `MauiAppearanceService` only converts them to `Color` and writes them into the resource dictionary; `Colors.xaml` carries the Dark palette + Blue accent as the pre-Apply XAML-parse-time baseline and must match `AppearancePalette.Dark` exactly (#344/#372/#373). Adding or renaming a token means updating **three** places: `AppearancePalette` (Dark + Light), `Colors.xaml`, and `MauiAppearanceService.UpdateResources`.
+- **Newer semantic tokens** (#344/#372/#373/#343): `ErrorText`/`SuccessText`/`WarningText` are theme-aware, ≥4.5:1 text colours — use them for any `Label` reporting an error/success/warning state. `ErrorRed`/`SuccessGreen` (fixed brand colours in `Colors.xaml`, not theme-aware) are for **non-text indicators only** (e.g. the tally border) where WCAG 1.4.11's 3:1 non-text bar applies, not the 4.5:1 text bar — never bind them to a `Label.TextColor`. `ErrorFill`/`SuccessFill` are theme-independent button fills that carry white (`TextOnAccent`) text (Stop, Resume Output). `AccentGraphic` is the non-text-graphic counterpart to `Primary` (radio ring/dot, Switch track, spinners, sheet tab indicator) — brighter than `Primary` on dark surfaces, where the darkened accent drops under the 3:1 graphical bar. `StatusMuted` is for disabled/unknown status dots (`TextPlaceholder` is text-only and fails the 3:1 non-text bar there). `ShellRailActiveIndicator` is the neutral (not accent-tinted) active-item pill on the left nav rail, matching the tab bar's neutral selected-item treatment (#343 home-nav-05).
+- **Contrast is unit-tested, not just eyeballed**: `tests/MauiApp.Tests/Features/Settings/AppearancePaletteContrastTests.cs` asserts every token pair in both palettes against the numeric WCAG 2.2 AA thresholds (4.5:1 text, 3:1 non-text) — run it after touching any hex value in `AppearancePalette`.
 
 ## Agent Workflow Lessons
 

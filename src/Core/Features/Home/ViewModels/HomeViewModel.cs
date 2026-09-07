@@ -2,6 +2,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using NdiForAndroid.Features.AppState.Models;
 using NdiForAndroid.Features.AppState.Repositories;
+using NdiForAndroid.Features.Home.Models;
 using NdiForAndroid.Features.Navigation.Models;
 using NdiForAndroid.Features.Sources.Models;
 using NdiForAndroid.Features.Sources.Repositories;
@@ -10,6 +11,14 @@ using NdiForAndroid.Services;
 
 namespace NdiForAndroid.Features.Home.ViewModels;
 
+/// <summary>Home dashboard: discovery / viewer / output status summary and the quick actions.</summary>
+/// <remarks>
+/// Registered as a DI <b>Singleton</b> together with <c>HomePage</c> (#352/#359): it subscribes here to
+/// singleton events, while MAUI's Android Shell re-resolves the tab-root page on every tab entry and on
+/// every -tab/-rail placement change. A Transient lifetime would leak one subscribed instance per visit.
+/// Per-visit work belongs in <see cref="RefreshCommand"/> (run by <c>HomePage.OnAppearing</c>), never in
+/// the constructor. <see cref="Dispose"/> is container-owned (app teardown) — pages must not call it.
+/// </remarks>
 public partial class HomeViewModel : ObservableObject, IDisposable
 {
     private readonly IDiscoveryRefreshService _discoveryService;
@@ -33,6 +42,17 @@ public partial class HomeViewModel : ObservableObject, IDisposable
 
     [ObservableProperty]
     private string? _outputStatus;
+
+    // Semantic state behind each status card's text colour (#370 home-nav-08) — the view colours
+    // the label from these rather than parsing the displayed text.
+    [ObservableProperty]
+    private HomeStatusKind _discoveryStatusKind = HomeStatusKind.Idle;
+
+    [ObservableProperty]
+    private HomeStatusKind _viewerStatusKind = HomeStatusKind.Idle;
+
+    [ObservableProperty]
+    private HomeStatusKind _outputStatusKind = HomeStatusKind.Idle;
 
     [ObservableProperty]
     private string? _lastViewerSourceId;
@@ -84,14 +104,23 @@ public partial class HomeViewModel : ObservableObject, IDisposable
 
         _dispatcher.BeginInvokeOnMainThread(() =>
         {
-            ViewerStatus = string.IsNullOrWhiteSpace(state.LastViewerSourceId)
+            // Friendly name over the raw host:port id when the source is still in the cached
+            // registry; falls back to the id itself otherwise (#370 home-nav-03).
+            var lastId = state.LastViewerSourceId;
+            var lastDisplayName = string.IsNullOrWhiteSpace(lastId)
+                ? null
+                : cachedSources.FirstOrDefault(s => string.Equals(s.SourceId, lastId, StringComparison.Ordinal))?.DisplayName;
+
+            ViewerStatus = string.IsNullOrWhiteSpace(lastId)
                 ? "Idle (no source viewed yet)"
-                : $"Last viewed: {state.LastViewerSourceId}";
+                : $"Last viewed: {(string.IsNullOrWhiteSpace(lastDisplayName) ? lastId : lastDisplayName)}";
+            ViewerStatusKind = HomeStatusKind.Idle;
 
             var outputActive = state.IsOutputActive && _outputBridge.IsActive;
             OutputStatus = outputActive
                 ? $"Active output to \"{state.StreamName ?? "unknown"}\""
                 : "Idle (no active output)";
+            OutputStatusKind = outputActive ? HomeStatusKind.Active : HomeStatusKind.Idle;
 
             LastViewerSourceId = state.LastViewerSourceId;
             HasLastViewerSource = !string.IsNullOrWhiteSpace(state.LastViewerSourceId);
@@ -103,6 +132,7 @@ public partial class HomeViewModel : ObservableObject, IDisposable
             {
                 SourceCount = cachedSources.Count;
                 DiscoveryStatus = "Connected to NDI network";
+                DiscoveryStatusKind = HomeStatusKind.Active;
             }
         });
     }
@@ -120,6 +150,12 @@ public partial class HomeViewModel : ObservableObject, IDisposable
                 Features.Sources.Models.DiscoveryStatus.Empty => "No sources found",
                 Features.Sources.Models.DiscoveryStatus.Failure => snapshot.ErrorMessage ?? "Discovery failed",
                 _ => "Discovering..."
+            };
+            DiscoveryStatusKind = status switch
+            {
+                Features.Sources.Models.DiscoveryStatus.Success => HomeStatusKind.Active,
+                Features.Sources.Models.DiscoveryStatus.Failure => HomeStatusKind.Failure,
+                _ => HomeStatusKind.Idle,
             };
 
             SourceCount = snapshot.Sources.Count;
@@ -149,6 +185,7 @@ public partial class HomeViewModel : ObservableObject, IDisposable
         await _navigationService.NavigateToPrimaryAsync(PrimaryNavDestination.Stream, "resume=true");
     }
 
+    /// <summary>Container-owned teardown only (singleton lifetime) — never called from page lifecycle.</summary>
     public void Dispose()
     {
         _discoveryService.SnapshotReady -= OnDiscoverySnapshot;

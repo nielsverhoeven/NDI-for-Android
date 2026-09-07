@@ -14,21 +14,21 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.*" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.*" />
     <PackageReference Include="xunit" Version="2.*" />
-    <PackageReference Include="xunit.runner.visualstudio" Version="2.*">
+    <PackageReference Include="xunit.runner.visualstudio" Version="4.*">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
-    <PackageReference Include="Appium.WebDriver" Version="5.*" />
+    <PackageReference Include="Appium.WebDriver" Version="8.*" />
     <!-- Decodes device screenshots for the contrast assertions in ThemeRegressionTests. Colour is
          absent from the accessibility tree, so pixels are the only way to answer "is this icon
          visible against its background" — the question #294 turned out to be. NoDependencies is
          the right Linux variant for a CI container with no system libfontconfig. -->
-    <PackageReference Include="SkiaSharp" Version="3.*" />
-    <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="3.*" />
+    <PackageReference Include="SkiaSharp" Version="4.*" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="4.*" />
     <PackageReference Include="xunit.skippablefact" Version="1.*" />
-    <PackageReference Include="coverlet.collector" Version="6.*">
+    <PackageReference Include="coverlet.collector" Version="10.*">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>

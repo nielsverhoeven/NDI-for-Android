@@ -1,4 +1,4 @@
-<!-- Last updated: 2026-07-07 -->
+<!-- Last updated: 2026-09-07 -->
 
 # NDI SDK Coverage — What This App Implements
 
@@ -26,7 +26,7 @@ Architecture detail: [docs/architecture.md](architecture.md).
 | Tally (both directions) | ✅ Implemented | Receiver: `NdiViewerBridge.SetTally` (`NDIlib_recv_set_tally`, re-applied after every reconnect) + tally-echo metadata → `TallyEchoChanged`. Sender: `NdiOutputBridge.PollSenderStatus` (`NDIlib_send_get_tally`, 1 s poll) → `IsOnProgramTally`. | |
 | PTZ | ✅ Implemented | `NdiViewerBridge.cs` (PTZ passthroughs), contract in `src/Core/NdiBridge/INdiBridges.cs` | Gated on `NDIlib_recv_ptz_is_supported`, re-checked on `status_change` frames. Exposed: pan/tilt speed, zoom speed, preset store/recall (0–99), auto-focus. Manual focus is bound in interop but not surfaced; exposure/white-balance controls are not bound (niche for this app). |
 | Connection metadata | ✅ Implemented | `src/MauiApp/NdiBridge/NdiViewerBridge.cs`, `src/MauiApp/NdiBridge/NdiOutputBridge.cs` | Product/version identification attached to receiver and sender connections (added on this branch alongside the coverage work). |
-| Send video | ✅ Implemented | `src/MauiApp/NdiBridge/NdiOutputBridge.cs`; capture: `AndroidVideoCaptureSource.cs` (screen via MediaProjection, front/rear camera via Camera2 → NV12), foreground service `ScreenShareForegroundService.cs` (`mediaProjection\|camera\|microphone` types) | `NDIlib_send_create` + synchronous `send_send_video_v2` from the capture callback (producer owns/reuses the frame buffer — async ping-pong send is a documented later optimization). RGBA/BGRA/NV12 accepted natively, no CPU conversion. |
+| Send video | ✅ Implemented | `src/MauiApp/NdiBridge/NdiOutputBridge.cs`; capture: `AndroidVideoCaptureSource.cs` (screen via MediaProjection, front/rear camera via Camera2 → NV12), foreground service `ScreenShareForegroundService.cs` (`mediaProjection\|camera\|microphone` types) | `NDIlib_send_create` + synchronous `send_send_video_v2` from the capture callback (producer owns/reuses the frame buffer — async ping-pong send is a documented later optimization). RGBA/BGRA/NV12 accepted natively, no CPU conversion. Camera orientation compensation (#284) is implemented: `src/Core/Services/CameraFrameOrientation.cs` computes the clockwise rotation from `SENSOR_ORIENTATION` + display rotation, `src/Core/Services/Nv12FrameRotator.cs` rotates the NV12 buffer before send, and capture has migrated to `SessionConfiguration` (API 28+, with a Handler-based fallback for API 26-27). On-device verification of the rotated output against real Camera2 hardware is still pending. |
 | Send audio | ✅ Implemented | `NdiOutputBridge.cs` (`OnAudioChunkReady`), capture: `AndroidMicrophoneCaptureSource.cs` (AudioRecord float PCM) | `NDIlib_util_send_send_audio_interleaved_32f` — interleaved float in, SDK converts to planar FLTP. Opt-in via the microphone toggle. |
 | Re-stream (receive → send) | ✅ Implemented | `NdiOutputBridge.StartReStreamFromSourceAsync` / `ReStreamPumpLoop` | Dedicated receiver + dedicated sender; the recv-owned native buffer is forwarded zero-copy to the synchronous send, then freed. Independent of the viewer bridge's connection. |
 | Routing (`NDIlib_routing_*`) | ⛔ Out of scope | — | Deliberate: the user-facing re-stream case is covered by the zero-copy recv→send pump above, which also works when receivers cannot reach the original source directly. The routing API is not bound in `NdiNativeMethods.cs`. |
@@ -39,7 +39,8 @@ Architecture detail: [docs/architecture.md](architecture.md).
 
 - **On-device NDI network validation** for the receive (#277) and send (#278) paths on a
   physical ARM device is pending — includes the HX-decode verification above.
-- **Camera orientation compensation + `SessionConfiguration` migration** — tracked as issue #284.
+- **Camera orientation compensation + `SessionConfiguration` migration (#284)** — implemented (see
+  the Send video row above); on-device verification against real Camera2 hardware is pending.
 - **Async video send with ping-pong buffers** (`NDIlib_send_send_video_async_v2`) — bound in
   interop, documented optimization; the synchronous send is intentional while capture sources
   own their frame buffers.

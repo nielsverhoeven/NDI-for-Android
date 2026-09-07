@@ -100,6 +100,8 @@ public static class TestIds
     public const string ViewerPage            = "viewer.page";
     public const string ViewerVideoCanvas     = "viewer.videoCanvas";
     public const string ViewerVideoBorder     = "viewer.videoBorder";
+    public const string ViewerTallyProgramBadge = "viewer.tallyProgramBadge";
+    public const string ViewerStoppedBadge    = "viewer.stoppedBadge";
     public const string ViewerStatus          = "viewer.status";
     public const string ViewerQualitySmooth   = "viewer.quality.smooth";
     public const string ViewerQualityBalanced = "viewer.quality.balanced";
@@ -116,18 +118,43 @@ public static class TestIds
     public const string ViewerCancelRetry     = "viewer.cancelRetry";
     public const string ViewerReconnect       = "viewer.reconnect";
     public const string ViewerStop            = "viewer.stop";
+    public const string ViewerFullScreenToggle = "viewer.fullScreenToggle";
+
+    // ── PTZ endpoint override form (#374) ────────────────────────────────────
+
+    public const string PtzEndpointHost              = "viewer.ptzEndpoint.host";
+    public const string PtzEndpointPort               = "viewer.ptzEndpoint.port";
+    public const string PtzEndpointPortValidation     = "viewer.ptzEndpoint.portValidation";
+    public const string PtzEndpointValidationMessage  = "viewer.ptzEndpoint.validationMessage";
+    public const string PtzEndpointTest               = "viewer.ptzEndpoint.test";
+    public const string PtzEndpointClear              = "viewer.ptzEndpoint.clear";
+    public const string PtzEndpointCancel             = "viewer.ptzEndpoint.cancel";
+    public const string PtzEndpointSave               = "viewer.ptzEndpoint.save";
+
+    // The three quality ids above are applied through QualityProfileOption.AutomationId (bound in
+    // the BindableLayout template of PlaybackControlsView), not as x:Static literals — keep them
+    // in sync there.
+    public const string ViewerQualityLabel    = "viewer.qualityLabel";      // "Quality: Balanced" next to the status line
+    public const string ViewerConnectionHint  = "viewer.connectionHint";    // "Connection weak — try Smooth" (#331)
+    public const string ViewerQualityCycle    = "viewer.fullScreen.qualityCycle"; // S/B/H button in FullScreenControlsOverlay
 
     // ── OutputPage (Stream tab): send configuration and start/stop ───────────
 
     public const string OutputPage             = "output.page";
+    public const string OutputModeRow          = "output.modeRow";
     public const string OutputModeToggle       = "output.modeToggle";
+    public const string OutputModeCaptureLabel = "output.modeCaptureLabel";
+    public const string OutputModeReStreamLabel = "output.modeReStreamLabel";
     public const string OutputStreamName       = "output.streamName";
     public const string OutputVideoInput       = "output.videoInput";
+    public const string OutputMicrophoneRow    = "output.microphoneRow";
     public const string OutputMicrophoneToggle = "output.microphoneToggle";
+    public const string OutputMicrophoneLabel  = "output.microphoneLabel";
     public const string OutputReStreamSourceId = "output.reStreamSourceId";
     public const string OutputConnectionCount  = "output.connectionCount";
     public const string OutputOnAirTally       = "output.onAirTally";
     public const string OutputStatus           = "output.status";
+    public const string OutputStatusErrorIcon  = "output.statusErrorIcon";
     public const string OutputStart            = "output.start";
     public const string OutputStop             = "output.stop";
 
@@ -160,7 +187,6 @@ public static class TestIds
 
     public const string SettingsDiscoveryHost           = "settings.discoveryHost";
     public const string SettingsDiscoveryPort           = "settings.discoveryPort";
-    public const string SettingsDiscoveryServerEndpoint = "settings.discoveryServerEndpoint";
     public const string SettingsDiscoveryServerAction   = "settings.discoveryServerAction";
     public const string SettingsDiscoveryServersError   = "settings.discoveryServersError";
     public const string SettingsDiscoveryServerList     = "settings.discoveryServerList";
@@ -178,7 +204,19 @@ public static class TestIds
     public const string SettingsAppVersion    = "settings.appVersion";
     public const string SettingsNdiSdkVersion = "settings.ndiSdkVersion";
 
-    public const string SettingsValidationError = "settings.validationError";
+    // ── SettingsPage additions (#347, #370, #345, #355) ──────────────────────
+
+    /// <summary>Discovery panel empty-state label, shown while <c>DiscoveryServers</c> is empty (#370).</summary>
+    public const string SettingsDiscoveryEmptyState = "settings.discoveryEmptyState";
+
+    public const string SettingsEditServerCancel = "settings.editServer.cancel";
+    public const string SettingsEditServerSave   = "settings.editServer.save";
+
+    /// <summary>Tap target for the whole Developer Mode row's caption (#343 SET-8).</summary>
+    public const string SettingsDeveloperModeLabel = "settings.developerModeLabel";
+
+    /// <summary>Section-agnostic save-failure banner — visible regardless of which section is open (#355).</summary>
+    public const string SettingsSaveError = "settings.saveError";
 
     // ── DiagnosticLogPage: the in-memory log buffer view ─────────────────────
 

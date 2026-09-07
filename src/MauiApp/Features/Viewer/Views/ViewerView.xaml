@@ -45,10 +45,58 @@
                 <TapGestureRecognizer NumberOfTapsRequired="1" Command="{Binding ShowControlsOverlayCommand}" />
                 <TapGestureRecognizer NumberOfTapsRequired="2" Command="{Binding ToggleFullScreenCommand}" />
             </Border.GestureRecognizers>
-            <!-- ~16:9 video area; frames are letterboxed by the paint handler. -->
-            <skia:SKCanvasView x:Name="VideoCanvas"
-                               AutomationId="{x:Static t:TestIds.ViewerVideoCanvas}"
-                               VerticalOptions="Fill" HorizontalOptions="Fill" />
+            <Grid>
+                <!-- ~16:9 video area; frames are letterboxed by the paint handler. -->
+                <skia:SKCanvasView x:Name="VideoCanvas"
+                                   AutomationId="{x:Static t:TestIds.ViewerVideoCanvas}"
+                                   VerticalOptions="Fill" HorizontalOptions="Fill" />
+
+                <!-- Program-tally badge (#350): redundant text + shape cue, bound to the same
+                     IsTallyProgram as the red stroke, so the state is never colour-only
+                     (WCAG 1.4.1). Lives inside the video surface so it shows in Deck, Sheet and
+                     full screen alike; top-right because the full-screen overlay uses the other
+                     three corners. InputTransparent keeps single/double taps flowing to the
+                     outer Border's gestures. -->
+                <Border AutomationId="{x:Static t:TestIds.ViewerTallyProgramBadge}"
+                        IsVisible="{Binding IsTallyProgram}"
+                        InputTransparent="True"
+                        HorizontalOptions="End"
+                        VerticalOptions="Start"
+                        Margin="8"
+                        Padding="10,4"
+                        StrokeThickness="0"
+                        StrokeShape="RoundRectangle 12"
+                        BackgroundColor="{DynamicResource ErrorFill}">
+                    <Label Text="ON PROGRAM"
+                           FontSize="12"
+                           FontAttributes="Bold"
+                           CharacterSpacing="1"
+                           LineBreakMode="NoWrap"
+                           VerticalOptions="Center"
+                           TextColor="{DynamicResource OnPrimary}"
+                           SemanticProperties.Description="On program" />
+                </Border>
+
+                <!-- Stopped overlay (#348): the render loop keeps polling CurrentFrame and would
+                     otherwise leave the last live frame frozen on screen with no status text and
+                     no controls (Nielsen #1 — indistinguishable from a live feed). The code-behind
+                     also clears the retained bitmap when IsStopped becomes true. -->
+                <Border AutomationId="{x:Static t:TestIds.ViewerStoppedBadge}"
+                        IsVisible="{Binding IsStopped}"
+                        InputTransparent="True"
+                        HorizontalOptions="Center"
+                        VerticalOptions="Center"
+                        Padding="16,8"
+                        StrokeThickness="0"
+                        StrokeShape="RoundRectangle 12"
+                        BackgroundColor="{DynamicResource ScrimBackground}">
+                    <Label Text="Stopped"
+                           FontSize="14"
+                           FontAttributes="Bold"
+                           VerticalOptions="Center"
+                           TextColor="{DynamicResource White}" />
+                </Border>
+            </Grid>
         </Border>
 
         <views:ViewerControlDeck x:Name="Deck" Grid.Row="1" />

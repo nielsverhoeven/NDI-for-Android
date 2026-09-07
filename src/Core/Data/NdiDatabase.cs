@@ -189,6 +189,29 @@ public sealed class NdiDatabase : IDisposable
         // not part of NDI source metadata); carry forward whatever is already persisted so a
         // discovery poll never clobbers a saved VISCA endpoint.
         var existing = await _connection.FindAsync<SourceEntity>(source.SourceId);
+        var overrideHost = source.PtzOverrideHost;
+        var overridePort = source.PtzOverridePort;
+
+        if (overrideHost is null)
+        {
+            // #339 follow-up: prefer resolving the override by the stable NDI source NAME. When
+            // the sender's IP changes, discovery gives this row a brand-new SourceId (host:port)
+            // with no history of its own — but another row sharing the same DisplayName may
+            // already carry the override, so it is not silently lost. Falls back to the exact
+            // address (SourceId) match when no name match exists.
+            var byName = await FindPtzOverrideByDisplayNameAsync(source.DisplayName, excludeSourceId: source.SourceId);
+            if (byName is { } found)
+            {
+                overrideHost = found.Host;
+                overridePort = found.Port;
+            }
+            else
+            {
+                overrideHost = existing?.PtzOverrideHost;
+                overridePort = existing?.PtzOverridePort;
+            }
+        }
+
         var entity = new SourceEntity
         {
             SourceId = source.SourceId,
@@ -199,20 +222,60 @@ public sealed class NdiDatabase : IDisposable
             PreviouslyConnected = source.PreviouslyConnected,
             DiscoveryMode = source.DiscoveryMode.ToString(),
             QualityProfile = source.QualityProfile.ToString(),
-            PtzOverrideHost = source.PtzOverrideHost ?? existing?.PtzOverrideHost,
-            PtzOverridePort = source.PtzOverridePort ?? existing?.PtzOverridePort,
+            PtzOverrideHost = overrideHost,
+            PtzOverridePort = overridePort,
         };
         await _connection.InsertOrReplaceAsync(entity);
     }
 
-    /// <summary>Targeted update of just the PTZ override columns — does not touch any other column, so it
-    /// never races with a concurrent discovery upsert of the same row.</summary>
+    /// <summary>
+    /// The most recently seen row (other than <paramref name="excludeSourceId"/>) with the given
+    /// display name that carries a PTZ override, or null when there is none. Used to resolve an
+    /// override by the stable NDI source name rather than by address (#339 follow-up).
+    /// </summary>
+    private async Task<(string Host, int? Port)?> FindPtzOverrideByDisplayNameAsync(string displayName, string excludeSourceId)
+    {
+        if (string.IsNullOrWhiteSpace(displayName))
+            return null;
+
+        // Raw SQL rather than the LINQ Table<T> query: sqlite-net-pcl's expression translator does
+        // not reliably support a "!= null" predicate, and this needs one plus an ORDER BY/LIMIT.
+        var matches = await _connection.QueryAsync<SourceEntity>(
+            "SELECT * FROM sources WHERE DisplayName = ? AND PtzOverrideHost IS NOT NULL AND SourceId != ? " +
+            "ORDER BY LastSeenAtEpochMillis DESC LIMIT 1",
+            displayName, excludeSourceId);
+
+        var match = matches.FirstOrDefault();
+        return match is null ? null : (match.PtzOverrideHost!, match.PtzOverridePort);
+    }
+
+    /// <summary>
+    /// Targeted update of just the PTZ override columns — does not touch any other column, so it
+    /// never races with a concurrent discovery upsert of the same row. Keys the write by the
+    /// stable NDI source NAME (#339 follow-up) when a cached row for <paramref name="sourceId"/>
+    /// exists: every row currently sharing that name is updated together, so the override
+    /// immediately covers any other cached address for the same camera, not only the one the user
+    /// was looking at. Falls back to the exact address (SourceId) match otherwise — matching zero
+    /// rows (a harmless no-op) when there is no cached row for this source yet, same as before
+    /// the #339 follow-up.
+    /// </summary>
     public async Task SavePtzOverrideAsync(string sourceId, string? host, int? port)
     {
         await EnsureInitializedAsync();
-        await _connection.ExecuteAsync(
-            "UPDATE sources SET PtzOverrideHost = ?, PtzOverridePort = ? WHERE SourceId = ?",
-            host, port, sourceId);
+        var entity = await _connection.FindAsync<SourceEntity>(sourceId);
+
+        if (entity is not null && !string.IsNullOrWhiteSpace(entity.DisplayName))
+        {
+            await _connection.ExecuteAsync(
+                "UPDATE sources SET PtzOverrideHost = ?, PtzOverridePort = ? WHERE DisplayName = ?",
+                host, port, entity.DisplayName);
+        }
+        else
+        {
+            await _connection.ExecuteAsync(
+                "UPDATE sources SET PtzOverrideHost = ?, PtzOverridePort = ? WHERE SourceId = ?",
+                host, port, sourceId);
+        }
     }
 
     public async Task<IReadOnlyList<NdiSource>> GetSourcesAsync()

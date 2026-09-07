@@ -1,16 +1,10 @@
 using OpenQA.Selenium.Appium.Android;
+using NdiForAndroid.Features.Viewer.Models;
+using NdiForAndroid.NdiBridge;
 using NdiForAndroid.Testing;
 using NdiForAndroid.UITests.Infrastructure;
 
 namespace NdiForAndroid.UITests.Pages;
-
-/// <summary>Receive quality profiles offered by the viewer.</summary>
-public enum QualityProfile
-{
-    Smooth,
-    Balanced,
-    High,
-}
 
 /// <summary>
 /// The viewer: video surface plus quality, audio, PTZ and reconnect controls.
@@ -34,6 +28,16 @@ public sealed class ViewerPage : PageObject
     public bool HasVideoSurface => IsPresent(TestIds.ViewerVideoCanvas);
 
     /// <summary>
+    /// True while the source echoes program tally and the "ON PROGRAM" badge is showing (#350).
+    /// Never true on the CI emulator (x86_64 has no NDI runtime, so nothing ever plays) — this is
+    /// for device runs against a real switcher/sender; do not write an emulator test around it.
+    /// </summary>
+    public bool IsOnProgram => IsPresent(TestIds.ViewerTallyProgramBadge);
+
+    /// <summary>True while the "Stopped" overlay is showing over the frozen last frame (#348).</summary>
+    public bool IsStoppedOverlayVisible => IsPresent(TestIds.ViewerStoppedBadge);
+
+    /// <summary>
     /// True while a stream is playing — inferred from the Stop button, which is bound to
     /// <c>IsPlaying</c>.
     /// </summary>
@@ -47,18 +51,31 @@ public sealed class ViewerPage : PageObject
     public void WaitUntilPlaying() =>
         WaitFor(TestIds.ViewerStop, Timeouts.Network, "The viewer never reported playback");
 
-    public void SelectQuality(QualityProfile profile) => Tap(profile switch
-    {
-        QualityProfile.Smooth   => TestIds.ViewerQualitySmooth,
-        QualityProfile.Balanced => TestIds.ViewerQualityBalanced,
-        QualityProfile.High     => TestIds.ViewerQualityHigh,
-        _ => throw new ArgumentOutOfRangeException(nameof(profile)),
-    });
+    public void SelectQuality(QualityProfile profile) => Tap(QualityProfileOption.AutomationIdFor(profile));
+
+    /// <summary>"Quality: Balanced" while playing; the label is not rendered while idle.</summary>
+    public string QualityLabel => TextOf(TestIds.ViewerQualityLabel);
+
+    /// <summary>True while the advisory "Connection weak…" hint is shown (#331); never on the emulator.</summary>
+    public bool HasConnectionHint => IsPresent(TestIds.ViewerConnectionHint);
+    public string ConnectionHint => TextOf(TestIds.ViewerConnectionHint);
+
+    /// <summary>Full-screen toolbar S/B/H button: Smooth → Balanced → High → Smooth.</summary>
+    public void CycleQuality() => Tap(TestIds.ViewerQualityCycle);
 
     public void ToggleAudio()  => Tap(TestIds.ViewerAudioToggle);
     public void Stop()         => Tap(TestIds.ViewerStop);
     public void CancelRetry()  => Tap(TestIds.ViewerCancelRetry);
     public void Reconnect()    => Tap(TestIds.ViewerReconnect);
+
+    /// <summary>Toggles the full-screen overlay. Present in both the windowed sheet and the
+    /// full-screen toolbar, which never show at the same time (#343/#345).</summary>
+    public void ToggleFullScreen() => Tap(TestIds.ViewerFullScreenToggle);
+
+    /// <summary>What TalkBack would announce for the full-screen toggle — state-dependent
+    /// ("Enter full screen" / "Exit full screen"), not the same name in both states.</summary>
+    public string FullScreenToggleLabel =>
+        WaitFor(TestIds.ViewerFullScreenToggle).GetAttribute("content-desc") ?? string.Empty;
 
     public void PanUp()    => Tap(TestIds.ViewerPtzUp);
     public void PanDown()  => Tap(TestIds.ViewerPtzDown);

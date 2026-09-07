@@ -89,7 +89,7 @@ public partial class ViewerViewModel
 
         var controller = GetOrCreatePtzController();
         await controller.PanTiltAsync(pan, tilt);
-        await Task.Delay(PtzNudgeDurationMs);
+        await Task.Delay(TimeSpan.FromMilliseconds(PtzNudgeDurationMs), _timeProvider);
         await controller.PanTiltAsync(0f, 0f);
     }
 
@@ -109,7 +109,7 @@ public partial class ViewerViewModel
 
         var controller = GetOrCreatePtzController();
         await controller.ZoomAsync(speed);
-        await Task.Delay(PtzNudgeDurationMs);
+        await Task.Delay(TimeSpan.FromMilliseconds(PtzNudgeDurationMs), _timeProvider);
         await controller.ZoomAsync(0f);
     }
 

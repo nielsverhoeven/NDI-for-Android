@@ -27,6 +27,7 @@ public class ViewerViewModelTests
     private readonly Mock<IPtzControllerFactory> _ptzControllerFactoryMock = new();
     private readonly Mock<IPtzController> _ptzControllerMock = new();
     private readonly Mock<IImmersiveModeService> _immersiveModeMock = new();
+    private readonly Mock<IScreenReaderAnnouncer> _announcerMock = new();
 
     public ViewerViewModelTests()
     {
@@ -48,7 +49,18 @@ public class ViewerViewModelTests
         _bridgeMock.Object, _timeProvider, _dispatcher, _appStateRepoMock.Object, _lifecycleMock.Object,
         _sourceRepoMock.Object, _connectionHistoryMock.Object,
         _ptzControllerFactoryMock.Object, new PtzEndpointFormViewModel(_ptzControllerFactoryMock.Object),
-        _immersiveModeMock.Object);
+        _immersiveModeMock.Object, _announcerMock.Object);
+
+    /// <summary>Started on "src-1" (all mocked awaits complete synchronously); bridge call log
+    /// cleared so tests count only the traffic they generate from here.</summary>
+    private ViewerViewModel CreatePlayingSut()
+    {
+        var sut = CreateSut();
+        sut.SourceId = "src-1";
+        Assert.True(sut.IsPlaying);
+        _bridgeMock.Invocations.Clear();
+        return sut;
+    }
 
     [Fact]
     public void StartCommand_WithSourceId_StartsReceiverAndSetsIsPlaying()
@@ -107,7 +119,7 @@ public class ViewerViewModelTests
 
         _bridgeMock.Verify(b => b.StopReceiver(), Times.Once);
         Assert.False(sut.IsPlaying);
-        Assert.Null(sut.StatusMessage);
+        Assert.Equal("Stopped.", sut.StatusMessage);
     }
 
     // --- Reconnection tests (FR1-FR8) ---
@@ -234,6 +246,138 @@ public class ViewerViewModelTests
         Assert.False(sut.IsPtzSupported);
     }
 
+    // ── #350: TalkBack announcement redundant with the "ON PROGRAM" badge ──────
+
+    [Fact]
+    public void TallyEcho_ProgramOn_WhilePlaying_AnnouncesOnProgram()
+    {
+        var sut = CreateSut();
+        sut.IsPlaying = true;
+
+        _bridgeMock.Raise(b => b.TallyEchoChanged += null, _bridgeMock.Object, new NdiTallyEcho(OnProgram: true, OnPreview: false));
+
+        _announcerMock.Verify(a => a.Announce(ViewerViewModel.TallyOnProgramAnnouncement), Times.Once);
+        Assert.True(sut.IsTallyProgram);
+    }
+
+    [Fact]
+    public void TallyEcho_ProgramOff_WhilePlaying_AnnouncesOffProgram()
+    {
+        var sut = CreateSut();
+        sut.IsPlaying = true;
+
+        _bridgeMock.Raise(b => b.TallyEchoChanged += null, _bridgeMock.Object, new NdiTallyEcho(OnProgram: true, OnPreview: false));
+        _bridgeMock.Raise(b => b.TallyEchoChanged += null, _bridgeMock.Object, new NdiTallyEcho(OnProgram: false, OnPreview: false));
+
+        _announcerMock.Verify(a => a.Announce(ViewerViewModel.TallyOffProgramAnnouncement), Times.Once);
+        Assert.False(sut.IsTallyProgram);
+    }
+
+    [Fact]
+    public void TallyEcho_RepeatedSameState_AnnouncesOnce()
+    {
+        var sut = CreateSut();
+        sut.IsPlaying = true;
+
+        _bridgeMock.Raise(b => b.TallyEchoChanged += null, _bridgeMock.Object, new NdiTallyEcho(OnProgram: true, OnPreview: false));
+        _bridgeMock.Raise(b => b.TallyEchoChanged += null, _bridgeMock.Object, new NdiTallyEcho(OnProgram: true, OnPreview: false));
+
+        _announcerMock.Verify(a => a.Announce(It.IsAny<string>()), Times.Once);
+    }
+
+    [Fact]
+    public void TallyEcho_WhenNotPlaying_DoesNotAnnounce()
+    {
+        var sut = CreateSut();
+
+        _bridgeMock.Raise(b => b.TallyEchoChanged += null, _bridgeMock.Object, new NdiTallyEcho(OnProgram: true, OnPreview: false));
+
+        Assert.True(sut.IsTallyProgram);
+        _announcerMock.Verify(a => a.Announce(It.IsAny<string>()), Times.Never);
+    }
+
+    [Fact]
+    public void StopCommand_DoesNotAnnounceOffProgram()
+    {
+        var sut = CreateSut();
+        sut.SourceId = "192.168.1.10:5961";
+        _bridgeMock.Raise(b => b.TallyEchoChanged += null, _bridgeMock.Object, new NdiTallyEcho(OnProgram: true, OnPreview: false));
+        _announcerMock.Invocations.Clear();
+
+        sut.StopCommand.Execute(null);
+
+        Assert.False(sut.IsTallyProgram);
+        _announcerMock.Verify(a => a.Announce(It.IsAny<string>()), Times.Never);
+    }
+
+    // ── #348: explicit stopped state (Nielsen #1 — visibility of system status) ──
+
+    [Fact]
+    public void StopCommand_ShowsStoppedStatusAndClearsPlaying()
+    {
+        var sut = CreateSut();
+        sut.SourceId = "src-1";
+
+        sut.StopCommand.Execute(null);
+
+        Assert.False(sut.IsPlaying);
+        Assert.Equal("Stopped.", sut.StatusMessage);
+        Assert.True(sut.IsStopped);
+    }
+
+    [Fact]
+    public void StopCommand_LeavesAVisibleActionableControl()
+    {
+        var sut = CreateSut();
+        sut.SourceId = "src-1";
+
+        sut.StopCommand.Execute(null);
+
+        // Reused Reconnect affordance (#348): the screen is never left with neither status text
+        // nor a control.
+        Assert.True(sut.CanReconnect);
+    }
+
+    [Fact]
+    public void StartCommand_ClearsStoppedStateAndCanReconnect()
+    {
+        var sut = CreateSut();
+        sut.SourceId = "src-1";
+        sut.StopCommand.Execute(null);
+        Assert.True(sut.IsStopped);
+        Assert.True(sut.CanReconnect);
+
+        sut.SourceId = null;
+        sut.SourceId = "src-1"; // re-runs Start
+
+        Assert.False(sut.IsStopped);
+        Assert.False(sut.CanReconnect);
+        Assert.True(sut.IsPlaying);
+    }
+
+    [Fact]
+    public void ReconnectCommand_AfterStop_ClearsStoppedStateOnceConnected()
+    {
+        var sut = CreatePlayingSut();
+        _bridgeMock.Setup(b => b.GetConnectionState()).Returns(ConnectionState.Connected);
+        sut.StopCommand.Execute(null);
+        Assert.True(sut.IsStopped);
+
+        sut.ReconnectCommand.Execute(null);
+        _timeProvider.Advance(TimeSpan.FromSeconds(2));
+
+        Assert.False(sut.IsStopped);
+        Assert.True(sut.IsPlaying);
+    }
+
+    [Fact]
+    public void IsStopped_IsFalseWhileNeverStarted()
+    {
+        var sut = CreateSut();
+
+        Assert.False(sut.IsStopped);
+    }
+
     [Fact]
     public void IsAudioEnabled_Set_ForwardsToBridge()
     {
@@ -249,24 +393,36 @@ public class ViewerViewModelTests
     [InlineData("right", 0.5f, 0f)]
     [InlineData("up", 0f, 0.5f)]
     [InlineData("down", 0f, -0.5f)]
-    public async Task PtzNudge_BurstsThenStops(string direction, float expectedPan, float expectedTilt)
+    public async Task PtzNudge_BurstsThenStopsAfter250Ms(string direction, float expectedPan, float expectedTilt)
     {
         var sut = CreateSut();
 
-        await sut.PtzNudgeCommand.ExecuteAsync(direction);
+        var nudge = sut.PtzNudgeCommand.ExecuteAsync(direction);
 
         _ptzControllerMock.Verify(c => c.PanTiltAsync(expectedPan, expectedTilt, It.IsAny<CancellationToken>()), Times.Once);
+        _ptzControllerMock.Verify(c => c.PanTiltAsync(0f, 0f, It.IsAny<CancellationToken>()), Times.Never);
+        Assert.False(nudge.IsCompleted); // parked on Task.Delay(..., _timeProvider)
+
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(250));
+        await nudge;
+
         _ptzControllerMock.Verify(c => c.PanTiltAsync(0f, 0f, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
-    public async Task PtzZoomNudge_In_BurstsThenStops()
+    public async Task PtzZoomNudge_In_BurstsThenStopsAfter250Ms()
     {
         var sut = CreateSut();
 
-        await sut.PtzZoomNudgeCommand.ExecuteAsync("in");
+        var nudge = sut.PtzZoomNudgeCommand.ExecuteAsync("in");
 
         _ptzControllerMock.Verify(c => c.ZoomAsync(0.5f, It.IsAny<CancellationToken>()), Times.Once);
+        _ptzControllerMock.Verify(c => c.ZoomAsync(0f, It.IsAny<CancellationToken>()), Times.Never);
+        Assert.False(nudge.IsCompleted);
+
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(250));
+        await nudge;
+
         _ptzControllerMock.Verify(c => c.ZoomAsync(0f, It.IsAny<CancellationToken>()), Times.Once);
     }
 
@@ -384,5 +540,316 @@ public class ViewerViewModelTests
     public void PresetNumbers_IsOneToEight()
     {
         Assert.Equal(Enumerable.Range(1, 8), ViewerViewModel.PresetNumbers);
+    }
+
+    // --- Quality profile selection (#330/#331): data-driven strip, no auto-degradation ---
+
+    [Fact]
+    public void AvailableProfiles_ContainsEveryEnumValueInOrder()
+    {
+        var sut = CreateSut();
+
+        Assert.Equal(Enum.GetValues<QualityProfile>(), sut.AvailableProfiles.Select(o => o.Profile));
+    }
+
+    [Fact]
+    public void AvailableProfiles_DefaultSelection_IsBalanced()
+    {
+        var sut = CreateSut();
+
+        var selected = sut.AvailableProfiles.Where(o => o.IsSelected).ToList();
+        Assert.Single(selected);
+        Assert.Equal(QualityProfile.Balanced, selected[0].Profile);
+    }
+
+    [Fact]
+    public async Task ChangeQualityProfileCommand_WithEnumParameter_SelectsAndForwardsToBridge()
+    {
+        var sut = CreateSut();
+
+        await sut.ChangeQualityProfileCommand.ExecuteAsync(QualityProfile.High);
+
+        Assert.Equal(QualityProfile.High, sut.QualityProfile);
+        _bridgeMock.Verify(b => b.SetQualityProfile(QualityProfile.High), Times.Once);
+        Assert.True(sut.AvailableProfiles.Single(o => o.Profile == QualityProfile.High).IsSelected);
+        Assert.All(sut.AvailableProfiles.Where(o => o.Profile != QualityProfile.High), o => Assert.False(o.IsSelected));
+    }
+
+    [Fact]
+    public async Task ChangeQualityProfileCommand_WithOptionParameter_Selects()
+    {
+        var sut = CreateSut();
+
+        await sut.ChangeQualityProfileCommand.ExecuteAsync(sut.AvailableProfiles[0]);
+
+        Assert.Equal(QualityProfile.Smooth, sut.QualityProfile);
+    }
+
+    [Fact]
+    public async Task ChangeQualityProfileCommand_WithStringParameter_StillWorks()
+    {
+        var sut = CreateSut();
+
+        await sut.ChangeQualityProfileCommand.ExecuteAsync("smooth");
+
+        Assert.Equal(QualityProfile.Smooth, sut.QualityProfile);
+    }
+
+    [Fact]
+    public async Task ChangeQualityProfileCommand_WithUnknownParameter_IsIgnored()
+    {
+        var sut = CreateSut();
+
+        await sut.ChangeQualityProfileCommand.ExecuteAsync(42);
+
+        Assert.Equal(QualityProfile.Balanced, sut.QualityProfile);
+        _bridgeMock.Verify(b => b.SetQualityProfile(It.IsAny<QualityProfile>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ChangeQualityProfileCommand_PersistsProfileToCachedSource()
+    {
+        _sourceRepoMock.Setup(r => r.GetCachedSourcesAsync())
+            .ReturnsAsync(new List<NdiSource> { new("src-1", "Cam 1", "192.168.1.10", true, 0) });
+        var sut = CreateSut();
+        sut.SourceId = "src-1";
+
+        await sut.ChangeQualityProfileCommand.ExecuteAsync(QualityProfile.High);
+
+        _sourceRepoMock.Verify(r => r.SaveSourceAsync(It.Is<NdiSource>(s => s.QualityProfile == QualityProfile.High)), Times.Once);
+    }
+
+    [Fact]
+    public async Task QualityProfileLabel_IsNullWhileIdle_AndNamesProfileWhilePlaying()
+    {
+        var sut = CreateSut();
+        Assert.Null(sut.QualityProfileLabel);
+
+        sut.SourceId = "src-1";
+        Assert.Equal("Quality: Balanced", sut.QualityProfileLabel);
+
+        await sut.ChangeQualityProfileCommand.ExecuteAsync(QualityProfile.Smooth);
+        Assert.Equal("Quality: Smooth", sut.QualityProfileLabel);
+    }
+
+    [Fact]
+    public async Task QualityProfileLabel_RaisesPropertyChanged_WhenProfileOrPlayingChanges()
+    {
+        var sut = CreateSut();
+        var raised = new List<string?>();
+        sut.PropertyChanged += (_, e) => raised.Add(e.PropertyName);
+
+        sut.IsPlaying = true;
+        await sut.ChangeQualityProfileCommand.ExecuteAsync(QualityProfile.High);
+
+        Assert.Contains(nameof(ViewerViewModel.QualityProfileLabel), raised);
+    }
+
+    [Fact]
+    public void NextQualityProfile_WrapsAround()
+    {
+        var sut = CreateSut();
+
+        Assert.Equal(QualityProfile.High, sut.NextQualityProfile);
+
+        sut.QualityProfile = QualityProfile.High;
+        Assert.Equal(QualityProfile.Smooth, sut.NextQualityProfile);
+    }
+
+    [Fact]
+    public void CycleQualityProfileCommand_AdvancesAndForwardsToBridge()
+    {
+        var sut = CreateSut();
+
+        sut.CycleQualityProfileCommand.Execute(null);
+
+        Assert.Equal(QualityProfile.High, sut.QualityProfile);
+        _bridgeMock.Verify(b => b.SetQualityProfile(QualityProfile.High), Times.Once);
+        Assert.Equal("H", sut.QualityProfileShortLabel);
+        Assert.Equal("Quality High. Activate for Smooth.", sut.QualityProfileCycleDescription);
+    }
+
+    [Fact]
+    public void StatusMessages_NoLongerEmbedProfile()
+    {
+        var sut = CreateSut();
+
+        sut.SourceId = "src-1";
+
+        Assert.Equal("Connecting...", sut.StatusMessage);
+    }
+
+    // --- Reconnect timing (#332): every timer runs on the injected TimeProvider ---
+
+    [Fact]
+    public async Task ReconnectAttempt_UsesTheCurrentlySelectedQualityProfile()
+    {
+        var sut = CreatePlayingSut();
+        await sut.ChangeQualityProfileCommand.ExecuteAsync("High");
+        _bridgeMock.Invocations.Clear();
+
+        sut.BeginReconnectWindow();
+        _timeProvider.Advance(TimeSpan.FromSeconds(2));
+
+        _bridgeMock.Verify(b => b.StopReceiver(), Times.Once);
+        _bridgeMock.Verify(b => b.StartReceiver("src-1", QualityProfile.High), Times.Once);
+        _bridgeMock.Verify(b => b.StartReceiver("src-1", QualityProfile.Balanced), Times.Never);
+    }
+
+    [Fact]
+    public void ReconnectWindow_CountsDownOneSecondPerTick()
+    {
+        var sut = CreatePlayingSut();
+        sut.BeginReconnectWindow();
+
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(999));
+        Assert.Equal(15, sut.RetryRemainingSeconds);
+        Assert.Equal("Reconnecting... 15s remaining", sut.RetryStatusMessage);
+
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(1));
+        Assert.Equal(14, sut.RetryRemainingSeconds);
+        Assert.Equal("Reconnecting... 14s remaining", sut.RetryStatusMessage);
+
+        _timeProvider.Advance(TimeSpan.FromSeconds(1));
+        Assert.Equal(13, sut.RetryRemainingSeconds);
+        Assert.True(sut.IsReconnecting);
+    }
+
+    [Fact]
+    public void ReconnectWindow_WhenAttemptConnects_CompletesAndStopsAllTimers()
+    {
+        var sut = CreatePlayingSut();
+        _bridgeMock.Setup(b => b.GetConnectionState()).Returns(ConnectionState.Connected);
+
+        sut.BeginReconnectWindow();
+        _timeProvider.Advance(TimeSpan.FromSeconds(2));
+
+        Assert.False(sut.IsReconnecting);
+        Assert.True(sut.IsPlaying);
+        Assert.Equal(0, sut.RetryRemainingSeconds);
+        Assert.Null(sut.RetryStatusMessage);
+
+        _timeProvider.Advance(TimeSpan.FromSeconds(30));
+
+        _bridgeMock.Verify(b => b.StartReceiver("src-1", QualityProfile.Balanced), Times.Once);
+        Assert.Equal(0, sut.RetryRemainingSeconds);
+    }
+
+    [Fact]
+    public void ReconnectWindow_AfterFifteenSeconds_FailsAndStopsAllTimers()
+    {
+        var sut = CreatePlayingSut(); // GetConnectionState left un-setup -> default Connecting, attempts never succeed
+
+        sut.BeginReconnectWindow();
+        _timeProvider.Advance(TimeSpan.FromSeconds(15));
+
+        Assert.False(sut.IsReconnecting);
+        Assert.False(sut.IsPlaying);
+        Assert.True(sut.CanReconnect);
+        Assert.Equal(0, sut.RetryRemainingSeconds);
+        Assert.Null(sut.RetryStatusMessage);
+        Assert.Equal("Connection lost. Reconnection failed.", sut.StatusMessage);
+        _bridgeMock.Verify(b => b.StartReceiver("src-1", QualityProfile.Balanced), Times.Exactly(7));
+        _bridgeMock.Verify(b => b.StopReceiver(), Times.Exactly(7));
+
+        _timeProvider.Advance(TimeSpan.FromSeconds(30));
+        _bridgeMock.Verify(b => b.StartReceiver("src-1", QualityProfile.Balanced), Times.Exactly(7));
+    }
+
+    [Fact]
+    public void CancelRetry_StopsTimers()
+    {
+        var sut = CreatePlayingSut();
+        sut.BeginReconnectWindow();
+        _timeProvider.Advance(TimeSpan.FromSeconds(1));
+
+        sut.CancelRetryCommand.Execute(null);
+        _timeProvider.Advance(TimeSpan.FromSeconds(30));
+
+        Assert.Equal(15, sut.RetryRemainingSeconds);
+        Assert.Equal("Reconnection cancelled.", sut.RetryStatusMessage);
+        Assert.False(sut.IsReconnecting);
+        _bridgeMock.Verify(b => b.StartReceiver(It.IsAny<string>(), It.IsAny<QualityProfile>()), Times.Never);
+    }
+
+    [Fact]
+    public void Stop_DuringReconnectWindow_StopsTimers()
+    {
+        var sut = CreatePlayingSut();
+        sut.BeginReconnectWindow();
+        _timeProvider.Advance(TimeSpan.FromSeconds(3)); // one attempt has run
+        _bridgeMock.Invocations.Clear();
+
+        sut.StopCommand.Execute(null);
+        _timeProvider.Advance(TimeSpan.FromSeconds(30));
+
+        Assert.False(sut.IsReconnecting);
+        Assert.Equal(15, sut.RetryRemainingSeconds);
+        _bridgeMock.Verify(b => b.StartReceiver(It.IsAny<string>(), It.IsAny<QualityProfile>()), Times.Never);
+    }
+
+    [Fact]
+    public void Dispose_DuringReconnectWindow_StopsTimersWithoutThrowing()
+    {
+        var sut = CreatePlayingSut();
+        sut.BeginReconnectWindow();
+
+        Assert.Null(Record.Exception(() => sut.Dispose()));
+        _timeProvider.Advance(TimeSpan.FromSeconds(30));
+
+        _bridgeMock.Verify(b => b.StartReceiver(It.IsAny<string>(), It.IsAny<QualityProfile>()), Times.Never);
+        Assert.Equal(15, sut.RetryRemainingSeconds);
+    }
+
+    [Fact]
+    public void ReconnectCommand_AfterWindowExpired_OpensNewWindow()
+    {
+        var sut = CreatePlayingSut();
+        sut.BeginReconnectWindow();
+        _timeProvider.Advance(TimeSpan.FromSeconds(15));
+        Assert.True(sut.CanReconnect);
+        _bridgeMock.Invocations.Clear();
+
+        sut.ReconnectCommand.Execute(null);
+
+        Assert.True(sut.IsReconnecting);
+        Assert.False(sut.CanReconnect);
+        Assert.Equal(15, sut.RetryRemainingSeconds);
+
+        _timeProvider.Advance(TimeSpan.FromSeconds(2));
+        _bridgeMock.Verify(b => b.StartReceiver("src-1", QualityProfile.Balanced), Times.Once);
+    }
+
+    [Fact]
+    public void CheckForUnexpectedDrop_AfterSuccessfulReconnect_OpensNewWindow()
+    {
+        var sut = CreatePlayingSut();
+        _bridgeMock.Setup(b => b.GetConnectionState()).Returns(ConnectionState.Connected);
+        sut.BeginReconnectWindow();
+        _timeProvider.Advance(TimeSpan.FromSeconds(2));
+        Assert.False(sut.IsReconnecting);
+
+        _bridgeMock.Setup(b => b.GetConnectionState()).Returns(ConnectionState.Disconnected);
+        sut.CheckForUnexpectedDrop();
+
+        Assert.True(sut.IsReconnecting);
+        Assert.Equal(15, sut.RetryRemainingSeconds);
+    }
+
+    [Fact]
+    public void StopThenRestart_AfterFailedWindow_AllowsDropDetectionAgain()
+    {
+        var sut = CreatePlayingSut();
+        sut.BeginReconnectWindow();
+        _timeProvider.Advance(TimeSpan.FromSeconds(15));
+
+        sut.StopCommand.Execute(null);
+        sut.SourceId = null;
+        sut.SourceId = "src-1"; // re-runs Start
+
+        _bridgeMock.Setup(b => b.GetConnectionState()).Returns(ConnectionState.Disconnected);
+        sut.CheckForUnexpectedDrop();
+
+        Assert.True(sut.IsReconnecting);
     }
 }
