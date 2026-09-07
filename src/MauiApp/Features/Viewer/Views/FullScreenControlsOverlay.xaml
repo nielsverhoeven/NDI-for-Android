@@ -85,10 +85,10 @@
                         <Setter Property="TextColor" Value="{DynamicResource TextSecondary}" />
                         <Style.Triggers>
                             <DataTrigger TargetType="Label" Binding="{Binding PtzLinkState}" Value="Connected">
-                                <Setter Property="TextColor" Value="{DynamicResource SuccessGreen}" />
+                                <Setter Property="TextColor" Value="{DynamicResource SuccessText}" />
                             </DataTrigger>
                             <DataTrigger TargetType="Label" Binding="{Binding PtzLinkState}" Value="Error">
-                                <Setter Property="TextColor" Value="{DynamicResource ErrorRed}" />
+                                <Setter Property="TextColor" Value="{DynamicResource ErrorText}" />
                             </DataTrigger>
                         </Style.Triggers>
                     </Style>
@@ -140,7 +140,7 @@
             </Button>
             <Button Grid.Column="4" Text="Stop" Command="{Binding StopCommand}" FontSize="12" Padding="10,4" HeightRequest="48" MinimumWidthRequest="72"
                     VerticalOptions="Center"
-                    BackgroundColor="{DynamicResource ErrorRed}" TextColor="{DynamicResource White}" />
+                    BackgroundColor="{DynamicResource ErrorFill}" TextColor="{DynamicResource OnPrimary}" />
             <Button Grid.Column="5" Text="⋮" Command="{Binding OpenPtzEndpointFormCommand}" WidthRequest="48" HeightRequest="48" Padding="0"
                     SemanticProperties.Description="More options" />
         </Grid>

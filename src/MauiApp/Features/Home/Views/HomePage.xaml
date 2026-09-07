@@ -56,7 +56,7 @@
                         AutomationId="{x:Static t:TestIds.HomeResumeOutput}"
                         Command="{Binding ResumeOutputCommand}"
                         IsEnabled="{Binding CanResumeOutput}"
-                        BackgroundColor="{DynamicResource SuccessGreen}"
+                        BackgroundColor="{DynamicResource SuccessFill}"
                         TextColor="{DynamicResource TextOnAccent}"
                         CornerRadius="10"
                         FontAttributes="Bold"/>

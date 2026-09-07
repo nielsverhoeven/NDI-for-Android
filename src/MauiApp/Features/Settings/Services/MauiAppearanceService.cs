@@ -67,10 +67,11 @@ public sealed class MauiAppearanceService : IAppearanceService
 
         var isLight = Application.Current.RequestedTheme == AppTheme.Light;
 
-        var palette = isLight ? LightPalette : DarkPalette;
-        var accent  = ResolveAccent(accentColor);
+        var palette       = isLight ? LightPalette : DarkPalette;
+        var accent        = ResolveAccent(accentColor);
+        var accentGraphic = Color.FromArgb(AppearancePalette.AccentGraphic(isLight, accentColor));
 
-        UpdateResources(palette, accent);
+        UpdateResources(palette, accent, accentGraphic);
         UpdateShell(palette);
         UpdateAndroidStatusBar(palette, isLight);
 
@@ -82,8 +83,10 @@ public sealed class MauiAppearanceService : IAppearanceService
     }
 
     // ── Color palettes ──────────────────────────────────────────────
+    // Hex values live in Core (AppearancePalette) so the unit tests assert the same numbers the app
+    // applies. Colors.xaml carries the Dark values as the pre-Apply baseline (#344, #372, #373).
 
-    private record Palette(
+    private sealed record Palette(
         Color PageBackground,
         Color CardBackground,
         Color InputBackground,
@@ -96,64 +99,47 @@ public sealed class MauiAppearanceService : IAppearanceService
         Color TextPrimary,
         Color TextSecondary,
         Color TextPlaceholder,
+        Color ErrorText,
+        Color SuccessText,
+        Color WarningText,
         Color BorderColor,
-        Color DividerColor);
-
-    private static readonly Palette DarkPalette = new(
-        PageBackground:     Color.FromArgb("#1E1E2E"),
-        CardBackground:     Color.FromArgb("#2A2A3E"),
-        InputBackground:    Color.FromArgb("#33334A"),
-        ScrimBackground:    Color.FromArgb("#99000000"),
-        ShellBackground:    Color.FromArgb("#1C1C1E"),
-        ShellForeground:    Color.FromArgb("#FFFFFF"),
-        ShellTitleColor:    Color.FromArgb("#FFFFFF"),
-        ShellTabSelected:   Color.FromArgb("#FFFFFF"),
-        ShellTabUnselected: Color.FromArgb("#8E8E93"),
-        TextPrimary:        Color.FromArgb("#FFFFFF"),
-        TextSecondary:      Color.FromArgb("#AAAACC"),
-        TextPlaceholder:    Color.FromArgb("#666680"),
-        BorderColor:        Color.FromArgb("#3A3A5C"),
-        DividerColor:       Color.FromArgb("#2E2E4A"));
-
-    private static readonly Palette LightPalette = new(
-        PageBackground:     Color.FromArgb("#F2F2F7"),
-        CardBackground:     Color.FromArgb("#FFFFFF"),
-        InputBackground:    Color.FromArgb("#E8E8ED"),
-        ScrimBackground:    Color.FromArgb("#66000000"),
-        ShellBackground:    Color.FromArgb("#E5E5EA"),
-        ShellForeground:    Color.FromArgb("#1C1C1E"),
-        ShellTitleColor:    Color.FromArgb("#1C1C1E"),
-        ShellTabSelected:   Color.FromArgb("#1C1C1E"),
-        // #6E6E73, not the #8E8E93 the dark palette uses. That grey was inherited unchanged from
-        // dark, where it sits on #1C1C1E at a comfortable 5.2:1 — but against this palette's
-        // #E5E5EA shell it is only 2.59:1, under the 3:1 WCAG AA bar for graphical objects, so
-        // unselected navigation items were genuinely hard to read in the light theme. #6E6E73
-        // restores 4.0:1 while staying visibly secondary next to the selected item.
-        ShellTabUnselected: Color.FromArgb("#6E6E73"),
-        TextPrimary:        Color.FromArgb("#1C1C1E"),
-        TextSecondary:      Color.FromArgb("#3C3C43"),
-        TextPlaceholder:    Color.FromArgb("#8E8E93"),
-        BorderColor:        Color.FromArgb("#C6C6C8"),
-        DividerColor:       Color.FromArgb("#D1D1D6"));
-
-    private static Color ResolveAccent(AccentColorOption accent) => accent switch
+        Color DividerColor)
     {
-        AccentColorOption.Teal   => Color.FromArgb("#009688"),
-        AccentColorOption.Green  => Color.FromArgb("#4CAF50"),
-        AccentColorOption.Orange => Color.FromArgb("#FF9800"),
-        AccentColorOption.Red    => Color.FromArgb("#F44336"),
-        AccentColorOption.Pink   => Color.FromArgb("#E91E63"),
-        _                        => Color.FromArgb("#2B7CB8"),
-    };
+        public static Palette FromHex(ThemePalette p) => new(
+            Color.FromArgb(p.PageBackground),
+            Color.FromArgb(p.CardBackground),
+            Color.FromArgb(p.InputBackground),
+            Color.FromArgb(p.ScrimBackground),
+            Color.FromArgb(p.ShellBackground),
+            Color.FromArgb(p.ShellForeground),
+            Color.FromArgb(p.ShellTitleColor),
+            Color.FromArgb(p.ShellTabSelected),
+            Color.FromArgb(p.ShellTabUnselected),
+            Color.FromArgb(p.TextPrimary),
+            Color.FromArgb(p.TextSecondary),
+            Color.FromArgb(p.TextPlaceholder),
+            Color.FromArgb(p.ErrorText),
+            Color.FromArgb(p.SuccessText),
+            Color.FromArgb(p.WarningText),
+            Color.FromArgb(p.BorderColor),
+            Color.FromArgb(p.DividerColor));
+    }
+
+    private static readonly Palette DarkPalette  = Palette.FromHex(AppearancePalette.Dark);
+    private static readonly Palette LightPalette = Palette.FromHex(AppearancePalette.Light);
+
+    private static Color ResolveAccent(AccentColorOption accent) =>
+        Color.FromArgb(AppearancePalette.Accent(accent));
 
     // ── Resource dictionary ─────────────────────────────────────────
 
-    private static void UpdateResources(Palette p, Color accent)
+    private static void UpdateResources(Palette p, Color accent, Color accentGraphic)
     {
         var res = Application.Current!.Resources;
 
         res["Primary"]            = accent;
-        res["OnPrimary"]          = Color.FromArgb("#FFFFFF");
+        res["AccentGraphic"]      = accentGraphic;
+        res["OnPrimary"]          = Color.FromArgb(AppearancePalette.OnPrimary);
         res["PageBackground"]     = p.PageBackground;
         res["CardBackground"]     = p.CardBackground;
         res["InputBackground"]    = p.InputBackground;
@@ -167,7 +153,12 @@ public sealed class MauiAppearanceService : IAppearanceService
         res["TextPrimary"]        = p.TextPrimary;
         res["TextSecondary"]      = p.TextSecondary;
         res["TextPlaceholder"]    = p.TextPlaceholder;
-        res["TextOnAccent"]       = Color.FromArgb("#FFFFFF");
+        res["TextOnAccent"]       = Color.FromArgb(AppearancePalette.OnPrimary);
+        res["ErrorText"]          = p.ErrorText;
+        res["SuccessText"]        = p.SuccessText;
+        res["WarningText"]        = p.WarningText;
+        res["ErrorFill"]          = Color.FromArgb(AppearancePalette.ErrorFill);
+        res["SuccessFill"]        = Color.FromArgb(AppearancePalette.SuccessFill);
         res["BorderColor"]        = p.BorderColor;
         res["DividerColor"]       = p.DividerColor;
     }

@@ -69,7 +69,7 @@
             <Label Text="ON AIR"
                    AutomationId="{x:Static t:TestIds.OutputOnAirTally}"
                    FontAttributes="Bold"
-                   TextColor="{DynamicResource ErrorRed}"
+                   TextColor="{DynamicResource ErrorText}"
                    IsVisible="{Binding IsOnProgramTally}"
                    VerticalOptions="Center" />
         </HorizontalStackLayout>
