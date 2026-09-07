@@ -34,6 +34,9 @@ public sealed class ViewerPage : PageObject
     /// </summary>
     public bool IsOnProgram => IsPresent(TestIds.ViewerTallyProgramBadge);
 
+    /// <summary>True while the "Stopped" overlay is showing over the frozen last frame (#348).</summary>
+    public bool IsStoppedOverlayVisible => IsPresent(TestIds.ViewerStoppedBadge);
+
     /// <summary>
     /// True while a stream is playing — inferred from the Stop button, which is bound to
     /// <c>IsPlaying</c>.

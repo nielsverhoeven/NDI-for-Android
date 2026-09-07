@@ -50,6 +50,15 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private string? _statusMessage;
 
+    /// <summary>
+    /// True after the user taps Stop, until playback starts again (#348). Drives the View's
+    /// "Stopped" treatment of the video surface — the render loop keeps polling
+    /// <see cref="CurrentFrame"/>, so without this the last frame stays painted forever with
+    /// nothing on screen to say playback ended.
+    /// </summary>
+    [ObservableProperty]
+    private bool _isStopped;
+
     // Tally / PTZ / audio state surfaced from the bridge
     [ObservableProperty]
     private bool _isTallyProgram;
@@ -226,7 +235,15 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
     partial void OnIsPlayingChanged(bool value)
     {
         _wasPlayingBeforeResume = value;
-        if (value) StartStatsWatchdog(); else StopStatsWatchdog();
+        if (value)
+        {
+            IsStopped = false; // a fresh Start/Reconnect clears the previous Stop's badge (#348)
+            StartStatsWatchdog();
+        }
+        else
+        {
+            StopStatsWatchdog();
+        }
     }
 
     /// <summary>What TalkBack speaks when the source starts echoing program tally (#350).</summary>
@@ -269,7 +286,8 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
 
         _userInitiatedStop = false;
         _lastSourceId = SourceId;
-        
+        CanReconnect = false; // clears the "watch again" affordance left over from a previous Stop (#348)
+
         // Restore quality profile for this source from cached sources
         try
         {
@@ -322,12 +340,15 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
 
         IsPlaying = false;
         IsReconnecting = false;
-        CanReconnect = false;
+        // A visible way back in, so the screen is never left with neither status text nor a
+        // control (#348, Nielsen #1) — the same Reconnect action a failed auto-retry offers.
+        CanReconnect = true;
         IsTallyProgram = false;
         IsPtzSupported = false;
+        IsStopped = true;
         StopPtz();
         RetryStatusMessage = null;
-        StatusMessage = null;
+        StatusMessage = "Stopped.";
         RetryRemainingSeconds = ReconnectConstants.RetryWindowSeconds;
         RetryStatusMessage = null;
     }

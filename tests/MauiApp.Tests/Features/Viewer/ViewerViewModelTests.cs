@@ -119,7 +119,7 @@ public class ViewerViewModelTests
 
         _bridgeMock.Verify(b => b.StopReceiver(), Times.Once);
         Assert.False(sut.IsPlaying);
-        Assert.Null(sut.StatusMessage);
+        Assert.Equal("Stopped.", sut.StatusMessage);
     }
 
     // --- Reconnection tests (FR1-FR8) ---
@@ -308,6 +308,74 @@ public class ViewerViewModelTests
 
         Assert.False(sut.IsTallyProgram);
         _announcerMock.Verify(a => a.Announce(It.IsAny<string>()), Times.Never);
+    }
+
+    // ── #348: explicit stopped state (Nielsen #1 — visibility of system status) ──
+
+    [Fact]
+    public void StopCommand_ShowsStoppedStatusAndClearsPlaying()
+    {
+        var sut = CreateSut();
+        sut.SourceId = "src-1";
+
+        sut.StopCommand.Execute(null);
+
+        Assert.False(sut.IsPlaying);
+        Assert.Equal("Stopped.", sut.StatusMessage);
+        Assert.True(sut.IsStopped);
+    }
+
+    [Fact]
+    public void StopCommand_LeavesAVisibleActionableControl()
+    {
+        var sut = CreateSut();
+        sut.SourceId = "src-1";
+
+        sut.StopCommand.Execute(null);
+
+        // Reused Reconnect affordance (#348): the screen is never left with neither status text
+        // nor a control.
+        Assert.True(sut.CanReconnect);
+    }
+
+    [Fact]
+    public void StartCommand_ClearsStoppedStateAndCanReconnect()
+    {
+        var sut = CreateSut();
+        sut.SourceId = "src-1";
+        sut.StopCommand.Execute(null);
+        Assert.True(sut.IsStopped);
+        Assert.True(sut.CanReconnect);
+
+        sut.SourceId = null;
+        sut.SourceId = "src-1"; // re-runs Start
+
+        Assert.False(sut.IsStopped);
+        Assert.False(sut.CanReconnect);
+        Assert.True(sut.IsPlaying);
+    }
+
+    [Fact]
+    public void ReconnectCommand_AfterStop_ClearsStoppedStateOnceConnected()
+    {
+        var sut = CreatePlayingSut();
+        _bridgeMock.Setup(b => b.GetConnectionState()).Returns(ConnectionState.Connected);
+        sut.StopCommand.Execute(null);
+        Assert.True(sut.IsStopped);
+
+        sut.ReconnectCommand.Execute(null);
+        _timeProvider.Advance(TimeSpan.FromSeconds(2));
+
+        Assert.False(sut.IsStopped);
+        Assert.True(sut.IsPlaying);
+    }
+
+    [Fact]
+    public void IsStopped_IsFalseWhileNeverStarted()
+    {
+        var sut = CreateSut();
+
+        Assert.False(sut.IsStopped);
     }
 
     [Fact]
