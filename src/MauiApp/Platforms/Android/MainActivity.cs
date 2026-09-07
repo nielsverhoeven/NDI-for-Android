@@ -145,16 +145,19 @@ public class MainActivity : MauiAppCompatActivity
         var bridge = IPlatformApplication.Current?.Services.GetService<IAndroidOrientationBridge>();
         bridge?.UpdateFromConfiguration(newConfig.Orientation);
         var isLandscape = newConfig.Orientation == Orientation.Landscape;
-        ResolveLifecycleService()?.NotifyConfigurationChanged(isLandscape);
+        ResolveLifecycleService()?.NotifyConfigurationChanged(isLandscape, newConfig.SmallestScreenWidthDp);
     }
 
     private void SyncNavigationOrientation()
     {
-        if (Resources?.Configuration?.Orientation is not { } orientation)
+        if (Resources?.Configuration is not { } configuration)
             return;
 
         var bridge = IPlatformApplication.Current?.Services.GetService<IAndroidOrientationBridge>();
-        bridge?.UpdateFromConfiguration(orientation);
+        bridge?.UpdateFromConfiguration(configuration.Orientation);
+
+        var isLandscape = configuration.Orientation == Orientation.Landscape;
+        ResolveLifecycleService()?.NotifyConfigurationChanged(isLandscape, configuration.SmallestScreenWidthDp);
     }
 
     private static IAppLifecycleService? ResolveLifecycleService() =>
