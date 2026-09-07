@@ -118,6 +118,18 @@ public static class TestIds
     public const string ViewerCancelRetry     = "viewer.cancelRetry";
     public const string ViewerReconnect       = "viewer.reconnect";
     public const string ViewerStop            = "viewer.stop";
+    public const string ViewerFullScreenToggle = "viewer.fullScreenToggle";
+
+    // ── PTZ endpoint override form (#374) ────────────────────────────────────
+
+    public const string PtzEndpointHost              = "viewer.ptzEndpoint.host";
+    public const string PtzEndpointPort               = "viewer.ptzEndpoint.port";
+    public const string PtzEndpointPortValidation     = "viewer.ptzEndpoint.portValidation";
+    public const string PtzEndpointValidationMessage  = "viewer.ptzEndpoint.validationMessage";
+    public const string PtzEndpointTest               = "viewer.ptzEndpoint.test";
+    public const string PtzEndpointClear              = "viewer.ptzEndpoint.clear";
+    public const string PtzEndpointCancel             = "viewer.ptzEndpoint.cancel";
+    public const string PtzEndpointSave               = "viewer.ptzEndpoint.save";
 
     // The three quality ids above are applied through QualityProfileOption.AutomationId (bound in
     // the BindableLayout template of PlaybackControlsView), not as x:Static literals — keep them
