@@ -203,8 +203,13 @@
                                    </HorizontalStackLayout>
 
                                    <Label Text="Cached Source Registry" FontAttributes="Bold" />
-                                   <CollectionView AutomationId="{x:Static t:TestIds.SettingsCachedSourceList}" ItemsSource="{Binding CachedSourceRegistry}">
-                                          <CollectionView.ItemTemplate>
+                                   <!-- BindableLayout, not CollectionView, for the same reason as the discovery-server
+                                        list above: nested inside the page's outer ScrollView, a CollectionView never
+                                        re-measures its Auto-height ancestors when entries are added to
+                                        CachedSourceRegistry after the initial layout pass, so late rows get no
+                                        on-screen area. -->
+                                   <VerticalStackLayout AutomationId="{x:Static t:TestIds.SettingsCachedSourceList}" BindableLayout.ItemsSource="{Binding CachedSourceRegistry}">
+                                          <BindableLayout.ItemTemplate>
                                                  <DataTemplate x:DataType="model:CachedSourceRegistryEntry">
                                                         <VerticalStackLayout Spacing="2" Padding="0,6">
                                                                <Label Text="{Binding SourceName}" FontAttributes="Bold" />
@@ -214,8 +219,8 @@
                                                                <Label Text="{Binding LastSeenDisplay, StringFormat='Last seen: {0}'}" />
                                                         </VerticalStackLayout>
                                                  </DataTemplate>
-                                          </CollectionView.ItemTemplate>
-                                   </CollectionView>
+                                          </BindableLayout.ItemTemplate>
+                                   </VerticalStackLayout>
                             </VerticalStackLayout>
 
                             <VerticalStackLayout AutomationId="{x:Static t:TestIds.SettingsPanelAbout}" IsVisible="{Binding IsAboutSectionSelected}" Spacing="8">

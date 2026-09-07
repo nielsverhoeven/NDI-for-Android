@@ -138,8 +138,15 @@ public class DiscoveryRefreshServiceTests
             pollingInterval: TimeSpan.FromSeconds(60),  // suppress auto-poll
             debounceWindow: TimeSpan.FromMilliseconds(500));
 
+        // Wait for the first auto-poll to *complete* rather than sleeping 100 ms: RequestRefresh
+        // debounces against the last completion time, so manual requests issued before that
+        // first completion have nothing to debounce against and all go through. SnapshotReady
+        // is raised only after the completion time is recorded, so it is the exact signal.
+        var firstPollCompleted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        sut.SnapshotReady += (_, _) => firstPollCompleted.TrySetResult();
+
         sut.Start();
-        await Task.Delay(100);  // let first auto-poll fire
+        await firstPollCompleted.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
         var countBeforeManual = callCount;
 
