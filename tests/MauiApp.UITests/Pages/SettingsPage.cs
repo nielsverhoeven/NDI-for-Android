@@ -181,8 +181,14 @@ public sealed class SettingsPage : PageObject
     /// them findable — Android drops a zero-area node from the accessibility tree entirely, so
     /// "not displayed" and "displayed with no area" are the same observable failure here.
     /// </remarks>
-    public System.Drawing.Size LastServerRowControlSize(string controlId) =>
-        FindDisplayed(controlId).LastOrDefault()?.Size ?? System.Drawing.Size.Empty;
+    public System.Drawing.Size LastServerRowControlSize(string controlId)
+    {
+        // The list is the last content of the Discovery panel; with the persistent field labels
+        // above the Add form (#376) the newest row can sit at the bottom edge of the ScrollView,
+        // where its bounds come back clipped. Measure it fully scrolled into view.
+        ScrollToEnd();
+        return FindDisplayed(controlId).LastOrDefault()?.Size ?? System.Drawing.Size.Empty;
+    }
 
     // ── Appearance section ───────────────────────────────────────────────────
 

@@ -276,6 +276,34 @@ public abstract class PageObject
         FindAll(id).Where(IsDisplayed).ToList();
 
     /// <summary>On-screen bounds of <paramref name="id"/> in physical pixels (for target-size assertions).</summary>
+    /// <summary>
+    /// Scrolls the current page to the end of its scrollable content so that elements at the
+    /// bottom are measured at their full size. Appium reports the bounds of a partially
+    /// scrolled-out element clipped to the visible area (a 48 dp Switch at the bottom edge read
+    /// as 168x6 px), which a touch-target assertion cannot tell apart from a genuinely tiny
+    /// control. Uses a screen-area gesture so it needs no handle on the ScrollView itself.
+    /// </summary>
+    protected void ScrollToEnd(int maxSwipes = 4)
+    {
+        var window = Driver.Manage().Window.Size;
+        var area = new Dictionary<string, object>
+        {
+            ["left"] = window.Width / 4,
+            ["top"] = window.Height / 4,
+            ["width"] = window.Width / 2,
+            ["height"] = window.Height / 2,
+            ["direction"] = "down",
+            ["percent"] = 1.0,
+        };
+
+        for (var i = 0; i < maxSwipes; i++)
+        {
+            var moved = Driver.ExecuteScript("mobile: scrollGesture", area);
+            if (moved is false)
+                break;
+        }
+    }
+
     protected System.Drawing.Rectangle BoundsOf(string id)
     {
         var element = WaitFor(id);
