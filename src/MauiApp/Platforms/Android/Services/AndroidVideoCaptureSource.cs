@@ -23,6 +23,9 @@ namespace NdiForAndroid.Platforms.Android.Services;
 /// Frames are raised on a dedicated capture <see cref="HandlerThread"/> — never the
 /// UI thread — and reuse producer-owned buffers per the <see cref="IVideoCaptureSource"/>
 /// contract (consumers finish with the buffer before the event handler returns).
+/// Camera frames are rotated (Nv12FrameRotator) by CameraFrameOrientation(SENSOR_ORIENTATION,
+/// display rotation, lens facing) so receivers get an upright picture; portrait devices
+/// therefore send height×width frames.
 /// </summary>
 public sealed class AndroidVideoCaptureSource : IVideoCaptureSource
 {
@@ -52,8 +55,17 @@ public sealed class AndroidVideoCaptureSource : IVideoCaptureSource
     private CameraDevice? _cameraDevice;
     private CameraCaptureSession? _captureSession;
 
+    // Camera orientation compensation (#284). Sensor orientation and lens facing are fixed for
+    // the opened camera; the display rotation is sampled at start and updated from
+    // DeviceDisplay.MainDisplayInfoChanged (main thread) while the capture thread reads it.
+    private int _sensorOrientationDegrees;
+    private bool _isFrontFacing;
+    private volatile int _displayRotationDegrees;
+    private bool _displayListenerAttached;
+
     // Producer-owned reusable buffers (see class remarks).
     private byte[]? _frameBuffer;
+    private byte[]? _rotatedBuffer;
     private byte[]? _chromaScratchU;
     private byte[]? _chromaScratchV;
 
@@ -121,6 +133,16 @@ public sealed class AndroidVideoCaptureSource : IVideoCaptureSource
             _captureSession = null;
             try { _cameraDevice?.Close(); } catch { /* ignore — best-effort teardown */ }
             _cameraDevice = null;
+
+            if (_displayListenerAttached)
+            {
+                _displayListenerAttached = false;
+                MainThread.BeginInvokeOnMainThread(() =>
+                {
+                    try { Microsoft.Maui.Devices.DeviceDisplay.MainDisplayInfoChanged -= OnMainDisplayInfoChanged; }
+                    catch { /* ignore — best-effort teardown */ }
+                });
+            }
 
             // Screen teardown (no-ops for camera capture).
             try { _virtualDisplay?.Release(); } catch { /* ignore — best-effort teardown */ }
@@ -343,6 +365,17 @@ public sealed class AndroidVideoCaptureSource : IVideoCaptureSource
         var (cameraId, characteristics) = FindCamera(manager, facing);
         var (width, height) = PickCameraSize(characteristics);
 
+        // Orientation compensation (#284): SENSOR_ORIENTATION is fixed per camera; the display
+        // rotation is sampled now and tracked while capturing (OnMainDisplayInfoChanged).
+        _isFrontFacing = facing == LensFacing.Front;
+        _sensorOrientationDegrees = ReadSensorOrientation(characteristics);
+        await MainThread.InvokeOnMainThreadAsync(() =>
+        {
+            _displayRotationDegrees = ToDegrees(Microsoft.Maui.Devices.DeviceDisplay.MainDisplayInfo.Rotation);
+            Microsoft.Maui.Devices.DeviceDisplay.MainDisplayInfoChanged += OnMainDisplayInfoChanged;
+            _displayListenerAttached = true;
+        }).ConfigureAwait(false);
+
         var handler = StartCaptureThread();
 
         var reader = ImageReader.NewInstance(width, height, ImageFormatType.Yuv420888, 2 /* maxImages */);
@@ -357,12 +390,35 @@ public sealed class AndroidVideoCaptureSource : IVideoCaptureSource
         _cameraDevice = camera;
 
         var configured = new TaskCompletionSource<CameraCaptureSession>(TaskCreationOptions.RunContinuationsAsynchronously);
-        // CA1422: obsoleted on API 30 in favor of the SessionConfiguration overload, but that
-        // requires IExecutor plumbing; the deprecated overload remains functional on all our
-        // target APIs. Migration tracked in the camera follow-up issue.
+        var stateCallback = new SessionStateCallback(configured);
+        var useLegacySession = !OperatingSystem.IsAndroidVersionAtLeast(28);
+        if (!useLegacySession)
+        {
+            // API 28+: SessionConfiguration + Executor. HandlerExecutor keeps the state callbacks
+            // on the capture HandlerThread, exactly like the Handler overload did. Any failure here
+            // (e.g. an OEM quirk in the modern path) falls back to the legacy overload below rather
+            // than risk a broken camera session — see #284 safety note.
+            try
+            {
+                var outputs = new List<OutputConfiguration> { new OutputConfiguration(surface) };
+                var sessionConfiguration = new SessionConfiguration(
+                    (int)SessionType.Regular, outputs, new HandlerExecutor(handler), stateCallback);
+                camera.CreateCaptureSession(sessionConfiguration);
+            }
+            catch (Exception)
+            {
+                useLegacySession = true;
+            }
+        }
+        if (useLegacySession)
+        {
+            // API 26-27 (minSdk 26): SessionConfiguration does not exist yet there. The Handler
+            // overload is obsoleted on API 30 only, so it remains the correct call on these two
+            // levels, and is also the safety fallback if the SessionConfiguration path above throws.
 #pragma warning disable CA1422
-        camera.CreateCaptureSession(new List<Surface> { surface }, new SessionStateCallback(configured), handler);
+            camera.CreateCaptureSession(new List<Surface> { surface }, stateCallback, handler);
 #pragma warning restore CA1422
+        }
         var session = await configured.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
         _captureSession = session;
 
@@ -424,6 +480,24 @@ public sealed class AndroidVideoCaptureSource : IVideoCaptureSource
         return (Math.Max(2, chosen.Width & ~1), Math.Max(2, chosen.Height & ~1));
     }
 
+    private static int ReadSensorOrientation(CameraCharacteristics characteristics)
+    {
+        var key = CameraCharacteristics.SensorOrientation;
+        return key is not null && characteristics.Get(key) is Java.Lang.Integer value ? value.IntValue() : 0;
+    }
+
+    private static int ToDegrees(Microsoft.Maui.Devices.DisplayRotation rotation) => rotation switch
+    {
+        Microsoft.Maui.Devices.DisplayRotation.Rotation90 => 90,
+        Microsoft.Maui.Devices.DisplayRotation.Rotation180 => 180,
+        Microsoft.Maui.Devices.DisplayRotation.Rotation270 => 270,
+        _ => 0, // Rotation0 and Unknown
+    };
+
+    /// <summary>Main thread (MAUI raises it there); the capture thread reads the volatile field per frame.</summary>
+    private void OnMainDisplayInfoChanged(object? sender, Microsoft.Maui.Devices.DisplayInfoChangedEventArgs e) =>
+        _displayRotationDegrees = ToDegrees(e.DisplayInfo.Rotation);
+
     private void OnCameraImage(ImageReader reader)
     {
         AImage? image = null;
@@ -450,8 +524,23 @@ public sealed class AndroidVideoCaptureSource : IVideoCaptureSource
             if (!RepackChromaToNv12(planes[1], planes[2], width, height, frame))
                 return;
 
+            var rotation = CameraFrameOrientation.ComputeRotationDegrees(
+                _sensorOrientationDegrees, _displayRotationDegrees, _isFrontFacing);
+            if (rotation == 0)
+            {
+                FrameReady?.Invoke(this, new CapturedVideoFrame(
+                    width, height, CapturedPixelFormat.Nv12, frame, width, 30));
+                return;
+            }
+
+            // Rotate into the second producer-owned buffer; portrait frames come out as
+            // height×width (e.g. 720x1280) and the bridge derives aspect/stride per frame.
+            var rotated = _rotatedBuffer;
+            if (rotated is null || rotated.Length < required)
+                _rotatedBuffer = rotated = new byte[required];
+            var (outWidth, outHeight) = Nv12FrameRotator.Rotate(frame, width, height, rotation, rotated);
             FrameReady?.Invoke(this, new CapturedVideoFrame(
-                width, height, CapturedPixelFormat.Nv12, frame, width, 30));
+                outWidth, outHeight, CapturedPixelFormat.Nv12, rotated, outWidth, 30));
         }
         catch
         {
@@ -658,5 +747,26 @@ public sealed class AndroidVideoCaptureSource : IVideoCaptureSource
 
         public override void OnConfigureFailed(CameraCaptureSession session) =>
             _configured.TrySetException(new InvalidOperationException("Camera capture session configuration failed."));
+    }
+
+    /// <summary>
+    /// Runs Camera2 session state callbacks on the capture HandlerThread —
+    /// SessionConfiguration (API 28+) takes an Executor where the legacy overload took a Handler.
+    /// </summary>
+    private sealed class HandlerExecutor : Java.Lang.Object, Java.Util.Concurrent.IExecutor
+    {
+        private readonly Handler _handler;
+
+        public HandlerExecutor(Handler handler) => _handler = handler;
+
+        public void Execute(Java.Lang.IRunnable? command)
+        {
+            if (command is null)
+                return;
+            // Post returns false once the looper has quit (teardown race): run inline so an
+            // OnConfigureFailed/OnClosed is never silently dropped.
+            if (!_handler.Post(command))
+                command.Run();
+        }
     }
 }
