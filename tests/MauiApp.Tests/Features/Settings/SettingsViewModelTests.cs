@@ -17,6 +17,7 @@ public class SettingsViewModelTests
     private readonly Mock<ISettingsPlatformService> _platformServiceMock = new();
     private readonly Mock<ISourceRepository> _sourceRepositoryMock = new();
     private readonly Mock<INdiDiscoveryBridge> _discoveryBridgeMock = new();
+    private readonly FakeUserPromptService _userPromptService = new();
 
     private SettingsViewModel CreateSut(Mock<INdiVersionInfo>? versionInfo = null)
     {
@@ -36,7 +37,8 @@ public class SettingsViewModelTests
             _sourceRepositoryMock.Object,
             (versionInfo ?? new Mock<INdiVersionInfo>()).Object,
             _discoveryBridgeMock.Object,
-            new FakeMainThreadDispatcher());
+            new FakeMainThreadDispatcher(),
+            _userPromptService);
     }
 
     [Fact]

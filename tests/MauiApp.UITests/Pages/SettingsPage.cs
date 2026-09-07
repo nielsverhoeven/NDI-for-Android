@@ -1,5 +1,6 @@
 using OpenQA.Selenium;
 using OpenQA.Selenium.Appium.Android;
+using OpenQA.Selenium.Support.UI;
 using NdiForAndroid.Testing;
 using NdiForAndroid.UITests.Infrastructure;
 
@@ -51,6 +52,24 @@ public sealed class SettingsPage : PageObject
     public bool HasSectionButton(SettingsSection section) => IsPresent(SectionButtonId(section));
     public bool IsSectionOpen(SettingsSection section)    => IsPresent(PanelId(section));
 
+    /// <summary>
+    /// True when the section's rail button announces itself as selected. Read from content-desc
+    /// (what TalkBack reads), not from pixels: the selected state is carried in the name because a
+    /// MAUI Button exposes no native selected flag. Both rails share the id; only the live one is
+    /// displayed (#345 SET-1).
+    /// </summary>
+    public bool IsSectionSelected(SettingsSection section) =>
+        FindDisplayed(SectionButtonId(section))
+            .Select(b => b.GetAttribute("content-desc") ?? string.Empty)
+            .Any(d => d.EndsWith(", selected", StringComparison.Ordinal));
+
+    /// <summary>Rendered height in pixels of a section button — the compact rail on a phone-width
+    /// window (#370 P-3).</summary>
+    public int SectionButtonHeightPx(SettingsSection section) => WaitFor(SectionButtonId(section)).Size.Height;
+
+    /// <summary>True while the Discovery panel shows its 'no servers yet' label (#370).</summary>
+    public bool IsDiscoveryEmptyStateShown => IsPresent(TestIds.SettingsDiscoveryEmptyState);
+
     // ── Discovery section ────────────────────────────────────────────────────
 
     public string DiscoveryHost
@@ -79,7 +98,8 @@ public sealed class SettingsPage : PageObject
     public IReadOnlyList<string> ServerRowEndpoints =>
         FindDisplayed(TestIds.SettingsServerRowEndpoint).Select(row => row.Text).ToList();
 
-    /// <summary>Deletes the row whose endpoint matches <paramref name="endpoint"/>, if one is rendered.</summary>
+    /// <summary>Deletes the row whose endpoint matches <paramref name="endpoint"/>, if one is
+    /// rendered. Accepts the confirmation dialog (#347) the delete action now shows.</summary>
     public void RemoveServer(string endpoint)
     {
         var index = FindDisplayed(TestIds.SettingsServerRowEndpoint)
@@ -91,6 +111,37 @@ public sealed class SettingsPage : PageObject
             return;
 
         FindDisplayed(TestIds.SettingsServerRowDelete)[index].Click();
+        ConfirmDeleteServer();
+    }
+
+    /// <summary>
+    /// Confirms the native delete-confirmation dialog shown by RemoveDiscoveryServerCommand
+    /// (#347). The dialog is a platform <c>Page.DisplayAlert</c>, not app XAML, so its buttons
+    /// carry no AutomationId — locate the button by its caption, matched case-insensitively
+    /// because Android's default AlertDialog theme upper-cases button text.
+    /// </summary>
+    public void ConfirmDeleteServer() => TapNativeAlertButton("Delete");
+
+    /// <summary>Dismisses the delete-confirmation dialog without removing the server.</summary>
+    public void CancelDeleteServer() => TapNativeAlertButton("Cancel");
+
+    /// <summary>Taps Delete for the row whose endpoint matches, WITHOUT answering the confirmation
+    /// dialog — pair with <see cref="ConfirmDeleteServer"/> or <see cref="CancelDeleteServer"/>.</summary>
+    public void TapDeleteForRow(string endpoint)
+    {
+        var index = FindDisplayed(TestIds.SettingsServerRowEndpoint).Select(row => row.Text).ToList().IndexOf(endpoint);
+        if (index >= 0)
+            FindDisplayed(TestIds.SettingsServerRowDelete)[index].Click();
+    }
+
+    private void TapNativeAlertButton(string caption)
+    {
+        var wait = new WebDriverWait(Driver, Timeouts.Navigation);
+        var button = wait.Until(_ => Driver.FindElements(By.XPath(
+                $"//android.widget.Button[@text='{caption}' or @text='{caption.ToUpperInvariant()}' or @text='{caption.ToLowerInvariant()}']"))
+            .FirstOrDefault());
+
+        button?.Click();
     }
 
     /// <summary>Number of discovery server rows currently rendered.</summary>
@@ -116,6 +167,7 @@ public sealed class SettingsPage : PageObject
                     $"still {ServerRowCount} after {maxAttempts} deletes.");
 
             FindDisplayed(TestIds.SettingsServerRowDelete)[^1].Click();
+            ConfirmDeleteServer();
         }
     }
 
@@ -292,4 +344,32 @@ public sealed class SettingsPage : PageObject
         ThemeOption.System => TestIds.SettingsThemeSystem,
         _ => throw new ArgumentOutOfRangeException(nameof(theme)),
     };
+
+    // ── Edit-server dialog (#343 SET-6) ───────────────────────────────────────
+
+    /// <summary>Opens the edit dialog for the row whose endpoint matches <paramref name="endpoint"/>;
+    /// no-op when not rendered.</summary>
+    public void EditServer(string endpoint)
+    {
+        var index = FindDisplayed(TestIds.SettingsServerRowEndpoint).Select(row => row.Text).ToList().IndexOf(endpoint);
+        if (index >= 0)
+            FindDisplayed(TestIds.SettingsServerRowEdit)[index].Click();
+    }
+
+    public bool IsEditServerDialogOpen => IsPresent(TestIds.SettingsEditServerSave);
+    public void CancelEditServer() => Tap(TestIds.SettingsEditServerCancel);
+    public void SaveEditedServer() => Tap(TestIds.SettingsEditServerSave);
+
+    // ── Developer tools (#343 SET-8) ──────────────────────────────────────────
+
+    public bool IsDeveloperModeOn =>
+        string.Equals(WaitFor(TestIds.SettingsDeveloperModeToggle).GetAttribute("checked"), "true", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Taps the caption, not the switch — the label toggles the same setting (#343 SET-8).</summary>
+    public void ToggleDeveloperModeViaLabel() => Tap(TestIds.SettingsDeveloperModeLabel);
+
+    // ── Section-agnostic save-failure banner (#355 item 4) ────────────────────
+
+    public bool IsSaveErrorShown => IsPresent(TestIds.SettingsSaveError);
+    public string SaveErrorText  => TextOf(TestIds.SettingsSaveError);
 }

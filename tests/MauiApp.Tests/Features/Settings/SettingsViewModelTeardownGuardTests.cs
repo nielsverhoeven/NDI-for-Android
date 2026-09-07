@@ -27,6 +27,7 @@ public sealed class SettingsViewModelTeardownGuardTests
     private readonly Mock<ISettingsPlatformService> _platformServiceMock = new();
     private readonly Mock<ISourceRepository> _sourceRepositoryMock = new();
     private readonly Mock<INdiDiscoveryBridge> _discoveryBridgeMock = new();
+    private readonly FakeUserPromptService _userPromptService = new();
 
     private SettingsViewModel CreateSut()
     {
@@ -49,7 +50,8 @@ public sealed class SettingsViewModelTeardownGuardTests
             _sourceRepositoryMock.Object,
             new Mock<INdiVersionInfo>().Object,
             _discoveryBridgeMock.Object,
-            new FakeMainThreadDispatcher());
+            new FakeMainThreadDispatcher(),
+            _userPromptService);
     }
 
     /// <summary>Loads a persisted snapshot whose theme is an explicit, non-default choice.</summary>
