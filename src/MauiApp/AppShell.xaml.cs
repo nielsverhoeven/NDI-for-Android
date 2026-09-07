@@ -36,6 +36,10 @@ public partial class AppShell : Shell
     private static Color InactiveText => ResolveColor("ShellTabUnselected", Color.FromArgb("#8E8E93"));
     private static Color ActiveText   => ResolveColor("ShellTabSelected", Colors.White);
 
+    // Active rail item's indicator pill (M3 navigation-rail active indicator) — neutral, not
+    // accent-tinted, so it matches the tab bar, whose selected item is also neutral (#343 home-nav-05).
+    private static Color ActiveIndicator => ResolveColor("ShellRailActiveIndicator", Color.FromArgb("#45455F"));
+
     private static Color ResolveColor(string key, Color fallback) =>
         Application.Current?.Resources.TryGetValue(key, out var value) == true && value is Color color
             ? color
@@ -165,8 +169,9 @@ public partial class AppShell : Shell
             // accessibility services — a screen reader reaches it as an unlabelled container,
             // and it surfaces in the Android view tree as a bare TextView with no
             // contentDescription. The bottom tab bar gets this for free from Shell; the rail
-            // has to say it itself.
-            SemanticProperties.SetDescription(container, item.Label);
+            // has to say it itself — including which destination is currently selected, since a
+            // plain Border exposes no native "selected" state (#345 home-nav-06).
+            SemanticProperties.SetDescription(container, RailDescription(item.Label, isSelected: false));
 
             // Same destination, same id as the matching bottom tab — the two placements are
             // never in the tree at once, so a test asking for the id gets whichever is live.
@@ -187,19 +192,36 @@ public partial class AppShell : Shell
     private void UpdateRailHighlight(PrimaryNavDestination active)
     {
         // Resolved once per pass so a theme change picks up the new palette.
-        var activeText   = ActiveText;
-        var inactiveText = InactiveText;
+        var activeText      = ActiveText;
+        var inactiveText    = InactiveText;
+        var activeIndicator = ActiveIndicator;
 
         foreach (var kvp in _railButtons)
         {
             bool isActive = kvp.Key == active;
             var foreground = isActive ? activeText : inactiveText;
 
-            kvp.Value.Container.BackgroundColor = Colors.Transparent;
-            kvp.Value.Label.TextColor = foreground;
-            kvp.Value.Icon.Fill       = new SolidColorBrush(foreground);
+            // M3 navigation-rail active indicator: a tonal pill behind the selected item. The
+            // Border already has the RoundRectangle(12) shape and 64dp height (BuildRailItems).
+            // Not the sole state cue — the label's colour and bold weight also carry it — so the
+            // pill's own contrast against ShellBackground does not need to clear 3:1 on its own
+            // (#343 home-nav-05).
+            kvp.Value.Container.BackgroundColor = isActive ? activeIndicator : Colors.Transparent;
+            kvp.Value.Label.TextColor      = foreground;
+            kvp.Value.Label.FontAttributes = isActive ? FontAttributes.Bold : FontAttributes.None;
+            kvp.Value.Icon.Fill            = new SolidColorBrush(foreground);
+
+            SemanticProperties.SetDescription(kvp.Value.Container, RailDescription(kvp.Value.Label.Text, isActive));
         }
     }
+
+    /// <summary>
+    /// A rail item is a plain Border, so nothing exposes a tab role or a selected state to
+    /// TalkBack; both are carried in the accessible name instead (same pattern as
+    /// ViewerControlSheet's tab buttons) (#345).
+    /// </summary>
+    private static string RailDescription(string label, bool isSelected) =>
+        isSelected ? $"{label}, selected" : label;
 
     // ── Orientation / placement ───────────────────────────────────────────────
 
@@ -301,17 +323,24 @@ public partial class AppShell : Shell
         // MAUI re-applies per-page toolbar appearance on navigation, resetting the
         // AppBarLayout background to template defaults — restore the themed chrome (#296).
         _appearanceService.ReapplyChrome();
+
+        if (Navigation?.NavigationStack?.Count <= 1)
+            Dispatcher.Dispatch(async () => await EnsurePrimaryDestinationVisibleAsync());
+    }
+
+    private static string? LastSegment(string? location)
+    {
+        if (string.IsNullOrWhiteSpace(location)) return null;
+        return location.Split('?', 2)[0].Split('/', StringSplitOptions.RemoveEmptyEntries).LastOrDefault();
     }
 
     private static PrimaryNavDestination? ParseDestination(string? location)
     {
-        if (string.IsNullOrWhiteSpace(location)) return null;
         // Match on the last path segment only — a query value, or an ancestor
         // segment (e.g. "stream-tab" when "viewer" is pushed on top of it),
         // must never influence which destination this resolves to.
-        var path = location.Split('?', 2)[0];
-        var segment = path.Split('/', StringSplitOptions.RemoveEmptyEntries).LastOrDefault() ?? string.Empty;
-        var s = segment.ToLowerInvariant();
+        var s = LastSegment(location)?.ToLowerInvariant();
+        if (string.IsNullOrEmpty(s)) return null;
         if (s.Contains("home")     || s.Contains("sources")) return PrimaryNavDestination.Home;
         if (s.Contains("stream")   || s.Contains("output"))  return PrimaryNavDestination.Stream;
         if (s.Contains("view")     || s.Contains("viewer"))  return PrimaryNavDestination.View;
@@ -324,16 +353,15 @@ public partial class AppShell : Shell
 
     private async Task EnsurePrimaryDestinationVisibleAsync()
     {
-        if (_handoffInProgress)
-            return;
+        if (_handoffInProgress) return;
+        if (Navigation?.NavigationStack?.Count > 1) return;
+        if (Navigation?.ModalStack?.Count > 0) return;
+        if (!TryGetRouteForCurrentPlacement(_stateViewModel.SelectedDestination, out var route)) return;
 
-        if (!TryGetRouteForCurrentPlacement(_stateViewModel.SelectedDestination, out var route))
-            return;
+        var currentSegment = LastSegment(CurrentState?.Location?.OriginalString);
+        if (string.Equals(currentSegment, route.Trim('/'), StringComparison.OrdinalIgnoreCase)) return;
 
-        var currentLocation = CurrentState?.Location?.OriginalString;
-        if (string.Equals(currentLocation, route, StringComparison.OrdinalIgnoreCase))
-            return;
-
-        await GoToAsync(route);
+        try { await GoToAsync(route); }
+        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"Placement reconciliation failed: {ex}"); }
     }
 }

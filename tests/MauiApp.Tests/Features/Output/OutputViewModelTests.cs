@@ -16,6 +16,7 @@ public class OutputViewModelTests
     private readonly Mock<IAppLifecycleService> _lifecycleMock = new();
     private readonly Mock<IOutputConfigurationRepository> _configRepoMock = new();
     private readonly FakeMainThreadDispatcher _dispatcher = new();
+    private readonly FakeScreenReaderAnnouncer _announcer = new();
 
     public OutputViewModelTests()
     {
@@ -37,7 +38,8 @@ public class OutputViewModelTests
         _appStateRepoMock.Object,
         _lifecycleMock.Object,
         _configRepoMock.Object,
-        _dispatcher);
+        _dispatcher,
+        _announcer);
 
     [Fact]
     public void Constructor_SetsInitialStatusMessage()
@@ -178,6 +180,61 @@ public class OutputViewModelTests
 
         Assert.False(sut.IsOnProgramTally);
         Assert.Equal(0, sut.ConnectionCount);
+    }
+
+    // ── Lifetime contract (#352/#359): one subscription per event for the app lifetime ─────────
+
+    [Fact]
+    public void Constructor_SubscribesToEachSingletonEventExactlyOnce()
+    {
+        _ = CreateSut();
+
+        _bridgeMock.VerifyAdd(b => b.OutputStatusChanged += It.IsAny<EventHandler>(), Times.Once);
+        _lifecycleMock.VerifyAdd(l => l.AppResumed += It.IsAny<Action>(), Times.Once);
+    }
+
+    [Fact]
+    public async Task LoadCommand_RepeatedAppearances_DoNotAddSubscriptions()
+    {
+        var sut = CreateSut();
+
+        // OutputPage.OnAppearing awaits LoadCommand on every tab entry.
+        await sut.LoadCommand.ExecuteAsync(null);
+        await sut.LoadCommand.ExecuteAsync(null);
+        await sut.LoadCommand.ExecuteAsync(null);
+
+        _bridgeMock.VerifyAdd(b => b.OutputStatusChanged += It.IsAny<EventHandler>(), Times.Once);
+        _lifecycleMock.VerifyAdd(l => l.AppResumed += It.IsAny<Action>(), Times.Once);
+    }
+
+    [Fact]
+    public void Dispose_RemovesEverySubscriptionItAdded()
+    {
+        var sut = CreateSut();
+
+        sut.Dispose();
+        _appStateRepoMock.Invocations.Clear();
+
+        _bridgeMock.VerifyRemove(b => b.OutputStatusChanged -= It.IsAny<EventHandler>(), Times.Once);
+        _lifecycleMock.VerifyRemove(l => l.AppResumed -= It.IsAny<Action>(), Times.Once);
+
+        // A resume after teardown must not run the corroboration (and its SaveAsync) any more.
+        _lifecycleMock.Raise(l => l.AppResumed += null);
+        _appStateRepoMock.Verify(r => r.RestoreStateAsync(), Times.Never);
+    }
+
+    [Fact]
+    public async Task LoadCommand_WhenNothingPersisted_KeepsTheStreamNameTypedBeforeTheTabSwitch()
+    {
+        // Unit twin of the e2e Stream_TypedStreamName_SurvivesATabSwitch: with no persisted
+        // configuration and no persisted session, re-entering the tab (LoadCommand) must not
+        // reset what the user typed on the singleton instance.
+        var sut = CreateSut();
+        sut.StreamName = "Typed-Before-Leaving";
+
+        await sut.LoadCommand.ExecuteAsync(null);
+
+        Assert.Equal("Typed-Before-Leaving", sut.StreamName);
     }
 
     [Fact]
@@ -427,5 +484,235 @@ public class OutputViewModelTests
         Assert.Equal(originalStreamName, sut.StreamName);
         Assert.Equal(originalStatusMessage, sut.StatusMessage);
         Assert.False(sut.IsOutputActive);
+    }
+
+    // ── #349: IsStatusError + recovery-hint wording ──────────────────────────────────────────
+
+    [Fact]
+    public void Constructor_InitialStatusIsInformationalAndNotAnnounced()
+    {
+        var sut = CreateSut();
+
+        Assert.False(sut.IsStatusError);
+        Assert.Empty(_announcer.Announcements);
+    }
+
+    [Fact]
+    public async Task StartOutputCommand_WithEmptyStreamName_FlagsStatusAsErrorAndAnnounces()
+    {
+        var sut = CreateSut();
+        sut.StreamName = string.Empty;
+
+        await sut.StartOutputCommand.ExecuteAsync(null);
+
+        Assert.True(sut.IsStatusError);
+        Assert.Equal(
+            new[] { "Please enter a stream name before starting output." },
+            _announcer.Announcements);
+    }
+
+    [Fact]
+    public async Task StartOutputCommand_WhenPermissionDeclined_FlagsStatusAsErrorAndAnnounces()
+    {
+        _bridgeMock.Setup(b => b.StartOutputAsync(
+                It.IsAny<string>(), It.IsAny<VideoInputKind>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new OperationCanceledException());
+
+        var sut = CreateSut();
+        await sut.StartOutputCommand.ExecuteAsync(null);
+
+        Assert.True(sut.IsStatusError);
+        Assert.Equal("Permission declined — output not started.", sut.StatusMessage);
+        Assert.Contains("Permission declined — output not started.", _announcer.Announcements);
+    }
+
+    [Fact]
+    public async Task StartOutputCommand_WhenBridgeThrows_FlagsStatusAsErrorWithRecoveryHint()
+    {
+        _bridgeMock.Setup(b => b.StartOutputAsync(
+                It.IsAny<string>(), It.IsAny<VideoInputKind>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("NDI send failed"));
+
+        var sut = CreateSut();
+        await sut.StartOutputCommand.ExecuteAsync(null);
+
+        Assert.True(sut.IsStatusError);
+        Assert.Equal(
+            "Output failed to start: NDI send failed. Tap Start to try again.",
+            sut.StatusMessage);
+        Assert.Contains(
+            "Output failed to start: NDI send failed. Tap Start to try again.",
+            _announcer.Announcements);
+    }
+
+    [Fact]
+    public async Task StartOutputCommand_WhenBridgeThrowsWithTrailingPeriod_DoesNotDoubleThePeriod()
+    {
+        _bridgeMock.Setup(b => b.StartOutputAsync(
+                It.IsAny<string>(), It.IsAny<VideoInputKind>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("Runtime failed."));
+
+        var sut = CreateSut();
+        await sut.StartOutputCommand.ExecuteAsync(null);
+
+        Assert.Equal(
+            "Output failed to start: Runtime failed. Tap Start to try again.",
+            sut.StatusMessage);
+    }
+
+    [Fact]
+    public async Task StartOutputCommand_OnSuccess_KeepsStatusInformationalAndAnnouncesIt()
+    {
+        var sut = CreateSut();
+        await sut.StartOutputCommand.ExecuteAsync(null);
+
+        Assert.Equal("Output active", sut.StatusMessage);
+        Assert.False(sut.IsStatusError);
+        Assert.Contains("Output active", _announcer.Announcements);
+    }
+
+    [Fact]
+    public async Task StartOutputCommand_AfterFailure_SuccessfulRetryClearsErrorFlag()
+    {
+        _bridgeMock.Setup(b => b.StartOutputAsync(
+                It.IsAny<string>(), It.IsAny<VideoInputKind>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new OperationCanceledException());
+
+        var sut = CreateSut();
+        await sut.StartOutputCommand.ExecuteAsync(null);
+        Assert.True(sut.IsStatusError);
+
+        _bridgeMock.Setup(b => b.StartOutputAsync(
+                It.IsAny<string>(), It.IsAny<VideoInputKind>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        await sut.StartOutputCommand.ExecuteAsync(null);
+
+        Assert.False(sut.IsStatusError);
+        Assert.Equal("Output active", sut.StatusMessage);
+        Assert.True(sut.IsOutputActive);
+    }
+
+    [Fact]
+    public async Task StopOutputCommand_ClearsStatusAndErrorFlag()
+    {
+        _bridgeMock.Setup(b => b.StartOutputAsync(
+                It.IsAny<string>(), It.IsAny<VideoInputKind>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new OperationCanceledException());
+
+        var sut = CreateSut();
+        await sut.StartOutputCommand.ExecuteAsync(null);
+        await sut.StopOutputCommand.ExecuteAsync(null);
+
+        Assert.Null(sut.StatusMessage);
+        Assert.False(sut.IsStatusError);
+    }
+
+    [Fact]
+    public void ApplyReStreamRequest_AfterFailure_ResetsErrorFlag()
+    {
+        var sut = CreateSut();
+        sut.StreamName = string.Empty;
+        sut.StartOutputCommand.Execute(null);
+
+        sut.ApplyReStreamRequest("abc123", true);
+
+        Assert.False(sut.IsStatusError);
+    }
+
+    [Fact]
+    public void OutputStatusChanged_WhenBridgeStopsItself_IsInformational()
+    {
+        var sut = CreateSut();
+        sut.StartOutputCommand.Execute(null);
+        _bridgeMock.SetupGet(b => b.IsActive).Returns(false);
+
+        _bridgeMock.Raise(b => b.OutputStatusChanged += null, EventArgs.Empty);
+
+        Assert.Equal("Output stopped", sut.StatusMessage);
+        Assert.False(sut.IsStatusError);
+    }
+
+    [Fact]
+    public void IsStatusError_RaisesPropertyChanged()
+    {
+        var sut = CreateSut();
+        var changed = new List<string?>();
+        sut.PropertyChanged += (_, e) => changed.Add(e.PropertyName);
+
+        sut.StreamName = string.Empty;
+        sut.StartOutputCommand.Execute(null);
+
+        Assert.Contains(nameof(OutputViewModel.IsStatusError), changed);
+    }
+
+    // ── #345 OUT-03: every status transition is announced exactly once ──────────────────────
+
+    [Fact]
+    public async Task SameStatusTwice_IsAnnouncedOnce()
+    {
+        var sut = CreateSut();
+        sut.StreamName = string.Empty;
+
+        await sut.StartOutputCommand.ExecuteAsync(null);
+        await sut.StartOutputCommand.ExecuteAsync(null);
+
+        Assert.Single(_announcer.Announcements);
+    }
+
+    // ── #346 OUT-07: row-tap commands mirror the Switch's own plain flip ────────────────────
+
+    [Fact]
+    public void ToggleOutputModeCommand_FlipsIsReStreamMode_WithoutRenamingOrPersisting()
+    {
+        var sut = CreateSut();
+        var originalStreamName = sut.StreamName;
+
+        sut.ToggleOutputModeCommand.Execute(null);
+        Assert.True(sut.IsReStreamMode);
+
+        sut.ToggleOutputModeCommand.Execute(null);
+        Assert.False(sut.IsReStreamMode);
+
+        Assert.Equal(originalStreamName, sut.StreamName);
+        _appStateRepoMock.Verify(r => r.SaveAsync(It.IsAny<AppStateSnapshot>()), Times.Never);
+    }
+
+    [Fact]
+    public void ToggleMicrophoneCommand_FlipsCaptureMicrophone()
+    {
+        var sut = CreateSut();
+
+        sut.ToggleMicrophoneCommand.Execute(null);
+        Assert.True(sut.CaptureMicrophone);
+
+        sut.ToggleMicrophoneCommand.Execute(null);
+        Assert.False(sut.CaptureMicrophone);
+    }
+
+    [Fact]
+    public async Task ToggleMicrophoneCommand_CannotExecuteWhileOutputIsActive()
+    {
+        var sut = CreateSut();
+        await sut.StartOutputCommand.ExecuteAsync(null);
+
+        // Note: RelayCommand.Execute() does not itself gate on CanExecute — only a binding
+        // (e.g. MAUI's TapGestureRecognizer) checks it before invoking. CanExecute is the
+        // contract under test here.
+        Assert.False(sut.ToggleMicrophoneCommand.CanExecute(null));
+
+        await sut.StopOutputCommand.ExecuteAsync(null);
+        Assert.True(sut.ToggleMicrophoneCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public void IsOutputActive_Change_RaisesCanExecuteChangedForToggleMicrophone()
+    {
+        var sut = CreateSut();
+        var raised = 0;
+        sut.ToggleMicrophoneCommand.CanExecuteChanged += (_, _) => raised++;
+
+        sut.IsOutputActive = true;
+
+        Assert.Equal(1, raised);
     }
 }

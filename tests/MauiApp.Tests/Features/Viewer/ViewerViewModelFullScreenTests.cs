@@ -24,6 +24,7 @@ public class ViewerViewModelFullScreenTests
     private readonly Mock<ISourceRepository> _sourceRepoMock = new();
     private readonly Mock<IConnectionHistoryService> _connectionHistoryMock = new();
     private readonly Mock<IImmersiveModeService> _immersiveModeMock = new();
+    private readonly Mock<IScreenReaderAnnouncer> _announcerMock = new();
     private readonly Mock<IPtzControllerFactory> _ptzControllerFactoryMock = new();
     private readonly Mock<IPtzController> _ptzControllerMock = new();
 
@@ -47,7 +48,7 @@ public class ViewerViewModelFullScreenTests
         _bridgeMock.Object, _timeProvider, _dispatcher, _appStateRepoMock.Object,
         _lifecycleMock.Object, _sourceRepoMock.Object, _connectionHistoryMock.Object,
         _ptzControllerFactoryMock.Object, new PtzEndpointFormViewModel(_ptzControllerFactoryMock.Object),
-        _immersiveModeMock.Object);
+        _immersiveModeMock.Object, _announcerMock.Object);
 
     [Fact]
     public void ToggleFullScreenCommand_WhilePlaying_SetsIsFullScreenTrue()

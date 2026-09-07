@@ -51,6 +51,19 @@
         <Setter Property="FontSize" Value="14" />
     </Style>
 
+    <!-- #375: a Picker rendered bare (no background, no chevron) is visually and
+         programmatically indistinguishable from a static Label. The colour/font part lives
+         here, same as Entry above; the input-panel Border + chevron affordance is added around
+         each Picker instance (only one today, OutputPage's Video Input) because Border/Grid
+         wrapping cannot be expressed from a plain Style. -->
+    <Style TargetType="Picker">
+        <Setter Property="TextColor" Value="{DynamicResource TextPrimary}" />
+        <Setter Property="TitleColor" Value="{DynamicResource TextPlaceholder}" />
+        <Setter Property="BackgroundColor" Value="Transparent" />
+        <Setter Property="FontFamily" Value="OpenSansRegular" />
+        <Setter Property="FontSize" Value="14" />
+    </Style>
+
     <Style TargetType="RadioButton">
         <Setter Property="BackgroundColor" Value="{DynamicResource ControlBackground}" />
         <Setter Property="TextColor" Value="{DynamicResource TextPrimary}" />
@@ -65,11 +78,11 @@
                         <Grid WidthRequest="20" HeightRequest="20"
                               VerticalOptions="Center"
                               HorizontalOptions="Start">
-                            <Ellipse Stroke="{DynamicResource Primary}"
+                            <Ellipse Stroke="{DynamicResource AccentGraphic}"
                                      StrokeThickness="2"
                                      Fill="Transparent"
                                      WidthRequest="20" HeightRequest="20" />
-                            <Ellipse Fill="{DynamicResource Primary}"
+                            <Ellipse Fill="{DynamicResource AccentGraphic}"
                                      WidthRequest="10" HeightRequest="10"
                                      HorizontalOptions="Center"
                                      VerticalOptions="Center">
@@ -96,16 +109,16 @@
     </Style>
 
     <Style TargetType="Switch">
-        <Setter Property="OnColor" Value="{DynamicResource Primary}" />
+        <Setter Property="OnColor" Value="{DynamicResource AccentGraphic}" />
         <Setter Property="ThumbColor" Value="{DynamicResource OnPrimary}" />
     </Style>
 
     <Style TargetType="ActivityIndicator">
-        <Setter Property="Color" Value="{DynamicResource Primary}" />
+        <Setter Property="Color" Value="{DynamicResource AccentGraphic}" />
     </Style>
 
     <Style TargetType="RefreshView">
-        <Setter Property="RefreshColor" Value="{DynamicResource Primary}" />
+        <Setter Property="RefreshColor" Value="{DynamicResource AccentGraphic}" />
     </Style>
 
     <Style TargetType="CollectionView">
@@ -133,6 +146,7 @@
     <converters:InverseBoolConverter x:Key="InverseBoolConverter" />
     <converters:DiscoveryServerStateColorConverter x:Key="DiscoveryServerStateColorConverter" />
     <converters:VideoInputKindDisplayConverter x:Key="VideoInputKindDisplayConverter" />
+    <converters:LogLevelColorConverter x:Key="LogLevelColorConverter" />
 
     <!-- Static booleans -->
     <x:Boolean x:Key="True">True</x:Boolean>

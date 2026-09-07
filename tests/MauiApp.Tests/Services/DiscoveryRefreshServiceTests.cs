@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
+using NdiForAndroid.Features.DiagOverlay.Services;
 using NdiForAndroid.Features.Settings.Models;
 using NdiForAndroid.Features.Settings.Repositories;
 using NdiForAndroid.Features.Sources.Models;
@@ -18,7 +19,8 @@ public class DiscoveryRefreshServiceTests
 
     private DiscoveryRefreshService CreateSut(
         TimeSpan? pollingInterval = null,
-        TimeSpan? debounceWindow = null)
+        TimeSpan? debounceWindow = null,
+        IDiagnosticOverlayService? diagnostics = null)
     {
         _settingsRepositoryMock.Setup(r => r.GetSettingsAsync())
             .ReturnsAsync(NdiSettingsSnapshot.CreateDefault());
@@ -30,7 +32,16 @@ public class DiscoveryRefreshServiceTests
             logger:             NullLogger<DiscoveryRefreshService>.Instance,
             timeProvider:       _clock,
             pollingInterval:    pollingInterval ?? TimeSpan.FromMilliseconds(50),
-            debounceWindow:     debounceWindow  ?? TimeSpan.FromMilliseconds(10));
+            debounceWindow:     debounceWindow  ?? TimeSpan.FromMilliseconds(10),
+            diagnostics:        diagnostics);
+    }
+
+    private static async Task WaitUntilAsync(Func<bool> condition, TimeSpan timeout)
+    {
+        var deadline = DateTime.UtcNow + timeout;
+        while (!condition() && DateTime.UtcNow < deadline)
+            await Task.Delay(10);
+        Assert.True(condition(), "condition not met before timeout");
     }
 
     private DiscoverySnapshot OkSnapshot() => new(
@@ -278,6 +289,43 @@ public class DiscoveryRefreshServiceTests
         var sut = CreateSut();
         sut.Stop();  // stop before start — must not throw
         sut.Stop();  // double stop — must not throw
+    }
+
+    [Fact]
+    public async Task Poll_Success_ReportsDiscoveryDiagnostics()
+    {
+        _repositoryMock.Setup(r => r.DiscoverAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(OkSnapshot());
+
+        var diag = new DiagnosticOverlayService();
+        var sut = CreateSut(diagnostics: diag);
+        sut.Start();
+
+        await WaitUntilAsync(() => diag.GetCurrentDiscoveryDiagnostics().LastStatus != "No discovery run yet", TimeSpan.FromSeconds(5));
+        sut.Stop();
+
+        var snapshot = diag.GetCurrentDiscoveryDiagnostics();
+        Assert.Equal("Success", snapshot.LastStatus);
+        Assert.Equal(0, snapshot.SourceCount);
+        Assert.True(snapshot.Duration.HasValue);
+    }
+
+    [Fact]
+    public async Task Poll_Failure_ReportsFailureStatus()
+    {
+        _repositoryMock.Setup(r => r.DiscoverAsync(It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("NDI unavailable"));
+
+        var diag = new DiagnosticOverlayService();
+        var sut = CreateSut(diagnostics: diag);
+        sut.Start();
+
+        await WaitUntilAsync(() => diag.GetCurrentDiscoveryDiagnostics().LastStatus != "No discovery run yet", TimeSpan.FromSeconds(5));
+        sut.Stop();
+
+        var snapshot = diag.GetCurrentDiscoveryDiagnostics();
+        Assert.Equal("Failure", snapshot.LastStatus);
+        Assert.Equal(0, snapshot.SourceCount);
     }
 }
 

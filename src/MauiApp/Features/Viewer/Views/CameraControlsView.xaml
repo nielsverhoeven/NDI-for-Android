@@ -19,10 +19,10 @@
                         <Setter Property="TextColor" Value="{DynamicResource TextSecondary}" />
                         <Style.Triggers>
                             <DataTrigger TargetType="Label" Binding="{Binding PtzLinkState}" Value="Connected">
-                                <Setter Property="TextColor" Value="{DynamicResource SuccessGreen}" />
+                                <Setter Property="TextColor" Value="{DynamicResource SuccessText}" />
                             </DataTrigger>
                             <DataTrigger TargetType="Label" Binding="{Binding PtzLinkState}" Value="Error">
-                                <Setter Property="TextColor" Value="{DynamicResource ErrorRed}" />
+                                <Setter Property="TextColor" Value="{DynamicResource ErrorText}" />
                             </DataTrigger>
                         </Style.Triggers>
                     </Style>

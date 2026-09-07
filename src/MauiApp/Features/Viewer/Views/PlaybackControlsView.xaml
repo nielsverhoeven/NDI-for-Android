@@ -2,15 +2,28 @@
 <ContentView xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              xmlns:vm="clr-namespace:NdiForAndroid.Features.Viewer.ViewModels;assembly=NdiForAndroid.Core"
+             xmlns:models="clr-namespace:NdiForAndroid.Features.Viewer.Models;assembly=NdiForAndroid.Core"
              xmlns:t="clr-namespace:NdiForAndroid.Testing;assembly=NdiForAndroid.Core"
              x:Class="NdiForAndroid.Features.Viewer.Views.PlaybackControlsView"
              x:DataType="vm:ViewerViewModel">
     <Grid RowDefinitions="Auto,Auto,Auto" RowSpacing="6">
         <Grid Grid.Row="0" ColumnDefinitions="*,Auto" ColumnSpacing="8">
-            <Label Grid.Column="0" Text="{Binding StatusMessage}" FontSize="13"
-                   AutomationId="{x:Static t:TestIds.ViewerStatus}"
-                   LineBreakMode="TailTruncation" TextColor="{DynamicResource TextPrimary}"
-                   VerticalOptions="Center" />
+            <VerticalStackLayout Grid.Column="0" Spacing="2" VerticalOptions="Center">
+                <Label Text="{Binding StatusMessage}" FontSize="13"
+                       AutomationId="{x:Static t:TestIds.ViewerStatus}"
+                       LineBreakMode="TailTruncation" TextColor="{DynamicResource TextPrimary}" />
+                <!-- Active profile + advisory connection hint (#330/#331). Collapses while idle. -->
+                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8" IsVisible="{Binding IsPlaying}">
+                    <Label Grid.Column="0" Text="{Binding QualityProfileLabel}" FontSize="12"
+                           AutomationId="{x:Static t:TestIds.ViewerQualityLabel}"
+                           TextColor="{DynamicResource TextSecondary}"
+                           IsVisible="{Binding QualityProfileLabel, Converter={StaticResource IsNotNullConverter}}" />
+                    <Label Grid.Column="1" Text="{Binding ConnectionHint}" FontSize="12" FontAttributes="Bold"
+                           AutomationId="{x:Static t:TestIds.ViewerConnectionHint}"
+                           TextColor="{DynamicResource WarningText}" LineBreakMode="TailTruncation"
+                           IsVisible="{Binding ConnectionHint, Converter={StaticResource IsNotNullConverter}}" />
+                </Grid>
+            </VerticalStackLayout>
             <Button Grid.Column="1" Text="PTZ endpoint…" FontSize="12" Padding="10,0"
                     HeightRequest="48" VerticalOptions="Center"
                     BackgroundColor="{DynamicResource CardBackground}"
@@ -20,60 +33,41 @@
         </Grid>
 
         <Grid Grid.Row="1">
-            <Grid ColumnDefinitions="*,*,*" ColumnSpacing="4" HeightRequest="48" MinimumHeightRequest="48">
-                <Grid.Style>
-                    <Style TargetType="Grid">
+            <!-- Quality strip generated from AvailableProfiles: one Button per QualityProfile enum
+                 value. FlexLayout (Grow=1, Basis=0) gives equal widths like the old *,*,* Grid. -->
+            <FlexLayout Direction="Row" Wrap="NoWrap" JustifyContent="SpaceBetween" AlignItems="Stretch"
+                        HeightRequest="48" MinimumHeightRequest="48"
+                        BindableLayout.ItemsSource="{Binding AvailableProfiles}">
+                <FlexLayout.Style>
+                    <Style TargetType="FlexLayout">
                         <Setter Property="IsVisible" Value="{Binding IsPlaying}" />
                         <Style.Triggers>
-                            <DataTrigger TargetType="Grid" Binding="{Binding IsReconnecting}" Value="True">
+                            <DataTrigger TargetType="FlexLayout" Binding="{Binding IsReconnecting}" Value="True">
                                 <Setter Property="IsVisible" Value="False" />
                             </DataTrigger>
                         </Style.Triggers>
                     </Style>
-                </Grid.Style>
-                <Button Grid.Column="0" Text="Smooth" Padding="4,0" HeightRequest="48" MinimumHeightRequest="48"
-                        AutomationId="{x:Static t:TestIds.ViewerQualitySmooth}"
-                        Command="{Binding ChangeQualityProfileCommand}" CommandParameter="Smooth">
-                    <Button.Triggers>
-                        <DataTrigger TargetType="Button" Binding="{Binding QualityProfile}" Value="Balanced">
-                            <Setter Property="BackgroundColor" Value="{DynamicResource ControlBackground}" />
-                            <Setter Property="TextColor" Value="{DynamicResource TextPrimary}" />
-                        </DataTrigger>
-                        <DataTrigger TargetType="Button" Binding="{Binding QualityProfile}" Value="High">
-                            <Setter Property="BackgroundColor" Value="{DynamicResource ControlBackground}" />
-                            <Setter Property="TextColor" Value="{DynamicResource TextPrimary}" />
-                        </DataTrigger>
-                    </Button.Triggers>
-                </Button>
-                <Button Grid.Column="1" Text="Balanced" Padding="4,0" HeightRequest="48" MinimumHeightRequest="48"
-                        AutomationId="{x:Static t:TestIds.ViewerQualityBalanced}"
-                        Command="{Binding ChangeQualityProfileCommand}" CommandParameter="Balanced">
-                    <Button.Triggers>
-                        <DataTrigger TargetType="Button" Binding="{Binding QualityProfile}" Value="Smooth">
-                            <Setter Property="BackgroundColor" Value="{DynamicResource ControlBackground}" />
-                            <Setter Property="TextColor" Value="{DynamicResource TextPrimary}" />
-                        </DataTrigger>
-                        <DataTrigger TargetType="Button" Binding="{Binding QualityProfile}" Value="High">
-                            <Setter Property="BackgroundColor" Value="{DynamicResource ControlBackground}" />
-                            <Setter Property="TextColor" Value="{DynamicResource TextPrimary}" />
-                        </DataTrigger>
-                    </Button.Triggers>
-                </Button>
-                <Button Grid.Column="2" Text="High" Padding="4,0" HeightRequest="48" MinimumHeightRequest="48"
-                        AutomationId="{x:Static t:TestIds.ViewerQualityHigh}"
-                        Command="{Binding ChangeQualityProfileCommand}" CommandParameter="High">
-                    <Button.Triggers>
-                        <DataTrigger TargetType="Button" Binding="{Binding QualityProfile}" Value="Smooth">
-                            <Setter Property="BackgroundColor" Value="{DynamicResource ControlBackground}" />
-                            <Setter Property="TextColor" Value="{DynamicResource TextPrimary}" />
-                        </DataTrigger>
-                        <DataTrigger TargetType="Button" Binding="{Binding QualityProfile}" Value="Balanced">
-                            <Setter Property="BackgroundColor" Value="{DynamicResource ControlBackground}" />
-                            <Setter Property="TextColor" Value="{DynamicResource TextPrimary}" />
-                        </DataTrigger>
-                    </Button.Triggers>
-                </Button>
-            </Grid>
+                </FlexLayout.Style>
+                <BindableLayout.ItemTemplate>
+                    <DataTemplate x:DataType="models:QualityProfileOption">
+                        <Button Text="{Binding Label}" Padding="4,0" Margin="2,0"
+                                HeightRequest="48" MinimumHeightRequest="48"
+                                FlexLayout.Grow="1" FlexLayout.Basis="0"
+                                AutomationId="{Binding AutomationId}"
+                                SemanticProperties.Description="{Binding Description}"
+                                Command="{Binding Source={RelativeSource AncestorType={x:Type vm:ViewerViewModel}}, Path=ChangeQualityProfileCommand}"
+                                CommandParameter="{Binding Profile}">
+                            <Button.Triggers>
+                                <!-- Default Button style (Primary / OnPrimary) = selected; unselected goes flat. -->
+                                <DataTrigger TargetType="Button" Binding="{Binding IsSelected}" Value="False">
+                                    <Setter Property="BackgroundColor" Value="{DynamicResource ControlBackground}" />
+                                    <Setter Property="TextColor" Value="{DynamicResource TextPrimary}" />
+                                </DataTrigger>
+                            </Button.Triggers>
+                        </Button>
+                    </DataTemplate>
+                </BindableLayout.ItemTemplate>
+            </FlexLayout>
 
             <HorizontalStackLayout Spacing="6" IsVisible="{Binding IsReconnecting}">
                 <ActivityIndicator IsRunning="{Binding IsReconnecting}" Color="{DynamicResource TextPrimary}"
@@ -97,17 +91,21 @@
                     SemanticProperties.Description="Audio" />
             <Button Grid.Column="1" Text="⛶" Command="{Binding ToggleFullScreenCommand}"
                     WidthRequest="48" HeightRequest="48" MinimumHeightRequest="48" Padding="0"
-                    SemanticProperties.Description="Toggle full screen">
+                    AutomationId="{x:Static t:TestIds.ViewerFullScreenToggle}"
+                    SemanticProperties.Description="Enter full screen">
+                <!-- State-dependent name (#343/#345): announces what tapping it will do next,
+                     not a static label that stays the same in both states. -->
                 <Button.Triggers>
                     <DataTrigger TargetType="Button" Binding="{Binding IsFullScreen}" Value="True">
                         <Setter Property="Text" Value="⤢" />
+                        <Setter Property="SemanticProperties.Description" Value="Exit full screen" />
                     </DataTrigger>
                 </Button.Triggers>
             </Button>
             <Button Grid.Column="2" Text="Stop" Command="{Binding StopCommand}"
                     AutomationId="{x:Static t:TestIds.ViewerStop}"
                     HorizontalOptions="Fill" HeightRequest="48" MinimumHeightRequest="48"
-                    BackgroundColor="{DynamicResource ErrorRed}" TextColor="{DynamicResource White}" />
+                    BackgroundColor="{DynamicResource ErrorFill}" TextColor="{DynamicResource OnPrimary}" />
         </Grid>
     </Grid>
 </ContentView>

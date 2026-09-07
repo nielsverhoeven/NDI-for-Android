@@ -37,6 +37,7 @@ public partial class SettingsViewModel : ObservableObject
     private readonly ISourceRepository _sourceRepository;
     private readonly INdiDiscoveryBridge _discoveryBridge;
     private readonly IMainThreadDispatcher _dispatcher;
+    private readonly IUserPromptService _userPromptService;
     private readonly TimeProvider _timeProvider;
 
     private DiscoveryServerItem? _editingDiscoveryServer;
@@ -71,15 +72,12 @@ public partial class SettingsViewModel : ObservableObject
 
     // Nullable because the view can write null back: RadioButtonGroup.SelectedValue pushes null
     // through its two-way binding while the Settings page's visual tree is being torn down.
-    // The change handlers below reject those writes — see _lastValid* .
+    // The change handlers below reject those writes, restoring from _committedTheme/_committedAccent.
     [ObservableProperty]
     private string? _selectedThemeOption = ThemeSystemLabel;
 
     [ObservableProperty]
     private string? _selectedAccentColor = AccentColorOption.Blue.ToString();
-
-    private string _lastValidThemeOption = ThemeSystemLabel;
-    private string _lastValidAccentColor = AccentColorOption.Blue.ToString();
 
     // ── Add-server form ─────────────────────────────────────────────────────
 
@@ -94,6 +92,10 @@ public partial class SettingsViewModel : ObservableObject
 
     [ObservableProperty]
     private string _discoveryServersValidationMessage = string.Empty;
+
+    /// <summary>True while no discovery server is configured — drives the Discovery panel's
+    /// empty-state label (#370).</summary>
+    public bool HasNoDiscoveryServers => DiscoveryServers.Count == 0;
 
     // ── Edit-server dialog ──────────────────────────────────────────────────
 
@@ -118,6 +120,18 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty]
     private string _appVersionBuild = string.Empty;
 
+    // ── Section-agnostic save status (#355 item 4) ──────────────────────────
+    //
+    // DiscoveryServersValidationMessage above renders only inside the Discovery panel, so a
+    // PersistAsync failure triggered by a theme/accent/developer-mode change (all sections)
+    // was previously invisible. This mirrors it onto a banner shown regardless of which section
+    // is open.
+
+    [ObservableProperty]
+    private string _settingsSaveErrorMessage = string.Empty;
+
+    public bool HasSettingsSaveError => !string.IsNullOrWhiteSpace(SettingsSaveErrorMessage);
+
     public ObservableCollection<DiscoveryServerItem> DiscoveryServers { get; } = [];
 
     public ObservableCollection<CachedSourceRegistryEntry> CachedSourceRegistry { get; } = [];
@@ -136,6 +150,7 @@ public partial class SettingsViewModel : ObservableObject
         INdiVersionInfo ndiVersionInfo,
         INdiDiscoveryBridge discoveryBridge,
         IMainThreadDispatcher dispatcher,
+        IUserPromptService userPromptService,
         TimeProvider? timeProvider = null)
     {
         _repository = repository;
@@ -144,6 +159,7 @@ public partial class SettingsViewModel : ObservableObject
         _sourceRepository = sourceRepository;
         _discoveryBridge = discoveryBridge;
         _dispatcher = dispatcher;
+        _userPromptService = userPromptService;
         _timeProvider = timeProvider ?? TimeProvider.System;
 
         var info = _platformService.GetAppInfo();
@@ -203,6 +219,11 @@ public partial class SettingsViewModel : ObservableObject
     {
         SelectedSection = section;
     }
+
+    /// <summary>Row-tap affordance for the Developer Mode switch: the label toggles the same
+    /// setting (#343 SET-8). Persistence rides on OnDeveloperModeEnabledChanged.</summary>
+    [RelayCommand]
+    private void ToggleDeveloperMode() => DeveloperModeEnabled = !DeveloperModeEnabled;
 
     // ── Discovery server commands ───────────────────────────────────────────
 
@@ -283,6 +304,17 @@ public partial class SettingsViewModel : ObservableObject
         if (item is null)
             return;
 
+        // Nielsen #5 Error Prevention (#347 SET-2): deleting a server is immediate and
+        // irreversible (no Apply/staging step, no undo), so confirm before it commits.
+        var confirmed = await _userPromptService.ConfirmAsync(
+            "Delete server?",
+            $"Delete '{item.NameDisplay}'? This cannot be undone.",
+            "Delete",
+            "Cancel");
+
+        if (!confirmed)
+            return;
+
         if (ReferenceEquals(item, _editingDiscoveryServer))
             CancelEditDiscoveryServer();
 
@@ -337,6 +369,14 @@ public partial class SettingsViewModel : ObservableObject
         _statusMonitorCts?.Cancel();
         _statusMonitorCts?.Dispose();
         _statusMonitorCts = null;
+
+        // #355 follow-up to #300: a discovery row's Enabled switch is bound TwoWay inside a
+        // CollectionView row template, so cell recycling / page teardown can write it back the
+        // same way RadioButtonGroup writes null through the theme/accent bindings on teardown.
+        // Suppress auto-save from here so a value the user never chose is never persisted.
+        // SettingsViewModel is Transient (#352/#359), so a fresh instance with a clean
+        // _suppressAutoSave is created for the next Settings visit.
+        _suppressAutoSave = true;
     }
 
     /// <summary>Runs one out-of-band probe pass (after add/edit/toggle) without waiting for the next tick.</summary>
@@ -454,22 +494,27 @@ public partial class SettingsViewModel : ObservableObject
         _ = PersistAsync();
     }
 
+    partial void OnSettingsSaveErrorMessageChanged(string value)
+    {
+        _ = value;
+        OnPropertyChanged(nameof(HasSettingsSaveError));
+    }
+
     partial void OnSelectedThemeOptionChanged(string? value)
     {
         // Tearing the page down must not read as the user picking a theme. Without this, the
         // null that RadioButtonGroup writes on teardown parses to the default (System) and
-        // would auto-save over the user's actual choice (#300). Restore the last real
-        // selection and stay clean.
+        // would auto-save over the user's actual choice (#300). Restore the committed selection
+        // (#355: derived from _committedTheme rather than a second, hand-kept field) and stay clean.
         if (!IsKnownOption(ThemeOptions, value))
         {
             var wasSuppressed = _suppressAutoSave;
             _suppressAutoSave = true;
-            SelectedThemeOption = _lastValidThemeOption;
+            SelectedThemeOption = ToThemeOption(_committedTheme);
             _suppressAutoSave = wasSuppressed;
             return;
         }
 
-        _lastValidThemeOption = value!;
         _committedTheme = ParseThemeOption(value);
         _ = PersistAsync();
     }
@@ -481,12 +526,11 @@ public partial class SettingsViewModel : ObservableObject
         {
             var wasSuppressed = _suppressAutoSave;
             _suppressAutoSave = true;
-            SelectedAccentColor = _lastValidAccentColor;
+            SelectedAccentColor = _committedAccent.ToString();
             _suppressAutoSave = wasSuppressed;
             return;
         }
 
-        _lastValidAccentColor = value!;
         _committedAccent = ParseAccentColorOption(value);
         _ = PersistAsync();
     }
@@ -512,6 +556,10 @@ public partial class SettingsViewModel : ObservableObject
         }
 
         _statusTargets = DiscoveryServers.ToList();
+
+        // Covers add/remove/Clear (LoadAsync) alike — every path that changes the collection
+        // routes through here (#370 fullscreen-stream-settings-07).
+        OnPropertyChanged(nameof(HasNoDiscoveryServers));
     }
 
     private void OnDiscoveryServerItemPropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -545,9 +593,15 @@ public partial class SettingsViewModel : ObservableObject
             _committedAccent,
             discoveryServers));
 
+        SettingsSaveErrorMessage = string.Empty;
+
         if (!_validationService.TryValidateForSave(snapshot, out var error))
         {
-            DiscoveryServersValidationMessage = error ?? "The settings are invalid.";
+            var message = error ?? "The settings are invalid.";
+            DiscoveryServersValidationMessage = message;
+            // #355 item 4: a failure here can be triggered by a theme/accent/developer-mode change
+            // just as easily as by the Discovery panel, so it must not be visible only there.
+            SettingsSaveErrorMessage = message;
             return;
         }
 
@@ -557,7 +611,9 @@ public partial class SettingsViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            DiscoveryServersValidationMessage = $"Saving settings failed: {ex.Message}";
+            var message = $"Saving settings failed: {ex.Message}";
+            DiscoveryServersValidationMessage = message;
+            SettingsSaveErrorMessage = message;
         }
     }
 

@@ -4,12 +4,67 @@
              xmlns:vm="clr-namespace:NdiForAndroid.Features.Settings.ViewModels;assembly=NdiForAndroid.Core"
              xmlns:model="clr-namespace:NdiForAndroid.Features.Settings.Models;assembly=NdiForAndroid.Core"
              xmlns:t="clr-namespace:NdiForAndroid.Testing;assembly=NdiForAndroid.Core"
+             xmlns:converters="clr-namespace:NdiForAndroid.Converters"
              x:Class="NdiForAndroid.Features.Settings.Views.SettingsPage"
              x:Name="SettingsRoot"
              x:DataType="vm:SettingsViewModel"
              AutomationId="{x:Static t:TestIds.SettingsPage}"
              Title="Settings">
+    <ContentPage.Resources>
+        <converters:AccentOptionColorConverter x:Key="AccentOptionColorConverter" />
+
+        <!-- Section rail buttons: unselected = outlined tonal, selected (trigger) = filled Primary,
+             mirroring the viewer quality buttons. Setters are copied rather than BasedOn the global
+             implicit Button style, so this resolves regardless of merge order (#345 SET-1). -->
+        <Style x:Key="SettingsSectionButton" TargetType="Button">
+            <Setter Property="BackgroundColor" Value="{DynamicResource CardBackground}" />
+            <Setter Property="TextColor" Value="{DynamicResource TextPrimary}" />
+            <Setter Property="BorderColor" Value="{DynamicResource BorderColor}" />
+            <Setter Property="BorderWidth" Value="1" />
+            <Setter Property="FontFamily" Value="OpenSansSemibold" />
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="MinimumHeightRequest" Value="48" />
+        </Style>
+
+        <!-- Same pure-MAUI radio template as the global one in Styles.xaml (native
+             MaterialRadioButton ignores DynamicResource), plus a fixed swatch of the option's own
+             accent so the user sees the colour before picking it (#370). -->
+        <ControlTemplate x:Key="AccentSwatchRadioTemplate" x:DataType="RadioButton">
+            <Grid ColumnDefinitions="22,18,*" ColumnSpacing="8" Padding="0,6">
+                <Grid WidthRequest="20" HeightRequest="20" VerticalOptions="Center" HorizontalOptions="Start">
+                    <Ellipse Stroke="{DynamicResource AccentGraphic}" StrokeThickness="2" Fill="Transparent" WidthRequest="20" HeightRequest="20" />
+                    <Ellipse Fill="{DynamicResource AccentGraphic}" WidthRequest="10" HeightRequest="10" HorizontalOptions="Center" VerticalOptions="Center">
+                        <Ellipse.Triggers>
+                            <DataTrigger TargetType="Ellipse" Binding="{TemplateBinding IsChecked}" Value="False">
+                                <Setter Property="Fill" Value="Transparent" />
+                            </DataTrigger>
+                        </Ellipse.Triggers>
+                    </Ellipse>
+                </Grid>
+                <Ellipse Grid.Column="1" WidthRequest="16" HeightRequest="16" VerticalOptions="Center"
+                         Stroke="{DynamicResource BorderColor}" StrokeThickness="1"
+                         Fill="{TemplateBinding Content, Converter={StaticResource AccentOptionColorConverter}}" />
+                <Label Grid.Column="2" Text="{TemplateBinding Content}" TextColor="{DynamicResource TextPrimary}"
+                       VerticalOptions="Center" FontFamily="OpenSansRegular" FontSize="14" />
+            </Grid>
+        </ControlTemplate>
+    </ContentPage.Resources>
     <Grid>
+        <!-- Section-agnostic save-failure banner (#355): PersistAsync can fail while any section is
+             open (theme/accent/developer-mode/discovery), so this must not live only inside the
+             Discovery panel. Drawn above the ScrollView content, below the edit-server overlay. -->
+        <Label AutomationId="{x:Static t:TestIds.SettingsSaveError}"
+               Text="{Binding SettingsSaveErrorMessage}"
+               IsVisible="{Binding HasSettingsSaveError}"
+               TextColor="{DynamicResource TextOnAccent}"
+               BackgroundColor="{DynamicResource ErrorFill}"
+               Padding="12,8"
+               Margin="16,8,16,0"
+               VerticalOptions="Start"
+               HorizontalOptions="Fill"
+               ZIndex="1" />
+
         <ScrollView>
               <!-- Medium/Expanded: 220dp vertical rail beside the panel (RailColumn width 220,
                    VerticalRail visible). Compact: RailColumn collapses to 0 and the same five
@@ -29,52 +84,155 @@
                             <ColumnDefinition Width="*" />
                      </Grid.ColumnDefinitions>
 
+                     <!-- AlignContent="Start": with the default Stretch the FlexLayout redistributes
+                          its arranged height over the wrapped lines and the first row rendered at
+                          43 dp on a 360 dp phone (#370 P-3). -->
                      <FlexLayout x:Name="CompactRail" Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2"
-                                       Wrap="Wrap" Direction="Row" JustifyContent="Start" AlignItems="Start"
+                                       Wrap="Wrap" Direction="Row" JustifyContent="Start" AlignItems="Start" AlignContent="Start"
                                        IsVisible="False">
-                            <Button Text="General" HeightRequest="48" Margin="0,0,10,10"
+                            <Button Text="General" Style="{StaticResource SettingsSectionButton}" Margin="0,0,10,10"
                                    AutomationId="{x:Static t:TestIds.SettingsSectionGeneral}"
+                                   SemanticProperties.Description="General"
                                           Command="{Binding SelectSectionCommand}"
-                                   CommandParameter="{x:Static vm:SettingsSection.General}" />
-                            <Button Text="Appearance" HeightRequest="48" Margin="0,0,10,10"
+                                   CommandParameter="{x:Static vm:SettingsSection.General}">
+                                   <Button.Triggers>
+                                          <DataTrigger TargetType="Button" Binding="{Binding IsGeneralSectionSelected}" Value="True">
+                                                 <Setter Property="BackgroundColor" Value="{DynamicResource Primary}" />
+                                                 <Setter Property="TextColor" Value="{DynamicResource OnPrimary}" />
+                                                 <Setter Property="BorderColor" Value="{DynamicResource Primary}" />
+                                                 <Setter Property="SemanticProperties.Description" Value="General, selected" />
+                                          </DataTrigger>
+                                   </Button.Triggers>
+                            </Button>
+                            <Button Text="Appearance" Style="{StaticResource SettingsSectionButton}" Margin="0,0,10,10"
                                    AutomationId="{x:Static t:TestIds.SettingsSectionAppearance}"
+                                   SemanticProperties.Description="Appearance"
                                           Command="{Binding SelectSectionCommand}"
-                                   CommandParameter="{x:Static vm:SettingsSection.Appearance}" />
-                            <Button Text="Discovery" HeightRequest="48" Margin="0,0,10,10"
+                                   CommandParameter="{x:Static vm:SettingsSection.Appearance}">
+                                   <Button.Triggers>
+                                          <DataTrigger TargetType="Button" Binding="{Binding IsAppearanceSectionSelected}" Value="True">
+                                                 <Setter Property="BackgroundColor" Value="{DynamicResource Primary}" />
+                                                 <Setter Property="TextColor" Value="{DynamicResource OnPrimary}" />
+                                                 <Setter Property="BorderColor" Value="{DynamicResource Primary}" />
+                                                 <Setter Property="SemanticProperties.Description" Value="Appearance, selected" />
+                                          </DataTrigger>
+                                   </Button.Triggers>
+                            </Button>
+                            <Button Text="Discovery" Style="{StaticResource SettingsSectionButton}" Margin="0,0,10,10"
                                    AutomationId="{x:Static t:TestIds.SettingsSectionDiscovery}"
+                                   SemanticProperties.Description="Discovery"
                                           Command="{Binding SelectSectionCommand}"
-                                   CommandParameter="{x:Static vm:SettingsSection.Discovery}" />
-                            <Button Text="Developer tools" HeightRequest="48" Margin="0,0,10,10"
+                                   CommandParameter="{x:Static vm:SettingsSection.Discovery}">
+                                   <Button.Triggers>
+                                          <DataTrigger TargetType="Button" Binding="{Binding IsDiscoverySectionSelected}" Value="True">
+                                                 <Setter Property="BackgroundColor" Value="{DynamicResource Primary}" />
+                                                 <Setter Property="TextColor" Value="{DynamicResource OnPrimary}" />
+                                                 <Setter Property="BorderColor" Value="{DynamicResource Primary}" />
+                                                 <Setter Property="SemanticProperties.Description" Value="Discovery, selected" />
+                                          </DataTrigger>
+                                   </Button.Triggers>
+                            </Button>
+                            <Button Text="Developer tools" Style="{StaticResource SettingsSectionButton}" Margin="0,0,10,10"
                                    AutomationId="{x:Static t:TestIds.SettingsSectionDeveloperTools}"
+                                   SemanticProperties.Description="Developer tools"
                                           Command="{Binding SelectSectionCommand}"
-                                   CommandParameter="{x:Static vm:SettingsSection.DeveloperTools}" />
-                            <Button Text="About" HeightRequest="48" Margin="0,0,10,10"
+                                   CommandParameter="{x:Static vm:SettingsSection.DeveloperTools}">
+                                   <Button.Triggers>
+                                          <DataTrigger TargetType="Button" Binding="{Binding IsDeveloperToolsSectionSelected}" Value="True">
+                                                 <Setter Property="BackgroundColor" Value="{DynamicResource Primary}" />
+                                                 <Setter Property="TextColor" Value="{DynamicResource OnPrimary}" />
+                                                 <Setter Property="BorderColor" Value="{DynamicResource Primary}" />
+                                                 <Setter Property="SemanticProperties.Description" Value="Developer tools, selected" />
+                                          </DataTrigger>
+                                   </Button.Triggers>
+                            </Button>
+                            <Button Text="About" Style="{StaticResource SettingsSectionButton}" Margin="0,0,10,10"
                                    AutomationId="{x:Static t:TestIds.SettingsSectionAbout}"
+                                   SemanticProperties.Description="About"
                                           Command="{Binding SelectSectionCommand}"
-                                   CommandParameter="{x:Static vm:SettingsSection.About}" />
+                                   CommandParameter="{x:Static vm:SettingsSection.About}">
+                                   <Button.Triggers>
+                                          <DataTrigger TargetType="Button" Binding="{Binding IsAboutSectionSelected}" Value="True">
+                                                 <Setter Property="BackgroundColor" Value="{DynamicResource Primary}" />
+                                                 <Setter Property="TextColor" Value="{DynamicResource OnPrimary}" />
+                                                 <Setter Property="BorderColor" Value="{DynamicResource Primary}" />
+                                                 <Setter Property="SemanticProperties.Description" Value="About, selected" />
+                                          </DataTrigger>
+                                   </Button.Triggers>
+                            </Button>
                      </FlexLayout>
 
                      <VerticalStackLayout x:Name="VerticalRail" Grid.Row="1" Grid.Column="0" Spacing="10">
-                            <Button Text="General"
+                            <Button Text="General" Style="{StaticResource SettingsSectionButton}"
                                    AutomationId="{x:Static t:TestIds.SettingsSectionGeneral}"
+                                   SemanticProperties.Description="General"
                                           Command="{Binding SelectSectionCommand}"
-                                   CommandParameter="{x:Static vm:SettingsSection.General}" />
-                            <Button Text="Appearance"
+                                   CommandParameter="{x:Static vm:SettingsSection.General}">
+                                   <Button.Triggers>
+                                          <DataTrigger TargetType="Button" Binding="{Binding IsGeneralSectionSelected}" Value="True">
+                                                 <Setter Property="BackgroundColor" Value="{DynamicResource Primary}" />
+                                                 <Setter Property="TextColor" Value="{DynamicResource OnPrimary}" />
+                                                 <Setter Property="BorderColor" Value="{DynamicResource Primary}" />
+                                                 <Setter Property="SemanticProperties.Description" Value="General, selected" />
+                                          </DataTrigger>
+                                   </Button.Triggers>
+                            </Button>
+                            <Button Text="Appearance" Style="{StaticResource SettingsSectionButton}"
                                    AutomationId="{x:Static t:TestIds.SettingsSectionAppearance}"
+                                   SemanticProperties.Description="Appearance"
                                           Command="{Binding SelectSectionCommand}"
-                                   CommandParameter="{x:Static vm:SettingsSection.Appearance}" />
-                            <Button Text="Discovery"
+                                   CommandParameter="{x:Static vm:SettingsSection.Appearance}">
+                                   <Button.Triggers>
+                                          <DataTrigger TargetType="Button" Binding="{Binding IsAppearanceSectionSelected}" Value="True">
+                                                 <Setter Property="BackgroundColor" Value="{DynamicResource Primary}" />
+                                                 <Setter Property="TextColor" Value="{DynamicResource OnPrimary}" />
+                                                 <Setter Property="BorderColor" Value="{DynamicResource Primary}" />
+                                                 <Setter Property="SemanticProperties.Description" Value="Appearance, selected" />
+                                          </DataTrigger>
+                                   </Button.Triggers>
+                            </Button>
+                            <Button Text="Discovery" Style="{StaticResource SettingsSectionButton}"
                                    AutomationId="{x:Static t:TestIds.SettingsSectionDiscovery}"
+                                   SemanticProperties.Description="Discovery"
                                           Command="{Binding SelectSectionCommand}"
-                                   CommandParameter="{x:Static vm:SettingsSection.Discovery}" />
-                            <Button Text="Developer tools"
+                                   CommandParameter="{x:Static vm:SettingsSection.Discovery}">
+                                   <Button.Triggers>
+                                          <DataTrigger TargetType="Button" Binding="{Binding IsDiscoverySectionSelected}" Value="True">
+                                                 <Setter Property="BackgroundColor" Value="{DynamicResource Primary}" />
+                                                 <Setter Property="TextColor" Value="{DynamicResource OnPrimary}" />
+                                                 <Setter Property="BorderColor" Value="{DynamicResource Primary}" />
+                                                 <Setter Property="SemanticProperties.Description" Value="Discovery, selected" />
+                                          </DataTrigger>
+                                   </Button.Triggers>
+                            </Button>
+                            <Button Text="Developer tools" Style="{StaticResource SettingsSectionButton}"
                                    AutomationId="{x:Static t:TestIds.SettingsSectionDeveloperTools}"
+                                   SemanticProperties.Description="Developer tools"
                                           Command="{Binding SelectSectionCommand}"
-                                   CommandParameter="{x:Static vm:SettingsSection.DeveloperTools}" />
-                            <Button Text="About"
+                                   CommandParameter="{x:Static vm:SettingsSection.DeveloperTools}">
+                                   <Button.Triggers>
+                                          <DataTrigger TargetType="Button" Binding="{Binding IsDeveloperToolsSectionSelected}" Value="True">
+                                                 <Setter Property="BackgroundColor" Value="{DynamicResource Primary}" />
+                                                 <Setter Property="TextColor" Value="{DynamicResource OnPrimary}" />
+                                                 <Setter Property="BorderColor" Value="{DynamicResource Primary}" />
+                                                 <Setter Property="SemanticProperties.Description" Value="Developer tools, selected" />
+                                          </DataTrigger>
+                                   </Button.Triggers>
+                            </Button>
+                            <Button Text="About" Style="{StaticResource SettingsSectionButton}"
                                    AutomationId="{x:Static t:TestIds.SettingsSectionAbout}"
+                                   SemanticProperties.Description="About"
                                           Command="{Binding SelectSectionCommand}"
-                                   CommandParameter="{x:Static vm:SettingsSection.About}" />
+                                   CommandParameter="{x:Static vm:SettingsSection.About}">
+                                   <Button.Triggers>
+                                          <DataTrigger TargetType="Button" Binding="{Binding IsAboutSectionSelected}" Value="True">
+                                                 <Setter Property="BackgroundColor" Value="{DynamicResource Primary}" />
+                                                 <Setter Property="TextColor" Value="{DynamicResource OnPrimary}" />
+                                                 <Setter Property="BorderColor" Value="{DynamicResource Primary}" />
+                                                 <Setter Property="SemanticProperties.Description" Value="About, selected" />
+                                          </DataTrigger>
+                                   </Button.Triggers>
+                            </Button>
                      </VerticalStackLayout>
 
                      <VerticalStackLayout Grid.Row="1" Grid.Column="1" Spacing="12">
@@ -102,12 +260,12 @@
                                                         AlignItems="Center"
                                                         RadioButtonGroup.GroupName="AccentColor"
                                                         RadioButtonGroup.SelectedValue="{Binding SelectedAccentColor}">
-                                          <RadioButton Content="Blue" Value="Blue" Margin="0,0,16,0" AutomationId="{x:Static t:TestIds.SettingsAccentBlue}" />
-                                          <RadioButton Content="Teal" Value="Teal" Margin="0,0,16,0" AutomationId="{x:Static t:TestIds.SettingsAccentTeal}" />
-                                          <RadioButton Content="Green" Value="Green" Margin="0,0,16,0" AutomationId="{x:Static t:TestIds.SettingsAccentGreen}" />
-                                          <RadioButton Content="Orange" Value="Orange" Margin="0,0,16,0" AutomationId="{x:Static t:TestIds.SettingsAccentOrange}" />
-                                          <RadioButton Content="Red" Value="Red" Margin="0,0,16,0" AutomationId="{x:Static t:TestIds.SettingsAccentRed}" />
-                                          <RadioButton Content="Pink" Value="Pink" Margin="0,0,16,0" AutomationId="{x:Static t:TestIds.SettingsAccentPink}" />
+                                          <RadioButton Content="Blue" Value="Blue" Margin="0,0,16,0" AutomationId="{x:Static t:TestIds.SettingsAccentBlue}" ControlTemplate="{StaticResource AccentSwatchRadioTemplate}" />
+                                          <RadioButton Content="Teal" Value="Teal" Margin="0,0,16,0" AutomationId="{x:Static t:TestIds.SettingsAccentTeal}" ControlTemplate="{StaticResource AccentSwatchRadioTemplate}" />
+                                          <RadioButton Content="Green" Value="Green" Margin="0,0,16,0" AutomationId="{x:Static t:TestIds.SettingsAccentGreen}" ControlTemplate="{StaticResource AccentSwatchRadioTemplate}" />
+                                          <RadioButton Content="Orange" Value="Orange" Margin="0,0,16,0" AutomationId="{x:Static t:TestIds.SettingsAccentOrange}" ControlTemplate="{StaticResource AccentSwatchRadioTemplate}" />
+                                          <RadioButton Content="Red" Value="Red" Margin="0,0,16,0" AutomationId="{x:Static t:TestIds.SettingsAccentRed}" ControlTemplate="{StaticResource AccentSwatchRadioTemplate}" />
+                                          <RadioButton Content="Pink" Value="Pink" Margin="0,0,16,0" AutomationId="{x:Static t:TestIds.SettingsAccentPink}" ControlTemplate="{StaticResource AccentSwatchRadioTemplate}" />
                                    </FlexLayout>
                             </VerticalStackLayout>
 
@@ -115,27 +273,39 @@
                                    <Label Text="Discovery Settings" FontAttributes="Bold" FontSize="20" />
 
                                    <Label Text="Add discovery server" FontAttributes="Bold" />
-                                   <Entry Placeholder="Display name (optional)"
+                                   <Label Text="Display name (optional)" FontSize="12" TextColor="{DynamicResource TextSecondary}" Margin="0,4,0,0" />
+                                   <Entry Placeholder="e.g. Studio server"
+                                             SemanticProperties.Description="Display name (optional)"
                                              Text="{Binding NewServerDisplayName}" />
-                                   <Entry Placeholder="Hostname or IP"
+                                   <Label Text="Hostname or IP" FontSize="12" TextColor="{DynamicResource TextSecondary}" Margin="0,4,0,0" />
+                                   <Entry Placeholder="e.g. 192.168.1.10"
                                              AutomationId="{x:Static t:TestIds.SettingsDiscoveryHost}"
+                                             SemanticProperties.Description="Hostname or IP"
                                              Text="{Binding NewServerHost}"
                                              Keyboard="Url" />
+                                   <Label Text="Port (default 5959)" FontSize="12" TextColor="{DynamicResource TextSecondary}" Margin="0,4,0,0" />
                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
                                           <Entry Grid.Column="0"
                                                     AutomationId="{x:Static t:TestIds.SettingsDiscoveryPort}"
-                                                    Placeholder="Port (default 5959)"
+                                                    Placeholder="5959"
+                                                    SemanticProperties.Description="Port (default 5959)"
                                                     Text="{Binding NewServerPort}"
                                                     Keyboard="Numeric" />
                                           <Button Grid.Column="1"
                                                         AutomationId="{x:Static t:TestIds.SettingsDiscoveryServerAction}"
                                                         Text="Add Server"
+                                                        MinimumHeightRequest="48"
                                                         Command="{Binding AddDiscoveryServerCommand}" />
                                    </Grid>
 
                                    <Label Text="{Binding DiscoveryServersValidationMessage}"
                                              AutomationId="{x:Static t:TestIds.SettingsDiscoveryServersError}"
-                                             TextColor="{DynamicResource ErrorRed}" />
+                                             TextColor="{DynamicResource ErrorText}" />
+
+                                   <Label Text="No discovery servers added yet"
+                                             AutomationId="{x:Static t:TestIds.SettingsDiscoveryEmptyState}"
+                                             IsVisible="{Binding HasNoDiscoveryServers}"
+                                             TextColor="{DynamicResource TextSecondary}" />
 
                                    <!-- BindableLayout, not CollectionView: this list sits inside the page's own
                                         outer ScrollView, and a CollectionView added there does not re-measure its
@@ -182,8 +352,13 @@
                                                                                     AutomationId="{x:Static t:TestIds.SettingsServerRowEdit}"
                                                                                     Command="{Binding Source={x:Reference SettingsRoot}, Path=BindingContext.EditDiscoveryServerCommand}"
                                                                                     CommandParameter="{Binding .}" />
+                                                                      <!-- Distinct fill (#347 SET-2) so this destructive action cannot be
+                                                                           confused with the three non-destructive actions above, which share
+                                                                           the default Primary style. -->
                                                                       <Button Text="✕"
                                                                                     WidthRequest="48" HeightRequest="48" Padding="0"
+                                                                                    BackgroundColor="{DynamicResource ErrorFill}"
+                                                                                    TextColor="{DynamicResource TextOnAccent}"
                                                                                     AutomationId="{x:Static t:TestIds.SettingsServerRowDelete}"
                                                                                     Command="{Binding Source={x:Reference SettingsRoot}, Path=BindingContext.RemoveDiscoveryServerCommand}"
                                                                                     CommandParameter="{Binding .}" />
@@ -197,9 +372,20 @@
                             <VerticalStackLayout AutomationId="{x:Static t:TestIds.SettingsPanelDeveloperTools}" IsVisible="{Binding IsDeveloperToolsSectionSelected}" Spacing="10">
                                    <Label Text="Developer Settings" FontAttributes="Bold" FontSize="20" />
 
-                                   <HorizontalStackLayout Spacing="8">
-                                          <Switch IsToggled="{Binding DeveloperModeEnabled}" AutomationId="{x:Static t:TestIds.SettingsDeveloperModeToggle}" />
-                                          <Label Text="Developer Mode" VerticalOptions="Center" />
+                                   <!-- Tap target on the Label, not the row (#343 SET-8): the native Switch
+                                        consumes its own touch on Android, so a row-level TapGestureRecognizer
+                                        here would fire for the SAME tap and double-toggle. -->
+                                   <HorizontalStackLayout Spacing="8" MinimumHeightRequest="48">
+                                          <Switch IsToggled="{Binding DeveloperModeEnabled}" AutomationId="{x:Static t:TestIds.SettingsDeveloperModeToggle}" VerticalOptions="Center" />
+                                          <Label Text="Developer Mode"
+                                                    AutomationId="{x:Static t:TestIds.SettingsDeveloperModeLabel}"
+                                                    MinimumHeightRequest="48"
+                                                    VerticalTextAlignment="Center"
+                                                    VerticalOptions="Fill">
+                                                 <Label.GestureRecognizers>
+                                                        <TapGestureRecognizer Command="{Binding ToggleDeveloperModeCommand}" />
+                                                 </Label.GestureRecognizers>
+                                          </Label>
                                    </HorizontalStackLayout>
 
                                    <Label Text="Cached Source Registry" FontAttributes="Bold" />
@@ -245,19 +431,37 @@
                           VerticalOptions="Center">
                       <VerticalStackLayout Spacing="10">
                              <Label Text="Edit discovery server" FontAttributes="Bold" FontSize="18" />
-                             <Entry Placeholder="Display name (optional)"
+                             <Label Text="Display name (optional)" FontSize="12" TextColor="{DynamicResource TextSecondary}" />
+                             <Entry Placeholder="e.g. Studio server"
+                                       SemanticProperties.Description="Display name (optional)"
                                        Text="{Binding EditServerDisplayName}" />
-                             <Entry Placeholder="Hostname or IP"
+                             <Label Text="Hostname or IP" FontSize="12" TextColor="{DynamicResource TextSecondary}" />
+                             <Entry Placeholder="e.g. 192.168.1.10"
+                                       SemanticProperties.Description="Hostname or IP"
                                        Text="{Binding EditServerHost}"
                                        Keyboard="Url" />
-                             <Entry Placeholder="Port (default 5959)"
+                             <Label Text="Port (default 5959)" FontSize="12" TextColor="{DynamicResource TextSecondary}" />
+                             <Entry Placeholder="5959"
+                                       SemanticProperties.Description="Port (default 5959)"
                                        Text="{Binding EditServerPort}"
                                        Keyboard="Numeric" />
                              <Label Text="{Binding EditServerValidationMessage}"
-                                       TextColor="{DynamicResource ErrorRed}" />
+                                       TextColor="{DynamicResource ErrorText}" />
                              <HorizontalStackLayout Spacing="8" HorizontalOptions="End">
-                                    <Button Text="Cancel" Command="{Binding CancelEditDiscoveryServerCommand}" />
-                                    <Button Text="Save" Command="{Binding SaveEditedDiscoveryServerCommand}" />
+                                    <!-- Outlined/dismissive vs. filled/primary (#343 SET-6) so the two
+                                         actions read as different weights, not just different labels. -->
+                                    <Button Text="Cancel"
+                                               AutomationId="{x:Static t:TestIds.SettingsEditServerCancel}"
+                                               BackgroundColor="{DynamicResource ControlBackground}"
+                                               TextColor="{DynamicResource TextPrimary}"
+                                               BorderColor="{DynamicResource TextSecondary}"
+                                               BorderWidth="1"
+                                               MinimumHeightRequest="48"
+                                               Command="{Binding CancelEditDiscoveryServerCommand}" />
+                                    <Button Text="Save"
+                                               AutomationId="{x:Static t:TestIds.SettingsEditServerSave}"
+                                               MinimumHeightRequest="48"
+                                               Command="{Binding SaveEditedDiscoveryServerCommand}" />
                              </HorizontalStackLayout>
                       </VerticalStackLayout>
                </Border>

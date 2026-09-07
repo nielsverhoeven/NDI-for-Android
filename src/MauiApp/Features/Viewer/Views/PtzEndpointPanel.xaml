@@ -3,10 +3,33 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              xmlns:ptzVm="clr-namespace:NdiForAndroid.Features.Ptz.ViewModels;assembly=NdiForAndroid.Core"
              xmlns:vm="clr-namespace:NdiForAndroid.Features.Viewer.ViewModels;assembly=NdiForAndroid.Core"
+             xmlns:t="clr-namespace:NdiForAndroid.Testing;assembly=NdiForAndroid.Core"
              x:Class="NdiForAndroid.Features.Viewer.Views.PtzEndpointPanel"
              x:DataType="vm:ViewerViewModel"
              IsVisible="{Binding PtzEndpointForm.IsOpen, FallbackValue=False, TargetNullValue=False}"
              BackgroundColor="{DynamicResource ScrimBackground}">
+    <ContentView.Resources>
+        <!-- Outlined secondary action (Test/Clear — non-destructive, does not close the dialog)
+             and a plain text action (Cancel — dismissive) next to the filled-Primary Save
+             (#370 sources-viewer-005). Local to this panel rather than Styles.xaml so this
+             cluster's diff stays scoped to Viewer files. -->
+        <Style x:Key="PtzOutlinedButton" TargetType="Button">
+            <Setter Property="BackgroundColor" Value="{DynamicResource ControlBackground}" />
+            <Setter Property="TextColor" Value="{DynamicResource TextPrimary}" />
+            <Setter Property="BorderColor" Value="{DynamicResource BorderColor}" />
+            <Setter Property="BorderWidth" Value="1" />
+            <Setter Property="FontFamily" Value="OpenSansSemibold" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Padding" Value="8,10" />
+            <Setter Property="HeightRequest" Value="48" />
+            <Setter Property="MinimumHeightRequest" Value="48" />
+        </Style>
+        <Style x:Key="PtzTextButton" TargetType="Button" BasedOn="{StaticResource PtzOutlinedButton}">
+            <Setter Property="BackgroundColor" Value="Transparent" />
+            <Setter Property="BorderWidth" Value="0" />
+        </Style>
+    </ContentView.Resources>
     <Border BindingContext="{Binding PtzEndpointForm}"
             BackgroundColor="{DynamicResource CardBackground}"
             Stroke="{DynamicResource BorderColor}"
@@ -17,16 +40,38 @@
             VerticalOptions="Center">
         <VerticalStackLayout x:DataType="ptzVm:PtzEndpointFormViewModel" Spacing="10">
             <Label Text="PTZ endpoint" FontAttributes="Bold" FontSize="18" />
-            <Entry Placeholder="Host (blank = use NDI PTZ)" Text="{Binding Host}" Keyboard="Url" />
-            <Entry Placeholder="Port (default 5678)" Text="{Binding PortText}" Keyboard="Numeric" />
-            <Label Text="{Binding ValidationMessage}" TextColor="{DynamicResource ErrorRed}" />
+            <Entry Placeholder="Host (blank = use NDI PTZ)" Text="{Binding Host}" Keyboard="Url"
+                   AutomationId="{x:Static t:TestIds.PtzEndpointHost}"
+                   HeightRequest="48" MinimumHeightRequest="48" />
+            <Entry Placeholder="Port (default 5678)" Text="{Binding PortText}" Keyboard="Numeric"
+                   AutomationId="{x:Static t:TestIds.PtzEndpointPort}"
+                   HeightRequest="48" MinimumHeightRequest="48" />
+            <!-- Live, per-keystroke port feedback (#374 error prevention) — separate from the
+                 Save/Test result message below so a typo is flagged before either is tapped. -->
+            <Label Text="{Binding PortValidationMessage}"
+                   AutomationId="{x:Static t:TestIds.PtzEndpointPortValidation}"
+                   TextColor="{DynamicResource ErrorText}" FontSize="12" />
+            <Label Text="{Binding ValidationMessage}"
+                   AutomationId="{x:Static t:TestIds.PtzEndpointValidationMessage}"
+                   TextColor="{DynamicResource ErrorText}" />
             <Label Text="{Binding StatusText}" TextColor="{DynamicResource TextSecondary}" />
-            <HorizontalStackLayout Spacing="8" HorizontalOptions="End">
-                <Button Text="Test" Command="{Binding TestCommand}" />
-                <Button Text="Clear" Command="{Binding ClearCommand}" />
-                <Button Text="Cancel" Command="{Binding CancelCommand}" />
-                <Button Text="Save" Command="{Binding SaveCommand}" />
-            </HorizontalStackLayout>
+            <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto" ColumnSpacing="6">
+                <Button Grid.Column="0" Text="Test" Command="{Binding TestCommand}"
+                        AutomationId="{x:Static t:TestIds.PtzEndpointTest}"
+                        Style="{StaticResource PtzOutlinedButton}" />
+                <!-- Clear only resets the two fields for further editing (#374) — it does not
+                     close the dialog or commit anything; tap Save afterwards to commit the
+                     resulting blank-host "use NDI PTZ" state. -->
+                <Button Grid.Column="1" Text="Clear" Command="{Binding ClearCommand}"
+                        AutomationId="{x:Static t:TestIds.PtzEndpointClear}"
+                        Style="{StaticResource PtzOutlinedButton}" />
+                <Button Grid.Column="3" Text="Cancel" Command="{Binding CancelCommand}"
+                        AutomationId="{x:Static t:TestIds.PtzEndpointCancel}"
+                        Style="{StaticResource PtzTextButton}" />
+                <Button Grid.Column="4" Text="Save" Command="{Binding SaveCommand}"
+                        AutomationId="{x:Static t:TestIds.PtzEndpointSave}"
+                        HeightRequest="48" MinimumHeightRequest="48" Padding="10,10" />
+            </Grid>
         </VerticalStackLayout>
     </Border>
 </ContentView>

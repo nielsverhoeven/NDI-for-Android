@@ -28,7 +28,7 @@
                    TextColor="{DynamicResource TextSecondary}" />
             <Label Text="{Binding ErrorMessage}"
                    FontSize="12"
-                   TextColor="{DynamicResource ErrorRed}"
+                   TextColor="{DynamicResource ErrorText}"
                    IsVisible="{Binding ErrorMessage, Converter={StaticResource IsNotNullConverter}}" />
         </VerticalStackLayout>
 
@@ -50,14 +50,16 @@
                                 <Label Text="{Binding EndpointAddress}"
                                        AutomationId="{x:Static t:TestIds.SourceRowEndpoint}"
                                        FontSize="12"
-                                       TextColor="Gray" />
+                                       TextColor="{DynamicResource TextSecondary}" />
                             </VerticalStackLayout>
-                            <HorizontalStackLayout Grid.Column="1" Spacing="8">
+                            <HorizontalStackLayout Grid.Column="1" Spacing="8" VerticalOptions="Center">
                                 <Button Text="Watch"
+                                        MinimumHeightRequest="48"
                                         AutomationId="{x:Static t:TestIds.SourceRowWatch}"
                                         Command="{Binding Source={RelativeSource AncestorType={x:Type vm:SourceListViewModel}}, Path=NavigateToViewerCommand}"
                                         CommandParameter="{Binding .}" />
                                 <Button Text="Output"
+                                        MinimumHeightRequest="48"
                                         AutomationId="{x:Static t:TestIds.SourceRowOutput}"
                                         Command="{Binding Source={RelativeSource AncestorType={x:Type vm:SourceListViewModel}}, Path=NavigateToOutputCommand}"
                                         CommandParameter="{Binding .}" />

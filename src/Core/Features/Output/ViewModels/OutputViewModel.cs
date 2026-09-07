@@ -8,6 +8,16 @@ using NdiForAndroid.Services;
 
 namespace NdiForAndroid.Features.Output.ViewModels;
 
+/// <summary>Stream tab: outgoing NDI output (capture or re-stream) configuration and start/stop.</summary>
+/// <remarks>
+/// Registered as a DI <b>Singleton</b> together with <c>OutputPage</c> (#352/#359): it subscribes here to the
+/// singleton bridge's <c>OutputStatusChanged</c> and to <c>IAppLifecycleService.AppResumed</c>, while MAUI's
+/// Android Shell re-resolves the tab-root page on every tab entry and placement change. A Transient lifetime
+/// leaked one subscribed instance per visit, each still running <see cref="CorroborateWithBridgeAsync"/> on
+/// resume. Consequently the observable state persists across tab visits; truthfulness comes from
+/// <see cref="LoadCommand"/>, which <c>OutputPage.OnAppearing</c> awaits on every appearance and which
+/// corroborates against the live bridge. <see cref="Dispose"/> is container-owned — pages must not call it.
+/// </remarks>
 public partial class OutputViewModel : ObservableObject, IDisposable
 {
     private readonly INdiOutputBridge _bridge;
@@ -15,15 +25,33 @@ public partial class OutputViewModel : ObservableObject, IDisposable
     private readonly IAppLifecycleService _lifecycle;
     private readonly IOutputConfigurationRepository _configRepo;
     private readonly IMainThreadDispatcher _dispatcher;
+    private readonly IScreenReaderAnnouncer _announcer;
+
+    /// <summary>
+    /// Gates screen-reader announcements from <see cref="SetStatus"/> so the constructor's
+    /// initial message is not spoken — the page is not on screen yet. Set true as the last
+    /// statement of the constructor.
+    /// </summary>
+    private readonly bool _announceStatusChanges;
 
     [ObservableProperty]
     private string _streamName = "NDI-Android";
 
     [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(ToggleMicrophoneCommand))]
     private bool _isOutputActive;
 
     [ObservableProperty]
     private string? _statusMessage;
+
+    /// <summary>
+    /// True while <see cref="StatusMessage"/> describes a failure (validation, declined
+    /// permission, start exception) rather than routine or positive information. OutputPage
+    /// binds ErrorText, Bold and the warning glyph to it — the text alone never distinguishes
+    /// the two message classes (#349, Nielsen #9).
+    /// </summary>
+    [ObservableProperty]
+    private bool _isStatusError;
 
     /// <summary>Video input feeding the output: device screen or front/rear camera.</summary>
     [ObservableProperty]
@@ -67,17 +95,40 @@ public partial class OutputViewModel : ObservableObject, IDisposable
         IAppStateRepository appStateRepo,
         IAppLifecycleService lifecycle,
         IOutputConfigurationRepository configRepo,
-        IMainThreadDispatcher dispatcher)
+        IMainThreadDispatcher dispatcher,
+        IScreenReaderAnnouncer announcer)
     {
         _bridge = bridge;
         _appStateRepo = appStateRepo;
         _lifecycle = lifecycle;
         _configRepo = configRepo;
         _dispatcher = dispatcher;
-        StatusMessage = "Tap Start to begin broadcasting from this device.";
+        _announcer = announcer;
+        SetStatus("Tap Start to begin broadcasting from this device.");
 
         _lifecycle.AppResumed += OnAppResumed;
         _bridge.OutputStatusChanged += OnOutputStatusChanged;
+
+        // The constructor's message is spoken to nobody — the page is not on screen yet (#345).
+        _announceStatusChanges = true;
+    }
+
+    /// <summary>
+    /// The only writer of <see cref="StatusMessage"/> and <see cref="IsStatusError"/>, so the two
+    /// cannot drift apart, and the single point every status transition is spoken through the
+    /// screen reader (WCAG 4.1.3, #345 OUT-03) — the status label is not the focused element when
+    /// the message changes, so TalkBack would otherwise say nothing. Error statuses additionally
+    /// drive the ErrorText/Bold/glyph treatment on OutputPage (#349, Nielsen #9). Null/blank
+    /// clears are never announced.
+    /// </summary>
+    private void SetStatus(string? message, bool isError = false)
+    {
+        var changed = !string.Equals(StatusMessage, message, StringComparison.Ordinal);
+        StatusMessage = message;
+        IsStatusError = isError && !string.IsNullOrEmpty(message);
+
+        if (_announceStatusChanges && changed && !string.IsNullOrWhiteSpace(message))
+            _announcer.Announce(message);
     }
 
     /// <summary>Loads the persisted output configuration (called when the page appears).</summary>
@@ -123,7 +174,7 @@ public partial class OutputViewModel : ObservableObject, IDisposable
                 IsReStreamMode = _bridge.IsReStreamActive;
                 ConnectionCount = _bridge.ConnectionCount;
                 IsOnProgramTally = _bridge.IsOnProgramTally;
-                StatusMessage = activeStatusMessage;
+                SetStatus(activeStatusMessage);
             });
         }
         else
@@ -138,7 +189,7 @@ public partial class OutputViewModel : ObservableObject, IDisposable
             {
                 IsOutputActive = false;
                 StreamName = state.StreamName;
-                StatusMessage = "Tap Start to resume output";
+                SetStatus("Tap Start to resume output");
             });
         }
     }
@@ -156,7 +207,10 @@ public partial class OutputViewModel : ObservableObject, IDisposable
             if (IsOutputActive && !_bridge.IsActive)
             {
                 IsOutputActive = false;
-                StatusMessage = "Output stopped";
+                // Deliberately informational, not an error: the bridge stopping itself covers
+                // both autonomous capture loss and the notification Stop action, and the latter
+                // is a deliberate user action (#327 product note).
+                SetStatus("Output stopped");
             }
         });
     }
@@ -170,7 +224,7 @@ public partial class OutputViewModel : ObservableObject, IDisposable
             return;
 
         StreamName = state.StreamName;
-        StatusMessage = "Tap Start to resume output";
+        SetStatus("Tap Start to resume output");
     }
 
     /// <summary>Applies an inbound re-stream request from a deep link or the Sources page.</summary>
@@ -182,7 +236,7 @@ public partial class OutputViewModel : ObservableObject, IDisposable
         ReStreamSourceId = sourceId;
         IsReStreamMode = isReStreamMode;
         StreamName = "NDI-" + new string(sourceId.Where(char.IsLetterOrDigit).Take(32).ToArray());
-        StatusMessage = "Re-stream mode: ready — tap Start to begin.";
+        SetStatus("Re-stream mode: ready — tap Start to begin.");
     }
 
     [RelayCommand]
@@ -194,11 +248,11 @@ public partial class OutputViewModel : ObservableObject, IDisposable
         {
             // When switching to re-stream mode, default stream name uses the source identifier.
             StreamName = "NDI-" + new string(ReStreamSourceId!.Where(char.IsLetterOrDigit).Take(32).ToArray());
-            StatusMessage = "Re-stream mode: select a discovered source on the Sources page.";
+            SetStatus("Re-stream mode: select a discovered source on the Sources page.");
         }
         else
         {
-            StatusMessage = "Capture mode: stream your screen or camera as an NDI sender.";
+            SetStatus("Capture mode: stream your screen or camera as an NDI sender.");
         }
 
         // Persist mode so it survives app restarts / process death.
@@ -210,16 +264,31 @@ public partial class OutputViewModel : ObservableObject, IDisposable
             state.LastSelectedSourceId));
     }
 
+    /// <summary>
+    /// Row tap for the Capture/Re-stream row (#346 OUT-07). Deliberately the same plain flip the
+    /// Switch's two-way IsToggled binding performs — not <see cref="ToggleReStreamModeCommand"/>,
+    /// which also renames the stream, persists state and requires a selected ReStreamSourceId
+    /// (dereferenced with <c>!</c> below and would NRE if it were routed through the row tap).
+    /// </summary>
+    [RelayCommand]
+    private void ToggleOutputMode() => IsReStreamMode = !IsReStreamMode;
+
+    /// <summary>Row tap for the microphone row (#346 OUT-07); disabled while output runs, like the Switch.</summary>
+    [RelayCommand(CanExecute = nameof(CanToggleMicrophone))]
+    private void ToggleMicrophone() => CaptureMicrophone = !CaptureMicrophone;
+
+    private bool CanToggleMicrophone() => !IsOutputActive;
+
     [RelayCommand]
     private async Task StartOutputAsync(CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(StreamName))
         {
-            StatusMessage = "Please enter a stream name before starting output.";
+            SetStatus("Please enter a stream name before starting output.", isError: true);
             return;
         }
 
-        StatusMessage = null;
+        SetStatus(null);
 
         try
         {
@@ -230,7 +299,7 @@ public partial class OutputViewModel : ObservableObject, IDisposable
                     ReStreamSourceId, QualityProfile.Balanced, cancellationToken);
 
                 IsOutputActive = true;
-                StatusMessage = "Re-stream active";
+                SetStatus("Re-stream active");
             }
             else
             {
@@ -240,7 +309,7 @@ public partial class OutputViewModel : ObservableObject, IDisposable
                     StreamName, SelectedInputKind, CaptureMicrophone, cancellationToken);
 
                 IsOutputActive = true;
-                StatusMessage = "Output active";
+                SetStatus("Output active");
 
                 // Persist the configuration only after a successful start.
                 await _configRepo.SaveAsync(new OutputConfiguration(
@@ -259,12 +328,15 @@ public partial class OutputViewModel : ObservableObject, IDisposable
         {
             // The user declined the capture permission (e.g. MediaProjection consent).
             IsOutputActive = false;
-            StatusMessage = "Permission declined — output not started.";
+            SetStatus("Permission declined — output not started.", isError: true);
         }
         catch (Exception ex)
         {
             IsOutputActive = false;
-            StatusMessage = $"Output failed: {ex.Message}";
+            // Plain-language framing plus a recovery step around the raw reason (#349). The
+            // reason is trimmed so a message that already ends in '.' does not produce '..'.
+            var reason = ex.Message.TrimEnd('.', ' ');
+            SetStatus($"Output failed to start: {reason}. Tap Start to try again.", isError: true);
         }
     }
 
@@ -281,7 +353,7 @@ public partial class OutputViewModel : ObservableObject, IDisposable
         }
 
         IsOutputActive = false;
-        StatusMessage = null;
+        SetStatus(null);
         IsOnProgramTally = false;
         ConnectionCount = 0;
 
@@ -294,6 +366,7 @@ public partial class OutputViewModel : ObservableObject, IDisposable
             snapshot.LastSelectedSourceId));
     }
 
+    /// <summary>Container-owned teardown only (singleton lifetime) — never called from page lifecycle.</summary>
     public void Dispose()
     {
         _lifecycle.AppResumed -= OnAppResumed;

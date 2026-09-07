@@ -131,6 +131,18 @@ public partial class ViewerView : ContentView
         if (e.PropertyName == nameof(ViewerViewModel.IsFullScreen))
             UpdateLayoutVisibility();
 
+        // #348: Stop() sets IsStopped, but the render loop only repaints on a *new* frame
+        // timestamp — without this the last live frame would stay painted forever underneath
+        // the "Stopped" overlay. Clearing here (not in the ViewModel) keeps SkiaSharp/bitmap
+        // concerns in the View's rendering plumbing, matching OnRenderTick/OnPaintSurface below.
+        if (e.PropertyName == nameof(ViewerViewModel.IsStopped) &&
+            sender is ViewerViewModel { IsStopped: true })
+        {
+            _pendingFrame = null;
+            _lastRenderedTimestamp = -1;
+            VideoCanvas.InvalidateSurface();
+        }
+
         if (IsModalHost) return;
         if (e.PropertyName != nameof(ViewerViewModel.IsFullScreen)) return;
         if (BindingContext is not ViewerViewModel vm || !vm.IsFullScreen) return;

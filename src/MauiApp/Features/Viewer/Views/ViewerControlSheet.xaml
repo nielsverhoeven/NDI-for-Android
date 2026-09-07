@@ -18,17 +18,20 @@
         </Grid>
 
         <Grid Grid.Row="1" ColumnDefinitions="*,*" RowDefinitions="Auto,3">
+            <!-- Selected tab gets a bold TextPrimary caption vs. regular TextSecondary for the
+                 other, in addition to the 3dp underline — a non-colour cue for the selected tab
+                 (#370 sources-viewer-009). Playback starts selected. -->
             <Button x:Name="PlaybackTabButton" Grid.Row="0" Grid.Column="0" Text="Playback"
-                    BackgroundColor="Transparent" TextColor="{DynamicResource TextPrimary}"
+                    BackgroundColor="Transparent" TextColor="{DynamicResource TextPrimary}" FontAttributes="Bold"
                     SemanticProperties.Description="Playback tab, selected" />
             <Button x:Name="PtzTabButton" Grid.Row="0" Grid.Column="1" Text="PTZ"
-                    BackgroundColor="Transparent" TextColor="{DynamicResource TextPrimary}"
+                    BackgroundColor="Transparent" TextColor="{DynamicResource TextSecondary}" FontAttributes="None"
                     IsVisible="{Binding IsPtzControlActive}"
                     SemanticProperties.Description="PTZ tab" />
             <BoxView x:Name="PlaybackTabIndicator" Grid.Row="1" Grid.Column="0" HeightRequest="3"
-                     Color="{DynamicResource Primary}" />
+                     Color="{DynamicResource AccentGraphic}" />
             <BoxView x:Name="PtzTabIndicator" Grid.Row="1" Grid.Column="1" HeightRequest="3"
-                     Color="{DynamicResource Primary}" IsVisible="False" />
+                     Color="{DynamicResource AccentGraphic}" IsVisible="False" />
         </Grid>
 
         <ScrollView Grid.Row="2" Padding="16,0,16,16" VerticalScrollBarVisibility="Default">
