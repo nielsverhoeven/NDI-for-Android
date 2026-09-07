@@ -1,3 +1,4 @@
+using OpenQA.Selenium;
 using OpenQA.Selenium.Appium.Android;
 using NdiForAndroid.Testing;
 using NdiForAndroid.UITests.Infrastructure;
@@ -21,6 +22,16 @@ public sealed class OutputPage : PageObject
     public string Status => TextOf(TestIds.OutputStatus);
 
     /// <summary>
+    /// True when the status line is showing an error. Reads the warning glyph, which is only in
+    /// the view tree while <c>IsStatusError</c> is true — a non-colour cue, so this holds in
+    /// grayscale and pins no hex value.
+    /// </summary>
+    public bool IsStatusError => IsPresent(TestIds.OutputStatusErrorIcon);
+
+    /// <summary>The status label element, for pixel sampling with <c>ScreenSampler</c>.</summary>
+    public IWebElement StatusElement => WaitFor(TestIds.OutputStatus);
+
+    /// <summary>
     /// True while a send is running — read from which of Start/Stop is on screen, since the two
     /// buttons are mutually exclusive on <c>IsOutputActive</c>.
     /// </summary>
@@ -42,6 +53,21 @@ public sealed class OutputPage : PageObject
     /// <summary>True when the source is on program and the ON AIR tally is showing.</summary>
     public bool IsOnAir => IsPresent(TestIds.OutputOnAirTally);
 
+    /// <summary>What TalkBack would announce for the mode Switch — its content-desc.</summary>
+    public string ModeToggleLabel => WaitFor(TestIds.OutputModeToggle).GetAttribute("content-desc") ?? string.Empty;
+
+    /// <summary>What TalkBack would announce for the microphone Switch.</summary>
+    public string MicrophoneToggleLabel => WaitFor(TestIds.OutputMicrophoneToggle).GetAttribute("content-desc") ?? string.Empty;
+
+    /// <summary>True when the mode switch sits in its re-stream position (IsToggled binds the INVERSE of IsReStreamMode).</summary>
+    public bool IsReStreamMode => !IsChecked(TestIds.OutputModeToggle);
+
+    public bool IsMicrophoneOn => IsChecked(TestIds.OutputMicrophoneToggle);
+
+    public System.Drawing.Rectangle StartButtonBounds   => BoundsOf(TestIds.OutputStart);
+    public System.Drawing.Rectangle ModeRowBounds       => BoundsOf(TestIds.OutputModeRow);
+    public System.Drawing.Rectangle MicrophoneRowBounds => BoundsOf(TestIds.OutputMicrophoneRow);
+
     public void Start() => Tap(TestIds.OutputStart);
     public void Stop()  => Tap(TestIds.OutputStop);
 
@@ -54,4 +80,8 @@ public sealed class OutputPage : PageObject
 
     public void ToggleMicrophone() => Tap(TestIds.OutputMicrophoneToggle);
     public void ToggleReStreamMode() => Tap(TestIds.OutputModeToggle);
+
+    /// <summary>Taps the 'Re-stream:' label — the row, not the switch — to prove the whole row toggles (#346).</summary>
+    public void TapReStreamLabel()   => Tap(TestIds.OutputModeReStreamLabel);
+    public void TapMicrophoneLabel() => Tap(TestIds.OutputMicrophoneLabel);
 }

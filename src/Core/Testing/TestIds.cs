@@ -120,14 +120,20 @@ public static class TestIds
     // ── OutputPage (Stream tab): send configuration and start/stop ───────────
 
     public const string OutputPage             = "output.page";
+    public const string OutputModeRow          = "output.modeRow";
     public const string OutputModeToggle       = "output.modeToggle";
+    public const string OutputModeCaptureLabel = "output.modeCaptureLabel";
+    public const string OutputModeReStreamLabel = "output.modeReStreamLabel";
     public const string OutputStreamName       = "output.streamName";
     public const string OutputVideoInput       = "output.videoInput";
+    public const string OutputMicrophoneRow    = "output.microphoneRow";
     public const string OutputMicrophoneToggle = "output.microphoneToggle";
+    public const string OutputMicrophoneLabel  = "output.microphoneLabel";
     public const string OutputReStreamSourceId = "output.reStreamSourceId";
     public const string OutputConnectionCount  = "output.connectionCount";
     public const string OutputOnAirTally       = "output.onAirTally";
     public const string OutputStatus           = "output.status";
+    public const string OutputStatusErrorIcon  = "output.statusErrorIcon";
     public const string OutputStart            = "output.start";
     public const string OutputStop             = "output.stop";
 

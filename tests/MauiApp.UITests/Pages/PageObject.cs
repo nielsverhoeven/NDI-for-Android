@@ -275,6 +275,18 @@ public abstract class PageObject
     protected IReadOnlyList<IWebElement> FindDisplayed(string id) =>
         FindAll(id).Where(IsDisplayed).ToList();
 
+    /// <summary>On-screen bounds of <paramref name="id"/> in physical pixels (for target-size assertions).</summary>
+    protected System.Drawing.Rectangle BoundsOf(string id)
+    {
+        var element = WaitFor(id);
+        var (location, size) = (element.Location, element.Size);
+        return new System.Drawing.Rectangle(location.X, location.Y, size.Width, size.Height);
+    }
+
+    /// <summary>True when a native Switch/CheckBox reports checked="true".</summary>
+    protected bool IsChecked(string id) =>
+        string.Equals(WaitFor(id).GetAttribute("checked"), "true", StringComparison.OrdinalIgnoreCase);
+
     private static bool IsDisplayed(IWebElement element)
     {
         try

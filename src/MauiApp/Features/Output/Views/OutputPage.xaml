@@ -6,18 +6,31 @@
              x:Class="NdiForAndroid.Features.Output.Views.OutputPage"
              x:DataType="vm:OutputViewModel"
              AutomationId="{x:Static t:TestIds.OutputPage}"
-             Title="Output">
+             Title="Stream">
     <!-- ScrollView keeps the full form reachable in landscape / small windows (#280). -->
     <ScrollView>
     <VerticalStackLayout Padding="16" Spacing="16">
 
-        <!-- Mode toggle -->
+        <!-- Mode toggle. The whole row toggles the mode (#346 OUT-07). The Switch consumes its
+             own touches on Android, so the row's TapGestureRecognizer only fires for taps on
+             the labels and gaps — no double toggle. -->
         <Frame BackgroundColor="{DynamicResource CardBackground}" BorderColor="{DynamicResource BorderColor}">
-            <HorizontalStackLayout Spacing="8" HorizontalOptions="Center">
-                <Label Text="Capture:" VerticalOptions="Center" />
+            <HorizontalStackLayout Spacing="8" HorizontalOptions="Center"
+                                   MinimumHeightRequest="48"
+                                   AutomationId="{x:Static t:TestIds.OutputModeRow}"
+                                   SemanticProperties.Description="Output mode: capture or re-stream">
+                <HorizontalStackLayout.GestureRecognizers>
+                    <TapGestureRecognizer Command="{Binding ToggleOutputModeCommand}" />
+                </HorizontalStackLayout.GestureRecognizers>
+                <Label Text="Capture:" VerticalOptions="Center"
+                       AutomationId="{x:Static t:TestIds.OutputModeCaptureLabel}" />
+                <!-- IsToggled binds the INVERSE of IsReStreamMode: ON means Capture. The name must
+                     disclose that (#345 OUT-02) — TalkBack appends role/state itself. -->
                 <Switch AutomationId="{x:Static t:TestIds.OutputModeToggle}"
-                        IsToggled="{Binding IsReStreamMode, Converter={StaticResource InverseBoolConverter}}" />
-                <Label Text="Re-stream:" VerticalOptions="Center" />
+                        IsToggled="{Binding IsReStreamMode, Converter={StaticResource InverseBoolConverter}}"
+                        SemanticProperties.Description="Output mode, on for capture, off for re-stream" />
+                <Label Text="Re-stream:" VerticalOptions="Center"
+                       AutomationId="{x:Static t:TestIds.OutputModeReStreamLabel}" />
             </HorizontalStackLayout>
         </Frame>
 
@@ -28,24 +41,50 @@
                Placeholder="NDI-Android"
                IsEnabled="{Binding IsOutputActive, Converter={StaticResource InverseBoolConverter}}" />
 
-        <!-- Video input selection (capture mode only) -->
+        <!-- Video input selection (capture mode only). Wrapped in an input-styled panel with a
+             trailing chevron so it reads as a selection control rather than a static label
+             (#375): before this, the Picker rendered as plain text over a bare underline, the
+             only input in the app without the shared InputBackground panel. -->
         <Label Text="Video Input"
                FontAttributes="Bold"
                IsVisible="{Binding IsReStreamMode, Converter={StaticResource InverseBoolConverter}}" />
-        <Picker AutomationId="{x:Static t:TestIds.OutputVideoInput}"
-                ItemsSource="{Binding AvailableInputKinds}"
-                SelectedItem="{Binding SelectedInputKind}"
-                ItemDisplayBinding="{Binding ., Converter={StaticResource VideoInputKindDisplayConverter}}"
-                IsVisible="{Binding IsReStreamMode, Converter={StaticResource InverseBoolConverter}}"
-                IsEnabled="{Binding IsOutputActive, Converter={StaticResource InverseBoolConverter}}" />
+        <Border BackgroundColor="{DynamicResource InputBackground}"
+                Stroke="{DynamicResource BorderColor}"
+                StrokeShape="RoundRectangle 6"
+                Padding="12,0"
+                IsVisible="{Binding IsReStreamMode, Converter={StaticResource InverseBoolConverter}}">
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="4">
+                <Picker Grid.Column="0"
+                        AutomationId="{x:Static t:TestIds.OutputVideoInput}"
+                        ItemsSource="{Binding AvailableInputKinds}"
+                        SelectedItem="{Binding SelectedInputKind}"
+                        ItemDisplayBinding="{Binding ., Converter={StaticResource VideoInputKindDisplayConverter}}"
+                        IsEnabled="{Binding IsOutputActive, Converter={StaticResource InverseBoolConverter}}"
+                        SemanticProperties.Description="Video input" />
+                <!-- Decorative dropdown affordance; the accessible name/role lives on the Picker. -->
+                <Label Grid.Column="1" Text="&#x25BE;"
+                       VerticalOptions="Center"
+                       TextColor="{DynamicResource TextSecondary}"
+                       AutomationProperties.IsInAccessibleTree="False" />
+            </Grid>
+        </Border>
 
-        <!-- Microphone audio (capture mode only) -->
+        <!-- Microphone audio (capture mode only). Whole row toggles the switch (#346 OUT-07);
+             the command's CanExecute mirrors the Switch's IsEnabled (!IsOutputActive). -->
         <HorizontalStackLayout Spacing="8"
+                               MinimumHeightRequest="48"
+                               AutomationId="{x:Static t:TestIds.OutputMicrophoneRow}"
+                               SemanticProperties.Description="Send microphone audio"
                                IsVisible="{Binding IsReStreamMode, Converter={StaticResource InverseBoolConverter}}">
+            <HorizontalStackLayout.GestureRecognizers>
+                <TapGestureRecognizer Command="{Binding ToggleMicrophoneCommand}" />
+            </HorizontalStackLayout.GestureRecognizers>
             <Switch AutomationId="{x:Static t:TestIds.OutputMicrophoneToggle}"
                     IsToggled="{Binding CaptureMicrophone}"
-                    IsEnabled="{Binding IsOutputActive, Converter={StaticResource InverseBoolConverter}}" />
-            <Label Text="Send microphone audio" VerticalOptions="Center" />
+                    IsEnabled="{Binding IsOutputActive, Converter={StaticResource InverseBoolConverter}}"
+                    SemanticProperties.Description="Send microphone audio" />
+            <Label Text="Send microphone audio" VerticalOptions="Center"
+                   AutomationId="{x:Static t:TestIds.OutputMicrophoneLabel}" />
         </HorizontalStackLayout>
 
         <!-- Re-stream source selector (only visible in re-stream mode) -->
@@ -74,17 +113,39 @@
                    VerticalOptions="Center" />
         </HorizontalStackLayout>
 
-        <!-- Status -->
-        <Label Text="{Binding StatusMessage}"
-               AutomationId="{x:Static t:TestIds.OutputStatus}"
-               HorizontalOptions="Center" />
+        <!-- Status line (#349, Nielsen #9). Error statuses — validation, declined permission,
+             start failure — get the same ErrorText + Bold treatment as the ON AIR tally above,
+             plus a warning glyph so the distinction survives a grayscale rendering. Informational
+             and success statuses keep the implicit Label style (TextPrimary, regular weight). -->
+        <HorizontalStackLayout Spacing="6" HorizontalOptions="Center">
+            <Label Text="&#x26A0;"
+                   AutomationId="{x:Static t:TestIds.OutputStatusErrorIcon}"
+                   FontAttributes="Bold"
+                   TextColor="{DynamicResource ErrorText}"
+                   IsVisible="{Binding IsStatusError}"
+                   AutomationProperties.IsInAccessibleTree="False"
+                   VerticalOptions="Center" />
+            <Label Text="{Binding StatusMessage}"
+                   AutomationId="{x:Static t:TestIds.OutputStatus}"
+                   VerticalOptions="Center">
+                <Label.Triggers>
+                    <DataTrigger TargetType="Label" Binding="{Binding IsStatusError}" Value="True">
+                        <Setter Property="TextColor" Value="{DynamicResource ErrorText}" />
+                        <Setter Property="FontAttributes" Value="Bold" />
+                    </DataTrigger>
+                </Label.Triggers>
+            </Label>
+        </HorizontalStackLayout>
         <Button Text="Start Output" Command="{Binding StartOutputCommand}"
                 AutomationId="{x:Static t:TestIds.OutputStart}"
                 IsVisible="{Binding IsOutputActive, Converter={StaticResource InverseBoolConverter}}"
+                HeightRequest="48" MinimumHeightRequest="48"
                 HorizontalOptions="Center" />
         <Button Text="Stop Output" Command="{Binding StopOutputCommand}"
                 AutomationId="{x:Static t:TestIds.OutputStop}"
-                IsVisible="{Binding IsOutputActive}" HorizontalOptions="Center" />
+                IsVisible="{Binding IsOutputActive}"
+                HeightRequest="48" MinimumHeightRequest="48"
+                HorizontalOptions="Center" />
     </VerticalStackLayout>
     </ScrollView>
 </ContentPage>
