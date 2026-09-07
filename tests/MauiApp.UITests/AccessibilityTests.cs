@@ -18,11 +18,11 @@ namespace NdiForAndroid.UITests;
 /// </para>
 /// <para>
 /// <b>The gate is a ratchet, not a cliff.</b> It fails when the violation count exceeds
-/// <see cref="Budget"/>, which starts at the number of violations the app has today. Failing
-/// outright on every pre-existing violation would have meant either shipping a red pipeline or
-/// fixing the entire back catalogue inside a test PR; neither is honest. What this does buy
-/// immediately is that a *new* violation goes red. Lower the budget as violations are fixed —
-/// never raise it to make a red run green.
+/// <see cref="Budget"/>, which tracks the number of violations the app has today (currently 12,
+/// against a measured 10). Failing outright on every pre-existing violation would have meant
+/// either shipping a red pipeline or fixing the entire back catalogue inside a test PR; neither
+/// is honest. What this does buy immediately is that a *new* violation goes red. Lower the
+/// budget as violations are fixed — never raise it to make a red run green.
 /// </para>
 /// <para>
 /// The budget is overridable via <c>A11Y_MAX_VIOLATIONS</c> so it can be tightened in CI without
@@ -36,15 +36,18 @@ public sealed class AccessibilityTests : UiTestBase
     /// Maximum tolerated violations across the audited screens.
     /// </summary>
     /// <remarks>
-    /// Provisional. The real figure has never been measured — the app had no accessibility
-    /// coverage at all — so this starts permissive and is tightened to the measured count on the
-    /// first run, exactly as <c>COVERAGE_MIN</c> was. A number invented before the first
-    /// measurement would either block every PR or assert nothing.
+    /// Ratcheted to the measured count, exactly as <c>COVERAGE_MIN</c> was. Dispatched run
+    /// 34155799008 on this branch measured 10 violations — 8 structural missing-label findings on
+    /// <c>RecyclerView</c>/<c>ScrollView</c> containers and 2 touch-target findings on the Output
+    /// tab's Entry/Picker — so the default is set to 12 (a small margin above the measured count,
+    /// not the provisional 200 this started at, which let the app grow ~10x its violations before
+    /// the gate noticed). Lower it further as violations are fixed; never raise it to make a red
+    /// run green.
     /// </remarks>
     private static int Budget =>
         int.TryParse(Environment.GetEnvironmentVariable("A11Y_MAX_VIOLATIONS"), out var configured)
             ? configured
-            : 200;
+            : 12;
 
     private readonly ITestOutputHelper _output;
 
