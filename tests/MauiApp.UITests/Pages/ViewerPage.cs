@@ -68,6 +68,15 @@ public sealed class ViewerPage : PageObject
     public void CancelRetry()  => Tap(TestIds.ViewerCancelRetry);
     public void Reconnect()    => Tap(TestIds.ViewerReconnect);
 
+    /// <summary>Toggles the full-screen overlay. Present in both the windowed sheet and the
+    /// full-screen toolbar, which never show at the same time (#343/#345).</summary>
+    public void ToggleFullScreen() => Tap(TestIds.ViewerFullScreenToggle);
+
+    /// <summary>What TalkBack would announce for the full-screen toggle — state-dependent
+    /// ("Enter full screen" / "Exit full screen"), not the same name in both states.</summary>
+    public string FullScreenToggleLabel =>
+        WaitFor(TestIds.ViewerFullScreenToggle).GetAttribute("content-desc") ?? string.Empty;
+
     public void PanUp()    => Tap(TestIds.ViewerPtzUp);
     public void PanDown()  => Tap(TestIds.ViewerPtzDown);
     public void PanLeft()  => Tap(TestIds.ViewerPtzLeft);

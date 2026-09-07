@@ -76,6 +76,14 @@ public partial class ViewerControlSheet : ContentView
         SemanticProperties.SetDescription(PlaybackTabButton, isPtz ? "Playback tab" : "Playback tab, selected");
         SemanticProperties.SetDescription(PtzTabButton, isPtz ? "PTZ tab, selected" : "PTZ tab");
 
+        // Non-colour selected-tab cue (#370 sources-viewer-009): bold + TextPrimary for the
+        // selected tab, regular + TextSecondary for the other, alongside the 3dp underline.
+        // SetDynamicResource (not a plain Color assignment) keeps the colour theme-live.
+        PlaybackTabButton.FontAttributes = isPtz ? FontAttributes.None : FontAttributes.Bold;
+        PtzTabButton.FontAttributes = isPtz ? FontAttributes.Bold : FontAttributes.None;
+        PlaybackTabButton.SetDynamicResource(Button.TextColorProperty, isPtz ? "TextSecondary" : "TextPrimary");
+        PtzTabButton.SetDynamicResource(Button.TextColorProperty, isPtz ? "TextPrimary" : "TextSecondary");
+
         if (isPtz && !_isExpanded)
             _ = SetExpandedAsync(true);
     }
