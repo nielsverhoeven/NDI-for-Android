@@ -246,7 +246,7 @@ Auto-reconnect for up to **15s** when an active NDI connection drops unexpectedl
 ### `IMainThreadDispatcher` abstraction (NEW)
 | Item | Path | Notes |
 |------|------|-------|
-| Core interface | `src/Core/Services/IMainThreadDispatcher.cs` | `void Invoke(Action)` + `Task InvokeAsync(Func<Task>)` |
+| Core interface | `src/Core/Services/IMainThreadDispatcher.cs` | `void BeginInvokeOnMainThread(Action)` |
 | MAUI impl | `src/MauiApp/Services/MauiMainThreadDispatcher.cs` | Wraps `MainThread.BeginInvokeOnMainThread` / `InvokeOnMainThreadAsync` |
 | Why | — | Core cannot reference MAUI, so timer/poll callbacks dispatch via this seam; unit tests use a synchronous inline fake |
 
@@ -260,7 +260,14 @@ builder.Services.AddSingleton<IMainThreadDispatcher, MauiMainThreadDispatcher>()
 ### `ViewerViewModel` (`src/Core/Features/Viewer/ViewModels/ViewerViewModel.cs`)
 State machine: `Idle → Connecting → Connected → Dropped → Retrying(countdown) → {Reconnected | Failed}`.
 - Ctor injects `INdiViewerBridge`, `TimeProvider`, `IMainThreadDispatcher`.
-- Timers (all `TimeProvider.CreateTimer`): monitor poll (1s) detects drops; attempt loop (2s) does full `StopReceiver→StartReceiver`, stops on first `Connected`; countdown (1s) drives remaining-seconds text.
+- Timers — both held as `ITimer?` and created with `_timeProvider.CreateTimer` (#332): attempt loop
+  (2s) does a full `StopReceiver→StartReceiver` with the *current* `QualityProfile`, stops on the
+  first `Connected`; countdown (1s) drives the remaining-seconds text and fails the window at 0.
+  There is no monitor poll: `CheckForUnexpectedDrop()` has no production caller yet (#327/#331).
+  The PTZ nudge uses `Task.Delay(…, _timeProvider)` for the same reason. Rule: no
+  `new System.Threading.Timer` and no bare `Task.Delay` in Core ViewModels; unit tests drive time
+  with `Microsoft.Extensions.Time.Testing.FakeTimeProvider.Advance(...)` (the only fake — the
+  former `Core/Services/FakeTimeProvider` was removed, #332).
 - Window: 15s total; terminal failure after expiry.
 
 | Member | Type | Purpose |

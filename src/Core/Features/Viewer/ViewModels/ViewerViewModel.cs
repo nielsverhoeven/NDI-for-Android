@@ -10,7 +10,6 @@ using NdiForAndroid.Features.Sources.Models;
 using NdiForAndroid.Features.Sources.Repositories;
 using NdiForAndroid.NdiBridge;
 using NdiForAndroid.Services;
-using Timer = System.Threading.Timer;
 
 namespace NdiForAndroid.Features.Viewer.ViewModels;
 
@@ -25,9 +24,6 @@ internal static class ReconnectConstants
 
 public partial class ViewerViewModel : ObservableObject, IDisposable
 {
-    private const int RetryWindowSeconds = 15;
-    private const int AttemptIntervalSeconds = 2;
-    private const int MonitorIntervalSeconds = 1;
     private const string TerminalMessage = "Connection lost. Reconnection failed.";
     private const int PtzNudgeDurationMs = 250;
     private const float PtzNudgeSpeed = 0.5f;
@@ -80,8 +76,8 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private bool _canReconnect;
 
-    private Timer? _countdownTimer;
-    private Timer? _attemptTimer;
+    private ITimer? _countdownTimer;
+    private ITimer? _attemptTimer;
     private volatile bool _userInitiatedStop;
     private string? _lastSourceId;
     private bool _wasPlayingBeforeResume;
@@ -101,7 +97,7 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
     public string? QualityProfileLabel => IsPlaying ? $"QProfile: {QualityProfile}" : null;
 
     // State machine
-    private enum ReconnectState { Idle, InWindow, Attempting, Successful, Failed }
+    private enum ReconnectState { Idle, InWindow, Attempting, Failed }
     private ReconnectState _reconnectState = ReconnectState.Idle;
 
     public ViewerViewModel(
@@ -270,6 +266,7 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
         _userInitiatedStop = true;
         IsFullScreen = false;
         DisposeTimers();
+        _reconnectState = ReconnectState.Idle;
         _bridge.SetTally(onProgram: false, onPreview: false);
         _bridge.StopReceiver();
 
@@ -346,11 +343,11 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
 
     private void StartAttemptTimer()
     {
-        _attemptTimer = new Timer(
-            _ => _dispatcher.BeginInvokeOnMainThread(() => RunAttempt()),
-            null,
-            TimeSpan.FromSeconds(ReconnectConstants.RetryAttemptIntervalSeconds),
-            TimeSpan.FromSeconds(ReconnectConstants.RetryAttemptIntervalSeconds));
+        var interval = TimeSpan.FromSeconds(ReconnectConstants.RetryAttemptIntervalSeconds);
+        _attemptTimer?.Dispose();
+        _attemptTimer = _timeProvider.CreateTimer(
+            _ => _dispatcher.BeginInvokeOnMainThread(RunAttempt),
+            null, interval, interval);
     }
 
     private void RunAttempt()
@@ -382,7 +379,7 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
             // Attempt failed – fall through to continue the window.
         }
 
-        if (_reconnectState != ReconnectState.Failed && _reconnectState != ReconnectState.Successful)
+        if (_reconnectState == ReconnectState.Attempting)
             _reconnectState = ReconnectState.InWindow;
     }
 
@@ -390,7 +387,9 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
     {
         _dispatcher.BeginInvokeOnMainThread(() =>
         {
-            _reconnectState = ReconnectState.Successful;
+            // Success is terminal for this reconnect window; leaving the state machine at Idle
+            // (rather than a dedicated "Successful" state) lets the next drop open a new window.
+            _reconnectState = ReconnectState.Idle;
             IsReconnecting = false;
             IsPlaying = true;
             StatusMessage = $"Connected. (QProfile: {QualityProfile})";
@@ -404,11 +403,11 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
 
     private void StartCountdown()
     {
-        _countdownTimer = new Timer(
+        var interval = TimeSpan.FromSeconds(ReconnectConstants.CountdownTickIntervalSeconds);
+        _countdownTimer?.Dispose();
+        _countdownTimer = _timeProvider.CreateTimer(
             _ => _dispatcher.BeginInvokeOnMainThread(TickCountdown),
-            null,
-            TimeSpan.FromSeconds(ReconnectConstants.CountdownTickIntervalSeconds),
-            TimeSpan.FromSeconds(ReconnectConstants.CountdownTickIntervalSeconds));
+            null, interval, interval);
     }
 
     private void TickCountdown()
@@ -468,6 +467,8 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
         CanReconnect = false;
         StatusMessage = "Attempting reconnect...";
 
+        // Leaving Failed — BeginReconnectWindow's guard requires Idle to open a new window.
+        _reconnectState = ReconnectState.Idle;
         BeginReconnectWindow();
     }
 
