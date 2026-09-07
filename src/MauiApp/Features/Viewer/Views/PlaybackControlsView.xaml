@@ -107,7 +107,7 @@
             <Button Grid.Column="2" Text="Stop" Command="{Binding StopCommand}"
                     AutomationId="{x:Static t:TestIds.ViewerStop}"
                     HorizontalOptions="Fill" HeightRequest="48" MinimumHeightRequest="48"
-                    BackgroundColor="{DynamicResource ErrorRed}" TextColor="{DynamicResource White}" />
+                    BackgroundColor="{DynamicResource ErrorFill}" TextColor="{DynamicResource OnPrimary}" />
         </Grid>
     </Grid>
 </ContentView>

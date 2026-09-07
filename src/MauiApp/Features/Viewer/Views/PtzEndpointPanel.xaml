@@ -19,7 +19,7 @@
             <Label Text="PTZ endpoint" FontAttributes="Bold" FontSize="18" />
             <Entry Placeholder="Host (blank = use NDI PTZ)" Text="{Binding Host}" Keyboard="Url" />
             <Entry Placeholder="Port (default 5678)" Text="{Binding PortText}" Keyboard="Numeric" />
-            <Label Text="{Binding ValidationMessage}" TextColor="{DynamicResource ErrorRed}" />
+            <Label Text="{Binding ValidationMessage}" TextColor="{DynamicResource ErrorText}" />
             <Label Text="{Binding StatusText}" TextColor="{DynamicResource TextSecondary}" />
             <HorizontalStackLayout Spacing="8" HorizontalOptions="End">
                 <Button Text="Test" Command="{Binding TestCommand}" />

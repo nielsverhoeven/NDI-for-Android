@@ -26,9 +26,9 @@
                     IsVisible="{Binding IsPtzControlActive}"
                     SemanticProperties.Description="PTZ tab" />
             <BoxView x:Name="PlaybackTabIndicator" Grid.Row="1" Grid.Column="0" HeightRequest="3"
-                     Color="{DynamicResource Primary}" />
+                     Color="{DynamicResource AccentGraphic}" />
             <BoxView x:Name="PtzTabIndicator" Grid.Row="1" Grid.Column="1" HeightRequest="3"
-                     Color="{DynamicResource Primary}" IsVisible="False" />
+                     Color="{DynamicResource AccentGraphic}" IsVisible="False" />
         </Grid>
 
         <ScrollView Grid.Row="2" Padding="16,0,16,16" VerticalScrollBarVisibility="Default">

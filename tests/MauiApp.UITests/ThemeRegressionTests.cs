@@ -32,10 +32,12 @@ namespace NdiForAndroid.UITests;
 public sealed class ThemeRegressionTests : UiTestBase
 {
     /// <summary>
-    /// WCAG AA for large text and graphical objects. Nav icons and their captions are the
-    /// graphical-object case, so 3:1 is the correct bar rather than the 4.5:1 body-text one.
+    /// WCAG 2.2 SC 1.4.3 (AA) for normal-size text. Each nav item is sampled as a whole and its
+    /// caption is normal-size text (FontSize 10 rail labels, tab-bar captions) in the same colour
+    /// as the icon, so the text bar applies — not SC 1.4.11's 3:1 for graphical objects, which is
+    /// what let the light theme's 4.04:1 unselected items pass this test before (#344/#372).
     /// </summary>
-    private const double MinIconContrast = 3.0;
+    private const double MinNavItemContrast = 4.5;
 
     private readonly ITestOutputHelper _output;
 
@@ -76,10 +78,10 @@ public sealed class ThemeRegressionTests : UiTestBase
                 _output.WriteLine(
                     $"{theme}/{placement}/{destination}: fg={foreground} bg={background} ratio={ratio:0.00}:1");
 
-                Assert.True(ratio >= MinIconContrast,
+                Assert.True(ratio >= MinNavItemContrast,
                     $"The {destination} item in the {placement} is illegible under the {theme} theme: " +
                     $"foreground {foreground} against background {background} is only {ratio:0.00}:1, " +
-                    $"below the {MinIconContrast}:1 WCAG AA bar for graphical objects. " +
+                    $"below the {MinNavItemContrast}:1 WCAG AA bar for normal-size text (SC 1.4.3). " +
                     "This is the #294 failure mode — an icon that keeps its old tint after a theme change.");
             }
         }

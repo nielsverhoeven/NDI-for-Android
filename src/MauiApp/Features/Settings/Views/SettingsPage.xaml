@@ -115,16 +115,22 @@
                                    <Label Text="Discovery Settings" FontAttributes="Bold" FontSize="20" />
 
                                    <Label Text="Add discovery server" FontAttributes="Bold" />
-                                   <Entry Placeholder="Display name (optional)"
+                                   <Label Text="Display name (optional)" FontSize="12" TextColor="{DynamicResource TextSecondary}" Margin="0,4,0,0" />
+                                   <Entry Placeholder="e.g. Studio server"
+                                             SemanticProperties.Description="Display name (optional)"
                                              Text="{Binding NewServerDisplayName}" />
-                                   <Entry Placeholder="Hostname or IP"
+                                   <Label Text="Hostname or IP" FontSize="12" TextColor="{DynamicResource TextSecondary}" Margin="0,4,0,0" />
+                                   <Entry Placeholder="e.g. 192.168.1.10"
                                              AutomationId="{x:Static t:TestIds.SettingsDiscoveryHost}"
+                                             SemanticProperties.Description="Hostname or IP"
                                              Text="{Binding NewServerHost}"
                                              Keyboard="Url" />
+                                   <Label Text="Port (default 5959)" FontSize="12" TextColor="{DynamicResource TextSecondary}" Margin="0,4,0,0" />
                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
                                           <Entry Grid.Column="0"
                                                     AutomationId="{x:Static t:TestIds.SettingsDiscoveryPort}"
-                                                    Placeholder="Port (default 5959)"
+                                                    Placeholder="5959"
+                                                    SemanticProperties.Description="Port (default 5959)"
                                                     Text="{Binding NewServerPort}"
                                                     Keyboard="Numeric" />
                                           <Button Grid.Column="1"
@@ -135,7 +141,7 @@
 
                                    <Label Text="{Binding DiscoveryServersValidationMessage}"
                                              AutomationId="{x:Static t:TestIds.SettingsDiscoveryServersError}"
-                                             TextColor="{DynamicResource ErrorRed}" />
+                                             TextColor="{DynamicResource ErrorText}" />
 
                                    <!-- BindableLayout, not CollectionView: this list sits inside the page's own
                                         outer ScrollView, and a CollectionView added there does not re-measure its
@@ -245,16 +251,22 @@
                           VerticalOptions="Center">
                       <VerticalStackLayout Spacing="10">
                              <Label Text="Edit discovery server" FontAttributes="Bold" FontSize="18" />
-                             <Entry Placeholder="Display name (optional)"
+                             <Label Text="Display name (optional)" FontSize="12" TextColor="{DynamicResource TextSecondary}" />
+                             <Entry Placeholder="e.g. Studio server"
+                                       SemanticProperties.Description="Display name (optional)"
                                        Text="{Binding EditServerDisplayName}" />
-                             <Entry Placeholder="Hostname or IP"
+                             <Label Text="Hostname or IP" FontSize="12" TextColor="{DynamicResource TextSecondary}" />
+                             <Entry Placeholder="e.g. 192.168.1.10"
+                                       SemanticProperties.Description="Hostname or IP"
                                        Text="{Binding EditServerHost}"
                                        Keyboard="Url" />
-                             <Entry Placeholder="Port (default 5959)"
+                             <Label Text="Port (default 5959)" FontSize="12" TextColor="{DynamicResource TextSecondary}" />
+                             <Entry Placeholder="5959"
+                                       SemanticProperties.Description="Port (default 5959)"
                                        Text="{Binding EditServerPort}"
                                        Keyboard="Numeric" />
                              <Label Text="{Binding EditServerValidationMessage}"
-                                       TextColor="{DynamicResource ErrorRed}" />
+                                       TextColor="{DynamicResource ErrorText}" />
                              <HorizontalStackLayout Spacing="8" HorizontalOptions="End">
                                     <Button Text="Cancel" Command="{Binding CancelEditDiscoveryServerCommand}" />
                                     <Button Text="Save" Command="{Binding SaveEditedDiscoveryServerCommand}" />
