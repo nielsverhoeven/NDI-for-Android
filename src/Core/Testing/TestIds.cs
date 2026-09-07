@@ -100,6 +100,8 @@ public static class TestIds
     public const string ViewerPage            = "viewer.page";
     public const string ViewerVideoCanvas     = "viewer.videoCanvas";
     public const string ViewerVideoBorder     = "viewer.videoBorder";
+    public const string ViewerTallyProgramBadge = "viewer.tallyProgramBadge";
+    public const string ViewerStoppedBadge    = "viewer.stoppedBadge";
     public const string ViewerStatus          = "viewer.status";
     public const string ViewerQualitySmooth   = "viewer.quality.smooth";
     public const string ViewerQualityBalanced = "viewer.quality.balanced";
@@ -116,6 +118,13 @@ public static class TestIds
     public const string ViewerCancelRetry     = "viewer.cancelRetry";
     public const string ViewerReconnect       = "viewer.reconnect";
     public const string ViewerStop            = "viewer.stop";
+
+    // The three quality ids above are applied through QualityProfileOption.AutomationId (bound in
+    // the BindableLayout template of PlaybackControlsView), not as x:Static literals — keep them
+    // in sync there.
+    public const string ViewerQualityLabel    = "viewer.qualityLabel";      // "Quality: Balanced" next to the status line
+    public const string ViewerConnectionHint  = "viewer.connectionHint";    // "Connection weak — try Smooth" (#331)
+    public const string ViewerQualityCycle    = "viewer.fullScreen.qualityCycle"; // S/B/H button in FullScreenControlsOverlay
 
     // ── OutputPage (Stream tab): send configuration and start/stop ───────────
 

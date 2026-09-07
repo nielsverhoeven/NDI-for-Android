@@ -2,6 +2,7 @@
 <ContentView xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              xmlns:vm="clr-namespace:NdiForAndroid.Features.Viewer.ViewModels;assembly=NdiForAndroid.Core"
+             xmlns:t="clr-namespace:NdiForAndroid.Testing;assembly=NdiForAndroid.Core"
              x:Class="NdiForAndroid.Features.Viewer.Views.FullScreenControlsOverlay"
              x:DataType="vm:ViewerViewModel">
     <Grid IsVisible="{Binding AreControlsVisible}" BackgroundColor="Transparent">
@@ -78,55 +79,34 @@
 
         <Grid VerticalOptions="End" HeightRequest="48" ColumnDefinitions="*,48,48,48,Auto,48"
               ColumnSpacing="8" Padding="8,0" BackgroundColor="{DynamicResource ScrimBackground}">
-            <Label Grid.Column="0" Text="{Binding PtzStatusText}" FontSize="11" LineBreakMode="TailTruncation"
-                   VerticalOptions="Center" IsVisible="{Binding IsPtzControlActive}">
-                <Label.Style>
-                    <Style TargetType="Label">
-                        <Setter Property="TextColor" Value="{DynamicResource TextSecondary}" />
-                        <Style.Triggers>
-                            <DataTrigger TargetType="Label" Binding="{Binding PtzLinkState}" Value="Connected">
-                                <Setter Property="TextColor" Value="{DynamicResource SuccessText}" />
-                            </DataTrigger>
-                            <DataTrigger TargetType="Label" Binding="{Binding PtzLinkState}" Value="Error">
-                                <Setter Property="TextColor" Value="{DynamicResource ErrorText}" />
-                            </DataTrigger>
-                        </Style.Triggers>
-                    </Style>
-                </Label.Style>
-            </Label>
+            <VerticalStackLayout Grid.Column="0" Spacing="0" VerticalOptions="Center">
+                <Label Text="{Binding PtzStatusText}" FontSize="11" LineBreakMode="TailTruncation"
+                       IsVisible="{Binding IsPtzControlActive}">
+                    <Label.Style>
+                        <Style TargetType="Label">
+                            <Setter Property="TextColor" Value="{DynamicResource TextSecondary}" />
+                            <Style.Triggers>
+                                <DataTrigger TargetType="Label" Binding="{Binding PtzLinkState}" Value="Connected">
+                                    <Setter Property="TextColor" Value="{DynamicResource SuccessText}" />
+                                </DataTrigger>
+                                <DataTrigger TargetType="Label" Binding="{Binding PtzLinkState}" Value="Error">
+                                    <Setter Property="TextColor" Value="{DynamicResource ErrorText}" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Label.Style>
+                </Label>
+                <!-- Advisory connection hint (#331) — the deck/sheet label already carries
+                     ViewerConnectionHint and only one of them is on screen at a time. -->
+                <Label Text="{Binding ConnectionHint}" FontSize="11" FontAttributes="Bold" LineBreakMode="TailTruncation"
+                       TextColor="{DynamicResource WarningText}"
+                       IsVisible="{Binding ConnectionHint, Converter={StaticResource IsNotNullConverter}}" />
+            </VerticalStackLayout>
 
-            <Grid Grid.Column="1" WidthRequest="48">
-                <Button Text="S" WidthRequest="48" HeightRequest="48" Padding="0" FontSize="12"
-                        Command="{Binding ChangeQualityProfileCommand}" CommandParameter="Balanced"
-                        IsVisible="False"
-                        SemanticProperties.Description="Quality Smooth. Activate for Balanced.">
-                    <Button.Triggers>
-                        <DataTrigger TargetType="Button" Binding="{Binding QualityProfile}" Value="Smooth">
-                            <Setter Property="IsVisible" Value="True" />
-                        </DataTrigger>
-                    </Button.Triggers>
-                </Button>
-                <Button Text="B" WidthRequest="48" HeightRequest="48" Padding="0" FontSize="12"
-                        Command="{Binding ChangeQualityProfileCommand}" CommandParameter="High"
-                        IsVisible="False"
-                        SemanticProperties.Description="Quality Balanced. Activate for High.">
-                    <Button.Triggers>
-                        <DataTrigger TargetType="Button" Binding="{Binding QualityProfile}" Value="Balanced">
-                            <Setter Property="IsVisible" Value="True" />
-                        </DataTrigger>
-                    </Button.Triggers>
-                </Button>
-                <Button Text="H" WidthRequest="48" HeightRequest="48" Padding="0" FontSize="12"
-                        Command="{Binding ChangeQualityProfileCommand}" CommandParameter="Smooth"
-                        IsVisible="False"
-                        SemanticProperties.Description="Quality High. Activate for Smooth.">
-                    <Button.Triggers>
-                        <DataTrigger TargetType="Button" Binding="{Binding QualityProfile}" Value="High">
-                            <Setter Property="IsVisible" Value="True" />
-                        </DataTrigger>
-                    </Button.Triggers>
-                </Button>
-            </Grid>
+            <Button Grid.Column="1" Text="{Binding QualityProfileShortLabel}" WidthRequest="48" HeightRequest="48" Padding="0" FontSize="12"
+                    AutomationId="{x:Static t:TestIds.ViewerQualityCycle}"
+                    Command="{Binding CycleQualityProfileCommand}"
+                    SemanticProperties.Description="{Binding QualityProfileCycleDescription}" />
 
             <Switch Grid.Column="2" IsToggled="{Binding IsAudioEnabled}" WidthRequest="48" HeightRequest="48"
                     SemanticProperties.Description="Audio" />
