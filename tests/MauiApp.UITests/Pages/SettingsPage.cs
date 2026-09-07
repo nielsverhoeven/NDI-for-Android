@@ -136,13 +136,26 @@ public sealed class SettingsPage : PageObject
 
     private void TapNativeAlertButton(string caption)
     {
+        var xpath = $"//android.widget.Button[@text='{caption}' or @text='{caption.ToUpperInvariant()}' or @text='{caption.ToLowerInvariant()}']";
         var wait = new WebDriverWait(Driver, Timeouts.Navigation);
-        var button = wait.Until(_ => Driver.FindElements(By.XPath(
-                $"//android.widget.Button[@text='{caption}' or @text='{caption.ToUpperInvariant()}' or @text='{caption.ToLowerInvariant()}']"))
-            .FirstOrDefault());
+        var button = wait.Until(_ => Driver.FindElements(By.XPath(xpath)).FirstOrDefault())
+            ?? throw new InvalidOperationException($"No native alert button captioned '{caption}' appeared.");
 
-        button?.Click();
+        button.Click();
+
+        // The dialog is a separate window; until it is gone the page's own controls read as not
+        // displayed, so a caller that inspects the server list straight after the tap would see
+        // an empty list and misreport a declined confirmation as a deletion.
+        new WebDriverWait(Driver, Timeouts.Element)
+            .Until(_ => Driver.FindElements(By.XPath(xpath)).Count == 0);
     }
+
+    /// <summary>
+    /// Waits until a row with <paramref name="endpoint"/> is rendered — used after a dialog
+    /// round-trip, when the list needs a moment to be reported as displayed again.
+    /// </summary>
+    public void WaitForServerRow(string endpoint) =>
+        new WebDriverWait(Driver, Timeouts.Element).Until(_ => ServerRowEndpoints.Contains(endpoint));
 
     /// <summary>Number of discovery server rows currently rendered.</summary>
     public int ServerRowCount => FindDisplayed(TestIds.SettingsServerRowDelete).Count;

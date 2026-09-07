@@ -279,6 +279,7 @@ public sealed class AppLaunchTests : UiTestBase
             app.Settings.TapDeleteForRow(endpoint);
             app.Settings.CancelDeleteServer();
 
+            app.Settings.WaitForServerRow(endpoint);
             Assert.Contains(endpoint, app.Settings.ServerRowEndpoints);
         }
         finally
