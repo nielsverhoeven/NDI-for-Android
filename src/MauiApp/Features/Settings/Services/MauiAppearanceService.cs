@@ -18,8 +18,10 @@ public sealed class MauiAppearanceService : IAppearanceService
 
     // Last applied chrome state, so ReapplyChrome can restore it after Shell navigation
     // re-applies per-page toolbar appearance (resets the AppBarLayout background, #296).
-    private static Palette? _lastPalette;
-    private static bool _lastIsLight;
+    // #355 hygiene: these were static on a DI singleton whose AppearanceChanged is an instance
+    // event; a second instance (e.g. under test) would otherwise share this state.
+    private Palette? _lastPalette;
+    private bool _lastIsLight;
 
     public void Apply(ThemeMode theme, AccentColorOption accentColor)
     {

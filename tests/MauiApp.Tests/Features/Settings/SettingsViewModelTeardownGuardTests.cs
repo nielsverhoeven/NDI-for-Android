@@ -173,4 +173,46 @@ public sealed class SettingsViewModelTeardownGuardTests
         _repositoryMock.Verify(r => r.SaveSettingsAsync(
             It.Is<NdiSettingsSnapshot>(s => s.AccentColor == AccentColorOption.Orange)), Times.Once);
     }
+
+    // ─── Discovery-row Enabled switch (#355 follow-up to #300) ────────────────
+
+    [Fact]
+    public async Task DiscoveryServerEnabled_ChangedAfterStopConnectionMonitoring_DoesNotPersist()
+    {
+        var saved = NdiSettingsSnapshot.CreateDefault() with
+        {
+            DiscoveryServers = [new DiscoveryServerPreference("10.0.0.1", 5959, true, 0)],
+        };
+        _repositoryMock.Setup(r => r.GetSettingsAsync()).ReturnsAsync(saved);
+
+        var sut = CreateSut();
+        await sut.LoadCommand.ExecuteAsync(null);
+        _repositoryMock.Invocations.Clear();
+
+        // Simulates the page's OnDisappearing calling StopConnectionMonitoring, then a
+        // CollectionView row-recycle/teardown writing the Enabled switch back to false.
+        sut.StopConnectionMonitoring();
+        sut.DiscoveryServers[0].Enabled = false;
+
+        _repositoryMock.Verify(r => r.SaveSettingsAsync(It.IsAny<NdiSettingsSnapshot>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task DiscoveryServerEnabled_ChangedBeforeStopConnectionMonitoring_StillPersists()
+    {
+        var saved = NdiSettingsSnapshot.CreateDefault() with
+        {
+            DiscoveryServers = [new DiscoveryServerPreference("10.0.0.1", 5959, true, 0)],
+        };
+        _repositoryMock.Setup(r => r.GetSettingsAsync()).ReturnsAsync(saved);
+
+        var sut = CreateSut();
+        await sut.LoadCommand.ExecuteAsync(null);
+        _repositoryMock.Invocations.Clear();
+
+        sut.DiscoveryServers[0].Enabled = false;
+
+        _repositoryMock.Verify(r => r.SaveSettingsAsync(
+            It.Is<NdiSettingsSnapshot>(s => s.DiscoveryServers[0].Enabled == false)), Times.Once);
+    }
 }
