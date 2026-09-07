@@ -19,6 +19,9 @@ cleanup() {
   if [[ -n "${APPIUM_PID:-}" ]]; then
     kill "$APPIUM_PID" 2>/dev/null || true
   fi
+  if [[ -n "${LOGCAT_PID:-}" ]]; then
+    kill "$LOGCAT_PID" 2>/dev/null || true
+  fi
 }
 trap cleanup EXIT
 
@@ -40,6 +43,16 @@ fi
 
 # Extra settle time so the launcher and system services are stable
 sleep 5
+
+# Continuous logcat capture, started before install so nothing from app startup is missed.
+# `adb logcat -d` at the end of a run reads a 256K-ish ring buffer that UiAutomator2 fills with a
+# node dump per selector match — by the time a 3-10 minute run ends, the lines that explain an
+# early failure have already wrapped off the end of the buffer. Enlarging the buffer and mirroring
+# it continuously to a file from the start keeps that history around for the whole run.
+adb logcat -G 16M >/dev/null 2>&1 || true
+adb logcat -c || true
+adb logcat -v time > test-results/logcat-full.txt 2>&1 &
+LOGCAT_PID=$!
 
 echo "Installing APK: $APK_PATH"
 adb uninstall com.ndi.android >/dev/null 2>&1 || true
@@ -110,15 +123,35 @@ echo "dotnet test exit code: $TEST_EXIT"
 if [[ "$TEST_EXIT" -ne 0 ]]; then
   echo "Collecting device diagnostics..."
   adb logcat -b crash -d > test-results/logcat-crash.txt 2>&1 || true
-  adb logcat -d -v time | tail -400 > test-results/logcat-tail.txt 2>&1 || true
 
-  # A blind tail is the wrong tool for finding out what removed the app: the run is long, the
-  # buffer wraps, and the kill that matters happened minutes before the last test finished — so
-  # it has already scrolled away by the time this executes. Filter the whole buffer instead, and
-  # keep only the lines that name our package or the system deciding to end it.
-  adb logcat -d -v time 2>/dev/null \
-    | grep -E 'com\.ndi\.android|ActivityManager|lowmemorykiller|ANR' \
-    > test-results/logcat-app.txt || true
+  # Stop the continuous mirror so its file is complete and stable before it is read. The
+  # background capture (started before install, above) already holds the whole run — no ring
+  # buffer to have wrapped past — so derive both files from it instead of a fresh `adb logcat -d`.
+  if [[ -n "${LOGCAT_PID:-}" ]]; then
+    kill "$LOGCAT_PID" 2>/dev/null || true
+    wait "$LOGCAT_PID" 2>/dev/null || true
+    LOGCAT_PID=""
+  fi
+
+  if [[ -f test-results/logcat-full.txt ]]; then
+    tail -400 test-results/logcat-full.txt > test-results/logcat-tail.txt 2>&1 || true
+
+    # A blind tail is the wrong tool for finding out what removed the app: the run is long, and
+    # the kill that matters happened minutes before the last test finished. Filter the whole
+    # capture instead, keep the lines that name our package / activity lifecycle / the managed
+    # runtime, and drop UiAutomator2's own per-selector node-dump noise, which otherwise buries
+    # everything else under thousands of matching lines.
+    grep -E 'ActivityTaskManager|AndroidRuntime|monodroid|DOTNET|com\.ndi\.android|ActivityManager|lowmemorykiller|ANR' \
+      test-results/logcat-full.txt \
+      | grep -vE 'QueryController|UiObject\(|UiSelector|I/appium|InteractionController' \
+      > test-results/logcat-app.txt || true
+  else
+    echo "logcat-full.txt not found — continuous capture did not start; falling back to a point-in-time dump."
+    adb logcat -d -v time 2>/dev/null \
+      | grep -E 'com\.ndi\.android|ActivityManager|lowmemorykiller|ANR' \
+      > test-results/logcat-app.txt || true
+  fi
+
   adb shell dumpsys package com.ndi.android 2>/dev/null | head -60 > test-results/package-info.txt || true
 
   if [[ -s test-results/logcat-crash.txt ]]; then

@@ -1,4 +1,4 @@
-<!-- Last updated: 2026-07-07 -->
+<!-- Last updated: 2026-09-07 -->
 
 # Architecture
 
@@ -33,7 +33,17 @@ This guide defines the active MAUI architecture baseline for NDI-for-Android and
 5. Native NDI SDK types never leave the bridge boundary; only plain C# records/classes cross layers.
 6. Android-specific APIs are isolated in `Platforms/Android` services and injected through interfaces.
 7. Core may use BCL networking (`System.Net.Sockets`) for non-NDI device-control protocols (e.g. VISCA-over-TCP PTZ); NDI native interop stays bridge-only (Rule 4 governs `[DllImport("ndi")]` and NDI SDK types, not all networking).
-8. **Tab-root lifetime rule (#352/#359).** A page hosted by a `ShellContent` `ContentTemplate` (the Home/Stream/View/Settings roots in both `-tab` and `-rail` placements) is re-resolved from DI on every tab entry and on every placement change — MAUI's Android Shell recycles the non-current section — and never disposes its ViewModel from page lifecycle. A ViewModel that subscribes to a singleton event (`IDiscoveryRefreshService.SnapshotReady`, `INdiOutputBridge.OutputStatusChanged`, `IAppLifecycleService.AppResumed`, `IWindowSizeClassService.Changed`) is therefore registered **Singleton together with its page**: `SourceListViewModel`/`SourceListPage`, `HomeViewModel`/`HomePage`, `OutputViewModel`/`OutputPage`. Their `Dispose()` is container-owned. A tab-root ViewModel with no singleton subscriptions may stay Transient (`SettingsViewModel`, which starts/stops its own monitoring from `OnAppearing`/`OnDisappearing`). Only push-navigated pages (`ViewerPage`) dispose a Transient ViewModel from page lifecycle, and only once the page has left the navigation stack.
+8. **Newer Core seams follow the same MAUI-free pattern as `IMainThreadDispatcher`** (Core interface
+   + fake for tests, MAUI implementation registered in `MauiProgram.cs`, Noop twin where a build
+   target has no page/window to anchor to): `IScreenReaderAnnouncer` (#345, wraps
+   `SemanticScreenReader`), `IUserPromptService` (#347, wraps `Page.DisplayAlert` on
+   `Shell.Current.CurrentPage`). `IDeepLinkRouteResolver` (#335) and `ConnectionHintPolicy`/
+   `QualityProfileOption` (#330/#331) need no platform seam at all — they are pure functions/records
+   over plain data, exercised directly from `tests/MauiApp.Tests`. `CameraFrameOrientation` and
+   `Nv12FrameRotator` (#284, `src/Core/Services/`) are likewise pure — the Camera2-specific
+   `SessionConfiguration` plumbing that calls them stays in
+   `Platforms/Android/Services/AndroidVideoCaptureSource.cs`.
+9. **Tab-root lifetime rule (#352/#359).** A page hosted by a `ShellContent` `ContentTemplate` (the Home/Stream/View/Settings roots in both `-tab` and `-rail` placements) is re-resolved from DI on every tab entry and on every placement change — MAUI's Android Shell recycles the non-current section — and never disposes its ViewModel from page lifecycle. A ViewModel that subscribes to a singleton event (`IDiscoveryRefreshService.SnapshotReady`, `INdiOutputBridge.OutputStatusChanged`, `IAppLifecycleService.AppResumed`, `IWindowSizeClassService.Changed`) is therefore registered **Singleton together with its page**: `SourceListViewModel`/`SourceListPage`, `HomeViewModel`/`HomePage`, `OutputViewModel`/`OutputPage`. Their `Dispose()` is container-owned. A tab-root ViewModel with no singleton subscriptions may stay Transient (`SettingsViewModel`, which starts/stops its own monitoring from `OnAppearing`/`OnDisappearing`). Only push-navigated pages (`ViewerPage`) dispose a Transient ViewModel from page lifecycle, and only once the page has left the navigation stack.
 
 ## Architecture Diagram
 
@@ -128,6 +138,16 @@ Rules:
    `INavigationService.NavigateToPrimaryAsync(PrimaryNavDestination, string? queryString)` —
    placement-aware — never a hard-coded `//x-tab`/`//x-rail` route string.
 5. Placement-adaptive routing is handled by `ShellNavigationService` reading `AdaptiveShellStateViewModel.IsLeftRailNavigationVisible`; rail placement uses `//xxx-rail` routes, bottom-tab placement uses `//xxx-tab` routes.
+
+### Deep links (#335)
+
+`ndi://` deep links are resolved in two stages: `IDeepLinkRouteResolver`/`DeepLinkRouteResolver`
+(`src/Core/Features/DeepLinking/Services/`, pure/MAUI-free) parses the URI into a normalized
+`(DeepLinkType, sourceId)` — supporting both the query form (`ndi://view?sourceId=<id>`,
+`ndi://stream?sourceId=<id>`) and the path form for QR/NFC (`ndi://view/<host:port>`,
+`ndi://stream/<host:port>`) — and the MauiApp `DeepLinkService` adapter then does the
+navigation/source-cache lookup. This keeps the URI-parsing logic unit-testable in Core while the
+platform-facing side effects stay in MauiApp.
 
 ### Window size classes and navigation placement (#279)
 

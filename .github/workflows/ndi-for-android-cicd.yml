@@ -461,6 +461,21 @@ jobs:
           else
             echo "No filtered logcat captured."
           fi
+          # The kills/ANR/OOM grep above only answers "nobody killed it" — it says nothing about
+          # the class of failure where the activity finishes cleanly (backgrounded, popped, or
+          # handed to another task) rather than being killed. logcat-full.txt is the continuous,
+          # whole-run capture (testing/e2e/scripts/run-emulator-tests.sh); when present, grep it
+          # for the events that distinguish "app finished/backgrounded itself" from "app was
+          # never involved".
+          echo ""
+          if [ -s test-results/logcat-full.txt ]; then
+            echo "----- foreground handovers (whole run) -----"
+            grep -E 'START u0|moveTaskToBack|finishActivity|am_finish|Force removing|removeTask|TaskRemoved' \
+              test-results/logcat-full.txt | tail -40 || echo "  (no foreground-handover lines found)"
+            echo "---------------------------------------------"
+          else
+            echo "No continuous logcat capture (logcat-full.txt) found."
+          fi
           echo "==========================================================="
 
   # ════════════════════════════════════════════════════════════════════════════
