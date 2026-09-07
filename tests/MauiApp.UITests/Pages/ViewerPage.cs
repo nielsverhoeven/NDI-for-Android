@@ -1,16 +1,10 @@
 using OpenQA.Selenium.Appium.Android;
+using NdiForAndroid.Features.Viewer.Models;
+using NdiForAndroid.NdiBridge;
 using NdiForAndroid.Testing;
 using NdiForAndroid.UITests.Infrastructure;
 
 namespace NdiForAndroid.UITests.Pages;
-
-/// <summary>Receive quality profiles offered by the viewer.</summary>
-public enum QualityProfile
-{
-    Smooth,
-    Balanced,
-    High,
-}
 
 /// <summary>
 /// The viewer: video surface plus quality, audio, PTZ and reconnect controls.
@@ -47,13 +41,17 @@ public sealed class ViewerPage : PageObject
     public void WaitUntilPlaying() =>
         WaitFor(TestIds.ViewerStop, Timeouts.Network, "The viewer never reported playback");
 
-    public void SelectQuality(QualityProfile profile) => Tap(profile switch
-    {
-        QualityProfile.Smooth   => TestIds.ViewerQualitySmooth,
-        QualityProfile.Balanced => TestIds.ViewerQualityBalanced,
-        QualityProfile.High     => TestIds.ViewerQualityHigh,
-        _ => throw new ArgumentOutOfRangeException(nameof(profile)),
-    });
+    public void SelectQuality(QualityProfile profile) => Tap(QualityProfileOption.AutomationIdFor(profile));
+
+    /// <summary>"Quality: Balanced" while playing; the label is not rendered while idle.</summary>
+    public string QualityLabel => TextOf(TestIds.ViewerQualityLabel);
+
+    /// <summary>True while the advisory "Connection weak…" hint is shown (#331); never on the emulator.</summary>
+    public bool HasConnectionHint => IsPresent(TestIds.ViewerConnectionHint);
+    public string ConnectionHint => TextOf(TestIds.ViewerConnectionHint);
+
+    /// <summary>Full-screen toolbar S/B/H button: Smooth → Balanced → High → Smooth.</summary>
+    public void CycleQuality() => Tap(TestIds.ViewerQualityCycle);
 
     public void ToggleAudio()  => Tap(TestIds.ViewerAudioToggle);
     public void Stop()         => Tap(TestIds.ViewerStop);

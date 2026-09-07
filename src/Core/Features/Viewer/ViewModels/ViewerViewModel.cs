@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.Input;
 using NdiForAndroid.Features.AppState.Models;
 using NdiForAndroid.Features.AppState.Repositories;
 using NdiForAndroid.Features.ConnectionHistory.Services;
+using NdiForAndroid.Features.Viewer.Models;
 using NdiForAndroid.Features.Ptz.Services;
 using NdiForAndroid.Features.Ptz.ViewModels;
 using NdiForAndroid.Features.Sources.Models;
@@ -42,6 +43,7 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
     private string? _sourceId;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(QualityProfileLabel))]
     private bool _isPlaying;
 
     [ObservableProperty]
@@ -82,19 +84,38 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
     private string? _lastSourceId;
     private bool _wasPlayingBeforeResume;
 
-    // Quality profile selection
+    // Quality profile selection — manual only (#330/#331: no automatic degradation; the
+    // stats watchdog in ViewerViewModel.ConnectionHint.cs only feeds ConnectionHint).
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(QualityProfileLabel))]
+    [NotifyPropertyChangedFor(nameof(QualityProfileShortLabel))]
+    [NotifyPropertyChangedFor(nameof(NextQualityProfile))]
+    [NotifyPropertyChangedFor(nameof(QualityProfileCycleDescription))]
     private QualityProfile _qualityProfile = QualityProfile.Balanced;
 
-    private QualityProfile? _previousQualityProfile;
-    private int _sustainedDropCount;
-    private static readonly int AutoDegradationThreshold = 3;
-    private const float DegradationThresholdFps = 15f;
+    /// <summary>Every enum value, in declaration order — the button strip is generated from this.</summary>
+    public IReadOnlyList<QualityProfileOption> AvailableProfiles { get; } =
+        Enum.GetValues<QualityProfile>().Select(p => new QualityProfileOption(p)).ToArray();
 
-    public IEnumerable<QualityProfile> AvailableProfiles => new[] { QualityProfile.Smooth, QualityProfile.Balanced, QualityProfile.High };
+    /// <summary>User-visible label next to the status line; null (collapsed) while not playing.</summary>
+    public string? QualityProfileLabel => IsPlaying ? $"Quality: {QualityProfile}" : null;
 
-    /// <summary>Developer-visible label for the current quality profile.</summary>
-    public string? QualityProfileLabel => IsPlaying ? $"QProfile: {QualityProfile}" : null;
+    /// <summary>One-letter label for the full-screen toolbar button (S / B / H).</summary>
+    public string QualityProfileShortLabel => QualityProfile.ToString()[..1];
+
+    /// <summary>Profile the full-screen cycle button switches to (wraps around AvailableProfiles).</summary>
+    public QualityProfile NextQualityProfile
+    {
+        get
+        {
+            var index = -1;
+            for (var i = 0; i < AvailableProfiles.Count; i++)
+                if (AvailableProfiles[i].Profile == QualityProfile) { index = i; break; }
+            return AvailableProfiles[(index + 1) % AvailableProfiles.Count].Profile;
+        }
+    }
+
+    public string QualityProfileCycleDescription => $"Quality {QualityProfile}. Activate for {NextQualityProfile}.";
 
     // State machine
     private enum ReconnectState { Idle, InWindow, Attempting, Failed }
@@ -125,6 +146,7 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
         RetryRemainingSeconds = ReconnectConstants.RetryWindowSeconds;
         StatusMessage = "Select a source on Home to start viewing.";
         _isAudioEnabled = bridge.IsAudioEnabled; // backing field: don't push the default back to the bridge
+        SyncSelectedProfileOption(); // field initialisers do not fire OnQualityProfileChanged
 
         _lifecycle.AppResumed += OnAppResumed;
         _bridge.ConnectionStateChanged += OnBridgeConnectionStateChanged;
@@ -154,7 +176,7 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
 
             // Minimal status refresh; drop handling stays with the reconnect state machine.
             if (IsPlaying && !IsReconnecting && state == ConnectionState.Connected)
-                StatusMessage = $"Connected. (QProfile: {QualityProfile})";
+                StatusMessage = "Connected.";
         });
     }
 
@@ -192,7 +214,7 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
             {
                 IsPlaying = true;
                 IsReconnecting = false;
-                StatusMessage = $"Connected. (QProfile: {QualityProfile})";
+                StatusMessage = "Connected.";
                 RetryStatusMessage = null;
             }
         }
@@ -201,6 +223,7 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
     partial void OnIsPlayingChanged(bool value)
     {
         _wasPlayingBeforeResume = value;
+        if (value) StartStatsWatchdog(); else StopStatsWatchdog();
     }
 
     partial void OnSourceIdChanged(string? value)
@@ -257,7 +280,7 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
         _bridge.StartReceiver(SourceId, QualityProfile);
         _bridge.SetTally(onProgram: true, onPreview: false);
         IsPlaying = true;
-        StatusMessage = $"Connecting... (QProfile: {QualityProfile})";
+        StatusMessage = "Connecting...";
     }
 
     [RelayCommand]
@@ -288,6 +311,7 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
     public void Dispose()
     {
         DisposeTimers();
+        _statsTimer?.Dispose();
         _overlayAutoHideTimer?.Dispose();
         _immersiveMode.KeepScreenOn(false);
         _userInitiatedStop = true;
@@ -392,7 +416,7 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
             _reconnectState = ReconnectState.Idle;
             IsReconnecting = false;
             IsPlaying = true;
-            StatusMessage = $"Connected. (QProfile: {QualityProfile})";
+            StatusMessage = "Connected.";
             RetryRemainingSeconds = 0;
             RetryStatusMessage = null;
             DisposeTimers();
@@ -474,19 +498,35 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
 
     // --- PTZ (only offered when IsPtzSupported) --- see ViewerViewModel.Ptz.cs
 
-    // --- Quality Profile ---
+    // --- Quality Profile (manual selection only — #330/#331) ---
 
+    partial void OnQualityProfileChanged(QualityProfile value)
+    {
+        SyncSelectedProfileOption();
+        ResetConnectionHint(); // the new profile gets a fresh evaluation window
+    }
+
+    private void SyncSelectedProfileOption()
+    {
+        foreach (var option in AvailableProfiles)
+            option.IsSelected = option.Profile == QualityProfile;
+    }
+
+    /// <summary>Accepts a <see cref="QualityProfile"/> (templated buttons), a <see cref="QualityProfileOption"/>, or the enum name as a string (legacy XAML / tests).</summary>
     [RelayCommand]
     private async Task ChangeQualityProfileAsync(object? param)
     {
         NotifyControlInteraction();
-        if (param is not string profileName) return;
 
-        if (!Enum.TryParse<QualityProfile>(profileName, ignoreCase: true, out var profile)) return;
+        QualityProfile? requested = param switch
+        {
+            QualityProfile p => p,
+            QualityProfileOption o => o.Profile,
+            string s when Enum.TryParse<QualityProfile>(s, ignoreCase: true, out var parsed) => parsed,
+            _ => null,
+        };
+        if (requested is not { } profile || QualityProfile == profile) return;
 
-        if (QualityProfile == profile) return;
-
-        _previousQualityProfile ??= QualityProfile;
         QualityProfile = profile;
         _bridge.SetQualityProfile(profile);
 
@@ -505,80 +545,7 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
         StatusMessage = $"Quality profile set to {profile}.";
     }
 
-    /// <summary>
-    /// Monitor for quality degradation and auto-degrade if sustained drops detected.
-    /// Called from the frame stats watchdog (~every 5 seconds) once the real frame
-    /// pump lands (#277); returns a Task so the caller can observe failures.
-    /// </summary>
-    public async Task CheckAutoDegradation(float currentFps, float dropPercent)
-    {
-        // Only degrade if playing and not already in reconnect window
-        if (!IsPlaying || IsReconnecting) return;
-
-        // Already degraded — only auto-recover
-        if (_previousQualityProfile != null)
-        {
-            if (currentFps > DegradationThresholdFps && dropPercent < 10f)
-            {
-                // Recover to previous profile
-                QualityProfile = _previousQualityProfile.Value;
-                _bridge.SetQualityProfile(QualityProfile);
-                _previousQualityProfile = null;
-                _sustainedDropCount = 0;
-                StatusMessage = "Connection stabilized — quality restored.";
-            }
-
-            // Don't keep degrading if already at lowest
-            return;
-        }
-
-        // Check for degradation: sustained low FPS or high drop rate
-        if (currentFps < DegradationThresholdFps || dropPercent > 30f)
-        {
-            _sustainedDropCount++;
-            if (_sustainedDropCount >= AutoDegradationThreshold && QualityProfile != QualityProfile.Smooth)
-            {
-                // Degrade one step
-                var next = QualityProfile switch
-                {
-                    QualityProfile.High => QualityProfile.Balanced,
-                    QualityProfile.Balanced => QualityProfile.Smooth,
-                    _ => QualityProfile.Smooth
-                };
-
-                _previousQualityProfile = QualityProfile;
-                QualityProfile = next;
-                _bridge.SetQualityProfile(next);
-
-                // Persist
-                if (!string.IsNullOrEmpty(SourceId))
-                {
-                    var sources = await _sourceRepository.GetCachedSourcesAsync();
-                    var source = sources.FirstOrDefault(s => s.SourceId == SourceId);
-                    if (source != null)
-                    {
-                        var updatedSource = source with { QualityProfile = next };
-                        await _sourceRepository.SaveSourceAsync(updatedSource);
-                    }
-                }
-
-                StatusMessage = $"Auto-degraded quality to {next} due to poor connection.";
-            }
-        }
-        else
-        {
-            // Good connection — reset drop counter but don't auto-recover yet
-            _sustainedDropCount = Math.Max(0, _sustainedDropCount - 1);
-        }
-    }
-
-    public void ResumeQualityProfile()
-    {
-        if (_previousQualityProfile != null)
-        {
-            QualityProfile = _previousQualityProfile.Value;
-            _bridge.SetQualityProfile(QualityProfile);
-            StatusMessage = $"Quality profile resumed to {QualityProfile}.";
-        }
-    }
+    /// <summary>Full-screen toolbar: Smooth → Balanced → High → Smooth.</summary>
+    [RelayCommand]
+    private Task CycleQualityProfile() => ChangeQualityProfileAsync(NextQualityProfile);
 }

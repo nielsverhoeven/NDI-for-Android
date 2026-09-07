@@ -409,6 +409,143 @@ public class ViewerViewModelTests
         Assert.Equal(Enumerable.Range(1, 8), ViewerViewModel.PresetNumbers);
     }
 
+    // --- Quality profile selection (#330/#331): data-driven strip, no auto-degradation ---
+
+    [Fact]
+    public void AvailableProfiles_ContainsEveryEnumValueInOrder()
+    {
+        var sut = CreateSut();
+
+        Assert.Equal(Enum.GetValues<QualityProfile>(), sut.AvailableProfiles.Select(o => o.Profile));
+    }
+
+    [Fact]
+    public void AvailableProfiles_DefaultSelection_IsBalanced()
+    {
+        var sut = CreateSut();
+
+        var selected = sut.AvailableProfiles.Where(o => o.IsSelected).ToList();
+        Assert.Single(selected);
+        Assert.Equal(QualityProfile.Balanced, selected[0].Profile);
+    }
+
+    [Fact]
+    public async Task ChangeQualityProfileCommand_WithEnumParameter_SelectsAndForwardsToBridge()
+    {
+        var sut = CreateSut();
+
+        await sut.ChangeQualityProfileCommand.ExecuteAsync(QualityProfile.High);
+
+        Assert.Equal(QualityProfile.High, sut.QualityProfile);
+        _bridgeMock.Verify(b => b.SetQualityProfile(QualityProfile.High), Times.Once);
+        Assert.True(sut.AvailableProfiles.Single(o => o.Profile == QualityProfile.High).IsSelected);
+        Assert.All(sut.AvailableProfiles.Where(o => o.Profile != QualityProfile.High), o => Assert.False(o.IsSelected));
+    }
+
+    [Fact]
+    public async Task ChangeQualityProfileCommand_WithOptionParameter_Selects()
+    {
+        var sut = CreateSut();
+
+        await sut.ChangeQualityProfileCommand.ExecuteAsync(sut.AvailableProfiles[0]);
+
+        Assert.Equal(QualityProfile.Smooth, sut.QualityProfile);
+    }
+
+    [Fact]
+    public async Task ChangeQualityProfileCommand_WithStringParameter_StillWorks()
+    {
+        var sut = CreateSut();
+
+        await sut.ChangeQualityProfileCommand.ExecuteAsync("smooth");
+
+        Assert.Equal(QualityProfile.Smooth, sut.QualityProfile);
+    }
+
+    [Fact]
+    public async Task ChangeQualityProfileCommand_WithUnknownParameter_IsIgnored()
+    {
+        var sut = CreateSut();
+
+        await sut.ChangeQualityProfileCommand.ExecuteAsync(42);
+
+        Assert.Equal(QualityProfile.Balanced, sut.QualityProfile);
+        _bridgeMock.Verify(b => b.SetQualityProfile(It.IsAny<QualityProfile>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ChangeQualityProfileCommand_PersistsProfileToCachedSource()
+    {
+        _sourceRepoMock.Setup(r => r.GetCachedSourcesAsync())
+            .ReturnsAsync(new List<NdiSource> { new("src-1", "Cam 1", "192.168.1.10", true, 0) });
+        var sut = CreateSut();
+        sut.SourceId = "src-1";
+
+        await sut.ChangeQualityProfileCommand.ExecuteAsync(QualityProfile.High);
+
+        _sourceRepoMock.Verify(r => r.SaveSourceAsync(It.Is<NdiSource>(s => s.QualityProfile == QualityProfile.High)), Times.Once);
+    }
+
+    [Fact]
+    public async Task QualityProfileLabel_IsNullWhileIdle_AndNamesProfileWhilePlaying()
+    {
+        var sut = CreateSut();
+        Assert.Null(sut.QualityProfileLabel);
+
+        sut.SourceId = "src-1";
+        Assert.Equal("Quality: Balanced", sut.QualityProfileLabel);
+
+        await sut.ChangeQualityProfileCommand.ExecuteAsync(QualityProfile.Smooth);
+        Assert.Equal("Quality: Smooth", sut.QualityProfileLabel);
+    }
+
+    [Fact]
+    public async Task QualityProfileLabel_RaisesPropertyChanged_WhenProfileOrPlayingChanges()
+    {
+        var sut = CreateSut();
+        var raised = new List<string?>();
+        sut.PropertyChanged += (_, e) => raised.Add(e.PropertyName);
+
+        sut.IsPlaying = true;
+        await sut.ChangeQualityProfileCommand.ExecuteAsync(QualityProfile.High);
+
+        Assert.Contains(nameof(ViewerViewModel.QualityProfileLabel), raised);
+    }
+
+    [Fact]
+    public void NextQualityProfile_WrapsAround()
+    {
+        var sut = CreateSut();
+
+        Assert.Equal(QualityProfile.High, sut.NextQualityProfile);
+
+        sut.QualityProfile = QualityProfile.High;
+        Assert.Equal(QualityProfile.Smooth, sut.NextQualityProfile);
+    }
+
+    [Fact]
+    public void CycleQualityProfileCommand_AdvancesAndForwardsToBridge()
+    {
+        var sut = CreateSut();
+
+        sut.CycleQualityProfileCommand.Execute(null);
+
+        Assert.Equal(QualityProfile.High, sut.QualityProfile);
+        _bridgeMock.Verify(b => b.SetQualityProfile(QualityProfile.High), Times.Once);
+        Assert.Equal("H", sut.QualityProfileShortLabel);
+        Assert.Equal("Quality High. Activate for Smooth.", sut.QualityProfileCycleDescription);
+    }
+
+    [Fact]
+    public void StatusMessages_NoLongerEmbedProfile()
+    {
+        var sut = CreateSut();
+
+        sut.SourceId = "src-1";
+
+        Assert.Equal("Connecting...", sut.StatusMessage);
+    }
+
     // --- Reconnect timing (#332): every timer runs on the injected TimeProvider ---
 
     [Fact]
