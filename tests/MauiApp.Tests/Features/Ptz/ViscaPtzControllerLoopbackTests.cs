@@ -10,14 +10,21 @@ public class ViscaPtzControllerLoopbackTests : IAsyncLifetime
 {
     private static readonly TimeSpan ShortTimeout = TimeSpan.FromMilliseconds(300);
 
+    // Deliberately larger than ViscaPtzController's production defaults (3 s connect / 2 s command): these tests do not test timing.
+    private static readonly TimeSpan GenerousTimeout = TimeSpan.FromSeconds(5);
+
     private readonly LoopbackViscaCamera _camera = new();
 
     public Task InitializeAsync() => _camera.InitializeAsync();
 
     public Task DisposeAsync() => _camera.DisposeAsync();
 
-    private ViscaPtzController CreateSut() =>
-        new(new ViscaTcpTransport(), new PtzEndpoint("127.0.0.1", _camera.Port), ShortTimeout, ShortTimeout);
+    private ViscaPtzController CreateSut(TimeSpan? connectTimeout = null, TimeSpan? commandTimeout = null) =>
+        new(
+            new ViscaTcpTransport(),
+            new PtzEndpoint("127.0.0.1", _camera.Port),
+            connectTimeout ?? GenerousTimeout,
+            commandTimeout ?? GenerousTimeout);
 
     [Fact]
     public async Task PanTiltAsync_RespondMode_ReturnsTrue()
@@ -48,7 +55,7 @@ public class ViscaPtzControllerLoopbackTests : IAsyncLifetime
     public async Task PanTiltAsync_SilentMode_TimesOutWithoutHanging()
     {
         _camera.Mode = LoopbackViscaCameraMode.Silent;
-        var sut = CreateSut();
+        var sut = CreateSut(GenerousTimeout, ShortTimeout);
         var stopwatch = Stopwatch.StartNew();
 
         var result = await sut.PanTiltAsync(1f, 0f);
