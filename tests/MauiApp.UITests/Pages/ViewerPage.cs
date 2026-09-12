@@ -77,6 +77,39 @@ public sealed class ViewerPage : PageObject
     public string FullScreenToggleLabel =>
         WaitFor(TestIds.ViewerFullScreenToggle).GetAttribute("content-desc") ?? string.Empty;
 
+    /// <summary>
+    /// True while full screen is showing. The full-screen overlay's own Stop button has no
+    /// AutomationId (only the Deck/Sheet one does), so "the video canvas is present but no
+    /// id'd Stop button is" is exactly full screen — it cannot be confused with "not playing",
+    /// because a source must already be playing to reach either state in this suite.
+    /// </summary>
+    public bool IsFullScreen => HasVideoSurface && !IsPlaying;
+
+    /// <summary>
+    /// Blocks until full screen has actually rendered. `viewer.fullScreen.qualityCycle` exists only
+    /// in FullScreenControlsOverlay, so its appearance is proof the overlay is up — unlike the
+    /// non-waiting IsFullScreen read, which races MAUI's UI-thread property-change cascade. Call
+    /// this only immediately after entering full screen: the id disappears again when the 3s
+    /// auto-hide fires.
+    /// </summary>
+    public void WaitUntilFullScreen() =>
+        WaitFor(TestIds.ViewerQualityCycle, Timeouts.StateChange, "Full screen did not engage");
+
+    /// <summary>Single-taps the video surface — re-shows the full-screen overlay if the 3s
+    /// auto-hide has already fired, or toggles the overlay in the windowed layout.</summary>
+    public void TapVideo() => Tap(TestIds.ViewerVideoBorder);
+
+    /// <summary>
+    /// Exits full screen. Taps the video first to guarantee the overlay (and its toggle/exit
+    /// button) is on screen even if the 3s auto-hide already fired since entering — tapping the
+    /// button id directly would time out waiting for an element that auto-hid moments earlier.
+    /// </summary>
+    public void ExitFullScreen()
+    {
+        TapVideo();
+        ToggleFullScreen();
+    }
+
     public void PanUp()    => Tap(TestIds.ViewerPtzUp);
     public void PanDown()  => Tap(TestIds.ViewerPtzDown);
     public void PanLeft()  => Tap(TestIds.ViewerPtzLeft);
