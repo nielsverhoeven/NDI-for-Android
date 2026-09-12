@@ -1,6 +1,7 @@
 using System.Globalization;
 using NdiForAndroid.Features.DiagOverlay.Services;
 using NdiForAndroid.Features.Settings.Models;
+using NdiForAndroid.Features.Sources.Models;
 using NdiForAndroid.Services;
 
 namespace NdiForAndroid.Converters;
@@ -88,6 +89,21 @@ public sealed class VideoInputKindDisplayConverter : IValueConverter
             VideoInputKind.CameraRear => "Rear camera",
             _ => value?.ToString() ?? string.Empty,
         };
+
+    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+        => throw new NotSupportedException();
+}
+
+/// <summary>
+/// Maps an <see cref="NdiSource"/> to its display string for the re-stream Picker (#343 OUT-08) —
+/// the source's friendly name, falling back to the raw <c>SourceId</c> when blank.
+/// </summary>
+public sealed class NdiSourceDisplayConverter : IValueConverter
+{
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+        => value is NdiSource source
+            ? (string.IsNullOrWhiteSpace(source.DisplayName) ? source.SourceId : source.DisplayName)
+            : string.Empty;
 
     public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
         => throw new NotSupportedException();

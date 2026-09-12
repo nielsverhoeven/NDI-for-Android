@@ -220,6 +220,913 @@ but it has outlived the deferral and is user-visible.
 
 ---
 
+<!-- Paste each entry into `.claude/knowledge/architecture.md`'s Verdicts log on that item's own branch. -->
+
+### 2026-09-12 — #343 OUT-08 re-stream source picker (gate)
+
+**APPROVE-WITH-CHANGES.** The data-source choice, the lifetime model and the converter are all
+correct and are the *existing* idioms, not new ones. Three blocking defects, all in
+`ApplyReStreamSources` / `SelectReStreamSourceById` / the Appium smoke test, where the plan's code
+contradicts the plan's own design decisions.
+
+**Verified against the live tree (not taken from the plan):**
+
+- **Lifetime is right and cannot leak or double-fire.** `OutputViewModel` is
+  `AddSingleton` (`MauiProgram.cs:159`), `OutputPage` is `AddSingleton` (`:172`), and both
+  `ISourceRepository` (`:72`) and `IDiscoveryRefreshService` (`:96`) are singletons — **no DI change
+  is needed**. Subscribing once in the constructor and unsubscribing only in the container-owned
+  `Dispose()` is exactly the rule recorded in the 2026-09-07 #352/#359 verdict and restated in the
+  `MauiProgram.cs:147-153` comment. The ViewModel is resolved once per process and
+  `OutputPage.OnAppearing` runs `LoadCommand` (`OutputPage.xaml.cs:34-37`), never re-subscribes, so
+  there is exactly one handler for the process lifetime.
+- **The "already polling continuously" claim is TRUE.** `DiscoveryRefreshService` starts and stops
+  itself from `IAppLifecycleService.AppResumed`/`AppPaused` (`DiscoveryRefreshService.cs:56-57`),
+  not from the Sources page — `SourceListViewModel` only ever calls `Stop()` (`:106`) and
+  `RequestRefresh()` (`:99`). Poll interval is **5 s** (`DiscoveryRefreshService.cs:15`). That
+  number is what makes required change 1 blocking.
+- **Rule 4 holds.** `OnReStreamSourcesSnapshotReady` marshals through
+  `_dispatcher.BeginInvokeOnMainThread`, mirroring `SourceListViewModel.OnSnapshotReady`
+  (`SourceListViewModel.cs:80-91`) and the interface's own "raised on a background thread"
+  contract (`IDiscoveryRefreshService.cs:11-15`).
+- **Rule 1 holds** (repository interface, no SQLite in the ViewModel) and **Rule 3 holds**.
+- **The converter is the right place — do not move display strings into the ViewModel.**
+  `NdiSourceDisplayConverter` is a byte-for-byte parallel of `VideoInputKindDisplayConverter`
+  (`ValueConverters.cs:81`), which the sibling Video Input Picker already uses for
+  `ItemDisplayBinding` (`OutputPage.xaml:61`). This log already records that "a value converter …
+  is the correct usage" for `StaticResource` in a view. A ViewModel-side
+  `ObservableCollection<string>` would need a second collection kept in sync with `SelectedItem`
+  and would break the `SelectedItem`→`NdiSource` round-trip. Registration in `Styles.xaml:148`
+  next to `VideoInputKindDisplayConverter` is correct.
+- **Cross-feature Core dependency (Output → Sources) is established precedent**, not a new
+  boundary: `HomeViewModel` already takes `ISourceRepository` and `IDiscoveryRefreshService`
+  (`HomeViewModel.cs:24,72`). No layering deviation.
+- Baseline references all check out: `OutputViewModel.cs:84` (`_reStreamSourceId`), `:93-114`
+  (ctor), `:231-240` (`ApplyReStreamRequest`), `:283-341` (`StartOutputAsync`, including the silent
+  fall-through to capture mode at `:295-317`), `:370-374` (`Dispose`); `OutputPage.xaml:90-98`;
+  `TestIds.cs:153` + reflection-based `TestIds.All` (`:47`); `A11Y_MAX_VIOLATIONS` budget 12 /
+  measured 10 (`AccessibilityTests.cs:47-50`); `OutputPage.xaml.cs:40-61` awaits `LoadCommand`
+  **before** `ApplyReStreamRequest`, so the preselection ordering the plan depends on is real;
+  `SourceListViewModel.NavigateToOutputAsync:133-150` unchanged.
+
+**Decision on the new validation (design decision 7): KEEP.** `StartOutputAsync` today silently
+falls through to the **capture** branch when `IsReStreamMode && ReStreamSourceId` is empty
+(`OutputViewModel.cs:295,304-317`) — it starts a screen capture and raises the MediaProjection
+consent dialog for a user who asked to re-stream. That is a defect, not a feature, and a Picker
+makes "no selection" a first-class visible state that reaches it far more often. Four lines,
+mirrors the stream-name guard immediately above, Core-testable. Keep item 7 and its test.
+
+**Required changes, ordered:**
+
+1. **`ApplyReStreamSources` must merge, never `Clear()` — and must ignore failure/empty snapshots.**
+   The plan's design decision 2 commits to "cached registry + live discovery, **unioned by
+   identity**", but the code is a wholesale replace. Three consequences, all real:
+   (a) with a 5 s poll the Picker's bound `ItemsSource` is emptied and refilled **every 5 seconds**,
+   which resets the native `SelectedIndex` to −1, pushes `SelectedItem = null` back into the
+   ViewModel and transiently nulls `ReStreamSourceId`; (b) `HasReStreamSources` flips false→true on
+   every poll, so the Picker unloads and the fallback `Entry` flashes in; (c) a single **failed**
+   poll raises `SnapshotReady` with `Sources: Array.Empty` (`DiscoveryRefreshService.cs:164-171`),
+   which would wipe every cached source — precisely the "live-only was rejected" regression the plan
+   says it is avoiding. Replace the whole of `OnReStreamSourcesSnapshotReady` /
+   `ApplyReStreamSources` with:
+
+   ```csharp
+    /// <summary>Raised on a background/pump thread whenever a discovery poll completes — marshal to
+    /// the UI thread before touching <see cref="AvailableReStreamSources"/> (Architecture Rule 4).
+    /// A failed poll carries an empty source list (DiscoveryRefreshService raises a Failure snapshot
+    /// with Array.Empty) and must never be allowed to empty the picker.</summary>
+    private void OnReStreamSourcesSnapshotReady(object? sender, DiscoverySnapshot snapshot)
+    {
+        if (snapshot.Status == DiscoveryStatus.Failure)
+            return;
+
+        _dispatcher.BeginInvokeOnMainThread(() => ApplyReStreamSources(snapshot.Sources));
+    }
+
+    /// <summary>
+    /// Merges <paramref name="sources"/> into <see cref="AvailableReStreamSources"/> by SourceId.
+    /// Deliberately additive: discovery polls every 5 seconds, and clearing a Picker's bound
+    /// ItemsSource resets its SelectedIndex to -1 — which would null SelectedReStreamSource (and
+    /// with it ReStreamSourceId) on every poll. A source that did not answer one poll (weak Wi-Fi,
+    /// source briefly busy) also stays selectable, which is the whole reason this list is a union
+    /// of the cached registry and live discovery rather than the latest snapshot.
+    /// </summary>
+    private void ApplyReStreamSources(IReadOnlyList<NdiSource> sources)
+    {
+        foreach (var source in sources)
+        {
+            var index = IndexOfReStreamSource(source.SourceId);
+            if (index < 0)
+            {
+                AvailableReStreamSources.Add(source);
+            }
+            else if (AvailableReStreamSources[index].LastSeenAtEpochMillis == 0)
+            {
+                // A synthesized raw-id placeholder (LastSeenAtEpochMillis == 0 is only ever set by
+                // SelectReStreamSourceById) has now been discovered for real — swap in the real
+                // entry so the Picker shows its friendly name instead of the raw id.
+                AvailableReStreamSources[index] = source;
+                if (string.Equals(SelectedReStreamSource?.SourceId, source.SourceId, StringComparison.Ordinal))
+                    SelectedReStreamSource = source;
+            }
+        }
+
+        HasReStreamSources = AvailableReStreamSources.Any(s => s.LastSeenAtEpochMillis != 0);
+
+        // A restored/preselected id with no Picker selection yet (first LoadAsync) — point the
+        // selection at it now that the list is populated.
+        if (SelectedReStreamSource is null && !string.IsNullOrWhiteSpace(ReStreamSourceId))
+            SelectReStreamSourceById(ReStreamSourceId);
+    }
+
+    private int IndexOfReStreamSource(string sourceId)
+    {
+        for (var i = 0; i < AvailableReStreamSources.Count; i++)
+        {
+            if (string.Equals(AvailableReStreamSources[i].SourceId, sourceId, StringComparison.Ordinal))
+                return i;
+        }
+
+        return -1;
+    }
+   ```
+
+2. **A synthesized placeholder must not count as "there are sources to pick from".** As written,
+   `SelectReStreamSourceById` sets `HasReStreamSources = true` when it inserts a placeholder. On a
+   **singleton** ViewModel that is permanent: one deep link or one Sources-page "Output" tap, and
+   `ShowReStreamManualEntry` can never be true again for the rest of the process — the free-text
+   `Entry` that design decision 3 exists to preserve becomes unreachable. That matters because
+   typing a bare `host:port` is a *supported* path: `NdiOutputBridge.LooksLikeUrlAddress` routes it
+   to `p_url_address`, and the raw `192.168.0.25:5961` in the ticket's own screenshot is exactly
+   that case — it is how you re-stream a source mDNS cannot see. Replace `SelectReStreamSourceById`
+   with:
+
+   ```csharp
+    /// <summary>
+    /// Points the Picker at the entry matching <paramref name="sourceId"/>. When the picker is the
+    /// visible control but the id is not in it yet — e.g. a source preselected from the Sources
+    /// page's Output button that this view model's cache/snapshot has not reconciled — a
+    /// placeholder showing the raw id is synthesized and selected, so the Picker is never blank for
+    /// a source the user just chose (Nielsen #6). With an empty registry the free-text Entry is the
+    /// visible control instead, so only ReStreamSourceId is set: synthesizing there would flip
+    /// HasReStreamSources and permanently hide the manual-entry fallback on this Singleton VM.
+    /// </summary>
+    private void SelectReStreamSourceById(string? sourceId)
+    {
+        if (string.IsNullOrWhiteSpace(sourceId))
+        {
+            SelectedReStreamSource = null;
+            ReStreamSourceId = null;
+            return;
+        }
+
+        var index = IndexOfReStreamSource(sourceId);
+        if (index >= 0)
+        {
+            SelectedReStreamSource = AvailableReStreamSources[index];
+            return;
+        }
+
+        if (HasReStreamSources)
+        {
+            var placeholder = new NdiSource(sourceId, sourceId, null, IsAvailable: false, LastSeenAtEpochMillis: 0);
+            AvailableReStreamSources.Insert(0, placeholder);
+            SelectedReStreamSource = placeholder;
+            return;
+        }
+
+        // Empty registry: the manual-entry Entry is what is on screen — set the id it binds to.
+        SelectedReStreamSource = null;
+        ReStreamSourceId = sourceId;
+    }
+   ```
+
+   Two unit tests in §4 must change with it, because their expectations encoded the old behaviour:
+   - `ApplyReStreamRequest_SourceNotInList_SynthesizesPlaceholderAndSelectsIt` — with **no** cached
+     sources the expected outcome is now the manual-entry fallback. Rename to
+     `ApplyReStreamRequest_WithNoCachedSources_FallsBackToManualEntryWithTheRawId` and assert:
+     `Assert.Null(sut.SelectedReStreamSource); Assert.Equal("192.168.0.25:5961", sut.ReStreamSourceId);
+     Assert.False(sut.ShowReStreamSourcePicker); Assert.True(sut.ShowReStreamManualEntry);`
+   - Add a new test for the placeholder path proper: seed `GetCachedSourcesAsync` with one source,
+     `await sut.LoadCommand.ExecuteAsync(null)`, then `sut.ApplyReStreamRequest("192.168.0.25:5961", true)`
+     and assert `sut.SelectedReStreamSource?.SourceId == "192.168.0.25:5961"`,
+     `sut.AvailableReStreamSources.Count == 2`, `sut.ShowReStreamSourcePicker`.
+   - `SelectedReStreamSource_SetToNull_ClearsReStreamSourceId` still passes (the
+     `OnSelectedReStreamSourceChanged` partial still nulls the id).
+
+3. **The Appium smoke test does not compile — there is no `WaitUntil` helper.** `UiTestBase`
+   exposes only `Run(Action<NdiApp>, [CallerMemberName] string)` (`UiTestBase.cs:41`); `PageObject`
+   exposes `WaitFor`/`WaitUntilVisible`, not a predicate `WaitUntil`. Replace the block in §5's
+   smoke test with an explicit deadline loop:
+
+   ```csharp
+                app.Output.ToggleReStreamMode();
+
+                var deadline = DateTime.UtcNow + Timeouts.StateChange;
+                while (DateTime.UtcNow < deadline && !app.Output.IsReStreamMode)
+                    Thread.Sleep(250);
+
+                Assert.True(app.Output.IsReStreamMode, "The mode switch did not reach re-stream mode");
+   ```
+
+   Keep the `finally` that restores the previous mode — it is load-bearing, not tidiness: since
+   #352/#359 the Stream tab's state persists for the process lifetime on the Singleton ViewModel,
+   so leaving re-stream mode on would change what every later test in the shared `"AppiumSession"`
+   collection sees on the Stream tab, including `AccessibilityTests`' budget sweep.
+
+4. **Doc edits: locate the anchors by content, not by line number.** §6.1's "after line 236" and
+   §6.2's "after line 112" will have drifted; anchor on the `IOutputConfigurationRepository`
+   persistence paragraph in `docs/architecture.md` and on the "Lifetime (#352/#359)" bullet in
+   `.github/KNOWLEDGE-BASE.md`. Also amend `docs/architecture.md` Navigation rule 4's
+   `reStreamSourceId` sentence to note the id now resolves to a Picker selection.
+
+**Non-blocking:**
+
+5. Give the fallback `Entry` a `SemanticProperties.Description="Re-stream source id"`. It is
+   `Clickable`+`Focusable`, so `AccessibilityAudit.IsInteractive` (`AccessibilityAudit.cs:47`) picks
+   it up whenever re-stream mode happens to be on during the sweep — and per item 3 that state now
+   survives across tests. Cheap insurance against a 13th violation against a budget of 12.
+6. `MinimumHeightRequest="48"` on both new controls is correct and must not be dropped; it is also
+   the right call *not* to fix the two pre-existing touch-target violations on the Stream Name
+   `Entry` / Video Input `Picker` here — those want their own ticket before the budget is ratcheted
+   from 12 down to 10.
+7. Latent, out of scope, do **not** fix here: `ToggleReStreamModeAsync` dereferences
+   `ReStreamSourceId!` (`OutputViewModel.cs:250`) and would NRE with no selection. Unreachable
+   today — `ToggleReStreamModeCommand` is bound nowhere in XAML (`OutputPage.xaml` binds
+   `ToggleOutputModeCommand` and a two-way `IsReStreamMode` Switch); the only callers are
+   `OutputViewModelTests.cs:347,370`. Its own class remarks (`:267-272`) already record why.
+8. The plan's `NdiSource`-record-equality note is accurate and stays true under the merge rewrite.
+
+**Open question for the owner:** the ticket cell is truncated at source ("kee[p]…"). This verdict
+ratifies the plan's reading — free text is the *empty-state fallback*, not a permanently available
+alternate path — and required change 2 is what actually makes that reading true in code. If the
+owner meant "always keep a manual-override toggle even when sources exist", say so before
+implementation; that is a different control, not a tweak.
+
+---
+
+### 2026-09-12 — #393 rotation lands on Home (gate)
+
+**APPROVE-WITH-CHANGES — nine required changes, five of them blocking. The diagnosis is correct and
+device-proven, the chosen design is the right one, and the two rejected alternatives were rejected
+for the right reasons. The blocking defect is scope, not shape: the plan brackets only the *two*
+`GoToAsync` call sites inside `AppShell` and leaves the *three* in `ShellNavigationService`
+unbracketed — which silently classifies every `NavigateToPrimaryAsync` on a rail device as "Shell's
+own fallback" and bounces it back.**
+
+Verified line by line against the live `main` checkout (`AppShell.xaml.cs` @ 367 lines,
+`AppShell.xaml`, `ShellNavigationService.cs`, `MauiProgram.cs:87-88`, `MainActivity.cs:142-161`,
+`NavigationPolicyService.cs:25-28`, `AdaptiveShellStateViewModel.cs:36-40`,
+`tests/MauiApp.UITests/AppLaunchTests.cs`, `Pages/NavigationBar.cs:144-157`,
+`Pages/ViewerPage.cs:39-52`), and against the slice-2 worktree (`…-wt/yt/src/MauiApp/AppShell.xaml.cs:228-251`)
+and the #316 worktree (`…-wt/e2e316/tests/MauiApp.UITests/LifecycleTests.cs:29-46`).
+
+Every "Before" block in the plan matches `main` byte-for-byte (fields `:26-27`, `ApplyPlacement`
+`:234-248`, `OnRailItemSelected` `:252-256`, `OnNavigating` `:258-281`, `OnShellNavigated` `:303-329`,
+`EnsurePrimaryDestinationVisibleAsync` `:354-366`). Self-containment (the 2026-09-06 rule) is met for
+`AppShell.xaml.cs`; it is **not** met for the second file this fix now has to touch — see required
+change 1, which supplies it.
+
+---
+
+## Judgement on the four questions put to the gate
+
+**(1) Deferring the chrome swap while a page is pushed / a modal is open — correct, and
+chrome-neutral.** The guard is evaluated *before* the flip, so `Navigation` still refers to the
+**pre-swap** section — the one the pushed page actually lives in. That is precisely what the #386
+guard could not do (it is evaluated after the swap, against the already-re-pointed section, which is
+why the researcher found the pushed viewer lost on the emulator). No `Shell.TabBarIsVisible` /
+`Shell.NavBarIsVisible` is set anywhere in `src/` (grep: zero hits), so a pushed page renders with the
+bottom tab bar today in portrait. The deferral therefore makes rotation **chrome-neutral for a pushed
+page**: whatever chrome the user already had in portrait is exactly what they keep in landscape — no
+rail appears, nothing disappears, and no page is destroyed. That is coherent and strictly better than
+today, and it answers the question directly: yes, the bottom tab bar stays on the pushed page in
+landscape, and that is acceptable until pop. (On the 384 branch the landscape viewer is full screen
+anyway, so the state is not even reachable there.)
+The deferred swap does run on pop: `Shell.Navigated` fires with `Source == Pop` and
+`NavigationStack.Count == 1`, which is the existing, proven slice-1 reconciliation trigger. Two
+mechanical corrections are required (RC3/RC5): the flag must be cleared wherever the swap *does* run,
+and `ApplyPlacement()` must replace — not duplicate — the trailing dispatch.
+
+**(2) The flag held across `await GoToAsync` — sound in shape, under-scoped as written, and it must
+be a counter, not a bool.** Shell raises `Navigating` synchronously inside `GoToAsync` and accumulates
+`Navigated` until the call unwinds, so both events land while the marker is set — the ordering the
+design depends on, and the same ordering the plan's own logcat shows for the *unsolicited* path.
+`try/finally` covers exceptions. Two defects: (a) **re-entrancy** — `EnsurePrimaryDestinationVisibleAsync`
+is dispatched, so it can run on a UI-thread turn taken while `OnRailItemSelected`'s `await GoToAsync`
+is suspended; with a bool the inner `finally` clears the outer's marker and the outer's `Navigated`
+is then misclassified. A depth counter removes that by construction. (b) **scope** — see required
+change 1. Threading is clean: `OnConfigurationChanged` → `bridge.UpdateFromConfiguration` →
+`ApplyPlacement` is an unbroken UI-thread chain (`MainActivity.cs:145-146`), `Dispatcher.Dispatch`
+queues to the same thread, and `NotifyConfigurationChanged` (`:148`) — i.e. slice 3's
+`OrientationChanged` — is fed **after** the placement bridge, so the entire #393 chain, including the
+synchronous re-point, completes before any slice-3 handler sees the rotation. The marker is therefore
+never touched cross-thread.
+
+**(3) Ignoring `ShellItemChanged` without the marker — the classification is exhaustive only after
+required change 1.** Full census of everything that can produce a cross-`ShellItem` move in this app:
+- rail tap → `AdaptiveShellStateViewModel.SelectDestination` (`:36-40`, sets `SelectedDestination`
+  **before** raising the event) → `OnRailItemSelected` → `GoToAsync` — bracketed by the plan ✔
+- placement reconciliation → `EnsurePrimaryDestinationVisibleAsync` → `GoToAsync` — bracketed ✔
+- bottom-tab tap → same `TabBar` item, different `ShellContent` → `ShellSectionChanged`, never
+  `ShellItemChanged` ✔ (confirmed live in the plan's capture)
+- the Shell flyout menu → cannot navigate: all four `FlyoutItem`s are
+  `Shell.FlyoutItemIsVisible="False"` (`AppShell.xaml:34,43,52,61`) and the flyout body is a custom
+  `Shell.FlyoutContent` ✔
+- **`INavigationService.NavigateToPrimaryAsync` → `ShellNavigationService.cs:64` — NOT bracketed ✘**
+- **`INavigationService.NavigateToAsync` → `:45` and `GoBackAsync` → `:77` — NOT bracketed ✘**
+
+The third bullet-pair is the blocking defect. In the **rail** placement the four destinations are four
+*separate* `FlyoutItem`s, so `//home-rail` → `//stream-rail` is a `ShellItemChanged`. Every one of
+these is a live user path on a rail device (a tablet in either orientation, any phone in landscape):
+`SourceListViewModel.cs:145` (re-stream this source), `HomeViewModel.cs:175,185` (both Home quick
+actions), `DeepLinkService.cs:95` (`ndi://stream?…`). As written the plan would, for each of them,
+(i) skip the handoff in `OnNavigating` — so a View→Stream move no longer calls `StopReceiver()` and a
+receiver keeps running while output starts, the exact resource contention the handoff exists to
+prevent — and (ii) in `OnShellNavigated` refuse to adopt the new destination and then *reconcile back
+to the old one*, i.e. bounce the user out of the page they just asked for. In portrait this is
+invisible (all four are `ShellContent`s of one `TabBar` → `ShellSectionChanged`), which is exactly why
+the emulator repro did not surface it. `NavigateToAsync("viewer?…")` (`SourceListViewModel.cs:130`,
+`HomeViewModel.cs:176`, `DeepLinkService.cs:90`) is a relative push → `Push` → unaffected, and
+`GoBackAsync` is `Pop` → unaffected; they are bracketed anyway for uniformity.
+One residual, accepted: the first `Navigated` of the process may arrive as `ShellItemChanged` with the
+marker clear. It falls into the unsolicited branch, where `SelectedDestination` is already `Home`,
+`UpdateRailHighlight(Home)` is what `BuildRailItems` already did, `ReapplyChrome()` still runs, and the
+dispatched reconciliation short-circuits on `alreadyOnRoute` — inert.
+
+**(4) The #386 guard now works — for the right reason.** Not because the guard was rewritten, but
+because the eviction it was meant to survive no longer happens. The plan's §2 conclusion ("for a
+pushed page the only correct fix is to never let Shell evict the current item") is correct and is the
+single most important sentence in the document: `view-tab` and `view-rail` are independent
+`ShellSection`s with independent stacks, so no route reconciles back to a page that lived in the other
+family. Reconciling after the fact cannot work, and the plan does not try to.
+
+---
+
+## Required changes
+
+**1 (BLOCKING) — `src/MauiApp/Services/ShellNavigationService.cs`: the ownership marker belongs here,
+and all three of this file's `GoToAsync` calls must carry it.** Reason above. It must live on
+`ShellNavigationService` and **not** on `INavigationService`: Core must not learn that Shell has a
+navigation-source classification problem (2026-09-04 rule: "`//x-tab`/`//x-rail` are Shell URIs, a
+MAUI-layer concern; Core must not learn Shell routing"). `AppShell` already holds the concrete type
+(`_navigationService`, `AppShell.xaml.cs:24`) and already delegates route lookup to it
+(`:351-352`), and `MauiProgram.cs:87-88` registers the concrete singleton with the interface mapped to
+the *same* instance — so one marker is genuinely shared by both layers with no downcast (the
+`Shell.Current as AppShell` downcast this log banned stays banned). Delete the plan's
+`_explicitNavigationInProgress` field from `AppShell` entirely; `AppShell` reads
+`_navigationService.IsExplicitNavigationInProgress`.
+
+Add to `ShellNavigationService`, immediately after the `_portraitRoutes` dictionary (`:33`) and before
+the constructor:
+
+```csharp
+    private int _explicitNavigationDepth;
+
+    /// <summary>
+    /// True while this app is inside a <c>GoToAsync</c> call it issued itself — a rail tap, the
+    /// placement reconciliation, or any <see cref="INavigationService"/> call.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// MAUI Shell re-points <c>CurrentItem</c> to the first visible <c>ShellItem</c> on its own when
+    /// the current one is hidden — which is what <c>AppShell.ApplyPlacement</c> does to
+    /// <c>PrimaryTabBar</c> on a rotation (#393) — and reports it exactly like a real cross-item move
+    /// (<see cref="ShellNavigationSource.ShellItemChanged"/>). The source value alone cannot tell the
+    /// two apart, because the app's own rail taps and reconciliations are also cross-item moves.
+    /// </para>
+    /// <para>
+    /// A user has no other way to cause one: a bottom-tab tap is always
+    /// <see cref="ShellNavigationSource.ShellSectionChanged"/>, and the four rail
+    /// <c>FlyoutItem</c>s are <c>Shell.FlyoutItemIsVisible="False"</c> behind a custom
+    /// <c>Shell.FlyoutContent</c>, so the rail can only navigate through
+    /// <c>AppShell.OnRailItemSelected</c>. A <c>ShellItemChanged</c> that arrives while this is
+    /// <c>false</c> is therefore, by construction, Shell's own unsolicited fallback.
+    /// </para>
+    /// <para>
+    /// Counted rather than a flag: the reconciliation is dispatched, so it can run on a UI-thread
+    /// turn taken while another navigation is suspended at its <c>await</c>, and a bool would let the
+    /// inner call clear the outer call's marker. Written and read on the UI thread only — every
+    /// mutation brackets a <c>GoToAsync</c>, which MAUI requires to be issued from the UI thread.
+    /// </para>
+    /// </remarks>
+    public bool IsExplicitNavigationInProgress => _explicitNavigationDepth > 0;
+
+    /// <summary>Marks the start of a navigation this app issued. Pair with
+    /// <see cref="EndExplicitNavigation"/> in a <c>finally</c>.</summary>
+    public void BeginExplicitNavigation() => _explicitNavigationDepth++;
+
+    /// <summary>Marks the end of a navigation this app issued. Never drops below zero.</summary>
+    public void EndExplicitNavigation()
+    {
+        if (_explicitNavigationDepth > 0)
+            _explicitNavigationDepth--;
+    }
+```
+
+and replace the three navigating methods verbatim (namespace `NdiForAndroid.Services`, usings
+unchanged):
+
+```csharp
+    public async Task NavigateToAsync(string route)
+    {
+        BeginExplicitNavigation();
+        try
+        {
+            await Shell.Current.GoToAsync(route);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Navigation failed for route '{Route}'", route);
+            throw;
+        }
+        finally
+        {
+            EndExplicitNavigation();
+        }
+    }
+
+    public async Task NavigateToPrimaryAsync(PrimaryNavDestination destination, string? queryString = null)
+    {
+        if (!TryGetRouteForCurrentPlacement(destination, out var route))
+            throw new ArgumentOutOfRangeException(nameof(destination), destination, "No route registered for this primary destination.");
+
+        if (!string.IsNullOrEmpty(queryString))
+            route = $"{route}?{queryString}";
+
+        BeginExplicitNavigation();
+        try
+        {
+            await Shell.Current.GoToAsync(route);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Navigation failed for route '{Route}'", route);
+            throw;
+        }
+        finally
+        {
+            EndExplicitNavigation();
+        }
+    }
+
+    public async Task GoBackAsync()
+    {
+        BeginExplicitNavigation();
+        try
+        {
+            await Shell.Current.GoToAsync("..");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "GoBack navigation failed");
+            throw;
+        }
+        finally
+        {
+            EndExplicitNavigation();
+        }
+    }
+```
+
+`TryGetRouteForCurrentPlacement` (`:86-90`) and the two route dictionaries are unchanged.
+
+**2 (BLOCKING) — `src/MauiApp/AppShell.xaml.cs`, field block: one new field, not two.** Replace the
+plan's Step 1 entirely. After `private bool _handoffInProgress;` (`:27`):
+
+```csharp
+    /// <summary>
+    /// Set when <see cref="ApplyPlacement"/> was asked to hide <c>PrimaryTabBar</c> while a page was
+    /// pushed or a modal was open and therefore skipped the chrome swap (#393). Hiding the current
+    /// <c>ShellItem</c> makes Shell re-point to the first visible one, and a pushed page has no
+    /// equivalent route under the rail's independent <c>ShellItem</c> family — so the eviction can
+    /// never be reconciled afterwards and the swap must be deferred, not undone. Re-applied from
+    /// <see cref="OnShellNavigated"/> once the section stack is back at its root.
+    /// </summary>
+    private bool _placementSwapDeferred;
+```
+
+**3 (BLOCKING) — `ApplyPlacement`: defer only a genuine `true → false` flip, and clear the flag
+before the flip, not after.** The plan's version defers on the whole rail branch, which (a) makes the
+flag sticky across a rotate-back and (b) would, after the 384 rebase, skip the
+`FlyoutBehavior` assignment on a chrome-suppression toggle — leaving the rail `Locked` and visible over
+a full-screen viewer on a pushed page, the primary slice-3 scenario. Gating on
+`PrimaryTabBar.IsVisible` fixes both: only a `true → false` transition can evict anything, so a
+repeated call while the bar is already hidden falls through and still updates `FlyoutBehavior`.
+Clearing before the flip matters because the flip can re-enter `OnShellNavigated` synchronously (the
+plan's own Settings-tab capture shows exactly that ordering). Replace `:234-248` with:
+
+```csharp
+    private void ApplyPlacement()
+    {
+        // Cleared before the flip below, never after: hiding PrimaryTabBar can drive Shell's
+        // fallback navigation to completion synchronously, re-entering OnShellNavigated before
+        // this method returns.
+        _placementSwapDeferred = false;
+
+        if (_stateViewModel.IsLeftRailNavigationVisible)
+        {
+            // Hiding PrimaryTabBar while it is still Shell.CurrentItem makes Shell fall back to the
+            // first visible ShellItem (always HomeRailItem) — a navigation that cannot be stopped
+            // once IsVisible flips. A pushed page, or an open #338 modal, has no equivalent route
+            // under the rail's independent ShellItem family, so that eviction cannot be reconciled
+            // afterwards: defer the whole swap and let OnShellNavigated re-apply it once the page is
+            // popped. Only a true -> false transition can evict anything, so this is evaluated
+            // against the bar's current state, and the guard reads the *pre-swap* section — the one
+            // the pushed page actually lives in.
+            if (PrimaryTabBar.IsVisible
+                && (Navigation?.NavigationStack?.Count > 1 || Navigation?.ModalStack?.Count > 0))
+            {
+                _placementSwapDeferred = true;
+                return;
+            }
+
+            FlyoutBehavior          = FlyoutBehavior.Locked;
+            PrimaryTabBar.IsVisible = false;
+        }
+        else
+        {
+            FlyoutBehavior          = FlyoutBehavior.Disabled;
+            PrimaryTabBar.IsVisible = true;
+        }
+
+        Dispatcher.Dispatch(async () => await EnsurePrimaryDestinationVisibleAsync());
+    }
+```
+
+**4 (BLOCKING) — `OnNavigating`: same predicate, read from the service.** Replace `:258-281` with the
+plan's Step 3, with one line changed:
+
+```csharp
+    protected override void OnNavigating(ShellNavigatingEventArgs args)
+    {
+        base.OnNavigating(args);
+
+        // A modal push/pop (e.g. the full-screen viewer) does not change Shell.CurrentState and
+        // must never be misclassified as a primary-destination change by ParseDestination below.
+        if (Navigation?.ModalStack?.Count > 0)
+            return;
+
+        if (args.Cancelled)
+            return;
+
+        // Shell's own unsolicited item fallback (#393) — chrome plumbing, not a destination change:
+        // no handoff. See ShellNavigationService.IsExplicitNavigationInProgress.
+        if (args.Source == ShellNavigationSource.ShellItemChanged
+            && !_navigationService.IsExplicitNavigationInProgress)
+            return;
+
+        var to = ParseDestination(args.Target?.Location?.OriginalString);
+        if (to is null || to == _currentPrimaryDestination)
+            return;
+
+        if (!args.CanCancel)
+            return;
+
+        var deferral = args.GetDeferral();
+        _handoffInProgress = true;
+
+        _ = RunNavigatingHandoffAsync(to.Value, deferral);
+    }
+```
+
+**5 (BLOCKING) — `OnShellNavigated`: one dispatch, not two, and the deferred re-apply goes through
+`ApplyPlacement` (which dispatches for itself).** Replace `:303-329` with:
+
+```csharp
+    private async void OnShellNavigated(object? sender, ShellNavigatedEventArgs e)
+    {
+        // Shell's own unsolicited item fallback (#393): reconcile back to the destination that was
+        // actually selected instead of adopting wherever Shell fell back to, and never run the
+        // handoff or overwrite SelectedDestination for it. The rail keeps highlighting the real
+        // selection, so the fallback is never visible as a selection change.
+        // See ShellNavigationService.IsExplicitNavigationInProgress.
+        if (e.Source == ShellNavigationSource.ShellItemChanged
+            && !_navigationService.IsExplicitNavigationInProgress)
+        {
+            UpdateRailHighlight(_stateViewModel.SelectedDestination);
+            _appearanceService.ReapplyChrome();
+            Dispatcher.Dispatch(async () => await EnsurePrimaryDestinationVisibleAsync());
+            return;
+        }
+
+        var to = ParseDestination(e.Current.Location.OriginalString) ?? _currentPrimaryDestination;
+
+        if (to != _currentPrimaryDestination)
+        {
+            try
+            {
+                await _handoffService.HandlePrimaryDestinationChangeAsync(_currentPrimaryDestination, to);
+                _currentPrimaryDestination = to;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Navigation handoff failed: {ex}");
+            }
+        }
+
+        _stateViewModel.SelectedDestination = to;
+        UpdateRailHighlight(to);
+
+        // MAUI re-applies per-page toolbar appearance on navigation, resetting the
+        // AppBarLayout background to template defaults — restore the themed chrome (#296).
+        _appearanceService.ReapplyChrome();
+
+        if (Navigation?.NavigationStack?.Count <= 1)
+        {
+            // A rotation while a page was pushed (or a modal was open) deferred the chrome swap in
+            // ApplyPlacement (#393); the guard has just cleared, so apply the placement the device
+            // actually has now. ApplyPlacement dispatches the reconciliation itself, so this is an
+            // either/or — dispatching both would queue a redundant second pass.
+            if (_placementSwapDeferred && Navigation?.ModalStack?.Count is not > 0)
+                ApplyPlacement();
+            else
+                Dispatcher.Dispatch(async () => await EnsurePrimaryDestinationVisibleAsync());
+        }
+    }
+```
+
+**6 (required) — the two `GoToAsync` call sites in `AppShell`: use the service's marker, and stop the
+`async void` from being able to kill the process.** `OnRailItemSelected` awaits `GoToAsync` in an
+`async void` with no `catch` today; the plan adds a `finally` but still no `catch`, and this log has
+already ruled twice (2026-09-04 item 3, #386 revision-2 item 2) that an escaped exception there takes
+the process down. Replace `:252-256` with:
+
+```csharp
+    private async void OnRailItemSelected(object? sender, PrimaryNavDestination destination)
+    {
+        if (!TryGetRouteForCurrentPlacement(destination, out var route))
+            return;
+
+        _navigationService.BeginExplicitNavigation();
+        try { await GoToAsync(route); }
+        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"Rail navigation failed: {ex}"); }
+        finally { _navigationService.EndExplicitNavigation(); }
+    }
+```
+
+and the tail of `EnsurePrimaryDestinationVisibleAsync` (`:364-365`) with:
+
+```csharp
+        _navigationService.BeginExplicitNavigation();
+        try { await GoToAsync(route); }
+        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"Placement reconciliation failed: {ex}"); }
+        finally { _navigationService.EndExplicitNavigation(); }
+```
+
+The method's four guards (`_handoffInProgress`, `NavigationStack`, `ModalStack`, route lookup) and the
+`LastSegment`/`route.Trim('/')` comparison are unchanged.
+
+**7 (BLOCKING for the CI gate) — the e2e suite: fix test 1, delete test 2.**
+(a) `Rotating_WhileOnANonHomeTab_KeepsTheSameDestination` as written **fails deterministically on the
+CI AVD**: `NavigationBar.AnnouncesSelected` (`Pages/NavigationBar.cs:153-157`) reads `content-desc`
+and requires a `", selected"` suffix, which only the **rail** emits (`AppShell.RailDescription`,
+`:223-224`) — the bottom `BottomNavigationView` tab carries no such suffix, so the portrait assertion
+can never be true. It also inherits the shared session's page and orientation. Replace with:
+
+```csharp
+    [SkippableFact]
+    public void Rotating_WhileOnANonHomeTab_KeepsTheSameDestination() => Run(app =>
+    {
+        // The Appium session is shared: start from a known page and orientation rather than
+        // inheriting whatever the previous test left behind (including a pushed page).
+        app.ResetToHome();
+
+        app.Navigation.GoTo(NavDestination.Stream);
+        app.Output.WaitUntilVisible();
+
+        // Landscape is the rail placement on this AVD, and the rail is the only placement that
+        // announces its selection (NavigationBar.AnnouncesSelected reads the ", selected" suffix
+        // the rail puts in content-desc, #345 home-nav-06); the bottom tab bar has no such suffix,
+        // so in portrait the page's own id is the assertion.
+        app.Rotate(ScreenOrientation.Landscape);
+        app.Output.WaitUntilVisible();
+        Assert.True(app.Navigation.AnnouncesSelected(NavDestination.Stream),
+            "Rotating away from the Stream tab must not silently switch the selected destination to Home (#393).");
+
+        app.Rotate(ScreenOrientation.Portrait);
+        app.Output.WaitUntilVisible();
+        Assert.True(app.Output.IsVisible,
+            "Rotating back to portrait must keep Stream selected (#393).");
+    });
+```
+
+Insert immediately after `AdaptiveNavigation_AllFourDestinations_ShowTheirOwnPage`
+(`AppLaunchTests.cs:114`). `…-wt/e2e316`'s copy of `AppLaunchTests.cs` is identical to `main`'s (same
+14 methods, same line numbers), so this insertion does not conflict with #316.
+(b) **Delete `Rotating_WhileViewingASource_KeepsTheViewerOnScreen`.** It `Skip.If`s on
+`SourceCount == 0`, i.e. it never executes on CI, and it duplicates a test that already exists and
+*does* run there: `LifecycleTests.Rotation_BothWays_KeepsTheViewerAliveAndPlaying`
+(`…-wt/e2e316/tests/MauiApp.UITests/LifecycleTests.cs:29-46`), which reaches a pushed `ViewerPage`
+through `app.DeepLink("ndi://view?sourceId=…")` and its permanent "Connecting…" hold state — no live
+NDI source required — then asserts `Viewer.IsVisible` and `Viewer.IsPlaying` after rotating both
+ways. That is the #393 pushed-page regression test, and on today's `main` it must fail. `main` has no
+`NdiApp.DeepLink`, no `LifecycleTests`, no `DeviceInterruptionTestBase` and no `CrashBufferGuard`
+(all are new on `feature/316-e2e-entry-points-lifecycle`), so #393 cannot write the deep-link version
+without importing #316's infrastructure and guaranteeing a merge conflict. The two tests are therefore
+**complementary, not redundant**: #393 owns the section-root case, #316 owns the pushed-page case.
+Record the dependency in the #393 PR body and run the other branch's test before either reaches
+`main` — see the cross-branch section.
+
+**8 (required) — drop plan Step 6 (`.claude/knowledge/decision-log.md`).** Third time this proposal
+has come up and third refusal: `.claude/knowledge/` is agent-owned, a developer-written third decision
+store will drift, and the rationale belongs in the PR/issue plus this verdicts log (2026-09-04 #327
+verdict item 3; 2026-09-06 #384 slice-2 verdict item 6). The terse `(#393)` pointers in the code
+comments above are the whole of what goes in the C# file.
+
+**9 (required) — device checklist item 4 is factually wrong about the tablet, and two items are
+missing.** `NavigationPolicyService.ResolvePlacement` (`:25-28`) returns `LeftRail` when
+**landscape OR Expanded (> 840 dp)**. Either the Tab A9+ is Expanded in portrait — in which case
+`PlacementMode` never changes on rotation, `ApplyPlacement` is never called, and the tablet cannot
+exercise #393 at all — or it is Medium in portrait (600–840 dp), in which case rotating it flips
+Bottom↔LeftRail exactly like a phone and items 1–3 must be run on it too. The plan asserts the former
+and then claims it "exercises the *same* orientation-only trigger", which is self-contradictory.
+Replace item 4 with: *"First record the device's real width: `adb -s <device> shell wm size` +
+`wm density` → dp. If portrait width > 840 dp the placement never changes on rotation and #393 cannot
+fire on this device — item 4 is then a no-regression check only (pane keeps playing, no jump to Home).
+If portrait width is 600–840 dp the tablet flips Bottom↔LeftRail on rotation and items 1–3 must be
+repeated on it, including the pushed-viewer case."* Add two items:
+*"(9) On every rotation that lands on the rail from a section root, a brief Home frame may be visible
+before the app reconciles back to the original tab. Confirm it is a flash and not a landing — the
+destination after settling must be the original tab, the rail highlight must never move to Home, and
+no page may be re-created (check `OnAppearing` logging or the discovery/output status cards)."*
+*"(10) Rotate to landscape while a page is pushed (viewer or diagnostic log), then press Back: the
+chrome must catch up to the rail at that moment (deferred swap re-applied), and the app must land on
+the section root of the tab you started from — not Home."*
+
+---
+
+## Confirmed — no change needed
+
+- **Root cause and mechanism.** Confirmed in the live file: `ApplyPlacement:239` flips
+  `PrimaryTabBar.IsVisible` while the `TabBar` (`AppShell.xaml:73`) is `CurrentItem`; the four rail
+  `FlyoutItem`s (`:32,41,50,59`) carry only `Shell.FlyoutItemIsVisible="False"`, which governs the
+  auto-generated flyout listing, not `BaseShellItem.IsVisible`, so `HomeRailItem` is always the first
+  remaining visible item; `OnShellNavigated:320` then adopts it unconditionally. The plan's logcat is
+  consistent with the code in every detail, including the two different completion orderings that
+  explain #321's intermittency.
+- **Rejections (A-as-sketched, B, C) are all correct.** A's method-scoped flag cannot bracket an event
+  that lands after the method returns — the plan proves this with its own capture. B is the #386 bug
+  re-introduced deliberately when a page is pushed. C is a navigation-model change (retiring one route
+  family) that would collide head-on with slice 2/3 on the same method and must not ride in a bugfix.
+  Worth recording for the future: B is in fact *safe* precisely where the new defer guard does **not**
+  apply (section root, no modal), so "reconcile first, then hide the `TabBar`" remains the fallback
+  design if device testing ever shows the marker misclassifying — but it is not needed now and must
+  not be attempted in this ticket.
+- **Invariants preserved.** The #338 `ModalStack` early-return (`:264-265`) is untouched and is now
+  mirrored in the new guard; `LastSegment`/`ParseDestination` (`:331-349`) are byte-identical;
+  `SelectedDestination` is written only on genuine navigation; `RunNavigatingHandoffAsync` and
+  `NdiNavigationHandoffService`'s "only `from == View`" semantics are untouched; `UpdateRailHighlight`,
+  `RailDescription`, `BuildRailItems`, `ApplyRailInset`, `OnSizeAllocated`, `OnAppearanceChanged` and
+  the constructor are untouched; `ReapplyChrome()` (#296) runs on **both** branches of
+  `OnShellNavigated`; slice-1's `NavigationStack.Count <= 1` reconciliation survives and gains the
+  deferred re-apply.
+- **Rules 1–6.** No DB access from a ViewModel, no NDI type crosses the bridge, no business logic in a
+  View (the only changes are Shell/navigation plumbing in `AppShell` + `ShellNavigationService`, both
+  `src/MauiApp`), no threading rule touched (single UI thread throughout), no Android API added, no
+  frame-lifetime code touched. Core stays MAUI-free: `INavigationService` is unchanged.
+- **No unit-test gap.** `tests/MauiApp.Tests` references only `src/Core`, so `AppShell` and
+  `ShellNavigationService` are unreachable from it — a recorded, accepted coverage gap (2026-09-04
+  follow-up item 9), not new drift. `NavigationPolicyService`/`WindowSizeClassService`/
+  `AdaptiveShellStateViewModel` are untouched, so their suites need no edit.
+- **Threading/ordering.** `MainActivity.OnConfigurationChanged` (`:142-148`) feeds the placement bridge
+  *before* `NotifyConfigurationChanged`, so the whole #393 chain precedes slice 3's
+  `OrientationChanged`; `SyncNavigationOrientation` (`:151-161`, from `OnCreate:63` / `OnResume:132`)
+  keeps the same order. Nothing in the fix runs off the UI thread.
+
+## Recorded decisions
+
+- **The "did we ask for this?" marker lives on `ShellNavigationService`, never on `INavigationService`
+  and never on `AppShell` alone.** `ShellNavigationService` is already the single navigation choke
+  point (one route table, 2026-09-04) and is the same singleton instance behind `INavigationService`
+  (`MauiProgram.cs:87-88`), so one counter covers every app-issued `GoToAsync` in both layers with no
+  `Shell.Current as AppShell` downcast and no Core leakage.
+- **New standing rule:** *any new `GoToAsync` call site in `src/MauiApp` must be bracketed with
+  `BeginExplicitNavigation`/`EndExplicitNavigation` (or routed through `ShellNavigationService`, which
+  does it). An unbracketed cross-`ShellItem` navigation is silently treated as Shell's own fallback and
+  reverted.* This belongs in `docs/architecture.md`'s Navigation section when #393 lands.
+- **`PrimaryTabBar.IsVisible` may only be flipped `true → false` while the section stack is at its root
+  and no modal is open.** The #386 slice-1 verdict's "device-verify, not code-fixable" paragraph is now
+  **closed**: the device check failed exactly as that verdict's contingency predicted (MAUI re-points
+  `CurrentItem`; the pushed page is lost). The contingency it named — page-scoped
+  `Shell.SetTabBarIsVisible(currentPage, false)` — is **not** adopted, because that attached property
+  is owned by `ViewerFullScreenChromeController` on the 384 branch and two owners would make an exit
+  from full screen re-show the bottom bar in a rail window (slice-3 gate, binding constraint (b)).
+  Defer-and-re-apply is the adopted mechanism instead.
+- **#321 shares this root cause and is not closed by this fix.** Re-run its own diagnostic afterwards
+  and comment the result on #321; the decision to close is the owner's.
+- **Known limitation, unchanged by this fix and self-closing:** `Shell.Navigated` does not fire for
+  `PopModalAsync`, so a swap deferred while the #338 modal is open is only re-applied on the next
+  placement-changing event. There is no such mechanism on `main` today either, so this is not a
+  regression — and slice 2 retires `FullScreenViewerPage` entirely, which removes the case. Do not
+  expand this fix with a `Window.ModalPopped` hook.
+- **Accepted UX consequence:** on a section-root rotation into the rail, Shell's fallback still
+  happens; the app reconciles away from it within the same UI turn, so a brief Home frame may be
+  visible. Verified as a flash, not a landing, by device checklist item 9.
+
+## Cross-branch instructions
+
+**Sequencing is hard, not advisory.** `bugfix/393-rotation-lands-on-home` is cut from `main` and its
+PR targets **`main`** (there is no integration branch in flight for this work; `feature/384-…` is a
+feature branch that rebases, and the slice-3 gate already records that slice 3 is not device-verifiable
+or mergeable before #393 is in the same tree). Full gate before that merge: `dotnet build
+NdiForAndroid.sln`, `dotnet test tests/MauiApp.Tests`, the **full** `tests/MauiApp.UITests` Appium
+suite on the CI emulator with the run link on the PR, and the device checklist on both the tablet and
+a phone. Never merge with a check pending.
+
+**#393 branch — exactly this, and no more.** Required changes 1–9. `src/MauiApp/AppShell.xaml.cs` and
+`src/MauiApp/Services/ShellNavigationService.cs` are the only production files; `AppLaunchTests.cs` is
+the only test file. Do **not** add `ensureDestination`, do **not** add or read `IsChromeSuppressed`, do
+**not** touch `AdaptiveShellStateViewModel`, and do **not** introduce page-scoped
+`Shell.SetTabBarIsVisible` — all four are slice-2/3 concepts and must not leak into a bugfix (the
+slice-3 gate's binding constraints (a) and (b)). Slice-3 required change 4 is therefore **not**
+expressible on `main` as written: `ApplyPlacement` has no `ensureDestination` parameter and
+`IsChromeSuppressed` does not exist, and adding an unused parameter plus a property that no production
+code reads would be dead scaffolding. The #393 branch instead lands the *guard structure* the merged
+version needs (required change 3), which is what makes the merge mechanical.
+
+**`feature/384-youtube-style-full-screen` — rebase onto `main` after #393 merges and produce exactly
+this `ApplyPlacement`.** The two branches touch the same method, so a textual conflict is certain; this
+is the required resolution, verbatim (it carries #393's guard *and* slice-2's suppression *and*
+slice-3 required change 4):
+
+```csharp
+    private void ApplyPlacement(bool ensureDestination = true)
+    {
+        // Cleared before the flip below, never after: hiding PrimaryTabBar can drive Shell's
+        // fallback navigation to completion synchronously, re-entering OnShellNavigated before
+        // this method returns.
+        _placementSwapDeferred = false;
+
+        if (_stateViewModel.IsLeftRailNavigationVisible)
+        {
+            // Hiding PrimaryTabBar while it is still Shell.CurrentItem makes Shell fall back to the
+            // first visible ShellItem (always HomeRailItem) — a navigation that cannot be stopped
+            // once IsVisible flips. A pushed page, or an open modal, has no equivalent route under
+            // the rail's independent ShellItem family, so that eviction cannot be reconciled
+            // afterwards: defer the whole swap and let OnShellNavigated re-apply it once the page is
+            // popped (#393). Only a true -> false transition can evict anything, so a chrome
+            // suppression toggle on a rail device still falls through and updates FlyoutBehavior.
+            if (PrimaryTabBar.IsVisible
+                && (Navigation?.NavigationStack?.Count > 1 || Navigation?.ModalStack?.Count > 0))
+            {
+                _placementSwapDeferred = true;
+                return;
+            }
+
+            FlyoutBehavior          = _stateViewModel.IsChromeSuppressed ? FlyoutBehavior.Disabled : FlyoutBehavior.Locked;
+            PrimaryTabBar.IsVisible = false;
+        }
+        else
+        {
+            FlyoutBehavior          = FlyoutBehavior.Disabled;
+            PrimaryTabBar.IsVisible = true;
+        }
+
+        // A full-screen viewer owns the whole window; a placement reconciliation must never
+        // navigate it away (the section-root/pane case — the pushed-page case is covered by the
+        // NavigationStack guard inside EnsurePrimaryDestinationVisibleAsync). Same intent as
+        // SourceListPage.ApplySizeClass's _isPaneFullScreen early return.
+        if (ensureDestination && !_stateViewModel.IsChromeSuppressed)
+            Dispatcher.Dispatch(async () => await EnsurePrimaryDestinationVisibleAsync());
+    }
+```
+
+Also on the 384 branch after the rebase: `OnStatePropertyChanged` keeps its `IsChromeSuppressed` →
+`ApplyPlacement(ensureDestination: false)` arm unchanged; `OnShellNavigated`'s deferred re-apply calls
+`ApplyPlacement()` (default `ensureDestination: true`) unchanged; nothing else in slice 2/3 moves.
+Note the composition is behaviourally correct without further edits: while a swap is deferred on a
+pushed page, `FlyoutBehavior` stays `Disabled` (the portrait value), so entering full screen there
+shows no rail, and the page-scoped `Shell.SetTabBarIsVisible(page,false)` still hides the bottom bar —
+the full-screen chrome is correct in the deferred state, and the placement catches up on pop.
+
+**#316 (`feature/316-e2e-entry-points-lifecycle`, worktree `…-wt/e2e316`) — complementary, no name or
+id collision.** `LifecycleTests.Rotation_BothWays_KeepsTheViewerAliveAndPlaying` is the pushed-page
+regression test for #393 and will go green only with #393 in the tree; `AppLaunchTests`'
+`Rotating_WhileOnANonHomeTab_KeepsTheSameDestination` is the section-root one. Whichever branch merges
+second must run the other's test before merging: if #393 goes first, #316 rebases and its
+`LifecycleTests` run becomes the acceptance evidence for both; if #316 goes first, the #393 branch
+rebases onto it and must include `LifecycleTests.Rotation_BothWays_KeepsTheViewerAliveAndPlaying` in
+its PR's run link. Neither branch may relax or rename the other's test.
+
+## Non-blocking notes
+
+1. **A theoretically concurrent `GoToAsync` window survives.** `ApplyPlacement`'s trailing dispatch can
+   in principle run while Shell's own fallback navigation is still in flight (it did not in either
+   captured run — the dispatched lambda ran after `Navigated` both times). If device testing shows
+   navigation wedging or a double transition, the minimal hardening is a `_shellFallbackInProgress`
+   flag set in `OnNavigating`'s unsolicited branch, cleared at the top of every `OnShellNavigated`, and
+   checked as a fifth early return in `EnsurePrimaryDestinationVisibleAsync` — mirroring
+   `_handoffInProgress`. Do not add it pre-emptively.
+2. `_currentPrimaryDestination` and `_stateViewModel.SelectedDestination` are two sources of truth for
+   "where are we" (`OnAppearanceChanged` reads the former, the new unsolicited branch the latter). They
+   agree in every path traced here, but the duplication is worth collapsing under its own ticket.
+3. **Knowledge-base drift, for the teamlead:** `C:\repos-github\NDI-for-Android\.claude\knowledge\architecture.md`
+   (main checkout) contains **none** of the #386 slice-1, #384 slice-2 or 2026-09-12 verdicts — those
+   exist only in `C:\repos-github\NDI-for-Android-wt\yt\.claude\knowledge\architecture.md`. Two
+   divergent copies of the architect's own log are now in flight; whoever merges the 384 branch must
+   union them rather than let one overwrite the other, and this #393 entry should be appended to
+   whichever copy lands on `main` first.
+
 ### 2026-09-06 — #380 flaky `ViscaPtzControllerLoopbackTests` (per-test timeout budgets)
 
 **APPROVE-WITH-CHANGES.** Test-project-only change; no production code, no fake change. The plan is
