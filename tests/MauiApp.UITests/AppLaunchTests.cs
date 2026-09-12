@@ -114,6 +114,31 @@ public sealed class AppLaunchTests : UiTestBase
     });
 
     [SkippableFact]
+    public void Rotating_WhileOnANonHomeTab_KeepsTheSameDestination() => Run(app =>
+    {
+        // The Appium session is shared: start from a known page and orientation rather than
+        // inheriting whatever the previous test left behind (including a pushed page).
+        app.ResetToHome();
+
+        app.Navigation.GoTo(NavDestination.Stream);
+        app.Output.WaitUntilVisible();
+
+        // Landscape is the rail placement on this AVD, and the rail is the only placement that
+        // announces its selection (NavigationBar.AnnouncesSelected reads the ", selected" suffix
+        // the rail puts in content-desc, #345 home-nav-06); the bottom tab bar has no such suffix,
+        // so in portrait the page's own id is the assertion.
+        app.Rotate(ScreenOrientation.Landscape);
+        app.Output.WaitUntilVisible();
+        Assert.True(app.Navigation.AnnouncesSelected(NavDestination.Stream),
+            "Rotating away from the Stream tab must not silently switch the selected destination to Home (#393).");
+
+        app.Rotate(ScreenOrientation.Portrait);
+        app.Output.WaitUntilVisible();
+        Assert.True(app.Output.IsVisible,
+            "Rotating back to portrait must keep Stream selected (#393).");
+    });
+
+    [SkippableFact]
     public void Stream_TypedStreamName_SurvivesATabSwitch() => Run(app =>
     {
         app.ResetToHome();
