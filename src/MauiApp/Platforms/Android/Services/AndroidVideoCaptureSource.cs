@@ -29,6 +29,9 @@ namespace NdiForAndroid.Platforms.Android.Services;
 /// </summary>
 public sealed class AndroidVideoCaptureSource : IVideoCaptureSource
 {
+    /// <summary>logcat tag for capture-path diagnostics (`adb logcat -s NDI-Capture`).</summary>
+    private const string LogTag = "NDI-Capture";
+
     /// <summary>Activity-result request code for the MediaProjection consent dialog.</summary>
     internal const int ScreenCaptureRequestCode = 42731;
 
@@ -404,9 +407,13 @@ public sealed class AndroidVideoCaptureSource : IVideoCaptureSource
                 var sessionConfiguration = new SessionConfiguration(
                     (int)SessionType.Regular, outputs, new HandlerExecutor(handler), stateCallback);
                 camera.CreateCaptureSession(sessionConfiguration);
+                global::Android.Util.Log.Info(LogTag,
+                    $"Capture session requested via SessionConfiguration (API {(int)global::Android.OS.Build.VERSION.SdkInt}).");
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                global::Android.Util.Log.Warn(LogTag,
+                    $"SessionConfiguration path failed ({ex.GetType().Name}: {ex.Message}); falling back to the legacy CreateCaptureSession overload.");
                 useLegacySession = true;
             }
         }
@@ -418,6 +425,8 @@ public sealed class AndroidVideoCaptureSource : IVideoCaptureSource
 #pragma warning disable CA1422
             camera.CreateCaptureSession(new List<Surface> { surface }, stateCallback, handler);
 #pragma warning restore CA1422
+            global::Android.Util.Log.Info(LogTag,
+                $"Capture session requested via the legacy CreateCaptureSession(List<Surface>) overload (API {(int)global::Android.OS.Build.VERSION.SdkInt}).");
         }
         var session = await configured.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
         _captureSession = session;
