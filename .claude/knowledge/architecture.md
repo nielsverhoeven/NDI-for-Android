@@ -31,6 +31,480 @@ unconditionally. Rule 5's intent is to keep Android APIs out of **Core** and out
 
 ## Verdicts log
 
+### 2026-09-12 — #317 revised plan (gate v2)
+
+**APPROVE-WITH-CHANGES.** All six v1 required changes are genuinely resolved, not paraphrased — I
+re-derived each from the live repo rather than taking the plan's word for it. What remains is eight
+required changes, none of which needs an owner judgment call: three are substantive defects the
+revision introduced or carried (a guaranteed artifact-name collision in the nightly matrix, a
+font-scale value that leaks into the *shared* cached AVD and can poison the PR gate, and a
+reachability assertion that the repo's own page-object comment says cannot work on a ScrollView
+page), one is a workflow-permissions/`if:` error in the new `flake-report` job, and four are
+mechanical-accuracy fixes that a Sonnet developer applying line-anchored hunks will get wrong as
+written. Every item below has one obvious correct fix, stated verbatim. Nothing here is
+architectural drift: the change set remains test-project, workflow and script only — `src/Core`
+stays MAUI-free, Rules 1–6 are untouched, and no production file is edited.
+
+---
+
+## The six v1 required changes — all resolved
+
+1. **Consolidation (option b) — RESOLVED.** §3c keeps job id `e2e-tests`, `needs: build-android`
+   and `if: github.ref == 'refs/heads/main' || github.base_ref == 'main'` character-for-character,
+   so `publish-release`'s `needs: [unit-tests, version, build-android, e2e-tests]`
+   (`ndi-for-android-cicd.yml:490`) keeps resolving. The false "display name preserved for branch
+   protection" comment (live at `:249`) is explicitly deleted and is absent from the replacement
+   text. §10's PR-body paragraph states the check-name split correctly
+   (`Run Emulator UI Tests / Build Android APK` + `Run Emulator UI Tests / Android Emulator UI
+   Tests`) and records that `build-and-test` is the only required check. A `uses:` job may carry
+   `needs:` and may itself be a `needs:` target — no YAML problem.
+2. **Real-artifact gate — RESOLVED.** The unsigned fallback is gone: "Locate signed APK" now
+   searches `*-Signed.apk` only and `exit 1`s, byte-identical in intent to `build-android`'s
+   `:207-216`. `build_apk` (boolean, default `true`) and `apk_artifact_name` (string, default
+   `android-apk`) exist; `build-apk` is gated `if: inputs.build_apk`; `emulator-tests` is gated
+   `if: always() && (needs.build-apk.result == 'success' || needs.build-apk.result == 'skipped')`;
+   both the upload and the download use `${{ inputs.apk_artifact_name }}`. The CI caller passes
+   `build_apk: false` + `apk_artifact_name: 'release-apk'`. **Verified against the live file:**
+   `build-android` uploads artifact `release-apk` (`:232`) with `path: ${{ env.APK_PATH }}` set from
+   the `*-Signed.apk` find (`:215`), and the reusable `emulator-tests` download/locate pair
+   (`find "$PWD/apk" -name '*.apk' -type f -print -quit`) is the same code as `:299`. `needs:` on
+   the caller includes `build-android`. §9's per-caller table is now honest and correct: the PR
+   gate's wall clock really is unchanged (~11 min) and its extra compute really is ~0, because the
+   `build-apk` job is *skipped*, not run. The ~+30 compute-min/night for the nightly is correctly
+   attributed and correctly dismissed (public repo).
+3. **Retry policy — RESOLVED.** `MaxRetries { get; set; } = 1` in both attributes, and both
+   discoverer fallbacks are `if (maxRetries <= 0) maxRetries = 1;`. The every-run retry summary is
+   placed **after** the `Counters` echo (`run-emulator-tests.sh:205` on `main`) and is `set -e`/
+   `pipefail`-safe: the `if [[ -s … ]]` guard is exempt from `set -e`, the heredoc is not a pipe, and
+   the `python3 … || echo …` guard matches the file's own convention, so the block cannot abort the
+   script before the real assertions at `:235-243`. `RETRY_LOG="$(dirname "$E2E_ARTIFACT_DIR")/retry-log.ndjson"`
+   and `RetryLog.LogPath` agree: `FailureEvidence.ArtifactDirectory` is
+   `Path.GetFullPath($E2E_ARTIFACT_DIR)` (`FailureEvidence.cs:35-38`), the script sets it to
+   `$PWD/test-results/failure-evidence` (`:91`), so both land on `$PWD/test-results/retry-log.ndjson`
+   — inside the `test-results/*.ndjson` glob the reusable workflow's `emulator-diagnostics-*` upload
+   now carries (the live CI/CD upload at `:386-389` does **not**, so adding it was necessary). §7's
+   knowledge amendment is verbatim, scoped explicitly to `tests/MauiApp.UITests`, explicitly
+   preserves the #380 rejection for `tests/MauiApp.Tests`, and explicitly excludes
+   `DeepLinkTests.cs` / `LifecycleTests.cs` / `PermissionTests.cs` with the destructive-setup
+   reasoning.
+4. **No pre-emptive quarantine — RESOLVED.** `quarantine.json` ships as `[]`; §5c states the
+   reasoning and the "add an entry only with a run link" rule.
+   `Accessibility_RailItems_AnnounceSelectedDestination` keeps its normal attribute.
+5. **Skippable-exception set + pin — RESOLVED.** Both discoverers use
+   `new[] { typeof(Xunit.SkipException).FullName! }` with the justifying comment;
+   `GetSkippableExceptionNames` appears nowhere. `xunit.skippablefact` → `Version="[1.5.85]"`, and
+   `1.5.85` is what actually resolves (`tests/MauiApp.UITests/obj/project.assets.json:2143`). The
+   `[XunitTestCaseDiscoverer(..., "NdiForAndroid.UITests")]` assembly name is right: the csproj has
+   no `<AssemblyName>` override, so the assembly name is the project-file name
+   `NdiForAndroid.UITests`.
+6. **`FontScaleTests.cs` — one complete listing, RESOLVED (with required change 3 below).** The
+   placeholder body is gone; `AssertReachable` has a real implementation; the clipping check is
+   intersect-filtered (`.Where(n => n.Bounds.IntersectsWith(screen))`) and asserts horizontal bounds
+   only; the same filter is applied before the O(n²) sibling sweep because the sweep runs over the
+   already-filtered `textNodes` list. Every referenced helper exists with that exact name and shape:
+   `ScreenSampler.SaveTo(string)` (`Infrastructure/ScreenSampler.cs:166`), `A11yNode` with
+   `Class/ResourceId/ContentDescription/Text/Clickable/Focusable/Displayed/X/Y/Width/Height`
+   (`Infrastructure/AccessibilityAudit.cs:17-28`), `AccessibilityAudit.MinTouchTargetDp` = 48
+   (`:66`), `ReadTree()` (`:78`), `DeviceMetrics.Density` (`:50`) / `ToPixels(double)` (`:72`),
+   `SettingsPage.SectionButtonHeightPx(SettingsSection)` (`Pages/SettingsPage.cs:68`),
+   `FailureEvidence.ArtifactDirectory` (`:35`), `TestIds.HomeStartViewingLast` (`TestIds.cs:77`),
+   `TestIds.OutputStart` (`TestIds.cs:158`), `NdiApp.WindowSize` (`Pages/NdiApp.cs:63`),
+   `NdiApp.Metrics` (`:46`), `NdiApp.Accessibility` (`:60`), `NdiApp.CaptureScreen()` (`:57`),
+   `Home/Output/Settings/Navigation` (`:34-39`). The quarantine wrapper's exception ordering is also
+   correct: `FailureEvidence.Capture` catches `when (!IsSkip(ex))`, so a converted `SkipException`
+   passes straight through without being recorded as a failure.
+
+---
+
+## Required changes (v2)
+
+### RC1 — BLOCKING. The nightly matrix's three legs collide on one APK artifact name.
+
+All three nightly legs run in the **same workflow run** and none passes `apk_artifact_name`, so all
+three `build-apk` jobs upload the artifact `android-apk`. `actions/upload-artifact@v4+` returns a
+409 Conflict for a duplicate name in a run, so two of the three legs fail at "Upload APK artifact"
+on the very first nightly. The reusable workflow's own `LEG_SLUG` comment shows the plan knows this
+rule — it was applied to the results/diagnostics artifacts and missed for the APK.
+
+In `.github/workflows/nightly-e2e-matrix.yml`, replace the `e2e` job's `with:` block:
+
+```yaml
+    with:
+      avd_profile: ${{ matrix.avd_profile }}
+      api_level: ${{ matrix.api_level }}
+      font_scale: ${{ matrix.font_scale }}
+      test_filter: ${{ matrix.test_filter }}
+      require_device: true
+      release_sign: true
+      # One artifact name per leg: all three legs build inside the SAME workflow run, and
+      # actions/upload-artifact returns 409 Conflict for a duplicate name in a run.
+      apk_artifact_name: android-apk-${{ matrix.leg }}
+```
+
+(`emulator-tests` downloads `${{ inputs.apk_artifact_name }}`, so the per-leg name stays consistent
+end to end. This is also what makes `matrix.leg` load-bearing rather than decorative.)
+
+### RC2 — BLOCKING. `font_scale` persists inside the cached AVD and is shared with the PR gate.
+
+`adb shell settings put system font_scale` writes to `/data` (the settings provider DB), which lives
+in `~/.android/avd/<name>.avd/userdata-qemu.img` — i.e. inside the `actions/cache` path
+`~/.android/avd/*`. The new cache key is `avd-api<level>-x86_64-<profile>-v1`, which does **not**
+include the font scale, so the `font-scale-1_3` and `font-scale-2_0` legs share one key with each
+other **and with the CI/CD PR gate** (all three use `profile: Nexus 6`). On the first nightly both
+font-scale legs miss and both save that key; the winner's userdata carries `font_scale=1.3` or
+`2.0`, and every later restore — including the blocking PR gate — boots an emulator at that font
+scale. Given `§4a` only sets the scale when it is *not* `1.0`, nothing corrects it back.
+
+Two changes, both required:
+
+(a) In §4a hunk 1, drop the conditional — replace
+
+```bash
+FONT_SCALE="${E2E_FONT_SCALE:-1.0}"
+if [[ "$FONT_SCALE" != "1.0" ]]; then
+  echo "Setting device font scale to $FONT_SCALE"
+  adb shell settings put system font_scale "$FONT_SCALE"
+fi
+```
+
+with
+
+```bash
+# Device font scale, applied before install so the app picks it up on first launch. Set
+# unconditionally: /data is restored from the actions/cache AVD entry, so a previous leg's
+# non-default font_scale would otherwise persist into this run.
+FONT_SCALE="${E2E_FONT_SCALE:-1.0}"
+echo "Setting device font scale to $FONT_SCALE"
+adb shell settings put system font_scale "$FONT_SCALE"
+```
+
+(b) In `.github/workflows/e2e-reusable.yml`, put the font scale in the AVD cache key. Replace the
+`Sanitise cache key fragment` step and the cache key with:
+
+```yaml
+      - name: Sanitise cache key fragments
+        id: cachekey
+        run: |
+          SAFE=$(echo "${{ inputs.avd_profile }}" | tr -c 'a-zA-Z0-9' '_')
+          FS=$(echo "${{ inputs.font_scale }}" | tr -c 'a-zA-Z0-9' '_')
+          echo "profile=$SAFE" >> "$GITHUB_OUTPUT"
+          echo "fontscale=$FS" >> "$GITHUB_OUTPUT"
+```
+
+```yaml
+          key: avd-api${{ inputs.api_level }}-x86_64-${{ steps.cachekey.outputs.profile }}-fs${{ steps.cachekey.outputs.fontscale }}-v1
+```
+
+Also correct §11 risk 3: the key change makes the **PR gate's** first run a guaranteed cache miss as
+well (today's key is `avd-api35-x86_64-v1`), not only the tablet leg's.
+
+### RC3 — BLOCKING. `AssertReachable` cannot pass on Home or Output without scrolling first.
+
+Both targets sit near the bottom of a `ScrollView`: `HomePage.xaml:30` opens the ScrollView and
+`TestIds.HomeStartViewingLast` is at `:95` of a 116-line page; `OutputPage.xaml:11` opens the
+ScrollView and `TestIds.OutputStart` is at `:140` of 150. The repo's own page-object comment records
+the exact failure mode this creates — `Pages/PageObject.cs:280-285`: *"Appium reports the bounds of a
+partially scrolled-out element clipped to the visible area (a 48 dp Switch at the bottom edge read as
+168x6 px), which a touch-target assertion cannot tell apart from a genuinely tiny control."* A fully
+off-screen node is worse: UIA2 omits it (or reports `displayed=false`), so `node is null` and the test
+fails with "is not on screen at the current font scale." At font scale 1.3/2.0 on the 411 dp Compact
+AVD both pages certainly overflow — so the two assertions fail in exactly the legs the test exists
+for. This is the same ScrollView error class the v1 gate caught for the bounds check; it was fixed
+there and missed here.
+
+(a) Add to `tests/MauiApp.UITests/Pages/HomePage.cs` **and** `tests/MauiApp.UITests/Pages/OutputPage.cs`
+(`ScrollToEnd` is `protected` on `PageObject`, so a test cannot call it; `SettingsPage.AddServer`
+already uses it the same way at `Pages/SettingsPage.cs:202`):
+
+```csharp
+    /// <summary>
+    /// Scrolls this page's ScrollView to the end so controls at the bottom measure their full
+    /// size. Appium clips the reported bounds of a partially scrolled-out element (see
+    /// PageObject.ScrollToEnd), and omits a fully off-screen one, so a touch-target assertion on
+    /// a bottom-of-page control must scroll first.
+    /// </summary>
+    public void ScrollToBottom() => ScrollToEnd();
+```
+
+(b) In §4b, reorder the two affected test bodies so the readability sweep runs at the top of the page
+and the reachability check runs after scrolling:
+
+```csharp
+    [RetryableSkippableFact]
+    public void FontScale_HomePage_NoClippedOrOverlappingTextAndPrimaryActionReachable() => Run(app =>
+    {
+        app.ResetToHome();
+        AssertScreenIsReadable(app, "Home");
+        app.Home.ScrollToBottom();
+        AssertReachable(app, TestIds.HomeStartViewingLast, "Home start-viewing-last action");
+    });
+```
+
+```csharp
+    [RetryableSkippableFact]
+    public void FontScale_OutputPage_NoClippedOrOverlappingTextAndStartActionReachable() => Run(app =>
+    {
+        app.ResetToHome();
+        app.Navigation.GoTo(NavDestination.Stream);
+        app.Output.WaitUntilVisible();
+        AssertScreenIsReadable(app, "Output");
+        app.Output.ScrollToBottom();
+        AssertReachable(app, TestIds.OutputStart, "Output start action");
+    });
+```
+
+(c) Add to §4b's `AssertReachable` a `<remarks>` block recording why the caller must scroll first
+(same wording as (a)), so a future test does not call it un-scrolled and get a spurious red.
+(The button is `IsEnabled`-bound, not visibility-bound — `HomePage.xaml:97` — so a disabled Start
+Viewing Last is still in the tree; disablement is not the problem, scroll position is.)
+
+### RC4 — BLOCKING. The `flake-report` job drops `contents: read` and runs when `e2e` is skipped.
+
+Job-level `permissions` **replaces** the workflow-level block rather than merging with it — every
+scope omitted is set to `none` — so `permissions: { actions: read }` leaves `contents: none` and
+`actions/checkout@v7` has no token scope for the repo. Separately, `needs: e2e` + `if: always()`
+means that on a `labeled` event whose label is not `run-e2e-matrix` (i.e. every other label added to
+any PR in this repo, because the trigger is workflow-level) `e2e` is skipped and `flake-report` runs
+anyway, fails on `actions/download-artifact` with nothing to download, and posts a red run.
+
+In `.github/workflows/nightly-e2e-matrix.yml`, replace the `flake-report` job header:
+
+```yaml
+  flake-report:
+    name: Aggregate flake statistics
+    needs: e2e
+    # Not `always()`: on a `labeled` event whose label is not run-e2e-matrix the `e2e` job is
+    # skipped, and this job would then fail downloading artifacts that were never produced.
+    if: always() && needs.e2e.result != 'skipped'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Job-level `permissions` REPLACES the workflow-level block instead of merging with it: every
+    # scope omitted here is set to `none`. `contents: read` is for actions/checkout, `actions: read`
+    # is what `gh run download` needs.
+    permissions:
+      contents: read
+      actions: read
+```
+
+and add `continue-on-error: true` to the `Download this run's retry logs` step, so a leg that died
+before uploading diagnostics cannot turn the aggregation into a red run:
+
+```yaml
+      - name: Download this run's retry logs
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          pattern: emulator-diagnostics-*
+          path: current-run
+          merge-multiple: false
+```
+
+### RC5 — §4a's #316 sequencing paragraph is factually wrong; hunk 2's anchor moves.
+
+#316 does **not** edit the script "in place, adding no lines": it inserts a 3-line comment above the
+`appium` line. Verified against `C:\repos-github\NDI-for-Android-wt\e2e316\testing\e2e\scripts\run-emulator-tests.sh`
+— `appium --port 4723 … --allow-insecure=uiautomator2:adb_shell` moves from `:62` to `:65`, `timeout
+20m` → `timeout 35m` moves from `:103` to `:106`, and the `Counters` echo moves from `:205` to
+**`:208`**. Replace the whole "**Sequencing note**" paragraph of §4a with:
+
+> **Sequencing note (per the task's #316 concurrency constraint):** this plan assumes #316
+> (`feature/316-e2e-entry-points-lifecycle`) has already landed before this work starts. #316 edits
+> this same script in two places: it inserts a **3-line comment** above the `appium --port 4723 …`
+> line (which also gains `--allow-insecure=uiautomator2:adb_shell`), and it changes `timeout 20m` to
+> `timeout 35m`. The comment insertion shifts every line below it by **+3** — verified against the
+> #316 worktree: `appium` 62 → 65, `timeout` 103 → 106, the `Counters` echo 205 → **208**. Hunk 1's
+> anchor (`sleep 5`) sits *above* #316's edits and stays at line 45. **Hunk 2's anchor is line 208,
+> not 205, once #316 has landed.** Anchor both hunks on the quoted surrounding text below, never on
+> a line number; neither hunk overlaps either #316 edit.
+
+### RC6 — §3c's replacement line range is wrong by 7 lines at the top and 2 at the bottom.
+
+The live `e2e-tests` block runs **241–479**: line 241 starts the `# ════…` header comment, line 248
+is `e2e-tests:`, line 479 is the `Failure summary` step's closing
+`echo "==========================================================="`, line 480 is blank and line 481
+starts the Publish header comment. The plan's "lines 248–481 … from the job's own `# ══…` header
+comment" is self-contradictory and, taken literally, deletes the Publish job's header comment while
+leaving the e2e header comment orphaned above a `uses:` job that has its own. Replace that
+parenthetical with:
+
+> (currently lines **241–479** in the live file: from the `# ════…` header comment block that opens
+> `# E2E — runs on PRs into main and on main itself.` at line 241, through the last line of the
+> `Failure summary` step — `echo "==========================================================="` at
+> line 479. Line 480 is blank and line 481 opens the `# ════…` *Publish* header comment; leave both
+> untouched.)
+
+### RC7 — §6b's closing arithmetic contradicts itself (28 mechanical, not 29), and a repo-wide replace would break §7's exclusion.
+
+Verified counts on `main`: 30 occurrences across 7 files (`AppLaunchTests` 14, `AccessibilityTests` 4,
+`OutputPageTests` 3, `OutputStatusTests` 1, `StartupSmokeTests` 2, `SystemBarInsetTests` 1 fact + 1
+theory at `:32`, `ThemeRegressionTests` 3 facts + 1 theory at `:45`) — the §6b table is exactly right,
+and `SystemBarInsetTests.cs` really does lack `using NdiForAndroid.UITests.Infrastructure;` (its
+usings are `OpenQA.Selenium`, `NdiForAndroid.UITests.Pages`, `Xunit`, `Xunit.Abstractions`). Only the
+sum is wrong. Replace §6b's closing two paragraphs with:
+
+> Total mechanical replacements: 12+4+3+1+2+1+3 = **26** `[SkippableFact]` →
+> `[RetryableSkippableFact]`, plus 1 (`SystemBarInsetTests.cs:32`) + 1 (`ThemeRegressionTests.cs:45`)
+> = **2** `[SkippableTheory]` → `[RetryableSkippableTheory]` = **28 mechanical replacements**. Adding
+> §5b's one directly-written `[RetryableSkippableTheory]` gives **29** `Retryable*` attributes in the
+> suite in total (30 today − 2 deleted + 1 new).
+>
+> **Do not run a repo-wide find/replace.** After #316 lands the suite contains **41**
+> `[SkippableFact]`/`[SkippableTheory]` occurrences; the **11** in `DeepLinkTests.cs` (5),
+> `LifecycleTests.cs` (4) and `PermissionTests.cs` (2) are deliberately excluded per §7. Replace only
+> inside the seven files named in the table above.
+
+### RC8 — §8 step 1 cannot be executed at position 1.
+
+Step 1 dispatches `nightly-e2e-matrix.yml`, which does not exist until step 7 and whose
+`flake-report` job needs the scripts added in step 20; step 1 says so itself ("after step 7 lands"),
+which makes the "ordered edit list" not ordered. Delete step 1 and fold it into step 26:
+
+> 26. Dispatch `nightly-e2e-matrix.yml` manually (`gh workflow run nightly-e2e-matrix.yml`).
+>     **First** watch the `expanded-tablet` leg's `Create AVD` step: if `profile: pixel_c` is not a
+>     valid `avdmanager` device id on the runner image, change that leg's `avd_profile` and
+>     re-dispatch, in order `Nexus 10` → `10.1in WXGA (Tablet)`; the first one that boots wins. Once
+>     confirmed, leave it hardcoded in `nightly-e2e-matrix.yml`. Then confirm the two font-scale legs
+>     and the `flake-report` job (the first run shows `0%` / "Runs: 1" for everything — expected, not
+>     a bug). Finally append to `.claude/knowledge/decision-log.md` the confirmed tablet profile and
+>     the measured portrait width-dp (read from the new theory's assertion messages or the leg's TRX).
+
+and amend step 2 to "Record: the Compact/Medium-via-orientation correction (§1 item 1), the foldable
+skip rationale (§1 item 3), the quarantine-over-TRX-trait-parsing design choice (§6c), and the
+#316-classes retry exclusion. The confirmed tablet profile and its measured width-dp are appended
+later, by step 26."
+
+---
+
+## Confirmed — no change
+
+- **Reusable-workflow YAML is valid `workflow_call`.** Input types are legal (`string` × 6,
+  `boolean` × 3 — `expect_failure`, `require_device`, `release_sign`, plus `build_apk`), every input
+  has `required: false` + a default, the `secrets:` block declares four optional secrets and all
+  three callers use `secrets: inherit`. `runs-on`/`timeout-minutes` correctly live on the *called*
+  workflow's jobs and are correctly **absent** from the three caller jobs (a `uses:` job may not set
+  them, nor `env:`, nor `steps:`); §3c sets neither. Workflow-level `env: DOTNET_VERSION: '10.0.301'`
+  resolves inside both jobs' steps. Matrix + `uses:` is supported. `inputs.require_device` /
+  `inputs.expect_failure` render as `"true"`/`"false"` into the job `env:`, which is what
+  `run-emulator-tests.sh:83,222` and `AppiumDriverFixture` already compare against.
+  `a11y_max_violations: ''` is safe: `AccessibilityTests.Budget` is
+  `int.TryParse(Environment.GetEnvironmentVariable("A11Y_MAX_VIOLATIONS"), out var configured) ? configured : 12`
+  (`AccessibilityTests.cs:47-50`), and the script already forwards it as `"${A11Y_MAX_VIOLATIONS:-}"`
+  (`:105`), so an empty string falls back to 12 exactly as claimed.
+- **Cross-run artifact reuse (`build_apk: false` + `release-apk`) is the right mechanism and §3c
+  flags it honestly.** Artifacts are scoped to the workflow *run*, not the job graph, so a job inside
+  a called workflow can download what a sibling of its caller uploaded. §11 risk 7 + §8 step 25 keep
+  it as an empirical check rather than an assumption — correct, and the stated fallback
+  (`build_apk: true` for this caller only, +~3.5 min) is the right one.
+- **Retry mechanism composes with `xunit.skippablefact` as claimed.** `SkippableFactTestCase` /
+  `SkippableTheoryTestCase` fold `SkipException` into `RunSummary.Skipped` before returning, so
+  `summary.Failed > 0` after `base.RunAsync` can only be a genuine failure — a skip is never retried.
+  The `BufferingMessageBus` swap correctly suppresses a non-final failing attempt's messages and
+  forwards a non-final *passing* attempt's; `new ExceptionAggregator(aggregator)` per attempt stops
+  failures accumulating; `Serialize`/`Deserialize` overrides plus the `[Obsolete]` parameterless ctor
+  match the VSTest serialisation round-trip the base class already implements. Rejecting `xRetry`
+  because one method can carry only one `XunitTestCaseDiscoverer` is correct reasoning.
+- **§5b's policy-derived theory is correct and its derivation re-verified.**
+  `WindowSizeClassService.Classify(double)` is `public static` (`WindowSizeClassService.cs:28`) with
+  Material thresholds `<600` Compact / `≤840` Medium / else Expanded (`:9-10,30-32`);
+  `NavigationPolicyService(IWindowSizeClassService)` is public (`:11`) and `ResolvePlacement` is rail
+  when `Landscape || Expanded` (`:25-28`). `WindowSizeClass` is in
+  `NdiForAndroid.Features.Navigation.Services` (`IWindowSizeClassService.cs:7`);
+  `NavigationPlacementMode` and `DeviceOrientation` are in `…Navigation.Models`
+  (`PrimaryNavigationMetadata.cs:13,19`) — so the plan's two `using` lines are both needed and
+  correctly attributed. `AppLaunchTests.cs:70-94` matches the quoted code verbatim and is the correct
+  range to replace (line 81 blank, line 95 blank, line 96 starts the unaffected
+  `AdaptiveNavigation_AllFourDestinations_ShowTheirOwnPage`). The throwaway
+  `new NavigationPolicyService(new WindowSizeClassService())` subscribes to `Changed` but both objects
+  die together — no leak.
+- **§1's premise corrections stand** (Nexus 6 = 411 dp Compact portrait / ≈731 dp Medium landscape,
+  rail via the orientation rule; only Expanded-portrait is unreached; one tablet leg, not three phone
+  profiles; foldable correctly skipped because `avdmanager create avd --device` has no posture
+  control). §2a's drift table remains accurate against both live files.
+- **§6c's quarantine mechanism is non-blocking-when-active and blocking-when-expired, as claimed.**
+  `run-emulator-tests.sh:240-243` only warns on skips and `:235` fails on zero passes. The
+  `DateTime.Parse` in `ExpiresUtc` inside an exception filter fails safe. The `UiTestBase` wrapper's
+  ordering is right (see item 6 above). With `[]` shipped, the wrapper is inert.
+- **Fork-PR secrets note is materially right**: a `pull_request` event from a fork gets no repository
+  secrets, so `secrets: inherit` passes nothing.
+- **§10's PR-body text and §12's "no open owner questions"** are both correct given the teamlead's
+  recorded decisions.
+
+---
+
+## Non-blocking notes (ordered)
+
+1. **§6c drops a load-bearing comment.** The `UiTestBase.Run` replacement omits the existing comment
+   at `UiTestBase.cs:50-54` explaining why `App.EnsureInForeground()` is there ("Establish the app
+   rather than inherit it…"). Keep it above the `EnsureInForeground()` call in the replacement.
+2. **`MaxRetries = 0` cannot disable retries** — `if (maxRetries <= 0) maxRetries = 1;` silently
+   forces one retry, so the only way to opt out is not to apply the attribute (which is how §7's
+   #316 exclusion works). Either document that on the attribute or use `if (maxRetries < 0) maxRetries = 0;`.
+3. **Failure evidence is not attempt-keyed.** `FailureEvidence.Capture(driver, testName, …)` names
+   artifacts after the test only, so attempt 2 overwrites attempt 1's screenshot, and a
+   retried-then-passing test leaves failure evidence for a green test. Consider suffixing the
+   attempt, or at least say so in the PR body so a reader is not misled.
+4. **The retry summary is not literally "every run".** It sits after two early exits: `exit
+   "$TEST_EXIT"` when `E2E_REQUIRE_DEVICE != true` (`:181-183`) and `exit 1` when no TRX exists
+   (`:185-188`). Both CI callers set `require_device: true`, so in practice it prints on every CI run
+   that got as far as producing a TRX — which satisfies the intent. Worth one sentence in §4a.
+5. **Retries multiply wall clock inside `timeout 35m`.** A broad failure (e.g. the app not launching)
+   re-runs every failing test twice. The suite is ~6m40s today; watch the first red PR run before
+   assuming 35 min is still enough, and note that `E2E_EXPECT_FAILURE` proof runs now cost two
+   attempts per deliberately-failing test.
+6. **`FontScaleTests` enters the blocking PR gate on day one** (no filter in the CI caller, so it
+   runs at font scale 1.0 on every PR into `main`) with a brand-new O(n²) geometric assertion over the
+   whole accessibility tree. §8 step 23(c) proves it at the device default only; step 26's nightly is
+   what proves 1.3/2.0. Require both to be green — or the failures triaged — before the PR merges,
+   and record that if the sibling-overlap sweep proves noisy the sweep is the part to narrow (e.g.
+   restrict to `TextView`/`Button` classes), **not** the horizontal-clipping check.
+7. **`FontScaleTests` leaves Home/Output scrolled** after RC3, and the Appium session is shared across
+   the `AppiumSession` collection. `NdiApp.ResetToHome()` re-navigates but does not reset a ScrollView
+   offset. If a later test in the collection turns flaky, that is the first thing to check.
+8. **`if: always()` on `emulator-tests`** also runs the job when the whole workflow is cancelled;
+   `!cancelled() && (needs.build-apk.result == 'success' || needs.build-apk.result == 'skipped')` is
+   the tighter idiom. Cosmetic.
+9. **§3b's "keep lines 1–16" must include line 17.** `emulator-tests.yml:17` is the `name:` key;
+   only lines 1–16 are the comment block. Keeping 1–18 and replacing 19–end is what is meant.
+10. **"now release-signed by default" is conditional.** With no keystore secret, `dotnet publish`
+    still emits `*-Signed.apk` (debug-signed) so "Locate signed APK" passes, and the reusable
+    workflow has no `apksigner verify` counterpart to `build-android`'s `:218-227`. So a fork-PR or
+    secret-less run is debug-signed and **green**, not failed — §3d's "may fail signature-dependent
+    steps" overstates it, and §3b's claim holds only when the secret is present. Acceptable (these
+    callers never publish), but say it accurately.
+11. **`LEG_SLUG` will contain spaces and parentheses if the tablet fallback `10.1in WXGA (Tablet)` is
+    used.** `actions/upload-artifact` tolerates both, but sanitise it the same way the cache-key
+    fragment is sanitised if that fallback is taken.
+12. **The nightly `pull_request: [labeled]` trigger fires a workflow run for every label event on
+    every PR** (the job-level `if:` then skips). Expected, but after RC4 those runs will be
+    all-skipped rather than red.
+
+---
+
+## Recorded decisions (this gate)
+
+- Consolidation **option (b)** is in force: `ndi-for-android-cicd.yml`'s `e2e-tests` becomes a
+  `uses:` caller. The check named `Run Emulator UI Tests` ceases to exist and is replaced by
+  `Run Emulator UI Tests / Build Android APK` + `Run Emulator UI Tests / Android Emulator UI Tests`.
+  Because `build-and-test` is the only required check on `main`, no branch-protection rule changes —
+  but this is now on record as a known gap, unchanged from the 2026-09-05 #361 verdict and the PR
+  #299 incident: **the e2e gate is still not a required check.** Escalate separately; do not bundle.
+- The PR gate must keep testing the artifact that ships. `build_apk: false` +
+  `apk_artifact_name: 'release-apk'` is the mechanism; if §8 step 25 disproves the cross-workflow
+  artifact download, the only sanctioned fallback is `build_apk: true` **for that caller only**,
+  never reintroducing an unsigned-APK fallback in `Locate signed APK`.
+- Bounded retries (`MaxRetries = 1`) are permitted in `tests/MauiApp.UITests` only, conditional on
+  the every-run retry summary, the nightly flake aggregation and explicit `quarantine.json` entries.
+  `tests/MauiApp.Tests` keeps the #380 no-retry rule. `DeepLinkTests`/`LifecycleTests`/
+  `PermissionTests` are excluded. §7's verbatim paragraph is the authoritative record and must land
+  in `.claude/knowledge/architecture.md` as part of this change (edit list step 21).
+- `quarantine.json` ships `[]`. `Accessibility_RailItems_AnnounceSelectedDestination` is **not**
+  quarantined; #321 stays a product defect on its own branch.
+- `xunit.skippablefact` is pinned `[1.5.85]`. A future bump must re-verify
+  `SkippableFactTestCase`/`SkippableTheoryTestCase` constructor signatures and the `RunAsync`
+  contract before the pin moves.
+
+---
+
 ### 2026-09-12 — #316 e2e entry points and lifecycle (gate)
 
 **APPROVE-WITH-CHANGES.** Test-project + one script line; no production code. The scope decision,
@@ -2109,6 +2583,28 @@ Transient (no singleton subscriptions). Documented in `docs/architecture.md` Dep
 
 Accepted behaviour change: Stream-tab state (typed name, input kind, mic, re-stream mode, status text)
 now persists across tab visits/rotation — the symptom the #327 fit-check observed is gone by design.
+
+### 2026-09-12 — #317 amends #380: bounded retries permitted in tests/MauiApp.UITests only
+
+**Scope of the amendment.** The 2026-09-06 #380 verdict rejected "a retry attribute (hides flakes)"
+as an alternative for `tests/MauiApp.Tests/ViscaPtzControllerLoopbackTests.cs`. That rejection stands,
+unchanged, for `tests/MauiApp.Tests` (unit/integration tests against `src/Core`, no device involved):
+a flaky assertion there is evidence of a real race or a bad test, and a retry would mask it. #317
+introduces a narrower, new decision that does not reopen #380: `tests/MauiApp.UITests` (device e2e
+against a real emulator) may retry a test up to once (`RetryableSkippableFact`/
+`RetryableSkippableTheory`, `MaxRetries = 1`, 2 attempts total), because the flake source there is
+frequently the emulator/Appium session itself (cold boot jitter, UiAutomator2 timing) rather than the
+code under test — a different failure population than #380 addressed. This is conditional on all of:
+(i) every retry is logged to `test-results/retry-log.ndjson` and summarised on every run, not only the
+nightly matrix, by `testing/e2e/scripts/run-emulator-tests.sh`, so a retried-but-passing test is never
+invisible on a PR; (ii) the nightly `flake-report` job aggregates the per-test flake rate against a
+<1% target; (iii) a test whose flake rate stays above target is quarantined explicitly via
+`tests/MauiApp.UITests/quarantine.json` (owner + expiry), not silently tolerated by the retry alone.
+`tests/MauiApp.UITests/DeepLinkTests.cs`, `LifecycleTests.cs` and `PermissionTests.cs` (added by #316)
+are excluded from `RetryableSkippable*` — a retry re-runs destructive device setup (`am kill`,
+`pm revoke`, force-stop) against a device the previous attempt may have left in an unknown state, so
+these three classes keep `[SkippableFact]`/`[SkippableTheory]` unless a specific flake is later
+demonstrated and a scoped decision is recorded here.
 
 ## Open questions / assumptions
 

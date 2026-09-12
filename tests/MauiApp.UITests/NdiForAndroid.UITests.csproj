@@ -14,6 +14,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <None Include="quarantine.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.*" />
     <PackageReference Include="xunit" Version="2.*" />
     <PackageReference Include="xunit.runner.visualstudio" Version="4.*">
@@ -27,7 +31,7 @@
          the right Linux variant for a CI container with no system libfontconfig. -->
     <PackageReference Include="SkiaSharp" Version="4.*" />
     <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="4.*" />
-    <PackageReference Include="xunit.skippablefact" Version="1.*" />
+    <PackageReference Include="xunit.skippablefact" Version="[1.5.85]" />
     <PackageReference Include="coverlet.collector" Version="10.*">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
