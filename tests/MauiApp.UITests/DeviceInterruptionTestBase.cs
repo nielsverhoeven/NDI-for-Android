@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using OpenQA.Selenium;
 using NdiForAndroid.UITests.Infrastructure;
 using NdiForAndroid.UITests.Pages;
 
@@ -17,7 +18,20 @@ public abstract class DeviceInterruptionTestBase : UiTestBase
         Run(app =>
         {
             CrashBufferGuard.Mark(app);
-            body(app);
+            try
+            {
+                body(app);
+            }
+            catch
+            {
+                // A test that throws mid-interruption (e.g. mid-rotation, still on a pushed page)
+                // never reaches its own cleanup, leaving the device stuck for whatever runs next.
+                // Best-effort only: this must not hide the real failure behind a recovery failure.
+                try { app.Rotate(ScreenOrientation.Portrait); } catch { }
+                try { app.Terminate(); } catch { }
+                throw;
+            }
+
             CrashBufferGuard.AssertNoNewCrash(app, testName);
         }, testName);
 }
