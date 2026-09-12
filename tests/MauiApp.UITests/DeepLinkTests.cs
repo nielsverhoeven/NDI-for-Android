@@ -26,7 +26,10 @@ public sealed class DeepLinkTests : DeviceInterruptionTestBase
         app.Viewer.WaitUntilPlaying();
         Assert.Equal("Connecting...", app.Viewer.Status);
 
-        app.ResetToHome();
+        // "viewer" is a relative Shell route pushed onto the current tab's stack, so tapping the
+        // already-selected Home tab does not pop back to it. Terminate and let the next test's
+        // EnsureInForeground relaunch fresh onto Home instead of navigating back.
+        app.Terminate();
     });
 
     [SkippableFact]
@@ -39,7 +42,7 @@ public sealed class DeepLinkTests : DeviceInterruptionTestBase
         app.Viewer.WaitUntilPlaying();
         Assert.Equal("Connecting...", app.Viewer.Status);
 
-        app.ResetToHome();
+        app.Terminate();
     });
 
     [SkippableFact]

@@ -16,6 +16,7 @@ namespace NdiForAndroid.UITests;
 public sealed class PermissionAppiumDriverFixture : AppiumDriverFixture
 {
     protected override bool AutoGrantPermissions => false;
+    protected override string? AppWaitPackage => "*";
 
     /// <summary>
     /// The very first launch of a freshly-installed app immediately shows the POST_NOTIFICATIONS

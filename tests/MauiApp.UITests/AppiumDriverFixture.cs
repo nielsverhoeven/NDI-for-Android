@@ -55,6 +55,15 @@ public class AppiumDriverFixture : IAsyncLifetime
     /// </summary>
     protected virtual bool AutoGrantPermissions => true;
 
+    /// <summary>
+    /// Package Appium's own post-launch activity wait is scoped to. <c>null</c> (default) leaves
+    /// Appium's default (our own package). A fixture with <see cref="AutoGrantPermissions"/> off
+    /// overrides this to <c>"*"</c>: the very first cold launch shows the system permission
+    /// dialog — a different package — before our activity settles, so a wait scoped to our own
+    /// package never matches and the session times out.
+    /// </summary>
+    protected virtual string? AppWaitPackage => null;
+
     public async Task InitializeAsync()
     {
         var apkPath = Environment.GetEnvironmentVariable("ANDROID_APK_PATH");
@@ -119,6 +128,9 @@ public class AppiumDriverFixture : IAsyncLifetime
         // MainActivity requests POST_NOTIFICATIONS on API 33+, so the permission dialog is
         // briefly the foreground activity, and the crc64 name is regenerated per build.
         options.AddAdditionalAppiumOption("appium:appWaitActivity", "*");
+
+        if (AppWaitPackage is not null)
+            options.AddAdditionalAppiumOption("appium:appWaitPackage", AppWaitPackage);
 
         // MAUI cold start on a software-rendered emulator runs well past Appium's 20s default;
         // this repo's own guidance puts the cold-emulator floor at 30s.

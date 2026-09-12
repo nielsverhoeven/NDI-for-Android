@@ -39,7 +39,10 @@ public sealed class LifecycleTests : DeviceInterruptionTestBase
         Assert.True(app.Viewer.IsVisible, "Viewer left the screen after rotating back to portrait");
         Assert.True(app.Viewer.IsPlaying, "Viewer stopped playing after rotating back to portrait");
 
-        app.ResetToHome();
+        // "viewer" is a relative Shell route pushed onto the current tab's stack, so tapping the
+        // already-selected Home tab does not pop back to it. Terminate and let the next test's
+        // EnsureInForeground relaunch fresh onto Home instead of navigating back.
+        app.Terminate();
     });
 
     [SkippableFact]
@@ -54,7 +57,7 @@ public sealed class LifecycleTests : DeviceInterruptionTestBase
         app.Viewer.WaitUntilVisible(Timeouts.Navigation);
         Assert.True(app.Viewer.IsPlaying, "Viewer did not resume playing after returning to the foreground");
 
-        app.ResetToHome();
+        app.Terminate();
     });
 
     [SkippableFact]
@@ -90,6 +93,6 @@ public sealed class LifecycleTests : DeviceInterruptionTestBase
         app.EnsureInForeground();
         app.Viewer.WaitUntilVisible(Timeouts.Navigation);
 
-        app.ResetToHome();
+        app.Terminate();
     });
 }
