@@ -164,11 +164,9 @@ public static class MauiProgram
         builder.Services.AddSingleton<Features.Home.Views.HomePage>();      // Singleton: matches ViewModel lifetime (#352/#359)
         builder.Services.AddSingleton<Features.Sources.Views.SourceListPage>();  // Singleton: matches ViewModel lifetime (C1)
         builder.Services.AddTransient<Features.Viewer.Views.ViewerPage>();
-        builder.Services.AddTransient<Features.Viewer.Views.FullScreenViewerPage>();
-        // Factory seam: ViewerView is XAML-instantiated, not DI-constructed, so it resolves the
-        // page via IPlatformApplication.Current.Services (MS.DI does not provide Func<T> automatically).
-        builder.Services.AddSingleton<Func<Features.Viewer.Views.FullScreenViewerPage>>(
-            sp => () => sp.GetRequiredService<Features.Viewer.Views.FullScreenViewerPage>());
+        // Full-screen chrome ownership: one instance per host page (ViewerPage, SourceListPage),
+        // Attached/Detached across that page's own OnAppearing/OnDisappearing.
+        builder.Services.AddTransient<Features.Viewer.Services.ViewerFullScreenChromeController>();
         builder.Services.AddSingleton<Features.Output.Views.OutputPage>();  // Singleton: matches ViewModel lifetime (#352/#359)
         builder.Services.AddTransient<Features.Settings.Views.SettingsPage>();
 

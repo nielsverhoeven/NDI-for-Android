@@ -229,13 +229,15 @@ public partial class AppShell : Shell
     {
         if (e.PropertyName is nameof(AdaptiveShellStateViewModel.PlacementMode))
             ApplyPlacement();
+        else if (e.PropertyName is nameof(AdaptiveShellStateViewModel.IsChromeSuppressed))
+            ApplyPlacement(ensureDestination: false);
     }
 
-    private void ApplyPlacement()
+    private void ApplyPlacement(bool ensureDestination = true)
     {
         if (_stateViewModel.IsLeftRailNavigationVisible)
         {
-            FlyoutBehavior         = FlyoutBehavior.Locked;
+            FlyoutBehavior          = _stateViewModel.IsChromeSuppressed ? FlyoutBehavior.Disabled : FlyoutBehavior.Locked;
             PrimaryTabBar.IsVisible = false;
         }
         else
@@ -244,7 +246,8 @@ public partial class AppShell : Shell
             PrimaryTabBar.IsVisible = true;
         }
 
-        Dispatcher.Dispatch(async () => await EnsurePrimaryDestinationVisibleAsync());
+        if (ensureDestination)
+            Dispatcher.Dispatch(async () => await EnsurePrimaryDestinationVisibleAsync());
     }
 
     // ── Navigation ───────────────────────────────────────────────────────────
