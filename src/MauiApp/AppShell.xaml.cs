@@ -64,8 +64,6 @@ public partial class AppShell : Shell
         IAppearanceService appearanceService,
         ShellNavigationService navigationService)
     {
-        InitializeComponent();
-
         _stateViewModel   = stateViewModel;
         _orientationBridge = orientationBridge;
         _handoffService   = handoffService;
@@ -73,6 +71,10 @@ public partial class AppShell : Shell
         _windowInsetsService = windowInsetsService;
         _appearanceService = appearanceService;
         _navigationService = navigationService;
+
+        // Shell raises Navigating synchronously while this sets the initial CurrentItem, so every
+        // field OnNavigating/OnShellNavigated can read must already be assigned above this call.
+        InitializeComponent();
 
         Routing.RegisterRoute("viewer", typeof(ViewerPage));
         Routing.RegisterRoute("diagnostic-log", typeof(Features.DiagOverlay.Views.DiagnosticLogPage));
@@ -305,7 +307,7 @@ public partial class AppShell : Shell
         // Shell's own unsolicited item fallback (#393) — chrome plumbing, not a destination change:
         // no handoff. See ShellNavigationService.IsExplicitNavigationInProgress.
         if (args.Source == ShellNavigationSource.ShellItemChanged
-            && !_navigationService.IsExplicitNavigationInProgress)
+            && !(_navigationService?.IsExplicitNavigationInProgress ?? false))
             return;
 
         var to = ParseDestination(args.Target?.Location?.OriginalString);
@@ -349,7 +351,7 @@ public partial class AppShell : Shell
         // selection, so the fallback is never visible as a selection change.
         // See ShellNavigationService.IsExplicitNavigationInProgress.
         if (e.Source == ShellNavigationSource.ShellItemChanged
-            && !_navigationService.IsExplicitNavigationInProgress)
+            && !(_navigationService?.IsExplicitNavigationInProgress ?? false))
         {
             UpdateRailHighlight(_stateViewModel.SelectedDestination);
             _appearanceService.ReapplyChrome();
