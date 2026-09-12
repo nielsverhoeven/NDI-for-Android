@@ -376,6 +376,8 @@ public sealed class AndroidVideoCaptureSource : IVideoCaptureSource
         {
             _displayRotationDegrees = ToDegrees(Microsoft.Maui.Devices.DeviceDisplay.MainDisplayInfo.Rotation);
             Microsoft.Maui.Devices.DeviceDisplay.MainDisplayInfoChanged += OnMainDisplayInfoChanged;
+            global::Android.Util.Log.Info(LogTag,
+                $"Orientation compensation armed: sensor {_sensorOrientationDegrees} deg, display rotation {_displayRotationDegrees} deg, front={_isFrontFacing}.");
             _displayListenerAttached = true;
         }).ConfigureAwait(false);
 
@@ -505,8 +507,11 @@ public sealed class AndroidVideoCaptureSource : IVideoCaptureSource
     };
 
     /// <summary>Main thread (MAUI raises it there); the capture thread reads the volatile field per frame.</summary>
-    private void OnMainDisplayInfoChanged(object? sender, Microsoft.Maui.Devices.DisplayInfoChangedEventArgs e) =>
+    private void OnMainDisplayInfoChanged(object? sender, Microsoft.Maui.Devices.DisplayInfoChangedEventArgs e)
+    {
         _displayRotationDegrees = ToDegrees(e.DisplayInfo.Rotation);
+        global::Android.Util.Log.Info(LogTag, $"Display rotation -> {_displayRotationDegrees} deg.");
+    }
 
     private void OnCameraImage(ImageReader reader)
     {
