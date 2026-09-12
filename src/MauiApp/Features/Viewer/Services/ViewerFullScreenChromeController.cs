@@ -22,6 +22,12 @@ public sealed class ViewerFullScreenChromeController
     private Page? _page;
     private ViewerViewModel? _viewModel;
 
+    /// <summary>True while this controller has written the page-scoped chrome overrides onto
+    /// <see cref="_page"/>. Gates the restore so a page that never went full screen keeps
+    /// Shell's own values (this controller is the app's only writer of those two attached
+    /// properties).</summary>
+    private bool _chromeOverridden;
+
     public ViewerFullScreenChromeController(
         IImmersiveModeService immersiveMode,
         AdaptiveShellStateViewModel shellState,
@@ -52,7 +58,8 @@ public sealed class ViewerFullScreenChromeController
     /// Unconditionally releases chrome ownership: forces full screen off and abandons any
     /// in-flight orientation request (<see cref="ViewerViewModel.ForceExitFullScreen"/>), clears
     /// the shared suppression flag, exits immersive mode, releases the orientation lock, and
-    /// restores the page's own nav bar and tab bar. Safe to call when not attached.
+    /// reverts the page's own nav bar and tab bar to Shell's defaults (see
+    /// <see cref="RestoreChrome"/>). Safe to call when not attached.
     /// </summary>
     public void Detach()
     {
@@ -65,11 +72,7 @@ public sealed class ViewerFullScreenChromeController
         _shellState.IsChromeSuppressed = false;
         _immersiveMode.ExitImmersive();
         _orientationLock.Release();
-        if (_page is not null)
-        {
-            Shell.SetNavBarIsVisible(_page, true);
-            Shell.SetTabBarIsVisible(_page, true);
-        }
+        RestoreChrome();
 
         _page = null;
         _viewModel = null;
@@ -91,14 +94,44 @@ public sealed class ViewerFullScreenChromeController
         _shellState.IsChromeSuppressed = isFullScreen;
 
         if (isFullScreen)
-            _immersiveMode.EnterImmersive();
-        else
-            _immersiveMode.ExitImmersive();
-
-        if (_page is not null)
         {
-            Shell.SetNavBarIsVisible(_page, !isFullScreen);
-            Shell.SetTabBarIsVisible(_page, !isFullScreen);
+            _immersiveMode.EnterImmersive();
+            OverrideChrome();
         }
+        else
+        {
+            _immersiveMode.ExitImmersive();
+            RestoreChrome();
+        }
+    }
+
+    /// <summary>Hides the host page's own nav bar and tab bar, page-scoped. This is the one
+    /// mechanism that hides the bottom bar; the left rail is driven separately, through
+    /// <see cref="AdaptiveShellStateViewModel.IsChromeSuppressed"/>.</summary>
+    private void OverrideChrome()
+    {
+        if (_page is null)
+            return;
+
+        Shell.SetNavBarIsVisible(_page, false);
+        Shell.SetTabBarIsVisible(_page, false);
+        _chromeOverridden = true;
+    }
+
+    /// <summary>
+    /// Reverts to Shell's own per-page defaults by clearing the attached properties. Never writes
+    /// <c>true</c>, and never touches a property this controller did not set — writing
+    /// <c>true</c> is not the inverse of writing <c>false</c>, since Shell falls back to a
+    /// per-family default only when neither value was ever explicitly set.
+    /// </summary>
+    private void RestoreChrome()
+    {
+        if (_page is not null && _chromeOverridden)
+        {
+            _page.ClearValue(Shell.NavBarIsVisibleProperty);
+            _page.ClearValue(Shell.TabBarIsVisibleProperty);
+        }
+
+        _chromeOverridden = false;
     }
 }
