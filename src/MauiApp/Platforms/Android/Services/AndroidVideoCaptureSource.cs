@@ -395,6 +395,7 @@ public sealed class AndroidVideoCaptureSource : IVideoCaptureSource
         var configured = new TaskCompletionSource<CameraCaptureSession>(TaskCreationOptions.RunContinuationsAsynchronously);
         var stateCallback = new SessionStateCallback(configured);
         var useLegacySession = !OperatingSystem.IsAndroidVersionAtLeast(28);
+        var apiLevel = (int)global::Android.OS.Build.VERSION.SdkInt;
         if (!useLegacySession)
         {
             // API 28+: SessionConfiguration + Executor. HandlerExecutor keeps the state callbacks
@@ -408,7 +409,7 @@ public sealed class AndroidVideoCaptureSource : IVideoCaptureSource
                     (int)SessionType.Regular, outputs, new HandlerExecutor(handler), stateCallback);
                 camera.CreateCaptureSession(sessionConfiguration);
                 global::Android.Util.Log.Info(LogTag,
-                    $"Capture session requested via SessionConfiguration (API {(int)global::Android.OS.Build.VERSION.SdkInt}).");
+                    $"Capture session requested via SessionConfiguration (API {apiLevel}).");
             }
             catch (Exception ex)
             {
@@ -426,7 +427,7 @@ public sealed class AndroidVideoCaptureSource : IVideoCaptureSource
             camera.CreateCaptureSession(new List<Surface> { surface }, stateCallback, handler);
 #pragma warning restore CA1422
             global::Android.Util.Log.Info(LogTag,
-                $"Capture session requested via the legacy CreateCaptureSession(List<Surface>) overload (API {(int)global::Android.OS.Build.VERSION.SdkInt}).");
+                $"Capture session requested via the legacy CreateCaptureSession(List<Surface>) overload (API {apiLevel}).");
         }
         var session = await configured.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
         _captureSession = session;
