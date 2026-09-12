@@ -70,6 +70,9 @@ public sealed class NdiApp
     /// change, and querying immediately after the rotation returns the pre-rotation layout —
     /// which then fails a placement assertion for a reason that has nothing to do with the app.
     /// </remarks>
+    /// <summary>Presses the Android hardware/gesture Back button.</summary>
+    public void PressBackButton() => _driver.Navigate().Back();
+
     public void Rotate(ScreenOrientation orientation)
     {
         _driver.Orientation = orientation;

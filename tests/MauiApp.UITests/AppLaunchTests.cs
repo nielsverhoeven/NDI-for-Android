@@ -67,6 +67,52 @@ public sealed class AppLaunchTests : UiTestBase
         Assert.True(app.Viewer.HasVideoSurface, "The viewer opened without a video surface");
     });
 
+    /// <summary>
+    /// Every assertion in this test is preceded by an explicit wait, because both
+    /// <c>PageObject.IsPresent</c> and <c>NavigationBar.IsPresent</c> deliberately do not wait:
+    /// <c>WaitUntilFullScreen()</c> after each enter (blocks on the overlay-exclusive
+    /// `viewer.fullScreen.qualityCycle`), <c>WaitUntilPlaying()</c> after each exit (blocks on
+    /// `viewer.stop`, i.e. the Deck/Sheet layout has actually re-rendered). This is required
+    /// change 4's anti-race measure applied to all four transitions, not only to the Back-button
+    /// one.
+    /// </summary>
+    [SkippableFact]
+    public void FullScreen_EnterViaButton_HidesChromeAndExitButtonWorks() => Run(app =>
+    {
+        app.ResetToHome();
+        app.Navigation.GoTo(NavDestination.View);
+        app.Sources.WaitUntilVisible();
+
+        Skip.If(app.Sources.SourceCount == 0,
+            "No NDI sources discovered on this network; full screen needs a playing source.");
+
+        app.Sources.WatchSource();
+        app.Viewer.WaitUntilVisible();
+        app.Viewer.WaitUntilPlaying();
+
+        app.Viewer.ToggleFullScreen();
+        app.Viewer.WaitUntilFullScreen();
+        Assert.True(app.Viewer.IsFullScreen, "Full screen did not engage after the toggle button");
+        Assert.False(app.Navigation.IsPresent(NavDestination.Home),
+            "The bottom tab bar / left rail is still on screen in full screen");
+
+        app.Viewer.ExitFullScreen();
+        app.Viewer.WaitUntilPlaying();
+        Assert.False(app.Viewer.IsFullScreen, "Full screen did not exit after the overlay's exit button");
+        Assert.True(app.Navigation.IsPresent(NavDestination.Home),
+            "Navigation chrome was not restored after exiting full screen");
+
+        app.Viewer.ToggleFullScreen();
+        app.Viewer.WaitUntilFullScreen();
+        Assert.True(app.Viewer.IsFullScreen, "Full screen did not re-engage for the Back-button check");
+
+        app.PressBackButton();
+        app.Viewer.WaitUntilPlaying();
+        Assert.False(app.Viewer.IsFullScreen, "Back button did not exit full screen");
+        Assert.True(app.Navigation.IsPresent(NavDestination.Home),
+            "Navigation chrome was not restored after Back exited full screen");
+    });
+
     [SkippableFact]
     public void AdaptiveNavigation_InPortrait_PlacesNavigationAtTheBottom() => Run(app =>
     {
