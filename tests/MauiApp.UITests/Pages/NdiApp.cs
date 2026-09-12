@@ -1,5 +1,6 @@
 using OpenQA.Selenium;
 using OpenQA.Selenium.Appium.Android;
+using OpenQA.Selenium.Support.UI;
 using NdiForAndroid.UITests.Infrastructure;
 
 namespace NdiForAndroid.UITests.Pages;
@@ -277,5 +278,162 @@ public sealed class NdiApp
             $"foreground within {Timeouts.AppStart.TotalSeconds:0}s of being relaunched — the " +
             $"foreground package is now '{ForegroundPackage}'. It most likely crashed; check the " +
             "logcat crash buffer in the emulator diagnostics.");
+    }
+
+    // ── Device-level actions for deep links, permissions and interruptions ──────────────────
+
+    /// <summary>Force-stops the app without relaunching it.</summary>
+    public void Terminate() => _driver.TerminateApp(PackageName);
+
+    /// <summary>
+    /// Fires an <c>ndi://</c> deep link at the app via Appium's <c>mobile: deepLink</c> extension.
+    /// Cold-starts the app if it is not running, or delivers <c>OnNewIntent</c> to an
+    /// already-running process.
+    /// </summary>
+    public void DeepLink(string uri) => _driver.ExecuteScript("mobile: deepLink",
+        new Dictionary<string, object> { ["url"] = uri, ["package"] = PackageName });
+
+    /// <summary>Sends the app to the background indefinitely — the caller controls when it returns.</summary>
+    public void SendToBackground() => _driver.ExecuteScript("mobile: backgroundApp",
+        new Dictionary<string, object> { ["seconds"] = -1 });
+
+    /// <summary>
+    /// Runs an adb shell command through Appium's <c>mobile: shell</c> extension and returns its
+    /// output. Requires the Appium server to be started with
+    /// <c>--allow-insecure=uiautomator2:adb_shell</c>.
+    /// </summary>
+    public string ShellCommand(string command, params string[] args)
+    {
+        object? result;
+        try
+        {
+            result = _driver.ExecuteScript("mobile: shell", new Dictionary<string, object>
+            {
+                ["command"] = command,
+                ["args"] = args,
+            });
+        }
+        catch (WebDriverException ex)
+        {
+            throw new InvalidOperationException(
+                $"`mobile: shell` ({command} {string.Join(' ', args)}) failed. The Appium server " +
+                "must be started with --allow-insecure=uiautomator2:adb_shell. " +
+                $"Underlying error: {ex.Message}", ex);
+        }
+
+        // Some UiAutomator2 versions return {stdout, stderr} instead of a bare string.
+        return result switch
+        {
+            null => string.Empty,
+            string text => text,
+            IDictionary<string, object> map => map.TryGetValue("stdout", out var stdout)
+                ? stdout?.ToString() ?? string.Empty
+                : string.Empty,
+            _ => result.ToString() ?? string.Empty,
+        };
+    }
+
+    /// <summary>
+    /// Simulates or resolves a GSM call via the emulator console, through Appium's
+    /// <c>mobile: gsmCall</c> extension. <paramref name="action"/> is one of "call", "accept",
+    /// "cancel", "hold". Emulator-only.
+    /// </summary>
+    public void GsmCall(string phoneNumber, string action) => _driver.ExecuteScript("mobile: gsmCall",
+        new Dictionary<string, object> { ["phoneNumber"] = phoneNumber, ["action"] = action });
+
+    /// <summary>
+    /// True if a system Toast whose text contains <paramref name="expectedSubstring"/> is
+    /// currently showing. <c>MainActivity.ShowToast</c> renders a plain
+    /// <c>Android.Widget.Toast</c>, not a MAUI element, so it carries no automation id —
+    /// UiAutomator2 exposes a shown Toast as an accessibility node with
+    /// <c>class="android.widget.Toast"</c>, which is what this matches. Matching on the expected
+    /// text (not just the class) avoids a false positive against a stale Toast left over from an
+    /// earlier test.
+    /// </summary>
+    public bool HasVisibleToast(string expectedSubstring, TimeSpan? timeout = null)
+    {
+        var wait = new WebDriverWait(_driver, timeout ?? TimeSpan.FromSeconds(4));
+        try
+        {
+            return wait.Until(_ => _driver
+                .FindElements(By.XPath(
+                    $"//*[@class='android.widget.Toast' and contains(@text, '{expectedSubstring}')]"))
+                .Count > 0);
+        }
+        catch (WebDriverTimeoutException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Taps the system runtime-permission dialog's Allow or Deny button. The dialog belongs to
+    /// <c>com.android.permissioncontroller</c>, not our app, so this is a fully-qualified resource
+    /// id rather than a <c>TestIds</c> automation id.
+    /// </summary>
+    public void RespondToPermissionDialog(bool allow, TimeSpan? timeout = null)
+    {
+        const string permissionControllerPackage = "com.android.permissioncontroller";
+        var buttonId = allow
+            ? $"{permissionControllerPackage}:id/permission_allow_button"
+            : $"{permissionControllerPackage}:id/permission_deny_button";
+
+        var wait = new WebDriverWait(_driver, timeout ?? Timeouts.Element);
+        IWebElement? button;
+        try
+        {
+            button = wait.Until(_ => _driver
+                .FindElements(By.Id(buttonId))
+                .FirstOrDefault(SafeDisplayed));
+        }
+        catch (WebDriverTimeoutException)
+        {
+            throw new WebDriverTimeoutException(
+                $"The system permission dialog's '{(allow ? "Allow" : "Don't allow")}' button " +
+                $"('{buttonId}') never appeared within {(timeout ?? Timeouts.Element).TotalSeconds:0}s. " +
+                $"Current foreground package: '{ForegroundPackage}'.");
+        }
+
+        button!.Click();
+    }
+
+    /// <summary>
+    /// Restarts the app and returns once either our own UI or the system permission dialog is
+    /// showing. <see cref="TryRestart"/> cannot be reused here: it waits for
+    /// <see cref="IsInForeground"/>, which requires our own package to be foreground — but while
+    /// the permission dialog is up, the foreground package is
+    /// <c>com.android.permissioncontroller</c>, so a restart expected to land on that dialog would
+    /// spin for the full <see cref="Timeouts.AppStart"/> budget and report failure even though the
+    /// app started correctly.
+    /// </summary>
+    public bool TryRestartExpectingPermissionPrompt()
+    {
+        try
+        {
+            _driver.TerminateApp(PackageName);
+            _driver.ActivateApp(PackageName);
+        }
+        catch
+        {
+            return false;
+        }
+
+        const string permissionControllerPackage = "com.android.permissioncontroller";
+        var deadline = DateTime.UtcNow + Timeouts.AppStart;
+        while (DateTime.UtcNow < deadline)
+        {
+            if (IsInForeground ||
+                string.Equals(ForegroundPackage, permissionControllerPackage, StringComparison.Ordinal))
+                return true;
+
+            Thread.Sleep(250);
+        }
+
+        return false;
+    }
+
+    private static bool SafeDisplayed(IWebElement element)
+    {
+        try { return element.Displayed; } catch (StaleElementReferenceException) { return false; }
     }
 }
