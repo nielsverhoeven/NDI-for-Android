@@ -694,6 +694,546 @@ its PR's run link. Neither branch may relax or rename the other's test.
    union them rather than let one overwrite the other, and this #393 entry should be appended to
    whichever copy lands on `main` first.
 
+### 2026-09-12 — #384 slice 3 plan (gate)
+
+**APPROVE-WITH-CHANGES — eight required changes, four of them blocking; no design decision needs
+re-opening by the owner, and required change 1 is an amendment to *my own* 2026-09-06 decision (b),
+not a rejection of the plan.** The plan (`384-slice3-plan-v2.md`, 2318 lines) was re-verified line by
+line against the live slice-2 worktree (`C:\repos-github\NDI-for-Android-wt\yt` @ `b979b93`), not
+against its own prose. Every baseline claim in its §0 is true byte-for-byte:
+`ViewerViewModel.cs:134-167` (11-arg ctor), `:329-354` (`Stop()` with `IsFullScreen = false` as the
+2nd statement), `:356-367` (`Dispose()`), `ViewerViewModel.FullScreen.cs:10,35-57,59-60`,
+`ViewerViewModel.Ptz.cs:44-48`, `ViewerControlLayout.cs:15-16,55-62`,
+`IAppLifecycleService`/`AppLifecycleService.cs:27-33`, `MainActivity.cs:129-161`,
+`ViewerFullScreenChromeController.cs:23,50-68,73-80`, `ViewerPage.xaml.cs:35-63`,
+`SourceListPage.xaml.cs:48-58,97-142`, `ViewerView.xaml:44-47,104`, `ViewerView.xaml.cs:100-110`,
+`FullScreenControlsOverlay.xaml:81-131` (toolbar `*,48,48,48,Auto,48`; audio `Switch` and Stop with
+no `AutomationId`; pad/zoom with no ids), `TestIds.cs:109-121,139`, `MauiProgram.cs:127,139,155,169`,
+`Pages/ViewerPage.cs:44,51-52,86,95-96,107-111`, `AppLaunchTests.cs:79-114`, `docs/architecture.md:159`
++ `:161 ## NDI Bridge`. The four `ViewerViewModel` construction sites are exactly the four the plan
+lists — `ViewerViewModelFullScreenTests.cs:47`, `ViewerViewModelTests.cs:48`,
+`ViewerViewModelConnectionHintTests.cs:42`, `SourceListViewModelTests.cs:53` — grep confirms no fifth.
+Self-containment (the 2026-09-06 rule) is met: every "full new file" carries namespace, usings and
+XML docs, and every modified method (`Stop`, `Dispose`, the ctor, the two `OnIs*Changed` PTZ partials,
+`ChooseVideoHeightDp`, the two gesture recognizers, the two DI lines) is restated verbatim and matches
+the live file. The `#342` item-5 idiom holds (inner `IsVisible` bindings only; the overlay root is set
+from `ViewerView.xaml.cs:102`), every new brush is `DynamicResource`, every new target is 48 dp, and
+every new control has a human-language `SemanticProperties.Description`.
+
+---
+
+## Required changes
+
+**1 (BLOCKING) — `§3a`: hold the orientation lock for the lifetime of full screen; release it when
+full screen ends, not when the requested rotation arrives.** This corrects decision (b)'s
+"calls `Release()` when the matching `OrientationChanged` arrives", which I recorded on 2026-09-06
+and which is wrong on device. `OrientationChanged` is fed from `MainActivity.OnConfigurationChanged`
+→ `newConfig.Orientation` (`MainActivity.cs:142-148`), i.e. the **window's** orientation — which
+changed because *we* set `RequestedOrientation`, not because the user turned the phone. So on a
+compact device the button path is: request `SensorLandscape` → window flips → handler releases to
+`Unspecified` → the system immediately resolves `Unspecified` against a device that is still
+physically portrait (or against the user's rotation lock, with auto-rotate **off**) → window flips
+back to portrait → `OrientationChanged(false)` → the auto-exit branch fires. Net user-visible result:
+full screen flashes and exits, and S21 checklist item 10 ("with auto-rotate off the button still
+forces landscape") cannot pass. Fix, verbatim — in the new `ViewerViewModel.FullScreen.cs`, replace
+the landscape-pending branch of `HandleOrientationChanged`:
+
+```csharp
+        if (_pendingOrientation == PendingOrientation.Landscape && isLandscape)
+        {
+            // The lock is NOT released here: OrientationChanged reports the *window's* orientation,
+            // which flipped because this ViewModel asked it to, not because the user turned the
+            // device. Releasing now would resolve Unspecified against a device that is still
+            // physically portrait (or against the user's rotation lock with auto-rotate off) and
+            // snap straight back, taking full screen with it. The lock is held for as long as full
+            // screen is on and released the moment it ends (OnIsFullScreenChanged) — the same
+            // behaviour YouTube has: button-entered full screen stays landscape until the user
+            // exits it, rotation-entered full screen (no lock ever taken) still exits on rotation.
+            ClearPendingOrientation();
+            IsFullScreen = true;
+            return;
+        }
+```
+
+and replace the `else` branch of `OnIsFullScreenChanged` with:
+
+```csharp
+        else
+        {
+            _overlayAutoHideTimer?.Dispose();
+            _overlayAutoHideTimer = null;
+            IsControlsOverlayVisible = true;
+            IsPtzLayerVisible = false;
+            // Single choke point for "full screen ended" — every exit path (button, Back, Stop(),
+            // the portrait rotation completing, the 3s fallback, ForceExitFullScreen) converges
+            // here, so the device can never be left pinned. Release() is idempotent.
+            _orientationLock.Release();
+        }
+```
+
+`OnPendingOrientationTimeout`, `ForceExitFullScreen` and `BeginExitFullScreen`'s pending-landscape
+cancellation keep their explicit `_orientationLock.Release()` calls (they must release even when
+`IsFullScreen` does not change). Test changes that follow: rename
+`OrientationChanged_AfterButtonRequestedLandscape_EntersFullScreenAndReleasesLock` to
+`OrientationChanged_AfterButtonRequestedLandscape_EntersFullScreenAndKeepsTheLandscapeLock` and
+replace its verify with `_orientationLockMock.Verify(o => o.Release(), Times.Never);`, and add:
+
+```csharp
+    [Fact]
+    public void ExitingAfterAButtonEnteredFullScreen_ReleasesTheOrientationLock()
+    {
+        var sut = CreateSut();
+        SetCompactDevice(isLandscape: false);
+        sut.IsPlaying = true;
+        sut.ToggleFullScreenCommand.Execute(null);          // requests landscape
+        _lifecycleMock.Setup(l => l.IsLandscape).Returns(true);
+        _lifecycleMock.Raise(l => l.OrientationChanged += null, true);   // enters, lock still held
+        _orientationLockMock.Verify(o => o.Release(), Times.Never);
+
+        sut.ToggleFullScreenCommand.Execute(null);          // requests portrait
+        _lifecycleMock.Setup(l => l.IsLandscape).Returns(false);
+        _lifecycleMock.Raise(l => l.OrientationChanged += null, false);  // exits
+
+        Assert.False(sut.IsFullScreen);
+        _orientationLockMock.Verify(o => o.Release(), Times.AtLeastOnce);
+    }
+```
+
+Accepted consequence, to be written into S21 checklist item 4: full screen entered **by the button**
+on a compact device does not exit when the device is rotated to portrait (it cannot — the window is
+locked); it exits by the button or Back, which requests portrait and then releases. Full screen
+entered **by physically rotating to landscape** takes no lock and still exits on rotating back. That
+is YouTube's behaviour and it is the only pair of semantics achievable without an
+`OrientationEventListener` (rejected: new platform machinery for a slice-3 nicety).
+
+**2 (BLOCKING) — `§3a`: close the "playback starts while already landscape" hole in the
+`IsFullScreen ⟺ landscape (while playing)` invariant.** Decision (b) records that invariant as *the*
+reason #383 disappears rather than being patched ("`ViewerControlLayout.Choose` is never asked to
+return `Sheet` at 800×360 while playing"). The plan's §1 item 9 covers the *button* in
+already-landscape, but nothing covers playback that **starts** in landscape: `OrientationChanged` is
+raised only on an actual change (`AppLifecycleService.cs:30`), so tapping Watch from the landscape
+rail, a reconnect completing, or `OnAppResumed` restoring playback all leave `IsFullScreen == false`
+in landscape — the exact #383 symptom, on the exact device in the checklist (S21 Ultra landscape =
+914×411 dp → `WindowSizeClass.Expanded` → the `SourceListPage` pane renders `Sheet` under a 411 dp
+height). Fix, verbatim — in the new `ViewerViewModel.FullScreen.cs`, replace the `OnPropertyChanged`
+override and add the helper below it:
+
+```csharp
+    protected override void OnPropertyChanged(PropertyChangedEventArgs e)
+    {
+        base.OnPropertyChanged(e);
+
+        if (e.PropertyName == nameof(IsPlaying))
+        {
+            _immersiveMode.KeepScreenOn(IsPlaying);
+            EnterFullScreenIfPlayingInLandscapeOnCompactDevice();
+        }
+    }
+
+    /// <summary>Keeps the compact-device invariant "IsFullScreen ⟺ landscape while playing"
+    /// (#383/#384 design decision (b)) true on the one path no orientation event covers: playback
+    /// that *starts* while the device is already in landscape — Watch tapped from the landscape
+    /// rail, a reconnect completing, or a restore on resume. <see cref="IAppLifecycleService.OrientationChanged"/>
+    /// only fires on an actual change, so without this the viewer renders the windowed Sheet
+    /// layout in landscape, which is the #383 report itself. Never requests a rotation (the device
+    /// is already landscape) and never fires while a rotation request is in flight.</summary>
+    private void EnterFullScreenIfPlayingInLandscapeOnCompactDevice()
+    {
+        if (IsPlaying
+            && !IsFullScreen
+            && _pendingOrientation == PendingOrientation.None
+            && _lifecycle.IsLandscape
+            && ViewerControlLayout.IsCompactDevice(_lifecycle.SmallestWidthDp))
+        {
+            IsFullScreen = true;
+        }
+    }
+```
+
+Add to §7b:
+
+```csharp
+    [Fact]
+    public void PlaybackStartingWhileAlreadyLandscape_OnCompactDevice_EntersFullScreenWithoutRequestingRotation()
+    {
+        var sut = CreateSut();
+        SetCompactDevice(isLandscape: true);
+
+        sut.IsPlaying = true;
+
+        Assert.True(sut.IsFullScreen);
+        _orientationLockMock.Verify(o => o.RequestLandscape(), Times.Never);
+    }
+
+    [Fact]
+    public void PlaybackStartingWhileAlreadyLandscape_OnTablet_StaysWindowed()
+    {
+        var sut = CreateSut();
+        _lifecycleMock.Setup(l => l.SmallestWidthDp).Returns(800);
+        _lifecycleMock.Setup(l => l.IsLandscape).Returns(true);
+
+        sut.IsPlaying = true;
+
+        Assert.False(sut.IsFullScreen);
+    }
+```
+
+Mechanical consequence in §7b, must be applied or six tests silently change meaning: in
+`OrientationChanged_ToPortrait_CompactAndFullScreen_ExitsFullScreen`,
+`ToggleFullScreenCommand_CompactDeviceInLandscape_RequestsPortraitAndStaysFullScreenUntilOrientationChanges`,
+`OrientationChanged_AfterButtonRequestedPortrait_ExitsFullScreenAndReleasesLock`,
+`PendingPortraitRequest_TimesOutAfterThreeSeconds_ExitsFullScreenAndReleasesLock`,
+`AppPaused_WhileFullScreen_ForcesExitAndReleasesOrientationLock` and
+`HandleBackButtonPress_DuringPendingPortrait_SwallowsSecondPress` — each does
+`SetCompactDevice(isLandscape: true); sut.IsPlaying = true;` and then one
+`sut.ToggleFullScreenCommand.Execute(null); // enters directly`. Delete that now-redundant "enters
+directly" line in all six and put `Assert.True(sut.IsFullScreen, "playback starting in landscape on
+a compact device auto-enters full screen");` in its place. (Leave
+`Stop_WhileFullScreenCompactAndLandscape_StopsReceiverBeforeRequestingPortrait` alone — it sets
+`SourceId` *before* `SetCompactDevice`, so `SmallestWidthDp` is still 0 when `IsPlaying` flips and
+its explicit toggle is still the entry.)
+
+**3 (BLOCKING) — `§6`, `tests/MauiApp.UITests/Pages/ViewerPage.cs`: `ExitFullScreen()` must stop
+blind-tapping the video.** Decision 2 turns the single tap from *show* into *toggle*, which
+invalidates the existing method's whole premise ("Taps the video first to guarantee the overlay … is
+on screen", `Pages/ViewerPage.cs:102-111`). `AppLaunchTests.cs:94,99` calls `WaitUntilFullScreen()`
+and then `ExitFullScreen()` immediately, so the overlay is still up: `TapVideo()` now **hides** it
+and the following `Tap(viewer.fullScreenToggle)` waits 10 s and throws. The plan's "the existing test
+body needs no text changes" is correct only once this is fixed. Replace the method with:
+
+```csharp
+    /// <summary>
+    /// Exits full screen. The single tap on the video *toggles* the overlay since #384 slice 3, so
+    /// tapping unconditionally would hide the very button this method then needs; tap only when the
+    /// 2.5s/5s auto-hide has already taken the toolbar away, and re-check rather than assume.
+    /// </summary>
+    public void ExitFullScreen()
+    {
+        if (!IsPresent(TestIds.ViewerFullScreenToggle))
+            TapVideo();
+
+        if (!IsPresent(TestIds.ViewerFullScreenToggle))
+            TapVideo();   // the auto-hide can fire between the check and the tap; one retry is enough
+
+        ToggleFullScreen();
+    }
+```
+
+**4 (BLOCKING) — `AppShell.xaml.cs:236-251`: a placement change must not navigate away from a
+full-screen viewer.** The plan states "no changes to `AppShell.xaml.cs` … are needed for slice 3";
+that is true for the phone (the pushed `ViewerPage` is protected by slice 1's
+`NavigationStack.Count > 1` guard, `:360`) and false for the tablet pane, which lives at a **section
+root**. Tab A9+ portrait is ~600 dp wide = `Medium` → `ResolvePlacement` returns `Bottom`
+(`NavigationPolicyService.cs:25-28`), landscape returns `LeftRail`, so rotating the tablet while the
+pane is full screen runs `ApplyPlacement(ensureDestination: true)` → `EnsurePrimaryDestinationVisibleAsync`
+→ `GoToAsync` a different route family → `SourceListPage.OnDisappearing` → `Detach()` →
+`ForceExitFullScreen()`. Tab A9+ checklist item 3 ("rotating never auto-exits full screen") therefore
+cannot pass, and this is independent of #393. This is the navigation-level twin of the guard
+`SourceListPage.ApplySizeClass` already has (`:101-102`). One line, in `ApplyPlacement`:
+
+```csharp
+        // A full-screen viewer owns the whole window; a placement reconciliation must never
+        // navigate it away (the section-root/pane case — the pushed-page case is covered by the
+        // NavigationStack guard inside EnsurePrimaryDestinationVisibleAsync). Same intent as
+        // SourceListPage.ApplySizeClass's _isPaneFullScreen early return.
+        if (ensureDestination && !_stateViewModel.IsChromeSuppressed)
+            Dispatcher.Dispatch(async () => await EnsurePrimaryDestinationVisibleAsync());
+```
+
+**Coordination, mandatory:** `AppShell.xaml.cs` is currently owned by the #393 bugfix branch. Land
+this line in whichever of the two branches merges first and rebase the other onto it; the #393 fix
+must preserve it, and it must **not** be re-expressed as folding `IsChromeSuppressed` into
+`IsLeftRailNavigationVisible`/`IsBottomNavigationVisible` — the 2026-09-12 slice-2 verdict's
+deviation 1 (upheld) forbids that, because `ShellNavigationService.cs:88` reads the same property to
+decide the route *family*.
+
+**5 (required) — `§7b`: three test gaps.** (a) Decision (f) asks for the `NeverCallsStopReceiver`
+guard "extended to **every** new path"; the plan only covers the button+rotation pair. (b) Decision
+(b)'s "tablet ⇒ no orientation request ever" is asserted nowhere. (c)
+`Dispose_UnsubscribesFromAppPausedAndOrientationChanged` is vacuous — `Mock.Raise` with zero
+subscribers never throws, and with subscribers it would not throw either, so `Record.Exception`
+returns `null` regardless of whether the unsubscribe happened. Add/replace:
+
+```csharp
+    [Fact]
+    public void EveryFullScreenExitPath_NeverCallsStopReceiver()
+    {
+        var sut = CreateSut();
+        SetCompactDevice(isLandscape: true);
+        sut.IsPlaying = true;                                   // auto-enters (required change 2)
+
+        sut.HandleBackButtonPress();                            // exit via Back -> pending portrait
+        _lifecycleMock.Setup(l => l.IsLandscape).Returns(false);
+        _lifecycleMock.Raise(l => l.OrientationChanged += null, false);
+
+        _lifecycleMock.Setup(l => l.IsLandscape).Returns(true);
+        _lifecycleMock.Raise(l => l.OrientationChanged += null, true);   // auto-enter again
+        sut.ToggleFullScreenCommand.Execute(null);              // exit -> pending portrait
+        _timeProvider.Advance(TimeSpan.FromSeconds(3));         // exit via the 3s fallback
+
+        _lifecycleMock.Raise(l => l.AppPaused += null);         // force-exit path
+        sut.ForceExitFullScreen();                              // Detach()'s path
+
+        _bridgeMock.Verify(b => b.StopReceiver(), Times.Never);
+    }
+
+    [Fact]
+    public void ToggleFullScreenCommand_OnATablet_NeverRequestsAnOrientation()
+    {
+        var sut = CreateSut();
+        _lifecycleMock.Setup(l => l.SmallestWidthDp).Returns(800);
+        sut.IsPlaying = true;
+
+        sut.ToggleFullScreenCommand.Execute(null);
+        sut.ToggleFullScreenCommand.Execute(null);
+
+        Assert.False(sut.IsFullScreen);
+        _orientationLockMock.Verify(o => o.RequestLandscape(), Times.Never);
+        _orientationLockMock.Verify(o => o.RequestPortrait(), Times.Never);
+    }
+
+    [Fact]
+    public void Dispose_UnsubscribesFromAppPausedAndOrientationChanged()
+    {
+        var sut = CreateSut();
+        SetCompactDevice(isLandscape: false);
+        sut.IsPlaying = true;
+        sut.Dispose();
+
+        // A disposed ViewModel must not act on the event. Raising it on a Moq mock never throws,
+        // so the assertion has to be behavioural: if the handler were still attached it would set
+        // IsFullScreen (compact + playing + landscape).
+        _lifecycleMock.Setup(l => l.IsLandscape).Returns(true);
+        _lifecycleMock.Raise(l => l.OrientationChanged += null, true);
+
+        Assert.False(sut.IsFullScreen, "OrientationChanged still reached a disposed ViewerViewModel");
+    }
+```
+
+**6 (required) — `§6`: the new e2e's tablet skip must use a device-reported smallest width.**
+`Math.Min(app.WindowSize.Width, app.WindowSize.Height) / app.Metrics.Density` is not
+`Configuration.SmallestScreenWidthDp`: `Driver.Manage().Window.Size` is the app window, which on
+some devices excludes system decorations, and the Tab A9+ sits **exactly on** the 600 boundary — a
+few subtracted pixels flip it to "compact" and the test then asserts phone behaviour on a tablet and
+fails for the wrong reason, on the one device the checklist targets. Add to
+`tests/MauiApp.UITests/Infrastructure/DeviceMetrics.cs` (same no-silent-default rule as its
+siblings):
+
+```csharp
+    /// <summary>
+    /// The device's short edge in dp — Android's own phone/tablet discriminator
+    /// (<c>Configuration.SmallestScreenWidthDp</c>, sw600dp), mirrored for the test side so a
+    /// compact-device-only assertion can skip on a tablet. Read from the *real* display size, not
+    /// from the app window: the window can exclude system decorations, and the Tab A9+ sits on the
+    /// 600 dp boundary where that difference decides the answer.
+    /// </summary>
+    public double SmallestWidthDp
+    {
+        get
+        {
+            var info = Invoke("mobile: deviceInfo");
+
+            if (info is Dictionary<string, object> map &&
+                map.TryGetValue("realDisplaySize", out var size) &&
+                size?.ToString() is { } text &&
+                text.Split('x') is [var first, var second] &&
+                int.TryParse(first, out var width) && int.TryParse(second, out var height))
+            {
+                return Math.Min(width, height) / Density;
+            }
+
+            throw new InvalidOperationException(
+                $"'mobile: deviceInfo' returned no usable realDisplaySize (got: {Describe(info)}). " +
+                "The compact-device skip guard cannot run without it.");
+        }
+    }
+```
+
+and replace the guard in `Viewer_RotatedToLandscape_EntersFullScreenInPlace` with:
+
+```csharp
+        Skip.If(app.Metrics.SmallestWidthDp >= 600,
+            "Rotation-driven full screen is compact-device-only (#384 slice 3); this device reports " +
+            $"sw={app.Metrics.SmallestWidthDp:0}dp, i.e. tablet-class.");
+```
+
+**7 (required) — `§6`: `WaitUntilPlaying()`'s second wait must fail loudly.** As written the loop
+just expires after 20 s and returns, so a genuine "never left full screen" is reported later by an
+unrelated assertion (or, in `FullScreen_EnterViaButton_…`, by a chrome assertion that names the wrong
+cause) after a silent 20 s stall. Replace the loop with:
+
+```csharp
+        var deadline = DateTime.UtcNow + Timeouts.Navigation;
+        while (IsFullScreen && DateTime.UtcNow < deadline)
+            Thread.Sleep(100);
+
+        if (IsFullScreen)
+            throw new InvalidOperationException(
+                $"The viewer reported playback but was still full screen after " +
+                $"{Timeouts.Navigation.TotalSeconds:0}s — the windowed Deck/Sheet never re-rendered.");
+```
+
+**8 (required) — `§10`: two checklist items, one of them a hard prerequisite for trusting the new
+page object.** Add to the S21 list: *"After entering full screen, wait out the 2.5 s auto-hide and
+confirm with `adb shell uiautomator dump` (or an Appium page source) that
+`com.ndi.android:id/viewer.fullScreen.overlay` is still in the tree. The overlay's only child is the
+`Grid` bound to `AreControlsVisible`, so once it collapses the node is an empty `ViewGroup`, which
+Android may prune from the accessibility tree — and `PageObject.IsPresent` additionally requires
+`Displayed`. If it is pruned, `IsFullScreen` must instead be read from a Deck/Sheet-exclusive id
+(`TestIds.ViewerQualitySmooth`, which this slice deliberately does **not** add to the overlay):
+`IsFullScreen => HasVideoSurface && !IsPresent(TestIds.ViewerQualitySmooth)`. Do not resolve this by
+moving the id onto the inner `Grid` — that reintroduces exactly the auto-hide race decision 6 exists
+to remove."* And to both lists: *"After a rotation that lands on Home (#393), confirm chrome is fully
+restored — tab bar/rail back, system bars back, no immersive mode — i.e. that `OnDisappearing` →
+`Detach()` actually ran for the page that was re-pointed away."*
+
+---
+
+## Confirmed — verified against the live files, no change needed
+
+- **Rule 4 (threading).** `OnOrientationChanged` marshals through `_dispatcher.BeginInvokeOnMainThread`
+  before touching any state; both new `TimeProvider` timers wrap their callbacks the same way,
+  matching `StartAttemptTimer`/`StartCountdown` (`ViewerViewModel.cs:417,477`). `OnAppPaused` and
+  `Dispose` are **not** marshalled and correctly so — `NotifyPaused` is called from
+  `MainActivity.OnPause` (`:136-140`) and `Dispose` from page lifecycle, both already the UI thread;
+  the existing `AppResumed` subscription sets the precedent. No Android type appears in Core:
+  `IOrientationLockService` is three `void` members over no platform type, the Android impl lives in
+  `Platforms/Android/Services` and mirrors `AndroidImmersiveModeService`'s
+  `MainThread.BeginInvokeOnMainThread` + `Platform.CurrentActivity is AppCompatActivity` idiom
+  (`:18,52`) exactly, the `Noop` twin lands in `src/MauiApp/Services` with namespace
+  `NdiForAndroid.Services` (same as `NoopImmersiveModeService.cs:1`), and both are registered in the
+  existing `#if ANDROID`/`#else` block at `MauiProgram.cs:127`/`:139`. `Release()` is
+  `ScreenOrientation.Unspecified` with the "never `FullSensor`" reason in an XML doc. Rule 5 holds.
+- **The state machine covers decision (b) exhaustively** apart from the hole in required change 2:
+  not-playing no-op (the `ToggleFullScreen` guard is unchanged), tablet direct entry with no
+  orientation call, compact-and-already-landscape falling through the same `else`, pending flags,
+  the symmetric 3 s fallback in both directions, app-pause/`Dispose` force-exit, and a second Back
+  swallowed by `BeginExitFullScreen`'s `_pendingOrientation == Portrait` early return (so
+  `HandleBackButtonPress` needs no third branch — correct, and the plan says so).
+- **The three gaps the researcher closed are real and correctly closed.** (i)
+  `BeginExitFullScreen`'s unconditional cancellation of a pending **Landscape** request before the
+  `IsFullScreen` guard is genuinely necessary — without it `Stop()` during the request window leaves
+  the platform locked and a late rotation re-enters full screen on a dead stream; the paired test
+  raises `OrientationChanged` *after* `Stop()` and asserts it does not resurrect, which is the right
+  shape. (ii) `Detach()` calling `ForceExitFullScreen()` instead of assigning
+  `_viewModel.IsFullScreen = false` is strictly better than the live slice-2 line
+  (`ViewerFullScreenChromeController.cs:55`), for the reason given: a torn-down ViewModel with
+  `_pendingOrientation` still set would flip itself back to full screen with nothing on screen. The
+  controller keeping its own `Release()` as defence in depth is harmless (idempotent) and matches
+  decision 7 literally. (iii) The `WaitUntilPlaying()` redefinition is necessary once `viewer.stop`
+  is added to the overlay, and the plan's rejection of `viewer.fullScreenToggle` as the
+  disambiguator is correct — that id is already shared with `PlaybackControlsView.xaml` and
+  disambiguates nothing.
+- **`Stop()` ordering** implements decision 3 exactly: `_bridge.StopReceiver()` keeps its position
+  and `BeginExitFullScreen()` follows it, with the call-order test proving it. The lock is never
+  left held because every exit converges on `Release()` (and, after required change 1, on a single
+  choke point).
+- **Overlay.** `ToggleControlsOverlayCommand` has the decision-(c) semantics (no-op when not full
+  screen; visible ⇒ dispose the timer and hide; hidden ⇒ show and re-arm);
+  `NotifyControlInteraction()` survives untouched and keeps its PTZ/quality/audio callers
+  (`ViewerViewModel.cs:178,517,531,564`); `IsFullScreenPtzVisible => IsPtzControlActive &&
+  IsPtzLayerVisible` is notified from all three sources (the `[NotifyPropertyChangedFor]` on
+  `_isPtzLayerVisible` plus the two widened PTZ partials); the layer resets on leaving full screen;
+  Back order is PTZ-layer → full screen → not consumed. The new XAML is a faithful superset of the
+  live file: `DynamicResource` everywhere, the toolbar column indices match the widened
+  `*,48,48,48,48,Auto,48` definition one-for-one, and the camera button uses the same
+  `Button.Triggers`/`DataTrigger` description idiom as the full-screen toggle.
+- **Reused ids break nothing.** `AccessibilityTests` audits only Home/Output/Sources/Settings in
+  portrait (`:60,204-210`) and never enters full screen, so the budget of 12 is untouched; its
+  `AutomationIds_AreNotUsedAsScreenReaderLabels` check is satisfied (every new id'd control has a
+  human-language description). `ThemeRegressionTests` and `SystemBarInsetTests` touch navigation
+  chrome only. The overlay's `viewer.stop`/`viewer.audioToggle`/`viewer.ptz.*` can never be in the
+  tree at the same time as the Deck/Sheet's (`ViewerView.xaml.cs:102-104` makes them mutually
+  exclusive), which is the accepted `TestIds.cs:94-98` duplicate-id-across-hosts precedent.
+- **`ViewerControlLayout.IsCompactDevice` is purely additive** — every existing constant and formula
+  is byte-identical, and the "existing formulas unchanged" regression block is present with pinned
+  values.
+- **Constructor call sites, DI and `TimeProvider`.** All four test files are covered with correct
+  before/after; `ViewerViewModel` and `ViewerFullScreenChromeController` are both `AddTransient<T>()`
+  so DI resolves the new parameters with no factory edit; `MsFakeTimeProvider` usage is right
+  (`Advance` past 2.5 s / 5 s / 3 s, no wall-clock sleeps), and a timer armed *inside* an advanced
+  callback correctly does not fire in the same `Advance`. `AdaptiveNavigationTests` /
+  `AdaptiveShellStateViewModel` tests are untouched, as the slice-2 verdict's deviation 1 requires.
+- **Docs.** The insertion point is correct (`docs/architecture.md:159` bullet, `:161 ## NDI Bridge`)
+  and the new bullet's content matches what the code will do — with one correction owed by required
+  change 1: the phrase "released back to `Unspecified` … as soon as the requested orientation
+  arrives" must become "held for as long as full screen is on and released the moment it ends (or by
+  the 3 s fallback)".
+
+## The #393 decision — sequence, do not redesign
+
+**Slice 3's design does not change because of #393; slice 3 *sequences after* it, and that sequencing
+is hard, not advisory.** The mechanism is confirmed in the live file: `ApplyPlacement`'s rail branch
+sets `PrimaryTabBar.IsVisible = false` (`AppShell.xaml.cs:241`), Shell re-points `CurrentItem` off the
+hidden `TabBar`, and `OnShellNavigated` adopts that as the truth (`:308,323`) before dispatching
+`EnsurePrimaryDestinationVisibleAsync` (`:330-331`). Chrome suppression alone cannot trigger it —
+`PrimaryTabBar.IsVisible` follows `PlacementMode` only (slice-2 deviation 1), and on a phone in
+portrait the `else` branch leaves it `true` — so the trigger is specifically the **rotation** that
+slice 3 is built on, and `MainActivity.OnConfigurationChanged` feeds the placement bridge *before*
+`NotifyConfigurationChanged` (`:145-148`), so the navigation reset is queued first every time. On a
+compact device that means every slice-3 path (button → forced rotation, and physical rotation) runs
+through the reset: the app lands on Home, the host page disappears, `Detach()` → `ForceExitFullScreen()`
+fires, and full screen never sticks. Slice 3 is therefore **not device-verifiable and not mergeable
+to `main` before the #393 fix is in the same tree**; implementation and unit tests can proceed in
+parallel, but the S21 checklist (items 4, 5, 6, 7, 9, 10, 11) and the new
+`Viewer_RotatedToLandscape_EntersFullScreenInPlace` e2e are blocked on it, as is Tab A9+ items 3, 4
+and 6. The binding constraint on the fix is that **no workaround may be added to `ViewerViewModel` or
+`ViewerFullScreenChromeController`** — not a suppressed `Detach()`, not a re-enter-after-navigation
+retry, not an `IsChromeSuppressed` check inside the ViewModel. #393 is a Shell-layer defect and its
+fix belongs in `AppShell.xaml.cs`; encoding it in the viewer would contradict the "only the visible
+host owns chrome" invariant that decision (e) exists to protect. Two further constraints for whoever
+fixes #393: it must not fold `IsChromeSuppressed` into the two visibility properties (slice-2
+deviation 1, upheld), and it must not adopt **page-scoped** `Shell.SetTabBarIsVisible(page, …)` as the
+placement mechanism — that attached property is already owned by `ViewerFullScreenChromeController`
+(`ApplyChrome`/`Detach`), and two owners writing it would make an exit from full screen re-show the
+bottom tab bar in a landscape rail window.
+
+**On the tablet, a #393-induced re-point while the pane is full screen is already handled correctly —
+provided `OnDisappearing` fires.** `SourceListPage.OnDisappearing:48-55` calls `Detach()`, which
+(with the plan's change) runs `ForceExitFullScreen()`; that raises `IsFullScreen`, which the page's
+own still-live subscription turns into `ApplyPaneFullScreen(false)` (`:90-94,125-142`), restoring
+`ListHeader` and the 2*/3* columns, while the controller clears `IsChromeSuppressed`, exits immersive
+and restores both bars. The pane subscription is never removed on `Detach`, so this holds even though
+the controller has let the ViewModel go. The residual risk is exactly "does MAUI raise
+`OnDisappearing` for a page whose `ShellItem` was re-pointed away" — hence required change 8's
+checklist line. Note that even **after** #393 is fixed, required change 4 is still needed for the
+tablet: the placement change itself would otherwise reconcile the route family at a section root and
+tear the full-screen pane down.
+
+## Recorded decisions
+
+- Decision (b)'s event-driven release is **amended**: the lock is held for the duration of full
+  screen and released when full screen ends. Rationale and the accepted behavioural consequence are
+  in required change 1. `docs/architecture.md`'s new bullet must state the amended rule.
+- The invariant "`IsFullScreen ⟺ landscape` while playing, on a compact device" is now enforced on
+  the playback-start edge as well as the rotation edge (required change 2).
+- `TestIds.ViewerFullScreenExit` from design (f) is **superseded**: the exit affordance is the same
+  `viewer.fullScreenToggle` button with a state-dependent glyph/description, as slice 2 shipped it.
+  Only `viewer.fullScreen.overlay` and `viewer.fullScreen.camera` are added.
+- Design (f)'s "reuse `viewer.quality.*` on the overlay" is **deliberately not done**: the overlay
+  keeps only `viewer.fullScreen.qualityCycle`, which leaves `viewer.quality.smooth` Deck/Sheet-
+  exclusive and available as the fallback full-screen signal in required change 8.
+- Camera-button placement (toolbar column 1, between status and quality) and its `IsPtzControlActive`
+  visibility gate are the plan's own calls, accepted; escalate only if a visual mock disagrees.
+- Button double-press during a pending rotation is accepted as un-deduplicated (idempotent
+  `RequestedOrientation` writes); S21 checklist item 12 confirms it on device.
+- `.github/KNOWLEDGE-BASE.md` needs no edit in this slice (agreed with the plan's §1 item 11).
+
+## Non-blocking notes
+
+1. The widened toolbar's fixed columns total ~360 dp (4×48 + a 72 dp Stop + 48 + 6×8 spacing), so on
+   a 360 dp-wide **portrait** phone the status column is squeezed to zero — reachable only via the
+   3 s timeout fallback, but it is the same fixed-column failure mode as #361. One line in the S21
+   checklist, or an `IsVisible` on the "⋮" button below some width, would close it.
+2. The XML doc for the new policy sits on `CompactDeviceMaxSmallestWidthDp`, leaving
+   `IsCompactDevice` itself undocumented; move or duplicate it onto the method.
+3. `IsPtzLayerVisible` is reset by `OnIsFullScreenChanged(false)`, so on a compact device `Stop()`
+   leaves the camera layer open for the duration of the pending-portrait window. Cosmetic, sub-second.
+4. Carried over unchanged from the 2026-09-12 slice-2 gate: `SourceListViewModel.cs:76` only stops
+   the pane when `PaneViewer is { IsPlaying: true }`, so a full-screen pane that is momentarily not
+   playing does not converge back via `Stop()`. Two escape routes remain; still not this slice's.
+
+
 ### 2026-09-12 — #384 slice 2 refreshed plan (gate)
 
 **APPROVE-WITH-CHANGES — four required changes, none of them design changes.** The refreshed plan
