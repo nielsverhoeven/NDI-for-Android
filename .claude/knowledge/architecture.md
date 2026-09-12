@@ -31,6 +31,195 @@ unconditionally. Rule 5's intent is to keep Android APIs out of **Core** and out
 
 ## Verdicts log
 
+### 2026-09-12 — #316 e2e entry points and lifecycle (gate)
+
+**APPROVE-WITH-CHANGES.** Test-project + one script line; no production code. The scope decision,
+the fixture seam and the substituted anchor state are all correct, and the central factual claim
+the whole plan rests on is **true**. Four required changes, three of which are silent-red landmines.
+
+**Verified independently:**
+
+- **The "Connecting…" hold state is real and is a genuine fixed point on x86_64.**
+  `NdiViewerBridge.StartReceiver` (`:102`) calls `TransitionState(ConnectionState.Disconnected)`
+  and returns when `_runtime.EnsureInitialized()` is false (`:114-119`) — it never throws.
+  `ViewerViewModel` sets `StatusMessage = "Connecting..."` unconditionally (`:325`).
+  `OnBridgeConnectionStateChanged` (`:182-193`) only writes `StatusMessage` on `Connected`.
+  `CheckForUnexpectedDrop()` (`:402-409`) is the only path from a `Disconnected` state into the
+  reconnect machinery, and **it has no production caller** — verified repo-wide; the only hits are
+  `ViewerViewModelTests.cs:148,162,833,851` and `logs/RECOVERED-commands-2026-09-04.md:570,577`,
+  where it is a recorded deferral (D2/D6). `BeginReconnectWindow()` (`:382`) is likewise reachable
+  only from `CheckForUnexpectedDrop` (`:407`) and the user-initiated retry path (`:541`). See
+  "New issue owed" below — the plan is right, and what it proves is bigger than #316.
+- **The fixture seam is the right one.** `AppiumDriverFixture` is `public sealed` (`:31`) with
+  `autoGrantPermissions` hardcoded (`:121`) and `InitializeAsync` ending at `:126-134`; the added
+  `return;` after `Unavailable(...)` is necessary and touches only the dev-machine skip path (in CI
+  `Unavailable` throws, `:141-143`). "Inject the capabilities instead" is not actually available:
+  xUnit constructs an `ICollectionFixture<T>` itself, so a capability parameter would need a whole
+  second abstraction to carry it. Virtual property + `AfterDriverCreatedAsync` is minimal and
+  keeps the default fixture byte-identical in behaviour.
+- **`TryRestartExpectingPermissionPrompt` is genuinely necessary.** `TryRestart` polls
+  `IsInForeground` (`NdiApp.cs:112-137`), which requires `CurrentPackage == com.ndi.android` **and**
+  a node under `com.ndi.android:` (`:171-190`) — neither holds while
+  `com.android.permissioncontroller` owns the screen.
+- `NdiApp` is `public sealed` with `public const string PackageName` (`:17`) and a private
+  `_driver`, so all new device actions must live inside the class — which the plan does.
+- `MainActivity` matches: intent filter (`:26-30`), cold-start link (`:44-51`), `OnNewIntent`
+  reassigning `Intent` first (`:85-98`), `ShowToast` as a plain `Android.Widget.Toast` (`:122-127`)
+  that cannot carry an `AutomationId`, and an unconditional POST_NOTIFICATIONS request on API 33+
+  (`:67-68`).
+- `run-emulator-tests.sh:62` has no `--allow-insecure`; one Appium server serves the whole
+  `dotnet test` run, so the flag covers both collections.
+- Exactly one `[CollectionDefinition]` exists today (`AppLaunchTests.cs:379`) and there is no
+  `CollectionBehavior` attribute — the assembly-level `DisableTestParallelization` is required and
+  costs nothing (classes inside one collection never ran in parallel anyway).
+
+**Required changes, ordered by blast radius:**
+
+1. **`NdiApp.ShellCommand` must handle a structured `mobile: shell` result now, not "if CI shows
+   it".** The plan files this as risk 5, but the consequence is not a cosmetic adjustment: some
+   UiAutomator2 versions return `{stdout, stderr}`, whose `.ToString()` is
+   `System.Collections.Generic.Dictionary'2[...]` — non-whitespace — so `CrashBufferGuard.AssertEmpty`
+   would throw "the process crashed during the interruption under test" on **every** test in all
+   three new classes, with a bogus message. Replace the body with:
+
+   ```csharp
+    public string ShellCommand(string command, params string[] args)
+    {
+        object? result;
+        try
+        {
+            result = _driver.ExecuteScript("mobile: shell", new Dictionary<string, object>
+            {
+                ["command"] = command,
+                ["args"] = args,
+            });
+        }
+        catch (WebDriverException ex)
+        {
+            throw new InvalidOperationException(
+                $"`mobile: shell` ({command} {string.Join(' ', args)}) failed. The Appium server " +
+                "must be started with --allow-insecure=uiautomator2:adb_shell (see " +
+                $"testing/e2e/scripts/run-emulator-tests.sh). Underlying error: {ex.Message}", ex);
+        }
+
+        // Some UiAutomator2 versions return {stdout, stderr} instead of a bare string.
+        return result switch
+        {
+            null => string.Empty,
+            string text => text,
+            IDictionary<string, object> map => map.TryGetValue("stdout", out var stdout)
+                ? stdout?.ToString() ?? string.Empty
+                : string.Empty,
+            _ => result.ToString() ?? string.Empty,
+        };
+    }
+   ```
+
+2. **`CrashBufferGuard` must not clear the device crash buffer, and must scope its verdict to our
+   package.** Two independent problems with `logcat -b crash -c`: (a) the buffer is device-global,
+   so a system-app crash — routine on this emulator image — fails *our* test with a message
+   blaming the interruption under test; (b) clearing it before every test guts the existing
+   whole-run diagnostic at `run-emulator-tests.sh:125`, which the CI failure-summary step
+   (`ndi-for-android-cicd.yml:443-451`) and the `android-ci-failure-patterns` skill both read.
+   Replace `CrashBufferGuard` with a since-marker that reads but never clears:
+
+   ```csharp
+    public static class CrashBufferGuard
+    {
+        private static int _baselineLength;
+
+        /// <summary>
+        /// Records where the crash buffer currently ends. Deliberately does NOT run
+        /// `logcat -b crash -c`: that buffer is device-wide and is the whole-run diagnostic
+        /// testing/e2e/scripts/run-emulator-tests.sh dumps at the end of a failed run.
+        /// </summary>
+        public static void Mark(NdiApp app) =>
+            _baselineLength = app.ShellCommand("logcat", "-b", "crash", "-d").Length;
+
+        public static void AssertNoNewCrash(NdiApp app, string testName)
+        {
+            var dump = app.ShellCommand("logcat", "-b", "crash", "-d");
+            if (dump.Length <= _baselineLength)
+                return;
+
+            var added = dump[_baselineLength..];
+            if (!added.Contains(NdiApp.PackageName, StringComparison.Ordinal))
+                return; // Something else on the device crashed; not our problem, not our failure.
+
+            throw new InvalidOperationException(
+                $"{testName}: {NdiApp.PackageName} entered the logcat crash buffer during this " +
+                $"test — the process crashed during the interruption under test.{Environment.NewLine}{added}");
+        }
+    }
+   ```
+
+   and update `DeviceInterruptionTestBase.RunWithCrashGate` to call `CrashBufferGuard.Mark(app)` /
+   `CrashBufferGuard.AssertNoNewCrash(app, testName)`.
+
+3. **Raise the `dotnet test` cap in `run-emulator-tests.sh`, in this same change.** §4 reasons about
+   the job timeouts (45 min / 40 min) but the binding ceiling is `timeout 20m` at
+   `run-emulator-tests.sh:103`. Today's whole emulator job is ~6m45s; +8–10 min of test time puts
+   `dotnet test` itself near that cap, and exceeding it exits 124 with **no TRX**, which
+   `run-emulator-tests.sh:185-188` then turns into "the suite did not run" — a red gate with no
+   diagnosis for a reason that has nothing to do with the app. Change `timeout 20m` to
+   `timeout 35m` and update the two comments at `:113-115` that name 20 minutes.
+
+4. **`ColdStart_StreamLink_NavigatesToOutputInReStreamMode` must restore capture mode in a
+   `finally`.** Since the 2026-09-07 #352/#359 decision, `OutputViewModel` is a Singleton and
+   Stream-tab state (including `IsReStreamMode`) **persists for the process lifetime** — that is a
+   recorded, accepted behaviour change. Leaving the tab in re-stream mode changes what every later
+   test in the shared `"AppiumSession"` collection sees on the Stream tab, including
+   `AccessibilityTests.Accessibility_AcrossPrimaryScreens_StaysWithinBudget`, whose budget of 12 sits
+   only 2 above the measured 10. Add, after the assertion and before `ResetToHome()`:
+
+   ```csharp
+        // OutputViewModel is a Singleton (#352/#359): re-stream mode set here survives for the rest
+        // of the process and would follow every later test in this collection onto the Stream tab.
+        if (app.Output.IsReStreamMode)
+            app.Output.ToggleReStreamMode();
+   ```
+
+5. **Harden the Toast assertion, and prove it on the first dispatched run before merging.** A shown
+   Toast lives in its own window; whether UiAutomator2's `getPageSource` includes it varies by
+   driver version and system image, and `HasVisibleToast()` as written also matches a **stale**
+   Toast from an earlier test. Change the signature to `HasVisibleToast(string expectedSubstring,
+   TimeSpan? timeout = null)` matching
+   `By.XPath($"//*[@class='android.widget.Toast' and contains(@text, '{expectedSubstring}')]")`,
+   and pass a substring of the resolver's actual error message at each call site. Then: run the
+   suite once via `emulator-tests.yml` on the branch and confirm the node is captured. **If it is
+   not**, demote the Toast check to a logged observation and keep `Assert.True(app.Home.IsVisible)`
+   as the gate — do not merge an unverified cross-window locator that can go red for an
+   environmental reason. Record the outcome in the PR.
+
+**Recorded decisions (no change needed):**
+
+- **Per-PR placement is APPROVED**, conditional on required change 3. `.claude/knowledge/testing.md`
+  (2026-09-05, #362) records exactly what happens to suites that only run on manual paths, and
+  these are the highest-value scenarios in the repo — an uncaught background-thread exception kills
+  the process (CLAUDE.md NDI rule 6). No new label or workflow input; #317 owns pipeline shape.
+- **MediaProjection consent and real audio-focus ducking stay device-only** — correct: there is no
+  capture/receive pipeline behind the consent dialog on x86_64, and the AVD runs `-noaudio`.
+- `pm revoke` before *every* permission test (not once) is right — collection order is unspecified,
+  only non-concurrency is guaranteed.
+- `--allow-insecure=uiautomator2:adb_shell` on the one shared Appium server is the correct place;
+  no workflow YAML change needed, and it composes with #317's font-scale edit to the same script
+  (different hunks).
+- Conflict avoidance with the concurrent #384 worktree is sound: everything is new files except
+  additive members on `NdiApp.cs` and two small hunks in `AppiumDriverFixture.cs`.
+- Rules 1–6 are untouched; `src/Core` and `src/MauiApp` are not edited at all.
+
+**New issue owed (file it; do not bundle into #316).** `ViewerViewModel.CheckForUnexpectedDrop()`
+having no production caller is not merely a convenient test property — it means the **#233
+automatic viewer reconnection never fires on a real drop**. `BeginReconnectWindow()` is reachable
+only from `CheckForUnexpectedDrop` (`ViewerViewModel.cs:407`) and the user-initiated retry path
+(`:541`), and `OnBridgeConnectionStateChanged` (`:182-193`) deliberately does nothing on
+`Disconnected`. So on a real device a dropped NDI source leaves the viewer sitting on its last
+status with no countdown, no retry and no "Connection lost" terminal state — the user must tap
+Reconnect. This was a deliberate deferral (`logs/RECOVERED-commands-2026-09-04.md:570-577`, D6),
+but it has outlived the deferral and is user-visible.
+
+---
+
 <!-- Paste each entry into `.claude/knowledge/architecture.md`'s Verdicts log on that item's own branch. -->
 
 ### 2026-09-12 — #343 OUT-08 re-stream source picker (gate)

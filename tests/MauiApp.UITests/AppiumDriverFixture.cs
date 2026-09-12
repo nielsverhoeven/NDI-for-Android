@@ -28,7 +28,7 @@ namespace NdiForAndroid.UITests;
 /// nothing. Keep infrastructure failures fatal under <c>E2E_REQUIRE_DEVICE</c>.
 /// </para>
 /// </remarks>
-public sealed class AppiumDriverFixture : IAsyncLifetime
+public class AppiumDriverFixture : IAsyncLifetime
 {
     public AndroidDriver? Driver { get; private set; }
 
@@ -47,6 +47,23 @@ public sealed class AppiumDriverFixture : IAsyncLifetime
             Environment.GetEnvironmentVariable("E2E_REQUIRE_DEVICE"),
             "true",
             StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Whether Appium should pre-answer every runtime permission dialog. <c>true</c> keeps the
+    /// default session's startup stable; a fixture that needs the real dialog to appear overrides
+    /// this to <c>false</c>.
+    /// </summary>
+    protected virtual bool AutoGrantPermissions => true;
+
+    /// <summary>
+    /// Whether Appium should launch the app itself and wait for a specific activity as part of
+    /// session creation. <c>true</c> (default) matches the main session. A fixture with
+    /// <see cref="AutoGrantPermissions"/> off overrides this to <c>false</c>: the very first cold
+    /// launch transitions through the system permission dialog activity before settling, which
+    /// Appium's own launch-wait does not reliably tolerate — the fixture launches and confirms the
+    /// app itself instead, in <see cref="AfterDriverCreatedAsync"/>.
+    /// </summary>
+    protected virtual bool AutoLaunch => true;
 
     public async Task InitializeAsync()
     {
@@ -117,8 +134,10 @@ public sealed class AppiumDriverFixture : IAsyncLifetime
         // this repo's own guidance puts the cold-emulator floor at 30s.
         options.AddAdditionalAppiumOption("appium:appWaitDuration", 60000);
 
+        options.AddAdditionalAppiumOption("appium:autoLaunch", AutoLaunch);
+
         // Answer the runtime permission dialog up front so it cannot sit in front of the app.
-        options.AddAdditionalAppiumOption("appium:autoGrantPermissions", true);
+        options.AddAdditionalAppiumOption("appium:autoGrantPermissions", AutoGrantPermissions);
 
         options.AddAdditionalAppiumOption("appium:noReset", false);
         options.AddAdditionalAppiumOption("appium:newCommandTimeout", 60);
@@ -130,8 +149,17 @@ public sealed class AppiumDriverFixture : IAsyncLifetime
         catch (Exception ex)
         {
             Unavailable($"Failed to create AndroidDriver: {ex.GetType().Name}: {ex.Message}");
+            return;
         }
+
+        await AfterDriverCreatedAsync().ConfigureAwait(false);
     }
+
+    /// <summary>
+    /// Extension point for a derived fixture to perform one-time setup right after the driver is
+    /// created, before any test in the collection runs. No-op by default.
+    /// </summary>
+    protected virtual Task AfterDriverCreatedAsync() => Task.CompletedTask;
 
     /// <summary>
     /// Records that no driver could be obtained: fatal when a device is required, otherwise a skip.
