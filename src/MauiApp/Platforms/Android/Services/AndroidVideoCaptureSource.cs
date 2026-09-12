@@ -25,10 +25,14 @@ namespace NdiForAndroid.Platforms.Android.Services;
 /// contract (consumers finish with the buffer before the event handler returns).
 /// Camera frames are rotated (Nv12FrameRotator) by CameraFrameOrientation(SENSOR_ORIENTATION,
 /// display rotation, lens facing) so receivers get an upright picture; portrait devices
-/// therefore send height×width frames.
+/// therefore send height×width frames. The display rotation comes from DisplayManager
+/// (registered on the capture thread), not from MAUI's DeviceDisplay — see the field remarks.
 /// </summary>
 public sealed class AndroidVideoCaptureSource : IVideoCaptureSource
 {
+    /// <summary>logcat tag for capture-path diagnostics (`adb logcat -s NDI-Capture`).</summary>
+    private const string LogTag = "NDI-Capture";
+
     /// <summary>Activity-result request code for the MediaProjection consent dialog.</summary>
     internal const int ScreenCaptureRequestCode = 42731;
 
@@ -55,13 +59,22 @@ public sealed class AndroidVideoCaptureSource : IVideoCaptureSource
     private CameraDevice? _cameraDevice;
     private CameraCaptureSession? _captureSession;
 
-    // Camera orientation compensation (#284). Sensor orientation and lens facing are fixed for
-    // the opened camera; the display rotation is sampled at start and updated from
-    // DeviceDisplay.MainDisplayInfoChanged (main thread) while the capture thread reads it.
+    // Camera orientation compensation. Sensor orientation and lens facing are fixed for
+    // the opened camera; the display rotation is read at start and kept current by a
+    // DisplayManager.IDisplayListener whose callbacks are delivered on the capture HandlerThread —
+    // the same thread that reads the field per frame.
+    // DeviceDisplay.MainDisplayInfoChanged is deliberately NOT used: MAUI's Android change
+    // detection hangs off an OrientationEventListener (accelerometer), so it never fires when the
+    // rotation changes without device motion (auto-rotate off + forced user_rotation), and it
+    // depends on sensor delivery to a possibly-backgrounded activity while capture runs from a
+    // foreground service. Device-verified 2026-09-12: zero events across four forced rotations.
+    private const int DefaultDisplayId = 0; // Android.Views.Display.DEFAULT_DISPLAY
+
     private int _sensorOrientationDegrees;
     private bool _isFrontFacing;
     private volatile int _displayRotationDegrees;
-    private bool _displayListenerAttached;
+    private DisplayManager? _displayManager;
+    private DisplayRotationListener? _displayRotationListener;
 
     // Producer-owned reusable buffers (see class remarks).
     private byte[]? _frameBuffer;
@@ -134,15 +147,7 @@ public sealed class AndroidVideoCaptureSource : IVideoCaptureSource
             try { _cameraDevice?.Close(); } catch { /* ignore — best-effort teardown */ }
             _cameraDevice = null;
 
-            if (_displayListenerAttached)
-            {
-                _displayListenerAttached = false;
-                MainThread.BeginInvokeOnMainThread(() =>
-                {
-                    try { Microsoft.Maui.Devices.DeviceDisplay.MainDisplayInfoChanged -= OnMainDisplayInfoChanged; }
-                    catch { /* ignore — best-effort teardown */ }
-                });
-            }
+            StopDisplayRotationTracking();
 
             // Screen teardown (no-ops for camera capture).
             try { _virtualDisplay?.Release(); } catch { /* ignore — best-effort teardown */ }
@@ -365,18 +370,15 @@ public sealed class AndroidVideoCaptureSource : IVideoCaptureSource
         var (cameraId, characteristics) = FindCamera(manager, facing);
         var (width, height) = PickCameraSize(characteristics);
 
-        // Orientation compensation (#284): SENSOR_ORIENTATION is fixed per camera; the display
-        // rotation is sampled now and tracked while capturing (OnMainDisplayInfoChanged).
+        // Orientation compensation: SENSOR_ORIENTATION is fixed per camera; the display
+        // rotation is read from DisplayManager now and tracked from the same API while capturing,
+        // so the initial value and the updates can never disagree. Must run after the capture
+        // thread exists — its Handler is where the display callbacks are delivered.
         _isFrontFacing = facing == LensFacing.Front;
         _sensorOrientationDegrees = ReadSensorOrientation(characteristics);
-        await MainThread.InvokeOnMainThreadAsync(() =>
-        {
-            _displayRotationDegrees = ToDegrees(Microsoft.Maui.Devices.DeviceDisplay.MainDisplayInfo.Rotation);
-            Microsoft.Maui.Devices.DeviceDisplay.MainDisplayInfoChanged += OnMainDisplayInfoChanged;
-            _displayListenerAttached = true;
-        }).ConfigureAwait(false);
 
         var handler = StartCaptureThread();
+        ArmDisplayRotationTracking(context, handler);
 
         var reader = ImageReader.NewInstance(width, height, ImageFormatType.Yuv420888, 2 /* maxImages */);
         reader.SetOnImageAvailableListener(new ImageListener(OnCameraImage), handler);
@@ -392,6 +394,7 @@ public sealed class AndroidVideoCaptureSource : IVideoCaptureSource
         var configured = new TaskCompletionSource<CameraCaptureSession>(TaskCreationOptions.RunContinuationsAsynchronously);
         var stateCallback = new SessionStateCallback(configured);
         var useLegacySession = !OperatingSystem.IsAndroidVersionAtLeast(28);
+        var apiLevel = (int)global::Android.OS.Build.VERSION.SdkInt;
         if (!useLegacySession)
         {
             // API 28+: SessionConfiguration + Executor. HandlerExecutor keeps the state callbacks
@@ -404,9 +407,13 @@ public sealed class AndroidVideoCaptureSource : IVideoCaptureSource
                 var sessionConfiguration = new SessionConfiguration(
                     (int)SessionType.Regular, outputs, new HandlerExecutor(handler), stateCallback);
                 camera.CreateCaptureSession(sessionConfiguration);
+                global::Android.Util.Log.Info(LogTag,
+                    $"Capture session requested via SessionConfiguration (API {apiLevel}).");
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                global::Android.Util.Log.Warn(LogTag,
+                    $"SessionConfiguration path failed ({ex.GetType().Name}: {ex.Message}); falling back to the legacy CreateCaptureSession overload.");
                 useLegacySession = true;
             }
         }
@@ -418,6 +425,8 @@ public sealed class AndroidVideoCaptureSource : IVideoCaptureSource
 #pragma warning disable CA1422
             camera.CreateCaptureSession(new List<Surface> { surface }, stateCallback, handler);
 #pragma warning restore CA1422
+            global::Android.Util.Log.Info(LogTag,
+                $"Capture session requested via the legacy CreateCaptureSession(List<Surface>) overload (API {apiLevel}).");
         }
         var session = await configured.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
         _captureSession = session;
@@ -486,17 +495,96 @@ public sealed class AndroidVideoCaptureSource : IVideoCaptureSource
         return key is not null && characteristics.Get(key) is Java.Lang.Integer value ? value.IntValue() : 0;
     }
 
-    private static int ToDegrees(Microsoft.Maui.Devices.DisplayRotation rotation) => rotation switch
+    /// <summary>
+    /// Reads the current default-display rotation and tracks it for the lifetime of this capture
+    /// session. Both the initial read and every update come from the same DisplayManager/Display
+    /// API, so "armed" and "changed" can never disagree. Never throws: a host with no display
+    /// service (headless service process) simply keeps the last known rotation and logs it.
+    /// </summary>
+    private void ArmDisplayRotationTracking(Context context, Handler handler)
     {
-        Microsoft.Maui.Devices.DisplayRotation.Rotation90 => 90,
-        Microsoft.Maui.Devices.DisplayRotation.Rotation180 => 180,
-        Microsoft.Maui.Devices.DisplayRotation.Rotation270 => 270,
-        _ => 0, // Rotation0 and Unknown
+        try
+        {
+            _displayManager = (DisplayManager?)context.GetSystemService(Context.DisplayService);
+            _displayRotationDegrees = ReadDisplayRotationDegrees();
+
+            if (_displayManager is { } manager)
+            {
+                var listener = new DisplayRotationListener(this);
+                // Callbacks arrive on the capture HandlerThread — the same thread that reads
+                // _displayRotationDegrees in OnCameraImage — so an update can never land mid-frame
+                // and the tracking keeps working while the activity is backgrounded behind the
+                // foreground service.
+                manager.RegisterDisplayListener(listener, handler);
+                _displayRotationListener = listener;
+            }
+
+            global::Android.Util.Log.Info(LogTag,
+                $"Orientation compensation armed: sensor {_sensorOrientationDegrees} deg, display rotation {_displayRotationDegrees} deg, front={_isFrontFacing}, tracking={_displayRotationListener is not null}.");
+        }
+        catch (Exception ex)
+        {
+            // Orientation tracking is best-effort: a failure here must not fail the capture start.
+            global::Android.Util.Log.Warn(LogTag,
+                $"Display rotation tracking unavailable ({ex.GetType().Name}: {ex.Message}); staying at {_displayRotationDegrees} deg for this session.");
+        }
+    }
+
+    /// <summary>
+    /// Current default-display rotation in degrees, or the last known value when the display is
+    /// unavailable (DisplayManager or Display can be null on a headless host).
+    /// </summary>
+    private int ReadDisplayRotationDegrees()
+    {
+        var display = _displayManager?.GetDisplay(DefaultDisplayId);
+        return display is null ? _displayRotationDegrees : ToDegrees((int)display.Rotation);
+    }
+
+    /// <summary>
+    /// Unregisters the display listener. Called from StopAsync before the capture HandlerThread is
+    /// quit, and safe to call when tracking was never armed (start rolls back through StopAsync).
+    /// The listener is not disposed: a callback may be in flight on the capture thread.
+    /// </summary>
+    private void StopDisplayRotationTracking()
+    {
+        var manager = _displayManager;
+        var listener = _displayRotationListener;
+        _displayManager = null;
+        _displayRotationListener = null;
+
+        if (manager is null || listener is null)
+            return;
+
+        try { manager.UnregisterDisplayListener(listener); }
+        catch { /* ignore — best-effort teardown */ }
+    }
+
+    /// <summary>Surface.ROTATION_* (0/1/2/3) → degrees; the cast at the call site keeps this independent of the binding's enum type.</summary>
+    private static int ToDegrees(int surfaceRotation) => surfaceRotation switch
+    {
+        1 => 90,   // Surface.ROTATION_90
+        2 => 180,  // Surface.ROTATION_180
+        3 => 270,  // Surface.ROTATION_270
+        _ => 0,    // Surface.ROTATION_0 / unknown
     };
 
-    /// <summary>Main thread (MAUI raises it there); the capture thread reads the volatile field per frame.</summary>
-    private void OnMainDisplayInfoChanged(object? sender, Microsoft.Maui.Devices.DisplayInfoChangedEventArgs e) =>
-        _displayRotationDegrees = ToDegrees(e.DisplayInfo.Rotation);
+    /// <summary>
+    /// Capture HandlerThread (the Handler passed to RegisterDisplayListener); the same thread reads
+    /// the field per frame in OnCameraImage. The field stays volatile because StartCameraAsync
+    /// writes the initial value from the caller's thread.
+    /// </summary>
+    private void OnDisplayRotationChanged(int displayId)
+    {
+        if (displayId != DefaultDisplayId)
+            return;
+
+        var degrees = ReadDisplayRotationDegrees();
+        if (degrees == _displayRotationDegrees)
+            return; // OnDisplayChanged also fires for refresh-rate/HDR/brightness changes.
+
+        _displayRotationDegrees = degrees;
+        global::Android.Util.Log.Info(LogTag, $"Display rotation -> {degrees} deg.");
+    }
 
     private void OnCameraImage(ImageReader reader)
     {
@@ -676,6 +764,30 @@ public sealed class AndroidVideoCaptureSource : IVideoCaptureSource
         {
             if (reader is not null)
                 _onImage(reader);
+        }
+    }
+
+    /// <summary>
+    /// Tracks default-display rotation changes for the camera orientation compensation.
+    /// DisplayManager fires on every rotation of the display — including one forced with
+    /// `settings put system user_rotation` while auto-rotate is off — and depends on neither MAUI,
+    /// nor the device-orientation sensor, nor a foreground activity.
+    /// </summary>
+    private sealed class DisplayRotationListener : Java.Lang.Object, DisplayManager.IDisplayListener
+    {
+        private readonly AndroidVideoCaptureSource _owner;
+
+        public DisplayRotationListener(AndroidVideoCaptureSource owner) => _owner = owner;
+
+        public void OnDisplayAdded(int displayId) { }
+
+        public void OnDisplayRemoved(int displayId) { }
+
+        public void OnDisplayChanged(int displayId)
+        {
+            // Native handler-thread callback — never throw into the runtime.
+            try { _owner.OnDisplayRotationChanged(displayId); }
+            catch { /* ignore — orientation tracking must never kill the capture thread */ }
         }
     }
 

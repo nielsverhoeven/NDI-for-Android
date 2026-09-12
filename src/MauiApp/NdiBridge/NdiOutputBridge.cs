@@ -41,6 +41,8 @@ public sealed class NdiOutputBridge : INdiOutputBridge, IDisposable
     private readonly SemaphoreSlim _reStreamStartStopLock = new(1, 1);
 
     private IntPtr _send;
+    private int _lastLoggedFrameWidth;
+    private int _lastLoggedFrameHeight;
     private bool _micRequested;
     private Timer? _statusTimer;
     private volatile bool _isOnProgramTally;
@@ -127,6 +129,10 @@ public sealed class NdiOutputBridge : INdiOutputBridge, IDisposable
                     clock_audio = false,
                 };
                 _send = NdiNativeMethods.NDIlib_send_create(ref create);
+                // A new sender session logs its first frame geometry again, even when it equals the
+                // previous session's (the log below fires on change only).
+                _lastLoggedFrameWidth = 0;
+                _lastLoggedFrameHeight = 0;
                 NdiConnectionMetadata.Apply(_send, isSender: true, sessionName: "output");
             }
             finally
@@ -249,6 +255,16 @@ public sealed class NdiOutputBridge : INdiOutputBridge, IDisposable
         {
             if (frame.Width <= 0 || frame.Height <= 0 || frame.Data.Length == 0)
                 return;
+
+            // Log the outgoing frame geometry once per change so a device pass can read the
+            // orientation-compensated size (#284) from `adb logcat -s NDI-Bridge`.
+            if (frame.Width != _lastLoggedFrameWidth || frame.Height != _lastLoggedFrameHeight)
+            {
+                _lastLoggedFrameWidth = frame.Width;
+                _lastLoggedFrameHeight = frame.Height;
+                Android.Util.Log.Debug("NDI-Bridge",
+                    $"Output video frame size -> {frame.Width}x{frame.Height} ({frame.Format}, {frame.FrameRateN}/{frame.FrameRateD} fps)");
+            }
 
             var handle = GCHandle.Alloc(frame.Data, GCHandleType.Pinned);
             try
