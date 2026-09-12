@@ -156,6 +156,7 @@
                    VerticalOptions="Center" />
             <Label Text="{Binding StatusMessage}"
                    AutomationId="{x:Static t:TestIds.OutputStatus}"
+                   TextColor="{DynamicResource TextPrimary}"
                    VerticalOptions="Center">
                 <Label.Triggers>
                     <DataTrigger TargetType="Label" Binding="{Binding IsStatusError}" Value="True">
