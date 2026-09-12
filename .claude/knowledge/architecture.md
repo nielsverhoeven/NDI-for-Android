@@ -694,6 +694,136 @@ its PR's run link. Neither branch may relax or rename the other's test.
    union them rather than let one overwrite the other, and this #393 entry should be appended to
    whichever copy lands on `main` first.
 
+### 2026-09-12 — #384 slice 2 refreshed plan (gate)
+
+**APPROVE-WITH-CHANGES — four required changes, none of them design changes.** The refreshed plan
+(2026-09-12, against `main` @ `9d294e9`) folds in all six required changes from the 2026-09-06 gate,
+and every factual claim it makes about the post-#390/#391 tree was re-verified against the live
+files: `ShellNavigationService.cs:88`, `AppShell.xaml.cs:228-248`, `AdaptiveShellStateViewModel.cs:22-24`,
+`ViewerView.xaml.cs` (#348 block `:134-144`, `SKSamplingOptions.Default` `:226`), `ViewerPage.xaml.cs`,
+`SourceListPage.xaml:25` / `.xaml.cs`, `AndroidImmersiveModeService.cs:61-81`, `MauiProgram.cs:166-172`,
+`ViewerViewModel.cs:332` (`Stop()` already clears full screen), `ViewerViewModel.FullScreen.cs:10,29-32`,
+`TestIds.cs:101-102,120-121,139`, `PlaybackControlsView.xaml:94,106`,
+`FullScreenControlsOverlay.xaml:108,115,126`, `tests/.../Pages/ViewerPage.cs:28,44,73`, `Pages/NdiApp.cs`,
+`AppLaunchTests.cs:52-68`, `NdiForAndroid.UITests.csproj:23` (Appium 8.*), `docs/architecture.md:157-158`.
+Required changes 1, 2, 3, 5 and 6 are correctly implemented; 4 is implemented in the page object but
+**not** in the test body (see required change 1 below). Self-containment (the 2026-09-06 rule) is met:
+every "replace whole file" snippet carries namespace, usings and surviving XML docs, and both
+`AppShell.xaml.cs` methods are restated verbatim and match the live file byte-for-byte.
+
+**Deviation 1 — UPHELD. Keep the visibility properties as pure `PlacementMode` queries.** Decision (a)
+conflated two different questions under one property name. `IsLeftRailNavigationVisible` has exactly two
+production consumers: `ShellNavigationService.cs:88` (which *route family* is current — `-rail` vs `-tab`)
+and `AppShell.ApplyPlacement:236` (is the rail chrome shown). The first must be invariant to chrome
+suppression, and that contract is **already recorded in two committed docs** — `docs/architecture.md:140`
+and `.github/KNOWLEDGE-BASE.md:104` both state that placement-adaptive routing reads
+`IsLeftRailNavigationVisible` — so folding suppression in would silently contradict them. Concretely it
+would break the tablet pane path: with suppression folded in, entering full screen on `SourceListPage`
+(section stack == 1, so slice 1's `NavigationStack.Count > 1` guard does not apply) makes route
+selection return `//view-tab` while the app sits on `//view-rail`, and the last-segment comparison in
+`EnsurePrimaryDestinationVisibleAsync` then fires an absolute `GoToAsync` that swaps the ShellContent
+family, runs `OnDisappearing`/`OnAppearing`, and force-exits the full screen the user just entered.
+The alternative — changing `ShellNavigationService.cs:88` to read `PlacementMode` directly and folding
+suppression into the two properties — is rejected because `ApplyPlacement` would then take its `else`
+branch during suppression on a rail device and set `PrimaryTabBar.IsVisible = true`, i.e. re-show the
+`TabBar` Shell item in a rail window; that is exactly the `Shell.CurrentItem` re-point hazard required
+change 2 exists to avoid, and avoiding it requires splitting the branch by `PlacementMode` anyway — the
+plan's inline form, plus one extra production file and a property with two different meanings for its
+two consumers. `IsBottomNavigationVisible` has no production consumer at all (tests only), which removes
+the last argument for symmetry. **Consequences, binding:** `OnStatePropertyChanged` must still listen for
+`IsChromeSuppressed` and call `ApplyPlacement(ensureDestination: false)` — `ensureDestination: false` is
+load-bearing, not an optimisation: in the slice-1-accepted stale-route-family state a suppression toggle
+would otherwise reach `GoToAsync` and reset the section stack. `PrimaryTabBar.IsVisible` keeps following
+`PlacementMode` only; `FlyoutBehavior` is the sole thing suppression touches, and only inside the
+existing rail branch (`Disabled` is the proven value the non-rail branch already uses). The section 4
+unit tests are therefore **correct as written** — suppression is inert on the ViewModel and
+`IsLeftRailNavigationVisible` stays `true` under `LeftRail`+suppressed; do **not** revert them to the
+2026-09-06 assertions.
+
+**Deviation 2 — CONFIRMED sound, and not racy with the auto-hide.** `IsPlaying` in the page object is
+`IsPresent(TestIds.ViewerStop)` (`Pages/ViewerPage.cs:44`), and `viewer.stop` is carried **only** by
+`PlaybackControlsView.xaml:106`; the overlay's own Stop button (`FullScreenControlsOverlay.xaml:126`)
+deliberately has no `AutomationId`. In full screen `ViewerView.UpdateLayoutVisibility` sets
+`Deck.IsVisible = Sheet.IsVisible = false`, so `viewer.stop` leaves the tree because the **deck/sheet is
+collapsed**, not because the overlay auto-hid — the signal is independent of `AreControlsVisible` and of
+the 3 s timer. `HasVideoSurface` (`viewer.videoCanvas`) is present in both states. The residual
+ambiguity (`IsFullScreen` is also true for "windowed and not playing") is real but is already documented
+in the plan's own comment and is excluded by the test's `WaitUntilPlaying()` precondition. The coupling
+is load-bearing: if anyone ever adds `viewer.stop` to the overlay's Stop button this property silently
+inverts — that is now recorded here.
+
+**Required changes.** (1) The new e2e test still reads three non-waiting properties immediately after a
+transition — `NavigationBar.IsPresent` (`Pages/NavigationBar.cs:145,160-187`) and `PageObject.IsPresent`
+(`:249-255`) both deliberately do not wait — so required change 4's anti-race measure is applied only
+after `PressBackButton()`. Add a `WaitUntilFullScreen()` built on the overlay-exclusive id
+`TestIds.ViewerQualityCycle` (`viewer.fullScreen.qualityCycle`, present only in
+`FullScreenControlsOverlay.xaml:108`, on screen for the first 3 s) with the 2 s `Timeouts.StateChange`
+budget, and a `WaitUntilPlaying()` after each exit, before the assertions. (2)+(3) Lock deviation 1 in
+the code and in the canonical doc, not only in a scratch plan: XML-doc the two visibility properties as
+placement queries that must never fold in suppression (naming `ShellNavigationService`), and add the
+same rule to `docs/architecture.md`. (4) Give the two new unit tests a comment naming
+`ShellNavigationService.cs:88` — same reasoning as the #380 verdict's "do not name it `DefaultTimeout`":
+a bare assertion invites a future "consistency" edit that reverts the decision.
+
+**Open question (i) — recommendation: accept the interim, do not special-case now.** Slice 3's decision
+(b) already says tablets get *no* orientation-driven full-screen behaviour ever ("`!compact` ⇒
+`IsFullScreen = true` directly, no orientation request ever"), so a tablet auto-exit added here would be
+contradicted by the next slice and removed again; the state is escapable by two independent on-screen
+paths (overlay exit button, Back — checklist items 10-11); it is visually coherent (full-window video in
+a portrait window); and implementing it means putting orientation logic in `SourceListPage.xaml.cs`,
+which decision (b) reserves for Core. **Sharper variant for the owner:** because
+`SourceListViewModel.cs:76` only stops the pane when `PaneViewer is { IsPlaying: true }`, a pane that is
+full screen but momentarily *not* playing (mid-reconnect) does not get the `Stop()` → `IsFullScreen=false`
+convergence the plan relies on, and `ApplySizeClass`'s `_isPaneFullScreen` early return then leaves a
+0-width list column in a Medium window until the user exits manually. Same two escape routes; worth one
+device-checklist line rather than code in this slice.
+
+**Standing rules re-checked.** Rules 1, 2, 6 untouched. Rule 3 holds — all state stays in Core, the new
+`ViewerFullScreenChromeController` is Shell/Page chrome plumbing that cannot live in Core (decision (e)
+mandated it), and `SourceListPage.ApplyPaneFullScreen` follows the established "Layout plumbing only"
+idiom. Rule 4 holds: after this slice `IsFullScreen` is assigned only from `ToggleFullScreen` (UI
+command), `Stop()` (`ViewerViewModel.cs:332`, UI command / UI-thread size-class handler) and the
+controller's `Detach`/`HandleBackButton` (page lifecycle), so `ApplyChrome`'s `Shell` writes are always
+on the UI thread; `AndroidImmersiveModeService` self-marshals. Rule 5 holds — `IsChromeSuppressed` is a
+MAUI-free Core property, Android APIs stay in `Platforms/Android`. Theming holds (the only XAML change
+is one `x:Name`). The #338 `ModalStack` guard (`AppShell.xaml.cs:264`), `LastSegment`/`ParseDestination`
+(`:331-349`) and `EnsurePrimaryDestinationVisibleAsync` (`:354-366`) all stay byte-identical.
+`KeepScreenOn` stays driven by `IsPlaying` (`ViewerViewModel.FullScreen.cs:29-32`). The render timer is
+never stopped on a transition — `StopRendering` survives only in page lifecycle and in `ApplySizeClass`'s
+non-Expanded branch, which the `_isPaneFullScreen` early return now guards. No slice-3 leakage: no
+`IOrientationLockService`, `OverlayAutoHideSeconds` still 3, no PTZ layer, and `ViewerView.xaml:46`'s
+double-tap recognizer is untouched. CI emulator: the new test `Skip.If`s on `SourceCount == 0` before any
+full-screen interaction; `AdaptiveNavigation_InLandscape_PlacesNavigationInTheLeftRail` is unaffected
+because `IsChromeSuppressed` can never be true on a sourceless emulator (`FlyoutBehavior.Locked` as
+today); the accessibility audit sees no id or control changes; `tests/` has zero references to any
+deleted symbol.
+
+**Recorded, verified, no change needed.** `Detach()` unsubscribes *before* forcing `IsFullScreen = false`,
+so `ApplyChrome` is not re-entered while the manual chrome clear runs — and the View's and
+`SourceListPage`'s own separate subscriptions still fire, so the overlay, deck/sheet, `ListHeader` and the
+column widths all restore. `PaneViewer` is assigned with `??=` (`SourceListViewModel.cs:124`), so it can
+never be replaced and `AttachPaneIfReady`'s single-shot `!ReferenceEquals` subscription cannot leak a
+stale handler. `ViewerFullScreenChromeController` registered `AddTransient` into a Singleton
+`SourceListPage` and a Transient `ViewerPage` is correct — it depends only on singletons, so there is no
+captive dependency, and registering it concretely (no interface) matches the `ShellNavigationService`
+precedent. `Shell.SetNavBarIsVisible(page, true)` on Detach is safe: neither `ViewerPage.xaml` nor
+`SourceListPage.xaml` sets `Shell.NavBarIsVisible`. Push/pop ordering between the two hosts is
+order-independent because both paths converge on "not suppressed". `docs/features/viewer-fullscreen/*`
+and `viewer-control-deck/*` correctly stay as point-in-time records; `.github/KNOWLEDGE-BASE.md` contains
+no claim about `FullScreenViewerPage`, so it needs no correction (an added chrome-suppression line there
+would be welcome but is optional).
+
+**Non-blocking notes.** (i) `ViewerView.Teardown()` gains its first real caller but does not clear
+`_pendingFrame`/`_lastRenderedTimestamp`, so the `BindingContext = null` → `UpdateLayoutVisibility` →
+`HeightRequest` path can trigger one more paint that reallocates an `SKBitmap` nobody disposes — a
+one-off leak per page pop, pre-existing in shape, worth two lines under its own ticket. (ii) On a Compact
+window the live layout is `ViewerControlSheet`, whose peek state can leave the ⛶ toggle partially below
+the fold; if `ToggleFullScreen()` misbehaves on the S21 the sheet must be expanded first — a page-object
+concern, not a product defect. (iii) Add one phone checklist step: rotate landscape→portrait *while full
+screen* and confirm the bottom tab bar stays hidden — that is the one path where Shell-wide
+`PrimaryTabBar.IsVisible = true` and the page-scoped `Shell.SetTabBarIsVisible(page, false)` disagree and
+the page-scoped value must win.
+
 ### 2026-09-06 — #380 flaky `ViscaPtzControllerLoopbackTests` (per-test timeout budgets)
 
 **APPROVE-WITH-CHANGES.** Test-project-only change; no production code, no fake change. The plan is
