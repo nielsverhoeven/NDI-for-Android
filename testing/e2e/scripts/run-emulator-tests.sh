@@ -51,6 +51,11 @@ FONT_SCALE="${E2E_FONT_SCALE:-1.0}"
 echo "Setting device font scale to $FONT_SCALE"
 adb shell settings put system font_scale "$FONT_SCALE"
 
+# Settle time: the font_scale write above broadcasts a config change that forces every window,
+# including the launcher's, to re-inflate — installing/launching immediately into that raced the
+# launcher into a SurfaceFlinger stall ("Quickstep isn't responding") that then blocked every test.
+sleep 5
+
 # Continuous logcat capture, started before install so nothing from app startup is missed.
 # `adb logcat -d` at the end of a run reads a 256K-ish ring buffer that UiAutomator2 fills with a
 # node dump per selector match — by the time a 3-10 minute run ends, the lines that explain an
