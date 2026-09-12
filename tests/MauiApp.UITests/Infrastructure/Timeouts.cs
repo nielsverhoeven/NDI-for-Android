@@ -46,7 +46,7 @@ public static class Timeouts
     /// returns the pre-rotation layout, which then fails a position assertion for the wrong
     /// reason.
     /// </summary>
-    public static readonly TimeSpan OrientationSettle = TimeSpan.FromMilliseconds(2000);
+    public static readonly TimeSpan OrientationSettle = TimeSpan.FromMilliseconds(1200);
 
     /// <summary>
     /// A control's own state reflecting a tap that already landed — a VSM transition or an

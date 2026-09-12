@@ -56,13 +56,14 @@ public class AppiumDriverFixture : IAsyncLifetime
     protected virtual bool AutoGrantPermissions => true;
 
     /// <summary>
-    /// Package Appium's own post-launch activity wait is scoped to. <c>null</c> (default) leaves
-    /// Appium's default (our own package). A fixture with <see cref="AutoGrantPermissions"/> off
-    /// overrides this to <c>"*"</c>: the very first cold launch shows the system permission
-    /// dialog — a different package — before our activity settles, so a wait scoped to our own
-    /// package never matches and the session times out.
+    /// Whether Appium should launch the app itself and wait for a specific activity as part of
+    /// session creation. <c>true</c> (default) matches the main session. A fixture with
+    /// <see cref="AutoGrantPermissions"/> off overrides this to <c>false</c>: the very first cold
+    /// launch transitions through the system permission dialog activity before settling, which
+    /// Appium's own launch-wait does not reliably tolerate — the fixture launches and confirms the
+    /// app itself instead, in <see cref="AfterDriverCreatedAsync"/>.
     /// </summary>
-    protected virtual string? AppWaitPackage => null;
+    protected virtual bool AutoLaunch => true;
 
     public async Task InitializeAsync()
     {
@@ -129,12 +130,11 @@ public class AppiumDriverFixture : IAsyncLifetime
         // briefly the foreground activity, and the crc64 name is regenerated per build.
         options.AddAdditionalAppiumOption("appium:appWaitActivity", "*");
 
-        if (AppWaitPackage is not null)
-            options.AddAdditionalAppiumOption("appium:appWaitPackage", AppWaitPackage);
-
         // MAUI cold start on a software-rendered emulator runs well past Appium's 20s default;
         // this repo's own guidance puts the cold-emulator floor at 30s.
         options.AddAdditionalAppiumOption("appium:appWaitDuration", 60000);
+
+        options.AddAdditionalAppiumOption("appium:autoLaunch", AutoLaunch);
 
         // Answer the runtime permission dialog up front so it cannot sit in front of the app.
         options.AddAdditionalAppiumOption("appium:autoGrantPermissions", AutoGrantPermissions);
