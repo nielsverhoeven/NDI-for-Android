@@ -3,6 +3,8 @@ using NdiForAndroid.Features.AppState.Models;
 using NdiForAndroid.Features.AppState.Repositories;
 using NdiForAndroid.Features.Output.Repositories;
 using NdiForAndroid.Features.Output.ViewModels;
+using NdiForAndroid.Features.Sources.Models;
+using NdiForAndroid.Features.Sources.Repositories;
 using NdiForAndroid.NdiBridge;
 using NdiForAndroid.Services;
 using Xunit;
@@ -17,6 +19,8 @@ public class OutputViewModelTests
     private readonly Mock<IOutputConfigurationRepository> _configRepoMock = new();
     private readonly FakeMainThreadDispatcher _dispatcher = new();
     private readonly FakeScreenReaderAnnouncer _announcer = new();
+    private readonly Mock<ISourceRepository> _sourceRepositoryMock = new();
+    private readonly Mock<IDiscoveryRefreshService> _discoveryServiceMock = new();
 
     public OutputViewModelTests()
     {
@@ -31,6 +35,9 @@ public class OutputViewModelTests
         _configRepoMock
             .Setup(r => r.GetAsync())
             .ReturnsAsync((OutputConfiguration?)null);
+        _sourceRepositoryMock
+            .Setup(r => r.GetCachedSourcesAsync())
+            .ReturnsAsync(new List<NdiSource>());
     }
 
     private OutputViewModel CreateSut() => new(
@@ -39,7 +46,9 @@ public class OutputViewModelTests
         _lifecycleMock.Object,
         _configRepoMock.Object,
         _dispatcher,
-        _announcer);
+        _announcer,
+        _sourceRepositoryMock.Object,
+        _discoveryServiceMock.Object);
 
     [Fact]
     public void Constructor_SetsInitialStatusMessage()
@@ -191,6 +200,8 @@ public class OutputViewModelTests
 
         _bridgeMock.VerifyAdd(b => b.OutputStatusChanged += It.IsAny<EventHandler>(), Times.Once);
         _lifecycleMock.VerifyAdd(l => l.AppResumed += It.IsAny<Action>(), Times.Once);
+        _discoveryServiceMock.VerifyAdd(
+            d => d.SnapshotReady += It.IsAny<EventHandler<DiscoverySnapshot>>(), Times.Once);
     }
 
     [Fact]
@@ -217,6 +228,8 @@ public class OutputViewModelTests
 
         _bridgeMock.VerifyRemove(b => b.OutputStatusChanged -= It.IsAny<EventHandler>(), Times.Once);
         _lifecycleMock.VerifyRemove(l => l.AppResumed -= It.IsAny<Action>(), Times.Once);
+        _discoveryServiceMock.VerifyRemove(
+            d => d.SnapshotReady -= It.IsAny<EventHandler<DiscoverySnapshot>>(), Times.Once);
 
         // A resume after teardown must not run the corroboration (and its SaveAsync) any more.
         _lifecycleMock.Raise(l => l.AppResumed += null);
@@ -395,6 +408,170 @@ public class OutputViewModelTests
         Assert.Equal("abc123", sut.ReStreamSourceId);
         Assert.True(sut.IsReStreamMode);
         Assert.StartsWith("NDI-", sut.StreamName);
+    }
+
+    // ── #343 OUT-08: re-stream source picker ─────────────────────────────────────────────────
+
+    [Fact]
+    public async Task LoadCommand_PopulatesAvailableReStreamSourcesFromCache()
+    {
+        _sourceRepositoryMock.Setup(r => r.GetCachedSourcesAsync())
+            .ReturnsAsync(new List<NdiSource>
+            {
+                new("192.168.0.25:5961", "Studio Cam", "192.168.0.25:5961", true, 1000),
+                new("192.168.0.26:5961", "Backup Cam", "192.168.0.26:5961", true, 2000),
+            });
+
+        var sut = CreateSut();
+        await sut.LoadCommand.ExecuteAsync(null);
+
+        Assert.Equal(2, sut.AvailableReStreamSources.Count);
+        Assert.True(sut.HasReStreamSources);
+    }
+
+    [Fact]
+    public async Task LoadCommand_WhenNoCachedSources_ShowsManualEntryFallbackInReStreamMode()
+    {
+        var sut = CreateSut();
+        await sut.LoadCommand.ExecuteAsync(null);
+        sut.IsReStreamMode = true;
+
+        Assert.False(sut.HasReStreamSources);
+        Assert.False(sut.ShowReStreamSourcePicker);
+        Assert.True(sut.ShowReStreamManualEntry);
+    }
+
+    [Fact]
+    public async Task LoadCommand_WhenSourcesCached_ShowsPickerInReStreamMode()
+    {
+        _sourceRepositoryMock.Setup(r => r.GetCachedSourcesAsync())
+            .ReturnsAsync(new List<NdiSource> { new("src-1", "Camera 1", "192.168.1.10", true, 1000) });
+
+        var sut = CreateSut();
+        await sut.LoadCommand.ExecuteAsync(null);
+        sut.IsReStreamMode = true;
+
+        Assert.True(sut.ShowReStreamSourcePicker);
+        Assert.False(sut.ShowReStreamManualEntry);
+    }
+
+    [Fact]
+    public void ShowReStreamSourcePicker_IsFalseWhileNotInReStreamMode()
+    {
+        var sut = CreateSut();
+        // Not in re-stream mode by default, regardless of source availability.
+        Assert.False(sut.ShowReStreamSourcePicker);
+        Assert.False(sut.ShowReStreamManualEntry);
+    }
+
+    [Fact]
+    public void SnapshotReady_UpdatesAvailableReStreamSourcesOnUiThread()
+    {
+        var sut = CreateSut();
+        var snapshot = new DiscoverySnapshot(
+            "snap-1", DiscoveryStatus.Success,
+            new List<NdiSource> { new("src-9", "New Cam", "10.0.0.9", true, 5000) },
+            5000);
+
+        _discoveryServiceMock.Raise(d => d.SnapshotReady += null, _discoveryServiceMock.Object, snapshot);
+
+        Assert.Single(sut.AvailableReStreamSources);
+        Assert.Equal("src-9", sut.AvailableReStreamSources[0].SourceId);
+        Assert.True(sut.HasReStreamSources);
+    }
+
+    [Fact]
+    public async Task SelectingAReStreamSource_UpdatesReStreamSourceId()
+    {
+        _sourceRepositoryMock.Setup(r => r.GetCachedSourcesAsync())
+            .ReturnsAsync(new List<NdiSource> { new("src-1", "Camera 1", "192.168.1.10", true, 1000) });
+
+        var sut = CreateSut();
+        await sut.LoadCommand.ExecuteAsync(null);
+
+        sut.SelectedReStreamSource = sut.AvailableReStreamSources[0];
+
+        Assert.Equal("src-1", sut.ReStreamSourceId);
+    }
+
+    [Fact]
+    public async Task SelectedReStreamSource_SetToNull_ClearsReStreamSourceId()
+    {
+        // A cached source is required so ApplyReStreamRequest resolves to a Picker selection
+        // (SelectedReStreamSource) rather than the manual-entry fallback, which sets
+        // ReStreamSourceId directly without ever touching SelectedReStreamSource.
+        _sourceRepositoryMock.Setup(r => r.GetCachedSourcesAsync())
+            .ReturnsAsync(new List<NdiSource> { new("abc123", "Camera 1", "192.168.1.10", true, 1000) });
+
+        var sut = CreateSut();
+        await sut.LoadCommand.ExecuteAsync(null);
+        sut.ApplyReStreamRequest("abc123", true);
+
+        sut.SelectedReStreamSource = null;
+
+        Assert.Null(sut.ReStreamSourceId);
+    }
+
+    [Fact]
+    public async Task ApplyReStreamRequest_SourceInList_SelectsMatchingEntryAndShowsPicker()
+    {
+        _sourceRepositoryMock.Setup(r => r.GetCachedSourcesAsync())
+            .ReturnsAsync(new List<NdiSource> { new("src-1", "Camera 1", "192.168.1.10", true, 1000) });
+
+        var sut = CreateSut();
+        await sut.LoadCommand.ExecuteAsync(null);
+
+        sut.ApplyReStreamRequest("src-1", true);
+
+        Assert.Equal("Camera 1", sut.SelectedReStreamSource?.DisplayName);
+        Assert.Equal("src-1", sut.ReStreamSourceId);
+        Assert.True(sut.ShowReStreamSourcePicker);
+        Assert.Single(sut.AvailableReStreamSources);
+    }
+
+    [Fact]
+    public void ApplyReStreamRequest_WithNoCachedSources_FallsBackToManualEntryWithTheRawId()
+    {
+        var sut = CreateSut();
+
+        sut.ApplyReStreamRequest("192.168.0.25:5961", true);
+
+        Assert.Null(sut.SelectedReStreamSource);
+        Assert.Equal("192.168.0.25:5961", sut.ReStreamSourceId);
+        Assert.False(sut.ShowReStreamSourcePicker);
+        Assert.True(sut.ShowReStreamManualEntry);
+    }
+
+    [Fact]
+    public async Task ApplyReStreamRequest_SourceNotInCachedList_SynthesizesPlaceholderAndSelectsIt()
+    {
+        _sourceRepositoryMock.Setup(r => r.GetCachedSourcesAsync())
+            .ReturnsAsync(new List<NdiSource> { new("src-1", "Camera 1", "192.168.1.10", true, 1000) });
+
+        var sut = CreateSut();
+        await sut.LoadCommand.ExecuteAsync(null);
+
+        sut.ApplyReStreamRequest("192.168.0.25:5961", true);
+
+        Assert.Equal("192.168.0.25:5961", sut.SelectedReStreamSource?.SourceId);
+        Assert.Equal(2, sut.AvailableReStreamSources.Count);
+        Assert.True(sut.ShowReStreamSourcePicker);
+    }
+
+    [Fact]
+    public async Task StartOutputCommand_InReStreamModeWithNoSourceSelected_SetsErrorAndDoesNotStart()
+    {
+        var sut = CreateSut();
+        await sut.LoadCommand.ExecuteAsync(null); // no cached sources -> ReStreamSourceId stays null
+        sut.IsReStreamMode = true;
+
+        await sut.StartOutputCommand.ExecuteAsync(null);
+
+        Assert.False(sut.IsOutputActive);
+        Assert.True(sut.IsStatusError);
+        Assert.Equal("Select a source to re-stream before starting output.", sut.StatusMessage);
+        _bridgeMock.Verify(b => b.StartReStreamFromSourceAsync(
+            It.IsAny<string>(), It.IsAny<QualityProfile>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]

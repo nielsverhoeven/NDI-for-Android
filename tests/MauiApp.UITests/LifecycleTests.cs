@@ -31,13 +31,16 @@ public sealed class LifecycleTests : DeviceInterruptionTestBase
     {
         EnterHoldState(app);
 
+        // Landscape lays the viewer out as a collapsed bottom sheet on this device profile, so
+        // viewer.stop (IsPlaying's signal) is not Displayed there — the status text is the one
+        // signal that holds across both placements.
         app.Rotate(ScreenOrientation.Landscape);
         Assert.True(app.Viewer.IsVisible, "Viewer left the screen after rotating to landscape");
-        Assert.True(app.Viewer.IsPlaying, "Viewer stopped playing after rotating to landscape");
+        Assert.Equal("Connecting...", app.Viewer.Status);
 
         app.Rotate(ScreenOrientation.Portrait);
         Assert.True(app.Viewer.IsVisible, "Viewer left the screen after rotating back to portrait");
-        Assert.True(app.Viewer.IsPlaying, "Viewer stopped playing after rotating back to portrait");
+        Assert.Equal("Connecting...", app.Viewer.Status);
 
         // "viewer" is a relative Shell route pushed onto the current tab's stack, so tapping the
         // already-selected Home tab does not pop back to it. Terminate and let the next test's
