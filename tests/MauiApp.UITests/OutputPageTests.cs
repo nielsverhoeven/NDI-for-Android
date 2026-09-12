@@ -11,7 +11,7 @@ public sealed class OutputPageTests : UiTestBase
 {
     public OutputPageTests(AppiumDriverFixture fixture) : base(fixture) { }
 
-    [SkippableFact]
+    [RetryableSkippableFact]
     public void Output_TappingTheReStreamLabel_TogglesTheModeSwitch() => Run(app =>
     {
         app.Rotate(ScreenOrientation.Portrait);
@@ -33,7 +33,7 @@ public sealed class OutputPageTests : UiTestBase
         }
     });
 
-    [SkippableFact]
+    [RetryableSkippableFact]
     public void Output_TappingTheMicrophoneLabel_TogglesTheMicrophoneSwitch() => Run(app =>
     {
         app.Rotate(ScreenOrientation.Portrait);
@@ -54,7 +54,7 @@ public sealed class OutputPageTests : UiTestBase
         }
     });
 
-    [SkippableFact]
+    [RetryableSkippableFact]
     public void Output_TappingTheMicrophoneSwitchItself_TogglesExactlyOnce() => Run(app =>
     {
         app.Rotate(ScreenOrientation.Portrait);

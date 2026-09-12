@@ -44,6 +44,13 @@ fi
 # Extra settle time so the launcher and system services are stable
 sleep 5
 
+# Device font scale, applied before install so the app picks it up on first launch. Set
+# unconditionally: /data is restored from the actions/cache AVD entry, so a previous leg's
+# non-default font_scale would otherwise persist into this run.
+FONT_SCALE="${E2E_FONT_SCALE:-1.0}"
+echo "Setting device font scale to $FONT_SCALE"
+adb shell settings put system font_scale "$FONT_SCALE"
+
 # Continuous logcat capture, started before install so nothing from app startup is missed.
 # `adb logcat -d` at the end of a run reads a 256K-ish ring buffer that UiAutomator2 fills with a
 # node dump per selector match — by the time a 3-10 minute run ends, the lines that explain an
@@ -206,6 +213,40 @@ FAILED=$(read_counter failed); FAILED=${FAILED:-0}
 SKIPPED=$(( TOTAL - PASSED - FAILED ))
 
 echo "Counters — total=$TOTAL passed=$PASSED failed=$FAILED skipped=$SKIPPED"
+
+# Retry summary: the TRX counters above only reflect the final attempt of a retried test, so a
+# test that failed once and then passed is otherwise invisible here.
+RETRY_LOG="$(dirname "$E2E_ARTIFACT_DIR")/retry-log.ndjson"
+if [[ -s "$RETRY_LOG" ]]; then
+  echo
+  echo "── Retries this run ────────────────────────────────────────────────────"
+  python3 - "$RETRY_LOG" <<'PY' || echo "  (could not summarise retry-log.ndjson)"
+import json, sys
+from collections import defaultdict
+
+by_test = defaultdict(list)
+with open(sys.argv[1], encoding="utf-8") as fh:
+    for line in fh:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        by_test[record.get("test", "?")].append(record)
+
+retried = {t: r for t, r in by_test.items() if any(a.get("attempt", 1) > 1 for a in r)}
+if not retried:
+    print("No test needed a retry this run.")
+for test, attempts in sorted(retried.items()):
+    attempts.sort(key=lambda a: a.get("attempt", 1))
+    trail = ", ".join(f"attempt {a['attempt']}: {'pass' if a.get('passed') else 'fail'}" for a in attempts)
+    outcome = "PASSED" if attempts[-1].get("passed") else "FAILED"
+    print(f"  {test} — final: {outcome} ({trail})")
+PY
+  echo "─────────────────────────────────────────────────────────────────────────"
+fi
 
 # The accessibility audit's own summary, echoed here rather than left where it was printed. It
 # lands in the middle of several hundred lines of dotnet output, and the violation count is what
