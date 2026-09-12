@@ -31,6 +31,255 @@ unconditionally. Rule 5's intent is to keep Android APIs out of **Core** and out
 
 ## Verdicts log
 
+### 2026-09-13 — #384 orphaned View chip after pane full screen (fit-check)
+
+**APPROVE-WITH-CHANGES.** The suspected mechanism is confirmed — and the UI dump disproves the
+device report's own hypothesis, which matters for the fix. The fix stays inside
+`ViewerFullScreenChromeController`; no new abstraction, no `AppShell` change, no XAML change.
+
+**Mechanism (confirmed from the dump + `AppShell.xaml`, not from the report's wording).**
+
+1. *The rail did not lose "View".* `ui_G05_rail_bug.xml` still contains all four rail entries —
+   `nav.home [12,48][96,144]`, `nav.stream [12,150][96,246]`, **`nav.view [12,252][96,348]`,
+   `content-desc="View, selected"`**, `nav.settings [12,354][96,450]` — inside the locked flyout
+   `ScrollView [0,0][108,1200]`. So "a leftover Medium bottom-tab item that never got removed when
+   the Expanded rail was rebuilt" (`logs/20260913-384-device-report.md:90-96`) is wrong: nothing was
+   relocated, an **extra** bar was added. Correct that line when the fix lands.
+2. *The chip is Shell's own `BottomNavigationView`.* The orphan sits in a `FrameLayout`
+   `[108,1093][1920,1200]` — the full content width, x-offset by the 108px rail — and its subtree
+   carries the Material ids `navigation_bar_item_icon_container`, `navigation_bar_item_labels_group`,
+   `navigation_bar_item_large_label_view` (`text="View"`, `selected="true"`). The sibling `ViewPager`
+   was shrunk from the window height to `[108,141][1920,1093]` to make room for it. That is
+   `ShellItemRenderer`'s bottom view flipping from `Gone` to `Visible` for the **current
+   `ShellItem`** — i.e. `ViewRailItem` — not a stray view.
+3. *Why one item.* The rail family is four independent `FlyoutItem`s each holding exactly one
+   `ShellContent` (`src/MauiApp/AppShell.xaml:32-66`), so `ViewRailItem` has a single section and its
+   bar renders exactly one centred tab. The `TabBar` family is one `ShellItem` with four
+   `ShellContent`s (`:73-94`).
+4. *Why writing `true` is not the inverse of writing `false`.* Shell resolves tab-bar visibility via
+   `ShellItem.ShowTabs`, which takes the **first explicitly set** `Shell.TabBarIsVisible` on the
+   displayed page's parent chain and only falls back to "this `ShellItem` has more than one section"
+   when **nobody set it** (`IsSet`-based lookup, not `GetValue`). Under the rail that fallback is
+   `false`; an explicit `true` overrides it. This is not taken on trust from the framework source —
+   the observed defect is only explicable this way: a bar that is absent by default appeared *because*
+   the app set the attached property to `true`, on a page whose `ShellItem` has one section.
+   `ViewerFullScreenChromeController.cs:101` (`ApplyChrome`) and `:71` (`Detach`) are the only two
+   writers of `true` in the repo (grep over `src/`: five hits total, all in that file).
+5. *Why only after an enter/exit round trip, and why it never self-heals.* The BindableProperty's own
+   default is `true`, so the **first** write on `Attach → ApplyChrome(false)` equals the current value
+   → no `PropertyChanged` → the renderer never recomputes → no chip on a plain visit. Entering writes
+   `false` (change → recompute → hide; invisible in the rail family, nothing was shown), exiting
+   writes `true` (change → recompute → `IsSet` is now `true` → **show**). After that the page-level
+   value stays `true` forever: `SourceListPage` is the `ShellContent`-cached page of `ViewRailItem`,
+   so Home→View round trips and rotation reuse the same instance, and every later `Attach` re-writes
+   `true` with no value change. Exactly the reported "persists across navigation, rotation and
+   stop/reconnect", with no exception line anywhere (`report:99-102`, item I clean).
+6. *Why the portrait pushed `ViewerPage` is fine.* Same explicit `true`, but under the 4-section
+   `TabBar` the default was `true` anyway, so the override is invisible.
+
+**Decision — option (a), with two required extensions.** Never write `true`; track that this
+controller took ownership and restore by `ClearValue` back to "unset", so Shell recomputes its own
+per-family default (hidden under a 1-section rail `FlyoutItem`, visible under the 4-item `TabBar`).
+
+- **Rejected: gate on `_shellState.IsBottomNavigationVisible`.** Placement can change between enter
+  and exit (rotation, an unlocked orientation, background/resume), so a family-conditional write can
+  write under one family and restore under the other. The failure mode is worse than today's: a
+  leaked `false` permanently hides the *real* bottom bar in the `TabBar` family. The ownership flag is
+  invariant to placement changes.
+- **Rejected: read the pre-entry value and restore it only if it was explicitly set.** Behaviourally
+  identical while this controller is the sole writer (#393), at the cost of extra state and a
+  dependency on `BindableObject.IsSet`. Revisit only if a host page ever declares
+  `Shell.TabBarIsVisible`/`NavBarIsVisible` in its own XAML — today none does, and the #393 ownership
+  rule (recorded in `AdaptiveShellStateViewModel.cs:14-19`) is what keeps `ClearValue` safe.
+- **Required extension 1 — only clear what we set.** An unconditional `ClearValue` in `Detach` would
+  wipe a value the controller never owned. Guard with the flag; a page that never went full screen
+  must end the session with the property untouched.
+- **Required extension 2 — `NavBarIsVisible` gets the same treatment.** `:70`/`:100` write `true`
+  there too. It is benign *today* only because no page sets it `false` in XAML and the property
+  default is `true`. It is the identical latent clobber, it costs nothing to fix symmetrically, and
+  leaving it asymmetric invites exactly this bug back on the next page that wants a custom nav bar.
+- **Slice-2 gate rule preserved.** Page-scoped `Shell.SetTabBarIsVisible(page, false)` is still the
+  one mechanism that hides the bottom bar, applied uniformly in both families;
+  `IsChromeSuppressed` still drives only the rail (`AppShell.xaml.cs:272`). **#393 preserved:** the
+  controller remains the only writer of both attached properties; `AppShell` still touches neither.
+
+**Verbatim change — `src/MauiApp/Features/Viewer/Services/ViewerFullScreenChromeController.cs`
+(four edits, nothing else in the file changes).**
+
+Edit 1 — fields (`:22-23`).
+
+BEFORE
+```csharp
+    private Page? _page;
+    private ViewerViewModel? _viewModel;
+```
+
+AFTER
+```csharp
+    private Page? _page;
+    private ViewerViewModel? _viewModel;
+
+    /// <summary>True while this controller has written the page-scoped chrome overrides onto
+    /// <see cref="_page"/>. Gates the restore so a page that never went full screen keeps
+    /// Shell's own values (this controller is the app's only writer of those two attached
+    /// properties — #393).</summary>
+    private bool _chromeOverridden;
+```
+
+Edit 2 — `Detach`'s doc comment (`:51-56`).
+
+BEFORE
+```csharp
+    /// <summary>
+    /// Unconditionally releases chrome ownership: forces full screen off and abandons any
+    /// in-flight orientation request (<see cref="ViewerViewModel.ForceExitFullScreen"/>), clears
+    /// the shared suppression flag, exits immersive mode, releases the orientation lock, and
+    /// restores the page's own nav bar and tab bar. Safe to call when not attached.
+    /// </summary>
+```
+
+AFTER
+```csharp
+    /// <summary>
+    /// Unconditionally releases chrome ownership: forces full screen off and abandons any
+    /// in-flight orientation request (<see cref="ViewerViewModel.ForceExitFullScreen"/>), clears
+    /// the shared suppression flag, exits immersive mode, releases the orientation lock, and
+    /// reverts the page's own nav bar and tab bar to Shell's defaults (see
+    /// <see cref="RestoreChrome"/>). Safe to call when not attached.
+    /// </summary>
+```
+
+Edit 3 — `Detach`'s restore block (`:68-72`).
+
+BEFORE
+```csharp
+        if (_page is not null)
+        {
+            Shell.SetNavBarIsVisible(_page, true);
+            Shell.SetTabBarIsVisible(_page, true);
+        }
+```
+
+AFTER
+```csharp
+        RestoreChrome();
+```
+
+(`RestoreChrome()` must stay **above** the `_page = null;` line — it needs the page it is clearing.)
+
+Edit 4 — `ApplyChrome` (`:89-103`), replaced in full and followed by the two new helpers.
+
+BEFORE
+```csharp
+    private void ApplyChrome(bool isFullScreen)
+    {
+        _shellState.IsChromeSuppressed = isFullScreen;
+
+        if (isFullScreen)
+            _immersiveMode.EnterImmersive();
+        else
+            _immersiveMode.ExitImmersive();
+
+        if (_page is not null)
+        {
+            Shell.SetNavBarIsVisible(_page, !isFullScreen);
+            Shell.SetTabBarIsVisible(_page, !isFullScreen);
+        }
+    }
+```
+
+AFTER
+```csharp
+    private void ApplyChrome(bool isFullScreen)
+    {
+        _shellState.IsChromeSuppressed = isFullScreen;
+
+        if (isFullScreen)
+        {
+            _immersiveMode.EnterImmersive();
+            OverrideChrome();
+        }
+        else
+        {
+            _immersiveMode.ExitImmersive();
+            RestoreChrome();
+        }
+    }
+
+    /// <summary>Hides the host page's own nav bar and tab bar, page-scoped. This is the one
+    /// mechanism that hides the bottom bar; the left rail is driven separately, through
+    /// <see cref="AdaptiveShellStateViewModel.IsChromeSuppressed"/>.</summary>
+    private void OverrideChrome()
+    {
+        if (_page is null)
+            return;
+
+        Shell.SetNavBarIsVisible(_page, false);
+        Shell.SetTabBarIsVisible(_page, false);
+        _chromeOverridden = true;
+    }
+
+    /// <summary>
+    /// Reverts to Shell's own per-page defaults by clearing the attached properties. Never writes
+    /// <c>true</c>, and never touches a property this controller did not set.
+    /// <para>
+    /// Writing <c>true</c> is NOT the inverse of writing <c>false</c> (#384 item G). Shell resolves
+    /// tab-bar visibility from the first <em>explicitly set</em> <c>Shell.TabBarIsVisible</c> on the
+    /// displayed page's parent chain, and only falls back to "this ShellItem has more than one
+    /// section" when nobody set it. Every rail destination is a single-<c>ShellContent</c>
+    /// <c>FlyoutItem</c> (`AppShell.xaml:32-66`), so that fallback is <c>false</c> there — an
+    /// explicit <c>true</c> overrode it and made Shell render a one-item BottomNavigationView
+    /// ("View") under the two-pane page, which never went away again. Clearing restores the correct
+    /// default in both families: hidden under the rail's FlyoutItems, visible under the 4-item
+    /// <c>TabBar</c>.
+    /// </para>
+    /// </summary>
+    private void RestoreChrome()
+    {
+        if (_page is not null && _chromeOverridden)
+        {
+            _page.ClearValue(Shell.NavBarIsVisibleProperty);
+            _page.ClearValue(Shell.TabBarIsVisibleProperty);
+        }
+
+        _chromeOverridden = false;
+    }
+```
+
+No other file changes. `ClearValue(BindableProperty)` is public on `BindableObject`; `Shell.NavBarIsVisibleProperty` / `Shell.TabBarIsVisibleProperty` are public statics; no new `using`.
+
+**Device re-check (device-only gate — this controller lives in `src/MauiApp` and
+`tests/MauiApp.Tests` references only `src/Core`, so no unit test can cover it).**
+Run `dotnet build NdiForAndroid.sln` first; `dotnet test tests/MauiApp.Tests` must stay green (it
+cannot regress, but run it).
+
+1. **G, the defect itself.** Galaxy Tab A9+, landscape/Expanded. Watch → pane plays → ⛶ → whole-window
+   full screen → exit. Take a UI dump and assert **no** node with a `navigation_bar_item_*`
+   resource-id exists anywhere, the rail still lists all four entries, and the content `ViewPager`
+   again reaches the window bottom (~y=1177 above the system nav bar) instead of stopping at 1093.
+   Repeat enter/exit **three** times, then Home→View, then a full rotation cycle — dump again each
+   time. Also dump **before** the first ⛶ of the session: no bottom item there either (that path now
+   writes nothing at all).
+2. **Portrait pushed `ViewerPage` (TabBar family) regression — the one this change could break.**
+   Portrait, Watch from the list → `ViewerPage` → ⛶ → nav bar + bottom tabs gone → exit → the bottom
+   tab bar returns with **all four** items (Home/Stream/View/Settings) and the header/nav bar returns.
+   Back out to the list and confirm the tabs are still correct. Repeat the enter/exit twice. Also
+   check the plain portrait View tab (no pane): bottom tabs present at all times.
+3. **Background / relaunch, both families.** (a) Portrait pushed viewer, enter full screen → Home key
+   → relaunch: not full screen, chrome fully intact, bottom tabs present (item H's scenario, now
+   exercising `Detach → RestoreChrome` on the backgrounding `OnDisappearing` and a no-write `Attach`
+   on resume). (b) The same from the landscape pane: enter full screen → Home key → relaunch → rail
+   back, **no chip**, and then one more ⛶/exit cycle to prove the flag survived the round trip.
+4. **Logcat** for the whole session: no `FATAL`, no `Placement reconciliation failed`, no
+   `Navigation handoff failed` (item I baseline was clean, keep it clean).
+
+**Follow-up (not part of this fix).** Nothing in the Appium suite asserts the *absence* of the bottom
+bar in Expanded, which is why a page-object run would not have caught this either. A tester-owned
+assertion ("in Expanded, no `navigation_bar_item_*` node exists") is cheap and would pin the invariant;
+file it separately rather than bundling it here.
+
+---
+
 ### 2026-09-12 — #393 rotation lands on Home (gate)
 
 **APPROVE-WITH-CHANGES — nine required changes, five of them blocking. The diagnosis is correct and
