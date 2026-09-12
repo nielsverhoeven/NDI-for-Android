@@ -60,4 +60,17 @@ public static class ViewerControlLayout
         var floor = Math.Min(MinVideoHeightDp, Math.Max(0, available));
         return Math.Clamp(available, floor, DeckVideoHeightDp);
     }
+
+    /// <summary>Android's own phone/tablet discriminator: <c>Configuration.SmallestScreenWidthDp</c>
+    /// (sw600dp), orientation-invariant. An unknown/unreported smallest width (0, before the first
+    /// configuration report) is treated as NOT compact, so nothing auto-enters full screen and the
+    /// toggle button behaves like a tablet until the platform reports a real value (#383/#384).</summary>
+    public const double CompactDeviceMaxSmallestWidthDp = 600;
+
+    /// <summary>Android's own phone/tablet discriminator: <c>Configuration.SmallestScreenWidthDp</c>
+    /// (sw600dp), orientation-invariant. An unknown/unreported smallest width (0, before the first
+    /// configuration report) is treated as NOT compact, so nothing auto-enters full screen and the
+    /// toggle button behaves like a tablet until the platform reports a real value (#383/#384).</summary>
+    public static bool IsCompactDevice(double smallestWidthDp) =>
+        smallestWidthDp > 0 && smallestWidthDp < CompactDeviceMaxSmallestWidthDp;
 }

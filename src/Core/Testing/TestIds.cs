@@ -119,6 +119,8 @@ public static class TestIds
     public const string ViewerReconnect       = "viewer.reconnect";
     public const string ViewerStop            = "viewer.stop";
     public const string ViewerFullScreenToggle = "viewer.fullScreenToggle";
+    public const string ViewerFullScreenOverlay = "viewer.fullScreen.overlay";
+    public const string ViewerFullScreenCamera  = "viewer.fullScreen.camera";
 
     // ── PTZ endpoint override form (#374) ────────────────────────────────────
 
