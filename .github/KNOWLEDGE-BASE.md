@@ -110,6 +110,17 @@ Left navigation rail placement: same pages on `//home-rail`, `//stream-rail`, `/
 - `HomeViewModel` takes `INdiOutputBridge`; Output status and `CanResumeOutput` derive from `state.IsOutputActive && _outputBridge.IsActive`; quick actions are disabled (not hidden) when unavailable. Start Viewing Last Source calls `NavigateToPrimaryAsync(View)` BEFORE pushing `viewer?sourceId=` so the push lands under the View tab/rail (otherwise the handoff never stops the receiver).
 - Background streaming (#327): an active output keeps running across tab switches and app backgrounding under `ScreenShareForegroundService`; `NdiNavigationHandoffService` only stops the viewer receiver when leaving View (constructor: `INdiViewerBridge` only). The persistent notification has a **Stop** action (`ActionStopRequested` → `INdiOutputBridge.StopOutputAsync()`; if the bridge is null or inactive the service stops itself). A sticky restart with a null intent stops the service (#351). A notification stop keeps `AppState.StreamName`, so Home offers Resume; only the in-app Stop button clears the name.
 - Lifetime (#352/#359): `OutputViewModel`/`OutputPage` and `HomeViewModel`/`HomePage` are Singletons, so the Stream tab keeps its typed stream name / input kind / mode across tab switches and rotation; `LoadCommand` re-corroborates with the bridge on every appearance and `OutputPage` consumes its query intents one-shot. e2e: `AppLaunchTests.Stream_TypedStreamName_SurvivesATabSwitch`.
+- Re-stream source picker (#343 OUT-08): `OutputViewModel.AvailableReStreamSources`
+  (`ObservableCollection<NdiSource>`) is populated from `ISourceRepository.GetCachedSourcesAsync()`
+  on `LoadCommand` and merged (by `SourceId`, never replaced wholesale) with live updates from
+  `IDiscoveryRefreshService.SnapshotReady` (subscribed once in the constructor, unsubscribed in
+  `Dispose()` — same pattern as `OutputStatusChanged`/`AppResumed`); a failed discovery poll is
+  ignored rather than clearing the list. `ShowReStreamSourcePicker`/`ShowReStreamManualEntry` switch
+  between the Picker (`SelectedReStreamSource` → `ReStreamSourceId`) and a free-text Entry fallback
+  for a fresh install with no cached/discovered sources. `ApplyReStreamRequest` (deep link / Sources
+  page Output button) selects the matching list entry, synthesizes a placeholder for an id not yet
+  discovered when the Picker already has other entries, or falls back to the manual-entry Entry when
+  the registry is empty.
 
 ## Settings Feature (Issue #142 — MERGED to main, PR #211)
 - **ViewModel**: `SettingsViewModel` — 5 sections: General, Appearance, Discovery, DeveloperTools, About

@@ -31,6 +31,250 @@ unconditionally. Rule 5's intent is to keep Android APIs out of **Core** and out
 
 ## Verdicts log
 
+<!-- Paste each entry into `.claude/knowledge/architecture.md`'s Verdicts log on that item's own branch. -->
+
+### 2026-09-12 — #343 OUT-08 re-stream source picker (gate)
+
+**APPROVE-WITH-CHANGES.** The data-source choice, the lifetime model and the converter are all
+correct and are the *existing* idioms, not new ones. Three blocking defects, all in
+`ApplyReStreamSources` / `SelectReStreamSourceById` / the Appium smoke test, where the plan's code
+contradicts the plan's own design decisions.
+
+**Verified against the live tree (not taken from the plan):**
+
+- **Lifetime is right and cannot leak or double-fire.** `OutputViewModel` is
+  `AddSingleton` (`MauiProgram.cs:159`), `OutputPage` is `AddSingleton` (`:172`), and both
+  `ISourceRepository` (`:72`) and `IDiscoveryRefreshService` (`:96`) are singletons — **no DI change
+  is needed**. Subscribing once in the constructor and unsubscribing only in the container-owned
+  `Dispose()` is exactly the rule recorded in the 2026-09-07 #352/#359 verdict and restated in the
+  `MauiProgram.cs:147-153` comment. The ViewModel is resolved once per process and
+  `OutputPage.OnAppearing` runs `LoadCommand` (`OutputPage.xaml.cs:34-37`), never re-subscribes, so
+  there is exactly one handler for the process lifetime.
+- **The "already polling continuously" claim is TRUE.** `DiscoveryRefreshService` starts and stops
+  itself from `IAppLifecycleService.AppResumed`/`AppPaused` (`DiscoveryRefreshService.cs:56-57`),
+  not from the Sources page — `SourceListViewModel` only ever calls `Stop()` (`:106`) and
+  `RequestRefresh()` (`:99`). Poll interval is **5 s** (`DiscoveryRefreshService.cs:15`). That
+  number is what makes required change 1 blocking.
+- **Rule 4 holds.** `OnReStreamSourcesSnapshotReady` marshals through
+  `_dispatcher.BeginInvokeOnMainThread`, mirroring `SourceListViewModel.OnSnapshotReady`
+  (`SourceListViewModel.cs:80-91`) and the interface's own "raised on a background thread"
+  contract (`IDiscoveryRefreshService.cs:11-15`).
+- **Rule 1 holds** (repository interface, no SQLite in the ViewModel) and **Rule 3 holds**.
+- **The converter is the right place — do not move display strings into the ViewModel.**
+  `NdiSourceDisplayConverter` is a byte-for-byte parallel of `VideoInputKindDisplayConverter`
+  (`ValueConverters.cs:81`), which the sibling Video Input Picker already uses for
+  `ItemDisplayBinding` (`OutputPage.xaml:61`). This log already records that "a value converter …
+  is the correct usage" for `StaticResource` in a view. A ViewModel-side
+  `ObservableCollection<string>` would need a second collection kept in sync with `SelectedItem`
+  and would break the `SelectedItem`→`NdiSource` round-trip. Registration in `Styles.xaml:148`
+  next to `VideoInputKindDisplayConverter` is correct.
+- **Cross-feature Core dependency (Output → Sources) is established precedent**, not a new
+  boundary: `HomeViewModel` already takes `ISourceRepository` and `IDiscoveryRefreshService`
+  (`HomeViewModel.cs:24,72`). No layering deviation.
+- Baseline references all check out: `OutputViewModel.cs:84` (`_reStreamSourceId`), `:93-114`
+  (ctor), `:231-240` (`ApplyReStreamRequest`), `:283-341` (`StartOutputAsync`, including the silent
+  fall-through to capture mode at `:295-317`), `:370-374` (`Dispose`); `OutputPage.xaml:90-98`;
+  `TestIds.cs:153` + reflection-based `TestIds.All` (`:47`); `A11Y_MAX_VIOLATIONS` budget 12 /
+  measured 10 (`AccessibilityTests.cs:47-50`); `OutputPage.xaml.cs:40-61` awaits `LoadCommand`
+  **before** `ApplyReStreamRequest`, so the preselection ordering the plan depends on is real;
+  `SourceListViewModel.NavigateToOutputAsync:133-150` unchanged.
+
+**Decision on the new validation (design decision 7): KEEP.** `StartOutputAsync` today silently
+falls through to the **capture** branch when `IsReStreamMode && ReStreamSourceId` is empty
+(`OutputViewModel.cs:295,304-317`) — it starts a screen capture and raises the MediaProjection
+consent dialog for a user who asked to re-stream. That is a defect, not a feature, and a Picker
+makes "no selection" a first-class visible state that reaches it far more often. Four lines,
+mirrors the stream-name guard immediately above, Core-testable. Keep item 7 and its test.
+
+**Required changes, ordered:**
+
+1. **`ApplyReStreamSources` must merge, never `Clear()` — and must ignore failure/empty snapshots.**
+   The plan's design decision 2 commits to "cached registry + live discovery, **unioned by
+   identity**", but the code is a wholesale replace. Three consequences, all real:
+   (a) with a 5 s poll the Picker's bound `ItemsSource` is emptied and refilled **every 5 seconds**,
+   which resets the native `SelectedIndex` to −1, pushes `SelectedItem = null` back into the
+   ViewModel and transiently nulls `ReStreamSourceId`; (b) `HasReStreamSources` flips false→true on
+   every poll, so the Picker unloads and the fallback `Entry` flashes in; (c) a single **failed**
+   poll raises `SnapshotReady` with `Sources: Array.Empty` (`DiscoveryRefreshService.cs:164-171`),
+   which would wipe every cached source — precisely the "live-only was rejected" regression the plan
+   says it is avoiding. Replace the whole of `OnReStreamSourcesSnapshotReady` /
+   `ApplyReStreamSources` with:
+
+   ```csharp
+    /// <summary>Raised on a background/pump thread whenever a discovery poll completes — marshal to
+    /// the UI thread before touching <see cref="AvailableReStreamSources"/> (Architecture Rule 4).
+    /// A failed poll carries an empty source list (DiscoveryRefreshService raises a Failure snapshot
+    /// with Array.Empty) and must never be allowed to empty the picker.</summary>
+    private void OnReStreamSourcesSnapshotReady(object? sender, DiscoverySnapshot snapshot)
+    {
+        if (snapshot.Status == DiscoveryStatus.Failure)
+            return;
+
+        _dispatcher.BeginInvokeOnMainThread(() => ApplyReStreamSources(snapshot.Sources));
+    }
+
+    /// <summary>
+    /// Merges <paramref name="sources"/> into <see cref="AvailableReStreamSources"/> by SourceId.
+    /// Deliberately additive: discovery polls every 5 seconds, and clearing a Picker's bound
+    /// ItemsSource resets its SelectedIndex to -1 — which would null SelectedReStreamSource (and
+    /// with it ReStreamSourceId) on every poll. A source that did not answer one poll (weak Wi-Fi,
+    /// source briefly busy) also stays selectable, which is the whole reason this list is a union
+    /// of the cached registry and live discovery rather than the latest snapshot.
+    /// </summary>
+    private void ApplyReStreamSources(IReadOnlyList<NdiSource> sources)
+    {
+        foreach (var source in sources)
+        {
+            var index = IndexOfReStreamSource(source.SourceId);
+            if (index < 0)
+            {
+                AvailableReStreamSources.Add(source);
+            }
+            else if (AvailableReStreamSources[index].LastSeenAtEpochMillis == 0)
+            {
+                // A synthesized raw-id placeholder (LastSeenAtEpochMillis == 0 is only ever set by
+                // SelectReStreamSourceById) has now been discovered for real — swap in the real
+                // entry so the Picker shows its friendly name instead of the raw id.
+                AvailableReStreamSources[index] = source;
+                if (string.Equals(SelectedReStreamSource?.SourceId, source.SourceId, StringComparison.Ordinal))
+                    SelectedReStreamSource = source;
+            }
+        }
+
+        HasReStreamSources = AvailableReStreamSources.Any(s => s.LastSeenAtEpochMillis != 0);
+
+        // A restored/preselected id with no Picker selection yet (first LoadAsync) — point the
+        // selection at it now that the list is populated.
+        if (SelectedReStreamSource is null && !string.IsNullOrWhiteSpace(ReStreamSourceId))
+            SelectReStreamSourceById(ReStreamSourceId);
+    }
+
+    private int IndexOfReStreamSource(string sourceId)
+    {
+        for (var i = 0; i < AvailableReStreamSources.Count; i++)
+        {
+            if (string.Equals(AvailableReStreamSources[i].SourceId, sourceId, StringComparison.Ordinal))
+                return i;
+        }
+
+        return -1;
+    }
+   ```
+
+2. **A synthesized placeholder must not count as "there are sources to pick from".** As written,
+   `SelectReStreamSourceById` sets `HasReStreamSources = true` when it inserts a placeholder. On a
+   **singleton** ViewModel that is permanent: one deep link or one Sources-page "Output" tap, and
+   `ShowReStreamManualEntry` can never be true again for the rest of the process — the free-text
+   `Entry` that design decision 3 exists to preserve becomes unreachable. That matters because
+   typing a bare `host:port` is a *supported* path: `NdiOutputBridge.LooksLikeUrlAddress` routes it
+   to `p_url_address`, and the raw `192.168.0.25:5961` in the ticket's own screenshot is exactly
+   that case — it is how you re-stream a source mDNS cannot see. Replace `SelectReStreamSourceById`
+   with:
+
+   ```csharp
+    /// <summary>
+    /// Points the Picker at the entry matching <paramref name="sourceId"/>. When the picker is the
+    /// visible control but the id is not in it yet — e.g. a source preselected from the Sources
+    /// page's Output button that this view model's cache/snapshot has not reconciled — a
+    /// placeholder showing the raw id is synthesized and selected, so the Picker is never blank for
+    /// a source the user just chose (Nielsen #6). With an empty registry the free-text Entry is the
+    /// visible control instead, so only ReStreamSourceId is set: synthesizing there would flip
+    /// HasReStreamSources and permanently hide the manual-entry fallback on this Singleton VM.
+    /// </summary>
+    private void SelectReStreamSourceById(string? sourceId)
+    {
+        if (string.IsNullOrWhiteSpace(sourceId))
+        {
+            SelectedReStreamSource = null;
+            ReStreamSourceId = null;
+            return;
+        }
+
+        var index = IndexOfReStreamSource(sourceId);
+        if (index >= 0)
+        {
+            SelectedReStreamSource = AvailableReStreamSources[index];
+            return;
+        }
+
+        if (HasReStreamSources)
+        {
+            var placeholder = new NdiSource(sourceId, sourceId, null, IsAvailable: false, LastSeenAtEpochMillis: 0);
+            AvailableReStreamSources.Insert(0, placeholder);
+            SelectedReStreamSource = placeholder;
+            return;
+        }
+
+        // Empty registry: the manual-entry Entry is what is on screen — set the id it binds to.
+        SelectedReStreamSource = null;
+        ReStreamSourceId = sourceId;
+    }
+   ```
+
+   Two unit tests in §4 must change with it, because their expectations encoded the old behaviour:
+   - `ApplyReStreamRequest_SourceNotInList_SynthesizesPlaceholderAndSelectsIt` — with **no** cached
+     sources the expected outcome is now the manual-entry fallback. Rename to
+     `ApplyReStreamRequest_WithNoCachedSources_FallsBackToManualEntryWithTheRawId` and assert:
+     `Assert.Null(sut.SelectedReStreamSource); Assert.Equal("192.168.0.25:5961", sut.ReStreamSourceId);
+     Assert.False(sut.ShowReStreamSourcePicker); Assert.True(sut.ShowReStreamManualEntry);`
+   - Add a new test for the placeholder path proper: seed `GetCachedSourcesAsync` with one source,
+     `await sut.LoadCommand.ExecuteAsync(null)`, then `sut.ApplyReStreamRequest("192.168.0.25:5961", true)`
+     and assert `sut.SelectedReStreamSource?.SourceId == "192.168.0.25:5961"`,
+     `sut.AvailableReStreamSources.Count == 2`, `sut.ShowReStreamSourcePicker`.
+   - `SelectedReStreamSource_SetToNull_ClearsReStreamSourceId` still passes (the
+     `OnSelectedReStreamSourceChanged` partial still nulls the id).
+
+3. **The Appium smoke test does not compile — there is no `WaitUntil` helper.** `UiTestBase`
+   exposes only `Run(Action<NdiApp>, [CallerMemberName] string)` (`UiTestBase.cs:41`); `PageObject`
+   exposes `WaitFor`/`WaitUntilVisible`, not a predicate `WaitUntil`. Replace the block in §5's
+   smoke test with an explicit deadline loop:
+
+   ```csharp
+                app.Output.ToggleReStreamMode();
+
+                var deadline = DateTime.UtcNow + Timeouts.StateChange;
+                while (DateTime.UtcNow < deadline && !app.Output.IsReStreamMode)
+                    Thread.Sleep(250);
+
+                Assert.True(app.Output.IsReStreamMode, "The mode switch did not reach re-stream mode");
+   ```
+
+   Keep the `finally` that restores the previous mode — it is load-bearing, not tidiness: since
+   #352/#359 the Stream tab's state persists for the process lifetime on the Singleton ViewModel,
+   so leaving re-stream mode on would change what every later test in the shared `"AppiumSession"`
+   collection sees on the Stream tab, including `AccessibilityTests`' budget sweep.
+
+4. **Doc edits: locate the anchors by content, not by line number.** §6.1's "after line 236" and
+   §6.2's "after line 112" will have drifted; anchor on the `IOutputConfigurationRepository`
+   persistence paragraph in `docs/architecture.md` and on the "Lifetime (#352/#359)" bullet in
+   `.github/KNOWLEDGE-BASE.md`. Also amend `docs/architecture.md` Navigation rule 4's
+   `reStreamSourceId` sentence to note the id now resolves to a Picker selection.
+
+**Non-blocking:**
+
+5. Give the fallback `Entry` a `SemanticProperties.Description="Re-stream source id"`. It is
+   `Clickable`+`Focusable`, so `AccessibilityAudit.IsInteractive` (`AccessibilityAudit.cs:47`) picks
+   it up whenever re-stream mode happens to be on during the sweep — and per item 3 that state now
+   survives across tests. Cheap insurance against a 13th violation against a budget of 12.
+6. `MinimumHeightRequest="48"` on both new controls is correct and must not be dropped; it is also
+   the right call *not* to fix the two pre-existing touch-target violations on the Stream Name
+   `Entry` / Video Input `Picker` here — those want their own ticket before the budget is ratcheted
+   from 12 down to 10.
+7. Latent, out of scope, do **not** fix here: `ToggleReStreamModeAsync` dereferences
+   `ReStreamSourceId!` (`OutputViewModel.cs:250`) and would NRE with no selection. Unreachable
+   today — `ToggleReStreamModeCommand` is bound nowhere in XAML (`OutputPage.xaml` binds
+   `ToggleOutputModeCommand` and a two-way `IsReStreamMode` Switch); the only callers are
+   `OutputViewModelTests.cs:347,370`. Its own class remarks (`:267-272`) already record why.
+8. The plan's `NdiSource`-record-equality note is accurate and stays true under the merge rewrite.
+
+**Open question for the owner:** the ticket cell is truncated at source ("kee[p]…"). This verdict
+ratifies the plan's reading — free text is the *empty-state fallback*, not a permanently available
+alternate path — and required change 2 is what actually makes that reading true in code. If the
+owner meant "always keep a manual-override toggle even when sources exist", say so before
+implementation; that is a different control, not a tweak.
+
+---
+
 ### 2026-09-06 — #380 flaky `ViscaPtzControllerLoopbackTests` (per-test timeout budgets)
 
 **APPROVE-WITH-CHANGES.** Test-project-only change; no production code, no fake change. The plan is
