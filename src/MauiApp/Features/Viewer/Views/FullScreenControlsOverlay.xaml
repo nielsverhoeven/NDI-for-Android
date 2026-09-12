@@ -9,7 +9,7 @@
         <!-- 8dp spacing matches the d-pad/zoom clusters below (#370 fullscreen-stream-settings-02). -->
         <Grid Margin="16" VerticalOptions="Start" HorizontalOptions="Start"
               RowDefinitions="48,48" ColumnDefinitions="48,48,48,48" RowSpacing="8" ColumnSpacing="8"
-              IsVisible="{Binding IsPtzControlActive}">
+              IsVisible="{Binding IsFullScreenPtzVisible}">
             <Button Grid.Row="0" Grid.Column="0" Text="1" Padding="0" WidthRequest="48" HeightRequest="48"
                     Command="{Binding PtzRecallPresetCommand}" SemanticProperties.Description="Preset 1">
                 <Button.CommandParameter><x:Int32>1</x:Int32></Button.CommandParameter>
@@ -46,20 +46,25 @@
 
         <Border Margin="16,16,16,64" HorizontalOptions="Start" VerticalOptions="End"
                 BackgroundColor="{DynamicResource ScrimBackground}" StrokeShape="RoundRectangle 8"
-                IsVisible="{Binding IsPtzControlActive}">
+                IsVisible="{Binding IsFullScreenPtzVisible}">
             <Grid RowDefinitions="48,48,48" ColumnDefinitions="48,48,48" RowSpacing="8" ColumnSpacing="8" Padding="8">
                 <Button Grid.Row="0" Grid.Column="1" Text="▲" WidthRequest="48" HeightRequest="48" Padding="0"
+                        AutomationId="{x:Static t:TestIds.ViewerPtzUp}"
                         Command="{Binding PtzNudgeCommand}" CommandParameter="up"
                         SemanticProperties.Description="Pan up" />
                 <Button Grid.Row="1" Grid.Column="0" Text="◄" WidthRequest="48" HeightRequest="48" Padding="0"
+                        AutomationId="{x:Static t:TestIds.ViewerPtzLeft}"
                         Command="{Binding PtzNudgeCommand}" CommandParameter="left"
                         SemanticProperties.Description="Pan left" />
                 <Button Grid.Row="1" Grid.Column="1" Text="AF" WidthRequest="48" HeightRequest="48" Padding="0"
+                        AutomationId="{x:Static t:TestIds.ViewerPtzAutoFocus}"
                         Command="{Binding PtzAutoFocusCommand}" SemanticProperties.Description="Autofocus" />
                 <Button Grid.Row="1" Grid.Column="2" Text="►" WidthRequest="48" HeightRequest="48" Padding="0"
+                        AutomationId="{x:Static t:TestIds.ViewerPtzRight}"
                         Command="{Binding PtzNudgeCommand}" CommandParameter="right"
                         SemanticProperties.Description="Pan right" />
                 <Button Grid.Row="2" Grid.Column="1" Text="▼" WidthRequest="48" HeightRequest="48" Padding="0"
+                        AutomationId="{x:Static t:TestIds.ViewerPtzDown}"
                         Command="{Binding PtzNudgeCommand}" CommandParameter="down"
                         SemanticProperties.Description="Pan down" />
             </Grid>
@@ -67,18 +72,20 @@
 
         <Border Margin="16,16,16,64" HorizontalOptions="End" VerticalOptions="End"
                 BackgroundColor="{DynamicResource ScrimBackground}" StrokeShape="RoundRectangle 8"
-                IsVisible="{Binding IsPtzControlActive}">
+                IsVisible="{Binding IsFullScreenPtzVisible}">
             <VerticalStackLayout Spacing="8" Padding="8">
                 <Button Text="T" WidthRequest="48" HeightRequest="48" Padding="0"
+                        AutomationId="{x:Static t:TestIds.ViewerPtzZoomIn}"
                         Command="{Binding PtzZoomNudgeCommand}" CommandParameter="in"
                         SemanticProperties.Description="Zoom in" />
                 <Button Text="W" WidthRequest="48" HeightRequest="48" Padding="0"
+                        AutomationId="{x:Static t:TestIds.ViewerPtzZoomOut}"
                         Command="{Binding PtzZoomNudgeCommand}" CommandParameter="out"
                         SemanticProperties.Description="Zoom out" />
             </VerticalStackLayout>
         </Border>
 
-        <Grid VerticalOptions="End" HeightRequest="48" ColumnDefinitions="*,48,48,48,Auto,48"
+        <Grid VerticalOptions="End" HeightRequest="48" ColumnDefinitions="*,48,48,48,48,Auto,48"
               ColumnSpacing="8" Padding="8,0" BackgroundColor="{DynamicResource ScrimBackground}">
             <VerticalStackLayout Grid.Column="0" Spacing="0" VerticalOptions="Center">
                 <Label Text="{Binding PtzStatusText}" FontSize="11" LineBreakMode="TailTruncation"
@@ -104,14 +111,28 @@
                        IsVisible="{Binding ConnectionHint, Converter={StaticResource IsNotNullConverter}}" />
             </VerticalStackLayout>
 
-            <Button Grid.Column="1" Text="{Binding QualityProfileShortLabel}" WidthRequest="48" HeightRequest="48" Padding="0" FontSize="12"
+            <Button Grid.Column="1" Text="📷" WidthRequest="48" HeightRequest="48" Padding="0"
+                    AutomationId="{x:Static t:TestIds.ViewerFullScreenCamera}"
+                    Command="{Binding TogglePtzLayerCommand}"
+                    IsVisible="{Binding IsPtzControlActive}"
+                    SemanticProperties.Description="Show camera controls">
+                <!-- State-dependent name (#343/#345 idiom), same shape as the full-screen toggle below. -->
+                <Button.Triggers>
+                    <DataTrigger TargetType="Button" Binding="{Binding IsPtzLayerVisible}" Value="True">
+                        <Setter Property="SemanticProperties.Description" Value="Hide camera controls" />
+                    </DataTrigger>
+                </Button.Triggers>
+            </Button>
+
+            <Button Grid.Column="2" Text="{Binding QualityProfileShortLabel}" WidthRequest="48" HeightRequest="48" Padding="0" FontSize="12"
                     AutomationId="{x:Static t:TestIds.ViewerQualityCycle}"
                     Command="{Binding CycleQualityProfileCommand}"
                     SemanticProperties.Description="{Binding QualityProfileCycleDescription}" />
 
-            <Switch Grid.Column="2" IsToggled="{Binding IsAudioEnabled}" WidthRequest="48" HeightRequest="48"
+            <Switch Grid.Column="3" IsToggled="{Binding IsAudioEnabled}" WidthRequest="48" HeightRequest="48"
+                    AutomationId="{x:Static t:TestIds.ViewerAudioToggle}"
                     SemanticProperties.Description="Audio" />
-            <Button Grid.Column="3" Text="⛶" Command="{Binding ToggleFullScreenCommand}" WidthRequest="48" HeightRequest="48" Padding="0"
+            <Button Grid.Column="4" Text="⛶" Command="{Binding ToggleFullScreenCommand}" WidthRequest="48" HeightRequest="48" Padding="0"
                     AutomationId="{x:Static t:TestIds.ViewerFullScreenToggle}"
                     SemanticProperties.Description="Enter full screen">
                 <!-- State-dependent name (#343/#345): announces what tapping it will do next,
@@ -123,10 +144,11 @@
                     </DataTrigger>
                 </Button.Triggers>
             </Button>
-            <Button Grid.Column="4" Text="Stop" Command="{Binding StopCommand}" FontSize="12" Padding="10,4" HeightRequest="48" MinimumWidthRequest="72"
+            <Button Grid.Column="5" Text="Stop" Command="{Binding StopCommand}" FontSize="12" Padding="10,4" HeightRequest="48" MinimumWidthRequest="72"
                     VerticalOptions="Center"
+                    AutomationId="{x:Static t:TestIds.ViewerStop}"
                     BackgroundColor="{DynamicResource ErrorFill}" TextColor="{DynamicResource OnPrimary}" />
-            <Button Grid.Column="5" Text="⋮" Command="{Binding OpenPtzEndpointFormCommand}" WidthRequest="48" HeightRequest="48" Padding="0"
+            <Button Grid.Column="6" Text="⋮" Command="{Binding OpenPtzEndpointFormCommand}" WidthRequest="48" HeightRequest="48" Padding="0"
                     SemanticProperties.Description="More options" />
         </Grid>
     </Grid>

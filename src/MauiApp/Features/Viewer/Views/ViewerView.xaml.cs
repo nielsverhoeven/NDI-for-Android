@@ -1,6 +1,5 @@
 using System.ComponentModel;
 using System.Runtime.InteropServices;
-using Microsoft.Extensions.DependencyInjection;
 using NdiForAndroid.Features.Viewer;
 using NdiForAndroid.Features.Viewer.ViewModels;
 using NdiForAndroid.NdiBridge;
@@ -17,19 +16,6 @@ namespace NdiForAndroid.Features.Viewer.Views;
 /// </summary>
 public partial class ViewerView : ContentView
 {
-    /// <summary>
-    /// True for the <see cref="ViewerView"/> embedded in <see cref="FullScreenViewerPage"/>,
-    /// so it never itself presents a nested full-screen modal.
-    /// </summary>
-    public static readonly BindableProperty IsModalHostProperty =
-        BindableProperty.Create(nameof(IsModalHost), typeof(bool), typeof(ViewerView), false);
-
-    public bool IsModalHost
-    {
-        get => (bool)GetValue(IsModalHostProperty);
-        set => SetValue(IsModalHostProperty, value);
-    }
-
     // Rendering plumbing only (allowed in code-behind): a ~30 fps pull loop that
     // invalidates the canvas when the bridge has produced a newer frame, and a
     // paint handler that blits the ARGB int[] into a reusable SKBitmap.
@@ -39,7 +25,6 @@ public partial class ViewerView : ContentView
     private SKBitmap? _frameBitmap;
 
     private ViewerViewModel? _boundViewModel;
-    private bool _presentingFullScreen;
 
     public ViewerView()
     {
@@ -69,9 +54,9 @@ public partial class ViewerView : ContentView
     }
 
     /// <summary>
-    /// Full teardown for a modal-host instance once its <see cref="FullScreenViewerPage"/> has
-    /// been popped: releases the render timer, detaches from the bound ViewModel, clears
-    /// BindingContext, and releases the frame bitmap.
+    /// Full teardown once the host page showing this instance has actually left the nav stack:
+    /// releases the render timer, detaches from the bound ViewModel, clears BindingContext, and
+    /// releases the frame bitmap.
     /// </summary>
     public void Teardown()
     {
@@ -114,9 +99,7 @@ public partial class ViewerView : ContentView
         var isFullScreen = _boundViewModel?.IsFullScreen ?? false;
         var layout = ViewerControlLayout.Choose(Width, Height);
 
-        // IsFullScreen is shared VM state, so the donor instance sees it too; only the
-        // modal host may show the full-screen overlay.
-        Overlay.IsVisible = isFullScreen && IsModalHost;
+        Overlay.IsVisible = isFullScreen;
         Deck.IsVisible = !isFullScreen && layout == ViewerControlLayoutKind.Deck;
         Sheet.IsVisible = !isFullScreen && layout == ViewerControlLayoutKind.Sheet;
 
@@ -126,7 +109,7 @@ public partial class ViewerView : ContentView
             VideoCanvas.HeightRequest = videoHeight;
     }
 
-    private async void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName == nameof(ViewerViewModel.IsFullScreen))
             UpdateLayoutVisibility();
@@ -142,41 +125,6 @@ public partial class ViewerView : ContentView
             _lastRenderedTimestamp = -1;
             VideoCanvas.InvalidateSurface();
         }
-
-        if (IsModalHost) return;
-        if (e.PropertyName != nameof(ViewerViewModel.IsFullScreen)) return;
-        if (BindingContext is not ViewerViewModel vm || !vm.IsFullScreen) return;
-        if (_presentingFullScreen) return;
-
-        _presentingFullScreen = true;
-        try
-        {
-            await PresentFullScreenAsync(vm);
-        }
-        catch
-        {
-            vm.IsFullScreen = false;
-            StartRendering();
-        }
-        finally
-        {
-            _presentingFullScreen = false;
-        }
-    }
-
-    private async Task PresentFullScreenAsync(ViewerViewModel vm)
-    {
-        StopRendering(); // explicit hand-off — page lifecycle is not reliable under a modal push
-        var factory = IPlatformApplication.Current?.Services.GetService<Func<FullScreenViewerPage>>();
-        if (factory is null || Shell.Current is null)
-        {
-            StartRendering();
-            return;
-        }
-
-        var page = factory();
-        page.Initialize(vm, onClosed: StartRendering);
-        await Shell.Current.Navigation.PushModalAsync(page);
     }
 
     private void OnRenderTick(object? sender, EventArgs e)

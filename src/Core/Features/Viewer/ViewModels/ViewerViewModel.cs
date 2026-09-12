@@ -39,6 +39,7 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
     private readonly IPtzControllerFactory _ptzControllerFactory;
     private readonly IImmersiveModeService _immersiveMode;
     private readonly IScreenReaderAnnouncer _announcer;
+    private readonly IOrientationLockService _orientationLock;
 
     [ObservableProperty]
     private string? _sourceId;
@@ -142,7 +143,8 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
         IPtzControllerFactory ptzControllerFactory,
         PtzEndpointFormViewModel ptzEndpointForm,
         IImmersiveModeService immersiveMode,
-        IScreenReaderAnnouncer announcer)
+        IScreenReaderAnnouncer announcer,
+        IOrientationLockService orientationLock)
     {
         _bridge = bridge;
         _timeProvider = timeProvider;
@@ -155,12 +157,15 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
         PtzEndpointForm = ptzEndpointForm;
         _immersiveMode = immersiveMode;
         _announcer = announcer;
+        _orientationLock = orientationLock;
         RetryRemainingSeconds = ReconnectConstants.RetryWindowSeconds;
         StatusMessage = "Select a source on Home to start viewing.";
         _isAudioEnabled = bridge.IsAudioEnabled; // backing field: don't push the default back to the bridge
         SyncSelectedProfileOption(); // field initialisers do not fire OnQualityProfileChanged
 
         _lifecycle.AppResumed += OnAppResumed;
+        _lifecycle.AppPaused += OnAppPaused;
+        _lifecycle.OrientationChanged += OnOrientationChanged;
         _bridge.ConnectionStateChanged += OnBridgeConnectionStateChanged;
         _bridge.TallyEchoChanged += OnBridgeTallyEchoChanged;
         PtzEndpointForm.EndpointSaved += OnPtzEndpointSaved;
@@ -329,11 +334,11 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
     private void Stop()
     {
         _userInitiatedStop = true;
-        IsFullScreen = false;
         DisposeTimers();
         _reconnectState = ReconnectState.Idle;
         _bridge.SetTally(onProgram: false, onPreview: false);
         _bridge.StopReceiver();
+        BeginExitFullScreen();
 
         // Record disconnection for history tracking
         _connectionHistory.RecordDisconnectedAsync().FireAndForget();
@@ -361,8 +366,11 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
         _immersiveMode.KeepScreenOn(false);
         _userInitiatedStop = true;
         _lifecycle.AppResumed -= OnAppResumed;
+        _lifecycle.AppPaused -= OnAppPaused;
+        _lifecycle.OrientationChanged -= OnOrientationChanged;
         _bridge.ConnectionStateChanged -= OnBridgeConnectionStateChanged;
         _bridge.TallyEchoChanged -= OnBridgeTallyEchoChanged;
+        ForceExitFullScreen();
         DisposePtz();
     }
 

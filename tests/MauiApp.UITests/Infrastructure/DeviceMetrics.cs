@@ -68,6 +68,34 @@ public sealed class DeviceMetrics
         }
     }
 
+    /// <summary>
+    /// The device's short edge in dp — Android's own phone/tablet discriminator
+    /// (<c>Configuration.SmallestScreenWidthDp</c>, sw600dp), mirrored for the test side so a
+    /// compact-device-only assertion can skip on a tablet. Read from the *real* display size, not
+    /// from the app window: the window can exclude system decorations, and the Tab A9+ sits on the
+    /// 600 dp boundary where that difference decides the answer.
+    /// </summary>
+    public double SmallestWidthDp
+    {
+        get
+        {
+            var info = Invoke("mobile: deviceInfo");
+
+            if (info is Dictionary<string, object> map &&
+                map.TryGetValue("realDisplaySize", out var size) &&
+                size?.ToString() is { } text &&
+                text.Split('x') is [var first, var second] &&
+                int.TryParse(first, out var width) && int.TryParse(second, out var height))
+            {
+                return Math.Min(width, height) / Density;
+            }
+
+            throw new InvalidOperationException(
+                $"'mobile: deviceInfo' returned no usable realDisplaySize (got: {Describe(info)}). " +
+                "The compact-device skip guard cannot run without it.");
+        }
+    }
+
     /// <summary>Converts density-independent units to physical pixels.</summary>
     public int ToPixels(double dp) => (int)Math.Round(dp * Density);
 

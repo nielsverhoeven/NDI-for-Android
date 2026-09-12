@@ -100,4 +100,32 @@ public class ViewerControlLayoutTests
         Assert.True(video + ViewerControlLayout.VideoBorderStrokeDp + peek <= contentHeightDp + 0.001,
                     $"video {video} + stroke + peek {peek} exceeds host {contentHeightDp}");
     }
+
+    [Theory]
+    [InlineData(0, false)]
+    [InlineData(359, true)]
+    [InlineData(360, true)]
+    [InlineData(599, true)]
+    [InlineData(600, false)]
+    [InlineData(601, false)]
+    [InlineData(800, false)]
+    public void IsCompactDevice_ReturnsExpected(double smallestWidthDp, bool expected)
+    {
+        var result = ViewerControlLayout.IsCompactDevice(smallestWidthDp);
+
+        Assert.Equal(expected, result);
+    }
+
+    [Fact]
+    public void ExistingLayoutFormulas_AreUnchangedByTheCompactDeviceAddition()
+    {
+        // Pinned pre-#384-slice-3 values — IsCompactDevice is purely additive and must never
+        // alter any existing Choose/sheet/video formula.
+        Assert.Equal(640, ViewerControlLayout.MinDeckWidthDp);
+        Assert.Equal(470, ViewerControlLayout.MinDeckHeightDp);
+        Assert.Equal(ViewerControlLayoutKind.Deck, ViewerControlLayout.Choose(640, 470));
+        Assert.Equal(ViewerControlLayoutKind.Sheet, ViewerControlLayout.Choose(639, 470));
+        Assert.Equal(-1, ViewerControlLayout.ChooseVideoHeightDp(608, ViewerControlLayoutKind.Sheet, isFullScreen: true));
+        Assert.Equal(240, ViewerControlLayout.ChooseVideoHeightDp(1168, ViewerControlLayoutKind.Deck, isFullScreen: false), 3);
+    }
 }

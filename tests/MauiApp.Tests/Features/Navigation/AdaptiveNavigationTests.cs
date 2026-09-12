@@ -231,6 +231,46 @@ public sealed class AdaptiveShellStateViewModelTests
         Assert.True(sut.IsLeftRailNavigationVisible);
     }
 
+    // Locks the #384 decision: IsBottomNavigationVisible/IsLeftRailNavigationVisible are pure
+    // PlacementMode queries. ShellNavigationService.TryGetRouteForCurrentPlacement selects the
+    // -rail vs -tab route table from IsLeftRailNavigationVisible, so folding IsChromeSuppressed
+    // into it would resolve the wrong route family while full screen is active. Do not "simplify"
+    // these assertions to expect suppression to force the visibility flags false.
+    [Fact]
+    public void IsChromeSuppressed_SetAndCleared_DoesNotAffectPlacementModeOrDerivedVisibility()
+    {
+        var policy = new FakeNavigationPolicyService(NavigationPlacementMode.LeftRail);
+        var sut = new AdaptiveShellStateViewModel(policy);
+
+        sut.IsChromeSuppressed = true;
+
+        Assert.True(sut.IsChromeSuppressed);
+        Assert.Equal(NavigationPlacementMode.LeftRail, sut.PlacementMode);
+        Assert.False(sut.IsBottomNavigationVisible);
+        Assert.True(sut.IsLeftRailNavigationVisible);
+
+        sut.IsChromeSuppressed = false;
+
+        Assert.False(sut.IsChromeSuppressed);
+        Assert.Equal(NavigationPlacementMode.LeftRail, sut.PlacementMode);
+        Assert.True(sut.IsLeftRailNavigationVisible);
+    }
+
+    [Fact]
+    public void IsChromeSuppressed_Set_RaisesPropertyChangedForItselfOnly()
+    {
+        var policy = new FakeNavigationPolicyService(NavigationPlacementMode.Bottom);
+        var sut = new AdaptiveShellStateViewModel(policy);
+        var raised = new List<string?>();
+        sut.PropertyChanged += (_, e) => raised.Add(e.PropertyName);
+
+        sut.IsChromeSuppressed = true;
+
+        Assert.Contains(nameof(AdaptiveShellStateViewModel.IsChromeSuppressed), raised);
+        Assert.DoesNotContain(nameof(AdaptiveShellStateViewModel.IsBottomNavigationVisible), raised);
+        Assert.DoesNotContain(nameof(AdaptiveShellStateViewModel.IsLeftRailNavigationVisible), raised);
+    }
+
     private sealed class FakeNavigationPolicyService : INavigationPolicyService
     {
         public FakeNavigationPolicyService(NavigationPlacementMode currentPlacement)

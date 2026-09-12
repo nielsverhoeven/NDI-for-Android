@@ -42,8 +42,7 @@
                 </Style>
             </Border.Style>
             <Border.GestureRecognizers>
-                <TapGestureRecognizer NumberOfTapsRequired="1" Command="{Binding ShowControlsOverlayCommand}" />
-                <TapGestureRecognizer NumberOfTapsRequired="2" Command="{Binding ToggleFullScreenCommand}" />
+                <TapGestureRecognizer NumberOfTapsRequired="1" Command="{Binding ToggleControlsOverlayCommand}" />
             </Border.GestureRecognizers>
             <Grid>
                 <!-- ~16:9 video area; frames are letterboxed by the paint handler. -->
@@ -101,7 +100,8 @@
 
         <views:ViewerControlDeck x:Name="Deck" Grid.Row="1" />
         <views:ViewerControlSheet x:Name="Sheet" Grid.RowSpan="2" />
-        <views:FullScreenControlsOverlay x:Name="Overlay" Grid.RowSpan="2" />
+        <views:FullScreenControlsOverlay x:Name="Overlay" Grid.RowSpan="2"
+                                          AutomationId="{x:Static t:TestIds.ViewerFullScreenOverlay}" />
 
         <views:PtzEndpointPanel Grid.RowSpan="2" />
     </Grid>
