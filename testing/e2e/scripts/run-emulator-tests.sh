@@ -44,17 +44,24 @@ fi
 # Extra settle time so the launcher and system services are stable
 sleep 5
 
-# Device font scale, applied before install so the app picks it up on first launch. Set
-# unconditionally: /data is restored from the actions/cache AVD entry, so a previous leg's
-# non-default font_scale would otherwise persist into this run.
+# Device font scale, applied before install so the app picks it up on first launch. Checked
+# rather than written unconditionally: /data is restored from the actions/cache AVD entry, so a
+# previous leg's non-default font_scale must still be corrected on a shared cache key, but writing
+# (and settling after) an already-correct value on every run would needlessly perturb a warm AVD.
 FONT_SCALE="${E2E_FONT_SCALE:-1.0}"
-echo "Setting device font scale to $FONT_SCALE"
-adb shell settings put system font_scale "$FONT_SCALE"
+CURRENT_FONT_SCALE=$(adb shell settings get system font_scale | tr -d '\r')
+if [[ "$CURRENT_FONT_SCALE" != "$FONT_SCALE" ]]; then
+  echo "Setting device font scale to $FONT_SCALE (was '$CURRENT_FONT_SCALE')"
+  adb shell settings put system font_scale "$FONT_SCALE"
 
-# Settle time: the font_scale write above broadcasts a config change that forces every window,
-# including the launcher's, to re-inflate — installing/launching immediately into that raced the
-# launcher into a SurfaceFlinger stall ("Quickstep isn't responding") that then blocked every test.
-sleep 5
+  # Settle time: the write above broadcasts a config change that forces every window, including
+  # the launcher's, to re-inflate — installing/launching immediately into that reflow raced the
+  # launcher into a SurfaceFlinger stall ("Quickstep isn't responding") on a fresh AVD, which then
+  # blocked every test for the rest of the run.
+  sleep 5
+else
+  echo "font scale already $FONT_SCALE"
+fi
 
 # Continuous logcat capture, started before install so nothing from app startup is missed.
 # `adb logcat -d` at the end of a run reads a 256K-ish ring buffer that UiAutomator2 fills with a
