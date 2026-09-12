@@ -26,6 +26,16 @@ public partial class AppShell : Shell
     private PrimaryNavDestination _currentPrimaryDestination = PrimaryNavDestination.Home;
     private bool _handoffInProgress;
 
+    /// <summary>
+    /// Set when <see cref="ApplyPlacement"/> was asked to hide <c>PrimaryTabBar</c> while a page was
+    /// pushed or a modal was open and therefore skipped the chrome swap (#393). Hiding the current
+    /// <c>ShellItem</c> makes Shell re-point to the first visible one, and a pushed page has no
+    /// equivalent route under the rail's independent <c>ShellItem</c> family — so the eviction can
+    /// never be reconciled afterwards and the swap must be deferred, not undone. Re-applied from
+    /// <see cref="OnShellNavigated"/> once the section stack is back at its root.
+    /// </summary>
+    private bool _placementSwapDeferred;
+
     private readonly Dictionary<PrimaryNavDestination, (Border Container, Label Label, Path Icon)> _railButtons = [];
 
     /// <summary>Rendered edge length of a rail icon, in device-independent units.</summary>
@@ -233,14 +243,34 @@ public partial class AppShell : Shell
 
     private void ApplyPlacement()
     {
+        // Cleared before the flip below, never after: hiding PrimaryTabBar can drive Shell's
+        // fallback navigation to completion synchronously, re-entering OnShellNavigated before
+        // this method returns.
+        _placementSwapDeferred = false;
+
         if (_stateViewModel.IsLeftRailNavigationVisible)
         {
-            FlyoutBehavior         = FlyoutBehavior.Locked;
+            // Hiding PrimaryTabBar while it is still Shell.CurrentItem makes Shell fall back to the
+            // first visible ShellItem (always HomeRailItem) — a navigation that cannot be stopped
+            // once IsVisible flips. A pushed page, or an open #338 modal, has no equivalent route
+            // under the rail's independent ShellItem family, so that eviction cannot be reconciled
+            // afterwards: defer the whole swap and let OnShellNavigated re-apply it once the page is
+            // popped. Only a true -> false transition can evict anything, so this is evaluated
+            // against the bar's current state, and the guard reads the *pre-swap* section — the one
+            // the pushed page actually lives in.
+            if (PrimaryTabBar.IsVisible
+                && (Navigation?.NavigationStack?.Count > 1 || Navigation?.ModalStack?.Count > 0))
+            {
+                _placementSwapDeferred = true;
+                return;
+            }
+
+            FlyoutBehavior          = FlyoutBehavior.Locked;
             PrimaryTabBar.IsVisible = false;
         }
         else
         {
-            FlyoutBehavior         = FlyoutBehavior.Disabled;
+            FlyoutBehavior          = FlyoutBehavior.Disabled;
             PrimaryTabBar.IsVisible = true;
         }
 
@@ -251,8 +281,13 @@ public partial class AppShell : Shell
 
     private async void OnRailItemSelected(object? sender, PrimaryNavDestination destination)
     {
-        if (TryGetRouteForCurrentPlacement(destination, out var route))
-            await GoToAsync(route);
+        if (!TryGetRouteForCurrentPlacement(destination, out var route))
+            return;
+
+        _navigationService.BeginExplicitNavigation();
+        try { await GoToAsync(route); }
+        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"Rail navigation failed: {ex}"); }
+        finally { _navigationService.EndExplicitNavigation(); }
     }
 
     protected override void OnNavigating(ShellNavigatingEventArgs args)
@@ -265,6 +300,12 @@ public partial class AppShell : Shell
             return;
 
         if (args.Cancelled)
+            return;
+
+        // Shell's own unsolicited item fallback (#393) — chrome plumbing, not a destination change:
+        // no handoff. See ShellNavigationService.IsExplicitNavigationInProgress.
+        if (args.Source == ShellNavigationSource.ShellItemChanged
+            && !_navigationService.IsExplicitNavigationInProgress)
             return;
 
         var to = ParseDestination(args.Target?.Location?.OriginalString);
@@ -302,6 +343,20 @@ public partial class AppShell : Shell
 
     private async void OnShellNavigated(object? sender, ShellNavigatedEventArgs e)
     {
+        // Shell's own unsolicited item fallback (#393): reconcile back to the destination that was
+        // actually selected instead of adopting wherever Shell fell back to, and never run the
+        // handoff or overwrite SelectedDestination for it. The rail keeps highlighting the real
+        // selection, so the fallback is never visible as a selection change.
+        // See ShellNavigationService.IsExplicitNavigationInProgress.
+        if (e.Source == ShellNavigationSource.ShellItemChanged
+            && !_navigationService.IsExplicitNavigationInProgress)
+        {
+            UpdateRailHighlight(_stateViewModel.SelectedDestination);
+            _appearanceService.ReapplyChrome();
+            Dispatcher.Dispatch(async () => await EnsurePrimaryDestinationVisibleAsync());
+            return;
+        }
+
         var to = ParseDestination(e.Current.Location.OriginalString) ?? _currentPrimaryDestination;
 
         if (to != _currentPrimaryDestination)
@@ -325,7 +380,16 @@ public partial class AppShell : Shell
         _appearanceService.ReapplyChrome();
 
         if (Navigation?.NavigationStack?.Count <= 1)
-            Dispatcher.Dispatch(async () => await EnsurePrimaryDestinationVisibleAsync());
+        {
+            // A rotation while a page was pushed (or a modal was open) deferred the chrome swap in
+            // ApplyPlacement (#393); the guard has just cleared, so apply the placement the device
+            // actually has now. ApplyPlacement dispatches the reconciliation itself, so this is an
+            // either/or — dispatching both would queue a redundant second pass.
+            if (_placementSwapDeferred && Navigation?.ModalStack?.Count is not > 0)
+                ApplyPlacement();
+            else
+                Dispatcher.Dispatch(async () => await EnsurePrimaryDestinationVisibleAsync());
+        }
     }
 
     private static string? LastSegment(string? location)
@@ -361,7 +425,9 @@ public partial class AppShell : Shell
         var currentSegment = LastSegment(CurrentState?.Location?.OriginalString);
         if (string.Equals(currentSegment, route.Trim('/'), StringComparison.OrdinalIgnoreCase)) return;
 
+        _navigationService.BeginExplicitNavigation();
         try { await GoToAsync(route); }
         catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"Placement reconciliation failed: {ex}"); }
+        finally { _navigationService.EndExplicitNavigation(); }
     }
 }
