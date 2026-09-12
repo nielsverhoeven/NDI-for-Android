@@ -25,7 +25,9 @@ public sealed class PermissionAppiumDriverFixture : AppiumDriverFixture
     /// does for a mid-session restart. The very first launch of a freshly-installed app
     /// immediately shows the POST_NOTIFICATIONS dialog; dismissing it here, once, before any test
     /// runs, gives every test a known starting point — each test still does its own
-    /// revoke-then-restart cycle regardless of what this leaves behind.
+    /// revoke-then-restart cycle regardless of what this leaves behind. A broken baseline must
+    /// fail the whole collection loudly rather than leak an undismissed dialog into the first test,
+    /// so neither step here swallows a failure.
     /// </summary>
     protected override Task AfterDriverCreatedAsync()
     {
@@ -33,16 +35,12 @@ public sealed class PermissionAppiumDriverFixture : AppiumDriverFixture
             return Task.CompletedTask;
 
         var app = new NdiApp(Driver);
-        app.TryRestartExpectingPermissionPrompt();
+        if (!app.TryRestartExpectingPermissionPrompt())
+            throw new InvalidOperationException(
+                "The permission-flow session's initial launch never reached our own UI or the " +
+                "system permission dialog.");
 
-        try
-        {
-            app.RespondToPermissionDialog(allow: false, TimeSpan.FromSeconds(10));
-        }
-        catch
-        {
-            // No dialog appeared within the window — nothing to dismiss.
-        }
+        app.RespondToPermissionDialog(allow: false);
 
         return Task.CompletedTask;
     }

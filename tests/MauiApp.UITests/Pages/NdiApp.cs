@@ -1,5 +1,6 @@
 using OpenQA.Selenium;
 using OpenQA.Selenium.Appium.Android;
+using OpenQA.Selenium.Interactions;
 using OpenQA.Selenium.Support.UI;
 using NdiForAndroid.UITests.Infrastructure;
 
@@ -369,32 +370,104 @@ public sealed class NdiApp
     /// <summary>
     /// Taps the system runtime-permission dialog's Allow or Deny button. The dialog belongs to
     /// <c>com.android.permissioncontroller</c>, not our app, so this is a fully-qualified resource
-    /// id rather than a <c>TestIds</c> automation id.
+    /// id rather than a <c>TestIds</c> automation id. The deny id varies by how many times the
+    /// permission has already been asked — this AVD image renders
+    /// <c>permission_deny_and_dont_ask_again_button</c> once a prior ask exists; the plain
+    /// <c>permission_deny_button</c> is tried as a fallback for an image that still has it.
     /// </summary>
     public void RespondToPermissionDialog(bool allow, TimeSpan? timeout = null)
     {
         const string permissionControllerPackage = "com.android.permissioncontroller";
-        var buttonId = allow
+        var primaryId = allow
             ? $"{permissionControllerPackage}:id/permission_allow_button"
-            : $"{permissionControllerPackage}:id/permission_deny_button";
+            : $"{permissionControllerPackage}:id/permission_deny_and_dont_ask_again_button";
+        var fallbackId = $"{permissionControllerPackage}:id/permission_deny_button";
 
         var wait = new WebDriverWait(_driver, timeout ?? Timeouts.Element);
+        var buttonId = primaryId;
         IWebElement? button;
         try
         {
-            button = wait.Until(_ => _driver
-                .FindElements(By.Id(buttonId))
-                .FirstOrDefault(SafeDisplayed));
+            button = wait.Until(_ =>
+            {
+                var match = _driver.FindElements(By.Id(primaryId)).FirstOrDefault(SafeDisplayed);
+                if (match is not null)
+                {
+                    buttonId = primaryId;
+                    return match;
+                }
+
+                if (allow)
+                    return null;
+
+                match = _driver.FindElements(By.Id(fallbackId)).FirstOrDefault(SafeDisplayed);
+                if (match is not null)
+                    buttonId = fallbackId;
+
+                return match;
+            });
         }
         catch (WebDriverTimeoutException)
         {
             throw new WebDriverTimeoutException(
                 $"The system permission dialog's '{(allow ? "Allow" : "Don't allow")}' button " +
-                $"('{buttonId}') never appeared within {(timeout ?? Timeouts.Element).TotalSeconds:0}s. " +
+                $"('{primaryId}'{(allow ? "" : $", or fallback '{fallbackId}'")}) never appeared " +
+                $"within {(timeout ?? Timeouts.Element).TotalSeconds:0}s. " +
                 $"Current foreground package: '{ForegroundPackage}'.");
         }
 
-        button!.Click();
+        // A single Click() can silently miss a dialog still settling — verify the button actually
+        // leaves the tree afterwards, alternating a direct click and a pointer tap at its centre.
+        const int maxAttempts = 4;
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            try
+            {
+                if (attempt % 2 == 1)
+                    button!.Click();
+                else
+                    TapAtCentre(button!);
+            }
+            catch (StaleElementReferenceException)
+            {
+                // The dialog may have already dismissed between the find and the tap.
+            }
+
+            var deadline = DateTime.UtcNow + Timeouts.StateChange;
+            IWebElement? stillThere;
+            do
+            {
+                stillThere = _driver.FindElements(By.Id(buttonId)).FirstOrDefault(SafeDisplayed);
+                if (stillThere is null)
+                    return;
+
+                Thread.Sleep(250);
+            } while (DateTime.UtcNow < deadline);
+
+            button = stillThere;
+        }
+
+        throw new InvalidOperationException(
+            $"'{buttonId}' did not disappear after {maxAttempts} tap attempts (alternating a " +
+            "direct click and a pointer tap at its centre) — the system permission dialog is not " +
+            "responding to synthetic input.");
+    }
+
+    private void TapAtCentre(IWebElement element)
+    {
+        var location = element.Location;
+        var size = element.Size;
+        var x = location.X + size.Width / 2;
+        var y = location.Y + size.Height / 2;
+
+        var touch = new PointerInputDevice(PointerKind.Touch, "finger");
+        var sequence = new ActionSequence(touch, 0);
+
+        sequence.AddAction(touch.CreatePointerMove(CoordinateOrigin.Viewport, x, y, TimeSpan.Zero));
+        sequence.AddAction(touch.CreatePointerDown(MouseButton.Touch));
+        sequence.AddAction(touch.CreatePointerUp(MouseButton.Touch));
+
+        _driver.PerformActions([sequence]);
     }
 
     /// <summary>
