@@ -239,244 +239,29 @@ jobs:
         run: rm -f "$RUNNER_TEMP/release.keystore" "$RUNNER_TEMP/certs.txt"
 
   # ════════════════════════════════════════════════════════════════════════════
-  # E2E — runs on PRs into main and on main itself.
+  # E2E — runs on PRs into main and on main itself. Delegates to e2e-reusable.yml
+  # so this job and emulator-tests.yml cannot drift again.
   #
-  # The suite must be able to fail: E2E_REQUIRE_DEVICE makes AppiumDriverFixture throw on an
-  # unavailable session instead of skipping, and the runner script asserts a non-zero passed
-  # count. Before that, an all-skipped run exited 0 and the gate reported success.
+  # This is a `uses:` call, so its required status checks are no longer a single
+  # "Run Emulator UI Tests" — GitHub reports one check per job in the called
+  # workflow: "Run Emulator UI Tests / Build Android APK" and
+  # "Run Emulator UI Tests / Android Emulator UI Tests". Branch protection does
+  # not reference the old single name (confirmed under Settings → Branches
+  # before this change), so nothing else needs updating there.
   # ════════════════════════════════════════════════════════════════════════════
   e2e-tests:
-    name: Run Emulator UI Tests   # display name preserved for branch protection — see note above
+    name: Run Emulator UI Tests
     needs: build-android
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
     if: github.ref == 'refs/heads/main' || github.base_ref == 'main'
-
-    env:
-      APPIUM_SERVER_URL: http://127.0.0.1:4723/
-      # Set to 'false' to make the suite report without blocking. Intended only as a temporary
-      # escape hatch while a known driver-side defect is being fixed — leaving it off restores
-      # the vacuous gate this pipeline exists to prevent, so put it back to 'true' after.
-      E2E_REQUIRE_DEVICE: ${{ vars.E2E_REQUIRE_DEVICE || 'true' }}
-
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Setup Java
-        uses: actions/setup-java@v6
-        with:
-          distribution: temurin
-          java-version: '17'
-
-      # Required: the UITests project targets net10.0. Without this the job depends on
-      # whichever SDK the runner image happens to ship.
-      - name: Setup .NET SDK
-        uses: actions/setup-dotnet@v6
-        with:
-          dotnet-version: ${{ env.DOTNET_VERSION }}
-
-      - name: Cache NuGet packages
-        uses: actions/cache@v6
-        with:
-          path: ~/.nuget/packages
-          key: ${{ runner.os }}-nuget-uitests-${{ hashFiles('**/*.csproj') }}
-          restore-keys: ${{ runner.os }}-nuget-uitests-
-
-      - name: Restore UITests project
-        run: dotnet restore tests/MauiApp.UITests/NdiForAndroid.UITests.csproj
-
-      - name: Download APK artifact
-        uses: actions/download-artifact@v8
-        with:
-          name: release-apk
-          path: apk
-
-      # Absolute, deliberately. dotnet test runs the test host from the project's output
-      # directory, not the workspace root, so a workspace-relative path does not resolve
-      # inside the fixture — and Appium's `app` capability needs an absolute path too.
-      - name: Locate downloaded APK
-        run: |
-          APK_PATH=$(find "$PWD/apk" -name '*.apk' -type f -print -quit)
-          if [ -z "$APK_PATH" ]; then echo "No APK in artifact"; exit 1; fi
-          echo "APK_PATH=$APK_PATH" >> "$GITHUB_ENV"
-          echo "Using APK: $APK_PATH"
-
-      - name: Setup Node.js for Appium
-        uses: actions/setup-node@v7
-        with:
-          node-version: '22'
-
-      - name: Install Appium and UIAutomator2 driver
-        run: |
-          npm install -g appium
-          appium driver install uiautomator2
-
-      - name: Enable KVM
-        run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
-
-      - name: Cache Android AVD and system image
-        uses: actions/cache@v6
-        id: avd-cache
-        with:
-          path: |
-            ~/.android/avd/*
-            ~/.android/adb*
-          key: avd-api35-x86_64-v1
-
-      - name: Create AVD (only on cache miss)
-        if: steps.avd-cache.outputs.cache-hit != 'true'
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 35
-          arch: x86_64
-          profile: Nexus 6
-          force-avd-creation: false
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
-          disable-animations: false
-          script: echo "AVD created and cached."
-
-      - name: Run emulator tests
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 35
-          arch: x86_64
-          profile: Nexus 6
-          force-avd-creation: false
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
-          disable-animations: true
-          emulator-boot-timeout: 300
-          script: bash ./testing/e2e/scripts/run-emulator-tests.sh "$APK_PATH"
-
-      - name: Report e2e results
-        if: always()
-        run: bash .github/scripts/report-test-results.sh test-results
-
-      # When the suite fails, the reason is almost always a session-creation error in the
-      # Appium log. Print it inline so diagnosis does not require downloading an artifact.
-      - name: Show Appium log on failure
-        if: failure()
-        run: |
-          LOG=test-results/appium.log
-          if [ ! -f "$LOG" ]; then
-            echo "No $LOG produced — Appium never started."
-            exit 0
-          fi
-          echo "===== appium.log (errors) ====="
-          grep -iE "error|failed|refused|could not|unable|exception" "$LOG" | head -40 || echo "(no error lines matched)"
-          echo "===== appium.log (last 60 lines) ====="
-          tail -60 "$LOG"
-
-      - name: Upload emulator test results
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: emulator-test-results
-          path: test-results/*.trx
-          retention-days: 7
-          if-no-files-found: warn
-
-      - name: Upload emulator diagnostics
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: emulator-diagnostics
-          path: |
-            test-results/*.log
-            test-results/*.txt
-            test-results/failure-evidence/**
-          retention-days: 7
-          if-no-files-found: warn
-
-      # Deliberately the last step: the artifact-upload steps emit hundreds of lines, so a
-      # failure message printed before them is buried. Keeping it at the tail means the reason
-      # for the failure is the last thing in the log.
-      - name: Failure summary
-        if: failure()
-        run: |
-          TRX=$(find test-results -name '*.trx' -type f -print -quit 2>/dev/null || true)
-          echo "=================== E2E FAILURE SUMMARY ==================="
-          if [ -z "$TRX" ]; then
-            echo "No TRX produced — the suite did not run to completion."
-            exit 0
-          fi
-          python3 - "$TRX" <<'PY'
-          import sys, xml.etree.ElementTree as ET
-          from collections import OrderedDict
-          NS = '{http://microsoft.com/schemas/VisualStudio/TeamTest/2010}'
-          try:
-              root = ET.parse(sys.argv[1]).getroot()
-          except Exception as e:
-              print(f"Could not parse TRX: {e}"); sys.exit(0)
-          groups = OrderedDict()
-          for r in root.iter(f'{NS}UnitTestResult'):
-              if r.get('outcome') != 'Failed':
-                  continue
-              msg = st = ''
-              for m in r.iter(f'{NS}Message'):
-                  if m.text: msg = m.text.strip(); break
-              for s in r.iter(f'{NS}StackTrace'):
-                  if s.text: st = s.text.strip(); break
-              groups.setdefault((msg, st), []).append(r.get('testName') or '')
-          for (msg, st), names in groups.items():
-              print(f"\n--- {len(names)} test(s) failed with: ---")
-              print(msg or "(no message)")
-              if st:
-                  print("\nStack trace (first 15 frames):")
-                  print('\n'.join(st.splitlines()[:15]))
-              print(f"\nAffected: {', '.join(n.split('.')[-1] for n in names[:12])}")
-          PY
-          EVIDENCE=test-results/failure-evidence
-          if [ -d "$EVIDENCE" ] && [ -n "$(ls -A "$EVIDENCE" 2>/dev/null)" ]; then
-            echo ""
-            echo "Screenshot + view hierarchy per failure — download the emulator-diagnostics"
-            echo "artifact from this run's summary page:"
-            ls -1 "$EVIDENCE" | sed 's/^/  /'
-          fi
-          # Repeated here on purpose. The crash buffer is collected inside the emulator step,
-          # which is followed by several hundred lines of artifact-upload output, so by the time
-          # it matters it has scrolled well out of view. This step is deliberately last, so an
-          # app that died during the run says so where a reader will actually see it.
-          echo ""
-          if [ -s test-results/logcat-crash.txt ]; then
-            echo "----- logcat crash buffer (first 60 lines) -----"
-            head -60 test-results/logcat-crash.txt
-            echo "-----------------------------------------------"
-          else
-            echo "Crash buffer empty: the app did not abort with a Java/native crash."
-            echo "If tests still reported the launcher on screen, it was killed or backgrounded"
-            echo "rather than crashed — see the system verdict below for who did it."
-          fi
-          # No crash means something else removed the app: the low-memory killer, an explicit
-          # force-stop, or an ANR. Each leaves a distinct line in the main buffer and each implies
-          # a different fix, so name it rather than leave the next round to guess.
-          echo ""
-          if [ -s test-results/logcat-app.txt ]; then
-            echo "----- system activity for com.ndi.android (kills / ANRs / OOM) -----"
-            grep -E 'am_kill|lowmemorykiller|Killing|ANR in|force-stop|died|OutOfMemory' \
-              test-results/logcat-app.txt | tail -25 || echo "  (no kill, ANR or OOM lines found)"
-            echo "-------------------------------------------------------------------"
-          else
-            echo "No filtered logcat captured."
-          fi
-          # The kills/ANR/OOM grep above only answers "nobody killed it" — it says nothing about
-          # the class of failure where the activity finishes cleanly (backgrounded, popped, or
-          # handed to another task) rather than being killed. logcat-full.txt is the continuous,
-          # whole-run capture (testing/e2e/scripts/run-emulator-tests.sh); when present, grep it
-          # for the events that distinguish "app finished/backgrounded itself" from "app was
-          # never involved".
-          echo ""
-          if [ -s test-results/logcat-full.txt ]; then
-            echo "----- foreground handovers (whole run) -----"
-            grep -E 'START u0|moveTaskToBack|finishActivity|am_finish|Force removing|removeTask|TaskRemoved' \
-              test-results/logcat-full.txt | tail -40 || echo "  (no foreground-handover lines found)"
-            echo "---------------------------------------------"
-          else
-            echo "No continuous logcat capture (logcat-full.txt) found."
-          fi
-          echo "==========================================================="
+    uses: ./.github/workflows/e2e-reusable.yml
+    with:
+      avd_profile: 'Nexus 6'
+      api_level: '35'
+      font_scale: '1.0'
+      require_device: true
+      build_apk: false
+      apk_artifact_name: 'release-apk'
+    secrets: inherit
 
   # ════════════════════════════════════════════════════════════════════════════
   # Publish — tag and release, main only.

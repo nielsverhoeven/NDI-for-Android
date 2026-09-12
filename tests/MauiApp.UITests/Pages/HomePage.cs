@@ -50,4 +50,12 @@ public sealed class HomePage : PageObject
 
     public void StartViewingLastSource() => Tap(TestIds.HomeStartViewingLast);
     public void ResumeOutput()           => Tap(TestIds.HomeResumeOutput);
+
+    /// <summary>
+    /// Scrolls this page's ScrollView to the end so controls at the bottom measure their full
+    /// size. Appium clips the reported bounds of a partially scrolled-out element (see
+    /// PageObject.ScrollToEnd), and omits a fully off-screen one, so a touch-target assertion on
+    /// a bottom-of-page control must scroll first.
+    /// </summary>
+    public void ScrollToBottom() => ScrollToEnd();
 }

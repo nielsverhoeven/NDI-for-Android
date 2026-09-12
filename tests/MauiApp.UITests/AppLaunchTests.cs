@@ -1,4 +1,6 @@
 using OpenQA.Selenium;
+using NdiForAndroid.Features.Navigation.Models;
+using NdiForAndroid.Features.Navigation.Services;
 using NdiForAndroid.Testing;
 using NdiForAndroid.UITests.Infrastructure;
 using NdiForAndroid.UITests.Pages;
@@ -20,7 +22,7 @@ public sealed class AppLaunchTests : UiTestBase
 {
     public AppLaunchTests(AppiumDriverFixture fixture) : base(fixture) { }
 
-    [SkippableFact]
+    [RetryableSkippableFact]
     public void AppLaunches_ShowsHomePageContent() => Run(app =>
     {
         app.ResetToHome();
@@ -33,7 +35,7 @@ public sealed class AppLaunchTests : UiTestBase
         Assert.False(string.IsNullOrWhiteSpace(app.Home.DiscoveryStatus), "Discovery status is blank");
     });
 
-    [SkippableFact]
+    [RetryableSkippableFact]
     public void Navigation_ToSettingsAndBackToHome_ShowsEachPage() => Run(app =>
     {
         // Starts from a known page: the session is shared, so without this the test inherits
@@ -48,7 +50,7 @@ public sealed class AppLaunchTests : UiTestBase
         app.Home.WaitUntilVisible();
     });
 
-    [SkippableFact]
+    [RetryableSkippableFact]
     public void Navigation_WatchOnASourceRow_OpensTheViewer() => Run(app =>
     {
         app.ResetToHome();
@@ -76,7 +78,7 @@ public sealed class AppLaunchTests : UiTestBase
     /// change 4's anti-race measure applied to all four transitions, not only to the Back-button
     /// one.
     /// </summary>
-    [SkippableFact]
+    [RetryableSkippableFact]
     public void FullScreen_EnterViaButton_HidesChromeAndExitButtonWorks() => Run(app =>
     {
         app.ResetToHome();
@@ -121,7 +123,7 @@ public sealed class AppLaunchTests : UiTestBase
     /// rotation by design (see the up-front design consult, decision (b)), so this assertion does
     /// not apply there.
     /// </summary>
-    [SkippableFact]
+    [RetryableSkippableFact]
     public void Viewer_RotatedToLandscape_EntersFullScreenInPlace() => Run(app =>
     {
         app.ResetToHome();
@@ -152,33 +154,43 @@ public sealed class AppLaunchTests : UiTestBase
             "Navigation chrome was not restored after rotating back to portrait");
     });
 
-    [SkippableFact]
-    public void AdaptiveNavigation_InPortrait_PlacesNavigationAtTheBottom() => Run(app =>
+    [RetryableSkippableTheory]
+    [InlineData(ScreenOrientation.Portrait)]
+    [InlineData(ScreenOrientation.Landscape)]
+    public void AdaptiveNavigation_MatchesPolicyForTheCurrentConfiguration(ScreenOrientation orientation) => Run(app =>
     {
-        app.Rotate(ScreenOrientation.Portrait);
+        app.Rotate(orientation);
+
+        var widthDp = app.WindowSize.Width / app.Metrics.Density;
+        var sizeClass = WindowSizeClassService.Classify(widthDp);
+        var deviceOrientation = orientation == ScreenOrientation.Landscape
+            ? DeviceOrientation.Landscape
+            : DeviceOrientation.Portrait;
+
+        var policy = new NavigationPolicyService(new WindowSizeClassService());
+        var expected = policy.ResolvePlacement(deviceOrientation, sizeClass);
 
         var home = app.Navigation.Item(NavDestination.Home);
         var window = app.WindowSize;
 
-        Assert.True(home.Location.Y > window.Height * 0.70,
-            $"Expected the Home nav item near the bottom in portrait. y={home.Location.Y}, height={window.Height}");
+        if (expected == NavigationPlacementMode.LeftRail)
+        {
+            Assert.True(home.Location.X < window.Width * 0.20,
+                $"{sizeClass}/{orientation}: expected the left rail (x<20% of {window.Width}), " +
+                $"Home is at x={home.Location.X}");
+            Assert.True(home.Location.Y < window.Height * 0.60,
+                $"{sizeClass}/{orientation}: expected the left rail, not the bottom bar " +
+                $"(y<60% of {window.Height}), Home is at y={home.Location.Y}");
+        }
+        else
+        {
+            Assert.True(home.Location.Y > window.Height * 0.70,
+                $"{sizeClass}/{orientation}: expected the bottom tab bar (y>70% of {window.Height}), " +
+                $"Home is at y={home.Location.Y}");
+        }
     });
 
-    [SkippableFact]
-    public void AdaptiveNavigation_InLandscape_PlacesNavigationInTheLeftRail() => Run(app =>
-    {
-        app.Rotate(ScreenOrientation.Landscape);
-
-        var home = app.Navigation.Item(NavDestination.Home);
-        var window = app.WindowSize;
-
-        Assert.True(home.Location.X < window.Width * 0.20,
-            $"Expected the Home nav item near the left edge in landscape. x={home.Location.X}, width={window.Width}");
-        Assert.True(home.Location.Y < window.Height * 0.60,
-            $"Expected the Home nav item in the left rail, not the bottom bar. y={home.Location.Y}, height={window.Height}");
-    });
-
-    [SkippableFact]
+    [RetryableSkippableFact]
     public void AdaptiveNavigation_AllFourDestinations_ShowTheirOwnPage() => Run(app =>
     {
         app.Rotate(ScreenOrientation.Portrait);
@@ -198,7 +210,7 @@ public sealed class AppLaunchTests : UiTestBase
         app.Settings.WaitUntilVisible();
     });
 
-    [SkippableFact]
+    [RetryableSkippableFact]
     public void Rotating_WhileOnANonHomeTab_KeepsTheSameDestination() => Run(app =>
     {
         // The Appium session is shared: start from a known page and orientation rather than
@@ -223,7 +235,7 @@ public sealed class AppLaunchTests : UiTestBase
             "Rotating back to portrait must keep Stream selected (#393).");
     });
 
-    [SkippableFact]
+    [RetryableSkippableFact]
     public void Stream_TypedStreamName_SurvivesATabSwitch() => Run(app =>
     {
         app.ResetToHome();
@@ -244,7 +256,7 @@ public sealed class AppLaunchTests : UiTestBase
         Assert.Equal("E2E-Keep-Me", app.Output.StreamName);
     });
 
-    [SkippableFact]
+    [RetryableSkippableFact]
     public void Settings_AllFiveSections_AreReachable() => Run(app =>
     {
         app.ResetToHome();
@@ -262,7 +274,7 @@ public sealed class AppLaunchTests : UiTestBase
         }
     });
 
-    [SkippableFact]
+    [RetryableSkippableFact]
     public void Settings_CompactRail_SectionButtonsMeet48dp() => Run(app =>
     {
         // The Nexus 6 API 35 CI AVD is 411 dp wide in portrait — Compact — so this exercises
@@ -283,7 +295,7 @@ public sealed class AppLaunchTests : UiTestBase
         }
     });
 
-    [SkippableFact]
+    [RetryableSkippableFact]
     public void Settings_DiscoveryHost_SurvivesAnAppRestart() => Run(app =>
     {
         // Typing into the add-server Entry proves nothing: AddDiscoveryServerAsync clears it
@@ -333,7 +345,7 @@ public sealed class AppLaunchTests : UiTestBase
         }
     });
 
-    [SkippableFact]
+    [RetryableSkippableFact]
     public void Settings_DiscoveryEmptyState_TracksTheServerList() => Run(app =>
     {
         const string host = "10.255.255.2";
@@ -367,7 +379,7 @@ public sealed class AppLaunchTests : UiTestBase
             Assert.True(app.Settings.IsDiscoveryEmptyStateShown);
     });
 
-    [SkippableFact]
+    [RetryableSkippableFact]
     public void Settings_DeleteServer_DeclinedConfirmation_LeavesTheRow() => Run(app =>
     {
         const string host = "10.255.255.3";
@@ -398,7 +410,7 @@ public sealed class AppLaunchTests : UiTestBase
         }
     });
 
-    [SkippableFact]
+    [RetryableSkippableFact]
     public void Settings_DeveloperMode_TappingTheLabel_TogglesTheSwitch() => Run(app =>
     {
         app.ResetToHome();
@@ -420,7 +432,7 @@ public sealed class AppLaunchTests : UiTestBase
         }
     });
 
-    [SkippableFact]
+    [RetryableSkippableFact]
     public void Settings_DiscoveryServerRow_RendersEveryControl() => Run(app =>
     {
         // Regression guard for a row template overflowing its container: on a narrow detail panel

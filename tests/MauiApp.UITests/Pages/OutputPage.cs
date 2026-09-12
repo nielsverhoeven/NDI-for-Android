@@ -84,4 +84,30 @@ public sealed class OutputPage : PageObject
     /// <summary>Taps the 'Re-stream:' label — the row, not the switch — to prove the whole row toggles (#346).</summary>
     public void TapReStreamLabel()   => Tap(TestIds.OutputModeReStreamLabel);
     public void TapMicrophoneLabel() => Tap(TestIds.OutputMicrophoneLabel);
+
+    /// <summary>
+    /// Scrolls this page's ScrollView to the end so controls at the bottom measure their full
+    /// size. Appium clips the reported bounds of a partially scrolled-out element (see
+    /// PageObject.ScrollToEnd), and omits a fully off-screen one, so a touch-target assertion on
+    /// a bottom-of-page control must scroll first.
+    /// </summary>
+    public void ScrollToBottom() => ScrollToEnd();
+
+    /// <summary>True when the re-stream source Picker (not the free-text fallback) is on screen.</summary>
+    public bool IsReStreamSourcePickerShown => IsPresent(TestIds.OutputReStreamSourcePicker);
+
+    /// <summary>True when the free-text fallback Entry is on screen (no cached/discovered sources).</summary>
+    public bool IsReStreamManualEntryShown => IsPresent(TestIds.OutputReStreamSourceId);
+
+    /// <summary>What TalkBack would announce for the re-stream source Picker — its content-desc.</summary>
+    public string ReStreamSourcePickerAccessibleName =>
+        IsReStreamSourcePickerShown
+            ? WaitFor(TestIds.OutputReStreamSourcePicker).GetAttribute("content-desc") ?? string.Empty
+            : string.Empty;
+
+    /// <summary>Text currently shown in the re-stream source Picker (the selected source's display name).</summary>
+    public string ReStreamSourcePickerText => TextOf(TestIds.OutputReStreamSourcePicker);
+
+    /// <summary>Taps the re-stream source Picker to open its native selection dialog.</summary>
+    public void OpenReStreamSourcePicker() => Tap(TestIds.OutputReStreamSourcePicker);
 }

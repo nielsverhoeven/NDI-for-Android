@@ -153,6 +153,7 @@ public static class TestIds
     public const string OutputMicrophoneToggle = "output.microphoneToggle";
     public const string OutputMicrophoneLabel  = "output.microphoneLabel";
     public const string OutputReStreamSourceId = "output.reStreamSourceId";
+    public const string OutputReStreamSourcePicker = "output.reStreamSourcePicker";
     public const string OutputConnectionCount  = "output.connectionCount";
     public const string OutputOnAirTally       = "output.onAirTally";
     public const string OutputStatus           = "output.status";

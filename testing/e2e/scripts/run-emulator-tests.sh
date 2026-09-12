@@ -44,6 +44,25 @@ fi
 # Extra settle time so the launcher and system services are stable
 sleep 5
 
+# Device font scale, applied before install so the app picks it up on first launch. Checked
+# rather than written unconditionally: /data is restored from the actions/cache AVD entry, so a
+# previous leg's non-default font_scale must still be corrected on a shared cache key, but writing
+# (and settling after) an already-correct value on every run would needlessly perturb a warm AVD.
+FONT_SCALE="${E2E_FONT_SCALE:-1.0}"
+CURRENT_FONT_SCALE=$(adb shell settings get system font_scale | tr -d '\r')
+if [[ "$CURRENT_FONT_SCALE" != "$FONT_SCALE" ]]; then
+  echo "Setting device font scale to $FONT_SCALE (was '$CURRENT_FONT_SCALE')"
+  adb shell settings put system font_scale "$FONT_SCALE"
+
+  # Settle time: the write above broadcasts a config change that forces every window, including
+  # the launcher's, to re-inflate — installing/launching immediately into that reflow raced the
+  # launcher into a SurfaceFlinger stall ("Quickstep isn't responding") on a fresh AVD, which then
+  # blocked every test for the rest of the run.
+  sleep 5
+else
+  echo "font scale already $FONT_SCALE"
+fi
+
 # Continuous logcat capture, started before install so nothing from app startup is missed.
 # `adb logcat -d` at the end of a run reads a 256K-ish ring buffer that UiAutomator2 fills with a
 # node dump per selector match — by the time a 3-10 minute run ends, the lines that explain an
@@ -59,7 +78,10 @@ adb uninstall com.ndi.android >/dev/null 2>&1 || true
 adb install -r "$APK_PATH"
 
 echo "Starting Appium"
-appium --port 4723 --log-level info > "$APPIUM_LOG" 2>&1 &
+# --allow-insecure=uiautomator2:adb_shell: required for the deep-link/permission/lifecycle tests'
+# `mobile: shell` calls (pm revoke, am kill, logcat clear/dump). GSM-call simulation uses the
+# separate `mobile: gsmCall` extension, which does not need this flag.
+appium --port 4723 --log-level info --allow-insecure=uiautomator2:adb_shell > "$APPIUM_LOG" 2>&1 &
 APPIUM_PID=$!
 
 echo "Waiting for Appium readiness..."
@@ -100,7 +122,7 @@ if [[ -n "${E2E_TEST_FILTER:-}" ]]; then
 fi
 
 set +e
-timeout 20m env ANDROID_APK_PATH="$APK_PATH" E2E_REQUIRE_DEVICE="$E2E_REQUIRE_DEVICE" \
+timeout 35m env ANDROID_APK_PATH="$APK_PATH" E2E_REQUIRE_DEVICE="$E2E_REQUIRE_DEVICE" \
   E2E_ARTIFACT_DIR="$E2E_ARTIFACT_DIR" \
   A11Y_MAX_VIOLATIONS="${A11Y_MAX_VIOLATIONS:-}" \
   dotnet test tests/MauiApp.UITests/NdiForAndroid.UITests.csproj -c Release \
@@ -111,7 +133,7 @@ TEST_EXIT=$?
 set -e
 
 if [[ "$TEST_EXIT" -eq 124 ]]; then
-  echo "dotnet test timed out after 20 minutes"
+  echo "dotnet test timed out after 35 minutes"
 fi
 
 echo "dotnet test exit code: $TEST_EXIT"
@@ -203,6 +225,40 @@ FAILED=$(read_counter failed); FAILED=${FAILED:-0}
 SKIPPED=$(( TOTAL - PASSED - FAILED ))
 
 echo "Counters — total=$TOTAL passed=$PASSED failed=$FAILED skipped=$SKIPPED"
+
+# Retry summary: the TRX counters above only reflect the final attempt of a retried test, so a
+# test that failed once and then passed is otherwise invisible here.
+RETRY_LOG="$(dirname "$E2E_ARTIFACT_DIR")/retry-log.ndjson"
+if [[ -s "$RETRY_LOG" ]]; then
+  echo
+  echo "── Retries this run ────────────────────────────────────────────────────"
+  python3 - "$RETRY_LOG" <<'PY' || echo "  (could not summarise retry-log.ndjson)"
+import json, sys
+from collections import defaultdict
+
+by_test = defaultdict(list)
+with open(sys.argv[1], encoding="utf-8") as fh:
+    for line in fh:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        by_test[record.get("test", "?")].append(record)
+
+retried = {t: r for t, r in by_test.items() if any(a.get("attempt", 1) > 1 for a in r)}
+if not retried:
+    print("No test needed a retry this run.")
+for test, attempts in sorted(retried.items()):
+    attempts.sort(key=lambda a: a.get("attempt", 1))
+    trail = ", ".join(f"attempt {a['attempt']}: {'pass' if a.get('passed') else 'fail'}" for a in attempts)
+    outcome = "PASSED" if attempts[-1].get("passed") else "FAILED"
+    print(f"  {test} — final: {outcome} ({trail})")
+PY
+  echo "─────────────────────────────────────────────────────────────────────────"
+fi
 
 # The accessibility audit's own summary, echoed here rather than left where it was printed. It
 # lands in the middle of several hundred lines of dotnet output, and the violation count is what

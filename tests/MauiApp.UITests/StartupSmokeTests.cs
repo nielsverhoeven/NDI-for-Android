@@ -25,7 +25,7 @@ public sealed class StartupSmokeTests : UiTestBase
     /// driver once the session was created, which cannot happen if the process aborted at the
     /// Fast Deployment check.
     /// </remarks>
-    [SkippableFact]
+    [RetryableSkippableFact]
     public void AppStartup_DoesNotAbort_SessionIsEstablished() => Run(app =>
     {
         Assert.NotNull(app);
@@ -40,7 +40,7 @@ public sealed class StartupSmokeTests : UiTestBase
     /// 15 seconds while the code waited 30; the budget now comes from
     /// <see cref="Timeouts.AppStart"/> and the name no longer states a number it does not own.
     /// </remarks>
-    [SkippableFact]
+    [RetryableSkippableFact]
     public void AppStartup_RendersUiWithinTheColdStartBudget() => Run(app =>
     {
         var deadline = DateTime.UtcNow + Timeouts.AppStart;

@@ -132,7 +132,9 @@ Rules:
 3. Route parameters are validated before bridge session creation.
 4. `OutputPage` is a top-level tab and does not accept or require a `sourceId` query parameter, but
    does accept the re-stream query parameters `reStreamSourceId` and `isReStreamMode`, and the
-   `resume` query parameter (bound via `[QueryProperty]` on `OutputPage`).
+   `resume` query parameter (bound via `[QueryProperty]` on `OutputPage`). `reStreamSourceId` now
+   resolves to a Picker selection in `OutputViewModel.AvailableReStreamSources` (#343 OUT-08) — or,
+   with an empty registry, pre-fills the manual-entry Entry instead — rather than a raw free-text id.
    `OutputPage`/`OutputViewModel` (like `HomePage`/`HomeViewModel`) are DI singletons (Dependency Rule 8), so their observable state persists across tab visits and rotation. On every appearance `OutputPage` awaits `OutputViewModel.LoadCommand`, which corroborates observable state against `INdiOutputBridge` before applying any one-shot query-parameter intent, and then nulls the three `[QueryProperty]` fields so an intent is consumed exactly once and never re-applied on a later plain tab entry. Primary destinations
    (Home/Stream/View/Settings) must be navigated through
    `INavigationService.NavigateToPrimaryAsync(PrimaryNavDestination, string? queryString)` —
@@ -236,6 +238,24 @@ The bridge also exposes:
 - **Re-stream**: `StartReStreamFromSourceAsync(sourceId, qualityProfile)` / `StopReStreamAsync` / `IsReStreamActive` — a dedicated receiver+sender pair pumps frames from a remote source into a new sender named `"Re-stream of {sourceId}"`, forwarding the recv-owned native buffer zero-copy. Independent of the viewer bridge's connection.
 
 The last-used output configuration (`PreferredStreamName`, `InputKind`, `CaptureMicrophone`) is persisted via `IOutputConfigurationRepository` (`src/MauiApp/Features/Output/Repositories/OutputConfigurationRepository.cs`).
+
+`OutputViewModel.AvailableReStreamSources` (an `ObservableCollection<NdiSource>`) feeds the
+re-stream mode's source Picker (#343 OUT-08): populated from `ISourceRepository.GetCachedSourcesAsync()`
+on every `LoadCommand` execution and merged (by `SourceId`, never replaced wholesale) with live
+updates from `IDiscoveryRefreshService.SnapshotReady` (subscribed once in the constructor,
+unsubscribed in `Dispose()` — the same singleton-event pattern as `OutputStatusChanged`/`AppResumed`,
+see the tab-root lifetime rule above). Merging rather than replacing matters because discovery polls
+every 5 seconds and a failed poll carries an empty source list; either would otherwise reset the
+Picker's selection or intermittently hide it behind the manual-entry fallback. The Picker
+(`ShowReStreamSourcePicker`) is the primary control; a free-text Entry (`ReStreamSourceId`,
+`ShowReStreamManualEntry`) remains only as the empty-state fallback when no source is cached or
+discovered. Selecting a Picker item (`SelectedReStreamSource`) sets `ReStreamSourceId` to that
+source's `SourceId` — the same string `StartReStreamFromSourceAsync` and the free-text Entry always
+used, so the bridge call is unchanged. A source id arriving via `ApplyReStreamRequest` (deep link or
+the Sources page's Output button) that is not yet in the list is inserted as a placeholder entry and
+selected only when the Picker already has other entries; with an empty registry the free-text Entry
+is the visible control instead, so only `ReStreamSourceId` is set — synthesizing a placeholder there
+would flip `HasReStreamSources` and permanently hide the manual-entry fallback on this Singleton VM.
 
 Session state (`AppStateSnapshot.StreamName`/`IsOutputActive`, `src/Core/Features/AppState/Models/AppStateSnapshot.cs`, persisted via `IAppStateRepository`) is a separate, shorter-lived record: `StreamName` names the current or most recent **unterminated** output session, and is cleared to `null` only by the in-app Stop button (`OutputViewModel.StopOutputCommand`) — never by navigation or backgrounding. A stop triggered from the notification action goes through `INdiOutputBridge.StopOutputAsync()` only, so it leaves `StreamName` set: the session stays resumable (`IsOutputActive` corroborated `false`, `HomeViewModel.CanResumeOutput` true). `IsOutputActive` is a hint only; it is trusted for the UI's "restored" vs. "tap Start to resume" distinction only when corroborated live by `INdiOutputBridge.IsActive` (see `OutputViewModel.OnAppResumed` and `HomeViewModel.RefreshAsync`).
 
