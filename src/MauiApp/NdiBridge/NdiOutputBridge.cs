@@ -129,6 +129,10 @@ public sealed class NdiOutputBridge : INdiOutputBridge, IDisposable
                     clock_audio = false,
                 };
                 _send = NdiNativeMethods.NDIlib_send_create(ref create);
+                // A new sender session logs its first frame geometry again, even when it equals the
+                // previous session's (the log below fires on change only).
+                _lastLoggedFrameWidth = 0;
+                _lastLoggedFrameHeight = 0;
                 NdiConnectionMetadata.Apply(_send, isSender: true, sessionName: "output");
             }
             finally
