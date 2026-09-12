@@ -38,8 +38,9 @@ public sealed class ViewerPage : PageObject
     public bool IsStoppedOverlayVisible => IsPresent(TestIds.ViewerStoppedBadge);
 
     /// <summary>
-    /// True while a stream is playing — inferred from the Stop button, which is bound to
-    /// <c>IsPlaying</c>.
+    /// True while a stream is playing, in either the windowed Deck/Sheet or the full-screen
+    /// overlay — both carry <c>viewer.stop</c> (#384 slice 3), and only one of them is ever on
+    /// screen at a time (mirrors the existing pane/page duplicate-id pattern).
     /// </summary>
     public bool IsPlaying => IsPresent(TestIds.ViewerStop);
 
@@ -47,9 +48,28 @@ public sealed class ViewerPage : PageObject
     public bool CanReconnect    => IsPresent(TestIds.ViewerReconnect);
     public bool IsPtzSupported  => IsPresent(TestIds.ViewerPtzAutoFocus);
 
-    /// <summary>Waits for playback to start — a network-budget wait, not an element one.</summary>
-    public void WaitUntilPlaying() =>
+    /// <summary>
+    /// Waits for playback to start in the windowed Deck/Sheet layout — a network-budget wait for
+    /// `viewer.stop` (bound to `IsPlaying`), followed by a bounded wait for the full-screen
+    /// overlay to be gone. The second wait matters because `viewer.stop` now also exists inside
+    /// `FullScreenControlsOverlay` (#384 slice 3): calling this right after `ExitFullScreen()` or
+    /// an orientation-driven exit must observe the Deck/Sheet actually re-rendered, not just any
+    /// `viewer.stop` node — and on a compact device an exit can involve a real OS rotation, hence
+    /// `Timeouts.Navigation` rather than the shorter `Timeouts.StateChange`.
+    /// </summary>
+    public void WaitUntilPlaying()
+    {
         WaitFor(TestIds.ViewerStop, Timeouts.Network, "The viewer never reported playback");
+
+        var deadline = DateTime.UtcNow + Timeouts.Navigation;
+        while (IsFullScreen && DateTime.UtcNow < deadline)
+            Thread.Sleep(100);
+
+        if (IsFullScreen)
+            throw new InvalidOperationException(
+                $"The viewer reported playback but was still full screen after " +
+                $"{Timeouts.Navigation.TotalSeconds:0}s — the windowed Deck/Sheet never re-rendered.");
+    }
 
     public void SelectQuality(QualityProfile profile) => Tap(QualityProfileOption.AutomationIdFor(profile));
 
@@ -78,37 +98,45 @@ public sealed class ViewerPage : PageObject
         WaitFor(TestIds.ViewerFullScreenToggle).GetAttribute("content-desc") ?? string.Empty;
 
     /// <summary>
-    /// True while full screen is showing. The full-screen overlay's own Stop button has no
-    /// AutomationId (only the Deck/Sheet one does), so "the video canvas is present but no
-    /// id'd Stop button is" is exactly full screen — it cannot be confused with "not playing",
-    /// because a source must already be playing to reach either state in this suite.
+    /// True while full screen is showing. Reads the overlay's own stable root id
+    /// (#384 slice 3) rather than inferring from `IsPlaying`: the overlay now also carries
+    /// `viewer.stop`/`viewer.audioToggle`/`viewer.quality.*`/`viewer.ptz.*` (reused from the
+    /// Deck/Sheet), so `!IsPlaying` no longer distinguishes "full screen" from "not playing".
+    /// Unlike the old `viewer.fullScreen.qualityCycle`-based `WaitUntilFullScreen` id, this one
+    /// does not depend on the 2.5s/5s auto-hide, so it stays valid for the lifetime of the state.
     /// </summary>
-    public bool IsFullScreen => HasVideoSurface && !IsPlaying;
+    public bool IsFullScreen => IsPresent(TestIds.ViewerFullScreenOverlay);
 
     /// <summary>
-    /// Blocks until full screen has actually rendered. `viewer.fullScreen.qualityCycle` exists only
-    /// in FullScreenControlsOverlay, so its appearance is proof the overlay is up — unlike the
-    /// non-waiting IsFullScreen read, which races MAUI's UI-thread property-change cascade. Call
-    /// this only immediately after entering full screen: the id disappears again when the 3s
-    /// auto-hide fires.
+    /// Blocks until full screen has actually rendered. On a compact device the button-triggered
+    /// path now involves a real OS orientation change before the overlay appears, hence
+    /// `Timeouts.Navigation` rather than the shorter `Timeouts.StateChange` used before #384 slice 3.
     /// </summary>
     public void WaitUntilFullScreen() =>
-        WaitFor(TestIds.ViewerQualityCycle, Timeouts.StateChange, "Full screen did not engage");
+        WaitFor(TestIds.ViewerFullScreenOverlay, Timeouts.Navigation, "Full screen did not engage");
 
     /// <summary>Single-taps the video surface — re-shows the full-screen overlay if the 3s
     /// auto-hide has already fired, or toggles the overlay in the windowed layout.</summary>
     public void TapVideo() => Tap(TestIds.ViewerVideoBorder);
 
     /// <summary>
-    /// Exits full screen. Taps the video first to guarantee the overlay (and its toggle/exit
-    /// button) is on screen even if the 3s auto-hide already fired since entering — tapping the
-    /// button id directly would time out waiting for an element that auto-hid moments earlier.
+    /// Exits full screen. The single tap on the video *toggles* the overlay since #384 slice 3, so
+    /// tapping unconditionally would hide the very button this method then needs; tap only when the
+    /// 2.5s/5s auto-hide has already taken the toolbar away, and re-check rather than assume.
     /// </summary>
     public void ExitFullScreen()
     {
-        TapVideo();
+        if (!IsPresent(TestIds.ViewerFullScreenToggle))
+            TapVideo();
+
+        if (!IsPresent(TestIds.ViewerFullScreenToggle))
+            TapVideo();   // the auto-hide can fire between the check and the tap; one retry is enough
+
         ToggleFullScreen();
     }
+
+    /// <summary>Shows/hides the full-screen camera (PTZ) controls layer.</summary>
+    public void ToggleCameraLayer() => Tap(TestIds.ViewerFullScreenCamera);
 
     public void PanUp()    => Tap(TestIds.ViewerPtzUp);
     public void PanDown()  => Tap(TestIds.ViewerPtzDown);

@@ -113,6 +113,45 @@ public sealed class AppLaunchTests : UiTestBase
             "Navigation chrome was not restored after Back exited full screen");
     });
 
+    /// <summary>
+    /// #383/#384 slice 3: on a compact (phone-class) device, rotating to landscape while playing
+    /// enters full screen in place with no page transition, and rotating back exits it. Skipped on
+    /// a device that reports as tablet-class (`SmallestWidthDp >= 600`, mirroring
+    /// `ViewerControlLayout.IsCompactDevice`) — tablets never auto-enter/exit full screen on
+    /// rotation by design (see the up-front design consult, decision (b)), so this assertion does
+    /// not apply there.
+    /// </summary>
+    [SkippableFact]
+    public void Viewer_RotatedToLandscape_EntersFullScreenInPlace() => Run(app =>
+    {
+        app.ResetToHome();
+        app.Navigation.GoTo(NavDestination.View);
+        app.Sources.WaitUntilVisible();
+
+        Skip.If(app.Sources.SourceCount == 0,
+            "No NDI sources discovered on this network; rotation-driven full screen needs a playing source.");
+
+        Skip.If(app.Metrics.SmallestWidthDp >= 600,
+            "Rotation-driven full screen is compact-device-only (#384 slice 3); this device reports " +
+            $"sw={app.Metrics.SmallestWidthDp:0}dp, i.e. tablet-class.");
+
+        app.Sources.WatchSource();
+        app.Viewer.WaitUntilVisible();
+        app.Viewer.WaitUntilPlaying();
+
+        app.Rotate(ScreenOrientation.Landscape);
+        app.Viewer.WaitUntilFullScreen();
+        Assert.True(app.Viewer.IsFullScreen, "Rotating to landscape did not enter full screen in place");
+        Assert.False(app.Navigation.IsPresent(NavDestination.Home),
+            "The bottom tab bar / left rail is still on screen in full screen");
+
+        app.Rotate(ScreenOrientation.Portrait);
+        app.Viewer.WaitUntilPlaying();
+        Assert.False(app.Viewer.IsFullScreen, "Rotating back to portrait did not exit full screen");
+        Assert.True(app.Navigation.IsPresent(NavDestination.Home),
+            "Navigation chrome was not restored after rotating back to portrait");
+    });
+
     [SkippableFact]
     public void AdaptiveNavigation_InPortrait_PlacesNavigationAtTheBottom() => Run(app =>
     {
