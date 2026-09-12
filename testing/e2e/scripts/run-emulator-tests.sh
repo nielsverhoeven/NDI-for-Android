@@ -59,7 +59,10 @@ adb uninstall com.ndi.android >/dev/null 2>&1 || true
 adb install -r "$APK_PATH"
 
 echo "Starting Appium"
-appium --port 4723 --log-level info > "$APPIUM_LOG" 2>&1 &
+# --allow-insecure=uiautomator2:adb_shell: required for the deep-link/permission/lifecycle tests'
+# `mobile: shell` calls (pm revoke, am kill, logcat clear/dump). GSM-call simulation uses the
+# separate `mobile: gsmCall` extension, which does not need this flag.
+appium --port 4723 --log-level info --allow-insecure=uiautomator2:adb_shell > "$APPIUM_LOG" 2>&1 &
 APPIUM_PID=$!
 
 echo "Waiting for Appium readiness..."
@@ -100,7 +103,7 @@ if [[ -n "${E2E_TEST_FILTER:-}" ]]; then
 fi
 
 set +e
-timeout 20m env ANDROID_APK_PATH="$APK_PATH" E2E_REQUIRE_DEVICE="$E2E_REQUIRE_DEVICE" \
+timeout 35m env ANDROID_APK_PATH="$APK_PATH" E2E_REQUIRE_DEVICE="$E2E_REQUIRE_DEVICE" \
   E2E_ARTIFACT_DIR="$E2E_ARTIFACT_DIR" \
   A11Y_MAX_VIOLATIONS="${A11Y_MAX_VIOLATIONS:-}" \
   dotnet test tests/MauiApp.UITests/NdiForAndroid.UITests.csproj -c Release \
@@ -111,7 +114,7 @@ TEST_EXIT=$?
 set -e
 
 if [[ "$TEST_EXIT" -eq 124 ]]; then
-  echo "dotnet test timed out after 20 minutes"
+  echo "dotnet test timed out after 35 minutes"
 fi
 
 echo "dotnet test exit code: $TEST_EXIT"
