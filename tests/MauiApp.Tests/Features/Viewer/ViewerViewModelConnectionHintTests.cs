@@ -2,6 +2,7 @@ using Moq;
 using NdiForAndroid.Features.AppState.Models;
 using NdiForAndroid.Features.AppState.Repositories;
 using NdiForAndroid.Features.ConnectionHistory.Services;
+using NdiForAndroid.Features.DiagOverlay.Services;
 using NdiForAndroid.Features.Ptz.Models;
 using NdiForAndroid.Features.Ptz.Services;
 using NdiForAndroid.Features.Ptz.ViewModels;
@@ -30,6 +31,8 @@ public class ViewerViewModelConnectionHintTests
     private readonly Mock<IImmersiveModeService> _immersiveModeMock = new();
     private readonly Mock<IScreenReaderAnnouncer> _announcerMock = new();
     private readonly Mock<IOrientationLockService> _orientationLockMock = new();
+    private readonly Mock<INetworkLinkService> _networkLinkMock = new();
+    private readonly DiagnosticOverlayService _diagnostics = new();
 
     public ViewerViewModelConnectionHintTests()
     {
@@ -49,6 +52,25 @@ public class ViewerViewModelConnectionHintTests
     private ViewerViewModel CreatePlayingSut()
     {
         var sut = CreateSut();
+        sut.SourceId = "src-1";
+        Assert.True(sut.IsPlaying);
+        return sut;
+    }
+
+    private ViewerViewModel CreateSutWithLink(NetworkLinkSnapshot link)
+    {
+        _networkLinkMock.Setup(s => s.GetSnapshot()).Returns(link);
+        return new(
+            _bridgeMock.Object, _timeProvider, _dispatcher, _appStateRepoMock.Object, _lifecycleMock.Object,
+            _sourceRepoMock.Object, _connectionHistoryMock.Object,
+            _ptzControllerFactoryMock.Object, new PtzEndpointFormViewModel(_ptzControllerFactoryMock.Object),
+            _immersiveModeMock.Object, _announcerMock.Object, _orientationLockMock.Object,
+            _networkLinkMock.Object, _diagnostics);
+    }
+
+    private ViewerViewModel CreatePlayingSutWithLink(NetworkLinkSnapshot link)
+    {
+        var sut = CreateSutWithLink(link);
         sut.SourceId = "src-1";
         Assert.True(sut.IsPlaying);
         return sut;
@@ -129,9 +151,21 @@ public class ViewerViewModelConnectionHintTests
     }
 
     [Fact]
-    public void Hint_StaysHidden_WhenBridgeNotConnected()
+    public void Hint_StaysHidden_WhenBridgeDisconnected()
     {
         _bridgeMock.Setup(b => b.GetConnectionState()).Returns(ConnectionState.Disconnected);
+        SetStats(5f, 40f);
+        var sut = CreatePlayingSut();
+
+        _timeProvider.Advance(TimeSpan.FromSeconds(10));
+
+        Assert.Null(sut.ConnectionHint);
+    }
+
+    [Fact]
+    public void Hint_StaysHidden_WhenBridgeConnecting()
+    {
+        _bridgeMock.Setup(b => b.GetConnectionState()).Returns(ConnectionState.Connecting);
         SetStats(5f, 40f);
         var sut = CreatePlayingSut();
 
@@ -222,5 +256,87 @@ public class ViewerViewModelConnectionHintTests
         _timeProvider.Advance(TimeSpan.FromSeconds(5));
 
         Assert.NotNull(sut.ConnectionHint);
+    }
+
+    [Fact]
+    public void Hint_OnA24GhzLink_NamesTheBand()
+    {
+        SetStats(5f, 40f);
+        var link = new NetworkLinkSnapshot(true, WifiBand.TwoPointFourGhz, -40, 200, WifiStandard.Unknown);
+        var sut = CreatePlayingSutWithLink(link);
+
+        _timeProvider.Advance(TimeSpan.FromSeconds(5));
+
+        Assert.Equal("2.4 GHz / weak signal — switch to Smooth", sut.ConnectionHint);
+    }
+
+    [Fact]
+    public void Hint_OnAStrong5GhzLink_KeepsTheGenericCopy()
+    {
+        SetStats(5f, 40f);
+        var link = new NetworkLinkSnapshot(true, WifiBand.FiveGhz, -45, 400, WifiStandard.Unknown);
+        var sut = CreatePlayingSutWithLink(link);
+
+        _timeProvider.Advance(TimeSpan.FromSeconds(5));
+
+        Assert.Equal("Connection weak — try Smooth", sut.ConnectionHint);
+    }
+
+    [Fact]
+    public void Hint_SurvivesAStalledSample()
+    {
+        SetStats(5f, 40f);
+        var sut = CreatePlayingSut();
+        _timeProvider.Advance(TimeSpan.FromSeconds(5));
+        Assert.NotNull(sut.ConnectionHint);
+
+        // A starved link demotes Connected -> Stalled every few seconds; before this change that
+        // reset the run and wiped the hint, so it could never stay up on the link it exists for.
+        _bridgeMock.Setup(b => b.GetConnectionState()).Returns(ConnectionState.Stalled);
+        _timeProvider.Advance(TimeSpan.FromSeconds(3));
+
+        Assert.NotNull(sut.ConnectionHint);
+    }
+
+    [Fact]
+    public void Hint_AccumulatesAcrossStalledSamples()
+    {
+        _bridgeMock.Setup(b => b.GetConnectionState()).Returns(ConnectionState.Stalled);
+        SetStats(0f, 0f);
+        var sut = CreatePlayingSut();
+
+        _timeProvider.Advance(TimeSpan.FromSeconds(5));
+
+        Assert.NotNull(sut.ConnectionHint);
+    }
+
+    [Fact]
+    public void Link_LogsOneDiagnosticEntryPerChange_NotPerSample()
+    {
+        SetStats(30f, 0f);
+        var link24 = new NetworkLinkSnapshot(true, WifiBand.TwoPointFourGhz, -40, 200, WifiStandard.Unknown);
+        CreatePlayingSutWithLink(link24);
+        _timeProvider.Advance(TimeSpan.FromSeconds(5));
+
+        var link5 = new NetworkLinkSnapshot(true, WifiBand.FiveGhz, -40, 400, WifiStandard.Unknown);
+        _networkLinkMock.Setup(s => s.GetSnapshot()).Returns(link5);
+        _timeProvider.Advance(TimeSpan.FromSeconds(5));
+
+        var linkEntries = _diagnostics.LogBuffer.GetEntries().Where(e => e.Category == "Link").ToList();
+        Assert.Equal(2, linkEntries.Count);
+    }
+
+    [Fact]
+    public void Link_NeverChangesTheProfile()
+    {
+        SetStats(5f, 40f);
+        var link = new NetworkLinkSnapshot(true, WifiBand.TwoPointFourGhz, -40, 200, WifiStandard.Unknown);
+        var sut = CreatePlayingSutWithLink(link);
+        _bridgeMock.Invocations.Clear();
+
+        _timeProvider.Advance(TimeSpan.FromSeconds(30));
+
+        Assert.Equal(QualityProfile.Balanced, sut.QualityProfile);
+        _bridgeMock.Verify(b => b.SetQualityProfile(It.IsAny<QualityProfile>()), Times.Never);
     }
 }
