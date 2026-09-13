@@ -92,6 +92,7 @@ public class ViewerViewModelRenderingTests
     {
         var sut = CreateSut();
         Assert.False(sut.IsPlaying);
+        sut.SetRenderingActive(true); // isolate the IsPlaying term: a renderer IS attached
         var count = 0;
         sut.FrameReady += (_, _) => count++;
 

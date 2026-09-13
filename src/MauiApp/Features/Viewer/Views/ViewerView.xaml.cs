@@ -63,6 +63,7 @@ public partial class ViewerView : ContentView
     public void StopRendering()
     {
         _isRenderingActive = false;
+        _frameAwaitingReport = false;
         _boundViewModel?.SetRenderingActive(false);
         _renderTimer?.Stop();
     }

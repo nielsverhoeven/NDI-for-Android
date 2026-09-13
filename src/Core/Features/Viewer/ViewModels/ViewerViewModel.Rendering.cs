@@ -16,9 +16,9 @@ public partial class ViewerViewModel
     // Written on the UI thread by SetRenderingActive, read on the pump thread — volatile, not locked.
     private volatile bool _isRenderingActive;
 
-    // Wall-clock millisecond mark of the last traced latency line, on the injected TimeProvider.
+    // Monotonic timestamp (TimeProvider.GetTimestamp()) of the last traced latency line.
     // Nullable so the first call always traces without a magic-zero sentinel.
-    private long? _lastLatencyTraceMillis;
+    private long? _lastLatencyTraceTimestamp;
 
     /// <summary>
     /// Raised on the UI thread when a newly arrived frame is ready to draw (#416). The View's render
@@ -44,13 +44,36 @@ public partial class ViewerViewModel
         if (Interlocked.Exchange(ref _framePostPending, 1) == 1)
             return;
 
-        _dispatcher.BeginInvokeOnMainThread(() =>
+        try
         {
-            // Cleared before the raise, so a frame arriving during the paint queues the next post
-            // rather than being dropped. Bounds the in-flight count at two: one running, one queued.
+            _dispatcher.BeginInvokeOnMainThread(() =>
+            {
+                // Cleared before the raise, so a frame arriving during the paint queues the next post
+                // rather than being dropped. Bounds the in-flight count at two: one running, one queued.
+                Interlocked.Exchange(ref _framePostPending, 0);
+                FrameReady?.Invoke(this, EventArgs.Empty);
+            });
+        }
+        catch (Exception ex)
+        {
+            // The post never reached the looper: release the latch, or draw-on-arrival is dead for
+            // the life of this ViewModel and only the 33 ms fallback keeps painting.
             Interlocked.Exchange(ref _framePostPending, 0);
-            FrameReady?.Invoke(this, EventArgs.Empty);
-        });
+
+            try
+            {
+                _diagnostics?.Trace(
+                    DiagnosticOverlayService.LatencyLogTag,
+                    "viewer.dispatchfault",
+                    $"type={ex.GetType().Name} msg={ex.Message}");
+            }
+            catch
+            {
+                // best-effort; must not mask the dispatch fault
+            }
+
+            throw;
+        }
     }
 
     /// <summary>
@@ -69,11 +92,11 @@ public partial class ViewerViewModel
         // The throttle is a cadence and uses the injected TimeProvider (deterministic under
         // FakeTimeProvider); the measurement below is a duration and stays on Environment.TickCount64,
         // the clock the pump stamped the frame with. Do not merge these into one clock.
-        var nowMillis = _timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
-        if (_lastLatencyTraceMillis is { } lastTraceMillis
-            && nowMillis - lastTraceMillis < LatencyTraceIntervalMs)
+        var nowTimestamp = _timeProvider.GetTimestamp();
+        if (_lastLatencyTraceTimestamp is { } lastTimestamp
+            && _timeProvider.GetElapsedTime(lastTimestamp, nowTimestamp).TotalMilliseconds < LatencyTraceIntervalMs)
             return;
-        _lastLatencyTraceMillis = nowMillis;
+        _lastLatencyTraceTimestamp = nowTimestamp;
 
         var nowTicks = Environment.TickCount64;
 

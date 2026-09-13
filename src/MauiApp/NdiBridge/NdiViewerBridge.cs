@@ -539,6 +539,16 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
 
             try
             {
+                Android.Util.Log.Warn("NDI-Bridge",
+                    $"VideoFrameReady subscriber fault: type={ex.GetType().Name} msg={ex.Message}");
+            }
+            catch
+            {
+                // Logging is best-effort; must never throw back into the pump's catch.
+            }
+
+            try
+            {
                 _diagnostics?.Trace(
                     DiagnosticOverlayService.LatencyLogTag,
                     "viewer.framereadyfault",
