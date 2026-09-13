@@ -20,7 +20,6 @@ internal static class ReconnectConstants
     public const int RetryWindowSeconds = 15;
     public const int RetryAttemptIntervalSeconds = 2;
     public const int CountdownTickIntervalSeconds = 1;
-    public const int DropDetectionGraceSeconds = 3;
 }
 
 public partial class ViewerViewModel : ObservableObject, IDisposable
@@ -78,6 +77,7 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
 
     // Reconnect state
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsFullScreenRetryVisible))]
     private bool _isReconnecting;
 
     [ObservableProperty]
@@ -194,6 +194,15 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
             // Minimal status refresh; drop handling stays with the reconnect state machine.
             if (IsPlaying && !IsReconnecting && state == ConnectionState.Connected)
                 StatusMessage = "Connected.";
+
+            // Only the bridge can observe a real (re)connection: StartReceiver returns while the
+            // receiver is still Connecting, so the attempt loop's own poll right after it never
+            // sees Connected. This also ends OnAppResumed's restore window, which polls the same way.
+            if (state == ConnectionState.Connected && IsReconnecting)
+                CompleteReconnect();
+
+            if (state == ConnectionState.Disconnected)
+                CheckForUnexpectedDrop();
         });
     }
 
@@ -410,7 +419,9 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
     public void CheckForUnexpectedDrop()
     {
         var connState = _bridge.GetConnectionState();
-        if (connState == ConnectionState.Disconnected && IsPlaying && !_userInitiatedStop && _reconnectState == ReconnectState.Idle)
+        if (connState == ConnectionState.Disconnected
+            && _bridge.GetLastStopReason() == ReceiverStopReason.ConnectionLost
+            && IsPlaying && !_userInitiatedStop && _reconnectState == ReconnectState.Idle)
         {
             BeginReconnectWindow();
         }
@@ -511,6 +522,11 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
             _reconnectState = ReconnectState.Failed;
             IsReconnecting = false;
             IsPlaying = false;
+            // Playback has definitively ended, so leave full screen the way Stop() already does.
+            // Idempotent; on a compact device in landscape this requests portrait and completes on
+            // the resulting orientation change. Doing it here and not when the window opens is what
+            // keeps a transient drop from force-rotating the device.
+            BeginExitFullScreen();
             StatusMessage = "Connection lost. Reconnection failed.";
             RetryStatusMessage = null;
             CanReconnect = true;

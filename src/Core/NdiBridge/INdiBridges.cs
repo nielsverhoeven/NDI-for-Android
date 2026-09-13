@@ -37,6 +37,12 @@ public interface INdiViewerBridge
     void StopReceiver();
     void SetQualityProfile(QualityProfile profile);
     ConnectionState GetConnectionState();
+
+    /// <summary>Why the receiver is currently (or most recently was) <see cref="ConnectionState.Disconnected"/>.
+    /// Read fresh alongside <see cref="GetConnectionState"/> — implementations must not require callers
+    /// to cache it.</summary>
+    ReceiverStopReason GetLastStopReason();
+
     NdiVideoFrame? GetLatestFrame();
     float GetDroppedFramePercent();
     (int Width, int Height) GetActualResolution();

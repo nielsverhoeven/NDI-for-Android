@@ -43,6 +43,14 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
     private string? _activeSourceId;
     private QualityProfile _qualityProfile = QualityProfile.Balanced;
     private ConnectionState _connectionState = ConnectionState.Disconnected;
+    private ReceiverStopReason _lastStopReason = ReceiverStopReason.Intentional;
+
+    /// <summary>Non-zero while a caller-requested <see cref="StopReceiver"/> is tearing the
+    /// receiver down. Every Disconnected transition raised inside that window is intentional by
+    /// definition — including one the video pump raises from its own connection-lost check between
+    /// <c>_running = false</c> and the thread join. A depth counter, not a flag: an event handler
+    /// running on a pump thread may call StopReceiver re-entrantly.</summary>
+    private int _stopDepth;
 
     // Latest-frame double buffer. The pump copies each native frame into _backPixels
     // (only ever touched by the pump thread) and swaps front/back references under
@@ -187,52 +195,61 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
 
     public void StopReceiver()
     {
-        Thread? videoThread;
-        Thread? audioThread;
+        lock (_connectionLock) _stopDepth++;
 
-        lock (_stateLock)
+        try
         {
-            _running = false;
-            videoThread = _videoThread;
-            audioThread = _audioThread;
-            _videoThread = null;
-            _audioThread = null;
-        }
+            Thread? videoThread;
+            Thread? audioThread;
 
-        // Join OUTSIDE the state lock (legacy deadlock lesson). Skip self-join in
-        // case an event handler running on a pump thread calls StopReceiver.
-        if (videoThread is not null && !ReferenceEquals(videoThread, Thread.CurrentThread))
-            videoThread.Join();
-        if (audioThread is not null && !ReferenceEquals(audioThread, Thread.CurrentThread))
-            audioThread.Join();
-
-        lock (_stateLock)
-        {
-            if (_recv != IntPtr.Zero)
+            lock (_stateLock)
             {
-                NdiNativeMethods.NDIlib_recv_destroy(_recv);
-                _recv = IntPtr.Zero;
-                _runtime.ReleaseHandle();
+                _running = false;
+                videoThread = _videoThread;
+                audioThread = _audioThread;
+                _videoThread = null;
+                _audioThread = null;
             }
 
-            _activeSourceId = null;
-            _isPtzSupported = false;
-            _measuredFps = 0f;
-            _droppedFramePercent = 0f;
-            _lastTallyEcho = null;
-        }
+            // Join OUTSIDE the state lock (legacy deadlock lesson). Skip self-join in
+            // case an event handler running on a pump thread calls StopReceiver.
+            if (videoThread is not null && !ReferenceEquals(videoThread, Thread.CurrentThread))
+                videoThread.Join();
+            if (audioThread is not null && !ReferenceEquals(audioThread, Thread.CurrentThread))
+                audioThread.Join();
 
-        lock (_frameLock)
+            lock (_stateLock)
+            {
+                if (_recv != IntPtr.Zero)
+                {
+                    NdiNativeMethods.NDIlib_recv_destroy(_recv);
+                    _recv = IntPtr.Zero;
+                    _runtime.ReleaseHandle();
+                }
+
+                _activeSourceId = null;
+                _isPtzSupported = false;
+                _measuredFps = 0f;
+                _droppedFramePercent = 0f;
+                _lastTallyEcho = null;
+            }
+
+            lock (_frameLock)
+            {
+                _frontPixels = null;
+                _backPixels = null;
+                _frameWidth = 0;
+                _frameHeight = 0;
+                _frameTimestampMillis = 0;
+            }
+
+            _audioSink.Stop(); // safe when not started
+            TransitionState(ConnectionState.Disconnected);
+        }
+        finally
         {
-            _frontPixels = null;
-            _backPixels = null;
-            _frameWidth = 0;
-            _frameHeight = 0;
-            _frameTimestampMillis = 0;
+            lock (_connectionLock) _stopDepth--;
         }
-
-        _audioSink.Stop(); // safe when not started
-        TransitionState(ConnectionState.Disconnected);
     }
 
     public void SetQualityProfile(QualityProfile profile)
@@ -257,6 +274,11 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
     public ConnectionState GetConnectionState()
     {
         lock (_connectionLock) return _connectionState;
+    }
+
+    public ReceiverStopReason GetLastStopReason()
+    {
+        lock (_connectionLock) return _lastStopReason;
     }
 
     public NdiVideoFrame? GetLatestFrame()
@@ -424,7 +446,7 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
                         }
 
                         if (connectionLost)
-                            TransitionState(ConnectionState.Disconnected);
+                            TransitionState(ConnectionState.Disconnected, ReceiverStopReason.ConnectionLost);
                         break;
                 }
 
@@ -446,7 +468,7 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
         {
             // A pump thread must never take down the process (unhandled exceptions on
             // background threads are fatal in .NET). Report loss of the stream instead.
-            TransitionState(ConnectionState.Disconnected);
+            TransitionState(ConnectionState.Disconnected, ReceiverStopReason.ConnectionLost);
         }
     }
 
@@ -620,13 +642,14 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
 
     // ── Helpers ──────────────────────────────────────────────────────────────
 
-    private void TransitionState(ConnectionState newState)
+    private void TransitionState(ConnectionState newState, ReceiverStopReason stopReason = ReceiverStopReason.Intentional)
     {
         bool changed;
         lock (_connectionLock)
         {
             changed = _connectionState != newState;
             _connectionState = newState;
+            _lastStopReason = _stopDepth > 0 ? ReceiverStopReason.Intentional : stopReason;
         }
 
         if (!changed)

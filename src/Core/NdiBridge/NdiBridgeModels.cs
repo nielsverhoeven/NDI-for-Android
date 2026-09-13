@@ -26,6 +26,25 @@ public enum ConnectionState
     Disconnected,
 }
 
+/// <summary>
+/// Why the receiver most recently transitioned to <see cref="ConnectionState.Disconnected"/>.
+/// Meaningless while <see cref="INdiViewerBridge.GetConnectionState"/> reports anything else.
+/// <see cref="Intentional"/> is deliberately the default value: an implementation that has not
+/// classified the stop must never be able to trigger an automatic reconnect window.
+/// </summary>
+public enum ReceiverStopReason
+{
+    /// <summary>An explicit, intentional stop requested by application code — the user's Stop
+    /// button, an internal restart (source switch, quality-profile bandwidth change, a reconnect
+    /// attempt), or a navigation handoff. Never an unexpected drop.</summary>
+    Intentional,
+
+    /// <summary>The pump thread detected the live connection was lost on its own
+    /// (<c>recv_get_no_connections</c> reached 0 after having been connected, or the pump thread
+    /// faulted) — a genuine unexpected-drop candidate.</summary>
+    ConnectionLost,
+}
+
 /// <summary>A single NDI Discovery Server endpoint (host + port).</summary>
 public record DiscoveryServerEndpoint(string Host, int Port);
 
