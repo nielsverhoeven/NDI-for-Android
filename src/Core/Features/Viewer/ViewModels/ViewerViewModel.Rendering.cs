@@ -28,7 +28,7 @@ public partial class ViewerViewModel
     /// </summary>
     public event EventHandler? FrameReady;
 
-    /// <summary>Set by the View's StartRendering/StopRendering/Teardown; the View is the only writer.</summary>
+    /// <summary>Set by the View's StartRendering/StopRendering/Teardown/OnBindingContextChanged; the View is the only writer.</summary>
     public void SetRenderingActive(bool active) => _isRenderingActive = active;
 
     // Video pump thread, up to 60/s. Not allocation-free: the closure below allocates a delegate

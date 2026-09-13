@@ -63,7 +63,8 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
 
     /// <summary>
     /// True after the user taps Stop, until playback starts again (#348). Drives the View's
-    /// "Stopped" treatment of the video surface — the render loop keeps polling
+    /// "Stopped" treatment of the video surface — the presenter only repaints on a new frame
+    /// timestamp (draw-on-arrival plus the 33 ms fallback pull) while reading
     /// <see cref="CurrentFrame"/>, so without this the last frame stays painted forever with
     /// nothing on screen to say playback ended.
     /// </summary>
