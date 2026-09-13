@@ -4873,3 +4873,110 @@ demonstrated and a scoped decision is recorded here.
   real behaviour. If parity is wanted, the seam is the ViewModel/AppState layer (a user-requested vs.
   autonomous stop distinction on `OutputStatusChanged`) — **not** `IAppStateRepository` writes from the
   Android foreground service. Owner decision needed; follow-up issue if yes.
+
+### 2026-09-13 — #415 viewer frame drops / #416 glass-to-glass latency (gate)
+
+**APPROVE-WITH-CHANGES.** Two PRs, strictly ordered, both authored **on top of PR #407** and both
+requiring **#417 Part A** (the `Trace` seam) to have merged. Verdict file: `verdict-415-416.md`
+(24 rulings, 12 + 10 `requiredChanges` verbatim, 22 + 8 tests, 2 deferred ticket texts, 12 accepted
+residuals, 7 open product questions, a device measurement procedure). Line numbers for the five
+files #407 owns are against `rc392`; everything else against this checkout. **No shell and no web
+access this session** — the issue bodies could not be read and the NDI latency figures could not be
+sourced from docs.ndi.video, so both are marked as estimates to confirm. Re-gate anything an issue
+body contradicts.
+
+**1. The drop-percentage defect, and where its state lives.** `UpdateStats`
+(`rc392/NdiViewerBridge.cs:552-555`) divides the *raw cumulative* counters
+`NDIlib_recv_get_performance` returns — a lifetime average, not a rate, exactly what the binding's
+own comment warns against (`NdiNativeStructs.cs:146`). Fixed by diffing per interval. **The previous
+snapshot is two `long` locals in `VideoPumpLoop` passed by `ref`, deliberately NOT a pump-thread
+field like `_maxFrameGapMs`:** the counters are per-*receiver* state and a receiver has exactly one
+video pump, so a new receiver starts from zero **with no reset anywhere** — which is what gives this
+change **zero line overlap with #417 Part B**, the one change that replaces `StopReceiver`
+wholesale. `_maxFrameGapMs` is a field only because the *stats tick* owns its lifetime; that
+argument does not transfer. A zero-frame interval reports 0 %, not the previous value — the fps arm
+already names that case.
+
+**2. `UpdateStats` is not made mockable; the arithmetic moves to Core instead.** New
+`src/Core/Features/Viewer/ReceiverStatsMath.DropPercent(totalDelta, droppedDelta)` — same shape and
+folder as `ConnectionHintPolicy`. Wrapping a static `[DllImport]` in an interface to test two
+subtractions would put a seam through the one layer this repo forbids seams in. The wiring stays
+untested (RC19/RC22 precedent) and is covered by a device cross-check that also settles an open
+question: whether the SDK's `dropped` counter is a **subset** of `total` (then `dropped/total` is
+right) or **disjoint** (then the denominator is `total + dropped`). The shipped formula is preserved
+and clamped 0-100 so no reading can be nonsensical either way.
+
+**3. Wi-Fi link telemetry: new Core `INetworkLinkService` + Android + Noop, read ONLY from the 1 Hz
+stats watchdog.** Never the UI thread (binder round-trip), never a pump thread (rule 6);
+`SampleConnectionStats` already runs on a thread pool at exactly 1 Hz and already marshals through
+`IMainThreadDispatcher`. **No new permission and no location permission, ever:** `ACCESS_WIFI_STATE`
++ `ACCESS_NETWORK_STATE` are already declared (`AndroidManifest.xml:7-8`), and on API 26+ **RSSI,
+PHY link speed and channel frequency (hence band) are not location-gated — only SSID/BSSID are**
+(redacted from API 29 without `ACCESS_FINE_LOCATION`). The record therefore carries no SSID at all:
+asking for a location permission to print a network name in a diagnostic line is a permission
+escalation for a cosmetic gain. Deprecation is handled by *branching*, not suppressing —
+`ConnectivityManager.GetNetworkCapabilities(...).TransportInfo` on API 31+, `WifiManager.
+ConnectionInfo` below, split on `OperatingSystem.IsAndroidVersionAtLeast(31)` with `#pragma warning
+disable CA1422` on the legacy branch only (`AndroidVideoCaptureSource.cs:425-427` precedent).
+
+**4. #330/#331 are untouched: the link changes the hint's *wording* and nothing else.** "Connection
+weak — try Smooth" becomes "2.4 GHz / weak signal — switch to Smooth" when the radio is a plausible
+cause, composed from the *actual* band so it can never claim a band the device is not on, and with
+the suggestion dropped on Smooth. No automatic profile change anywhere; a dedicated test asserts
+`SetQualityProfile` is never called.
+
+**5. `Stalled` must count as "the receiver is up" for the hint — changed now, not deferred.** After
+#407 a starved link lives in `Stalled` (3 s with no video demotes `Connected → Stalled`), and
+`ApplyConnectionSample`'s `!connected` branch both **wiped an active hint** and **reset the
+five-sample run** on every demotion — so the hint could never appear on the one link it exists for.
+Two lines, in a file both PRs already touch. Accepted cost: an idle sender on a good link now hints
+after 5 s; the wording for that case is a product question, not a reason to leave the detector
+broken.
+
+**6. The 33 ms render decimation is IN (#416); the BGRA colour format and per-frame managed copy are
+OUT (own ticket, text written).** The colour-format work changes the receive contract (`Fastest`
+returns UYVY) and the render surface (`SKCanvasView` is a CPU raster that only understands
+`Bgra8888`) *simultaneously*, and the only evidence it binds is one 3440x1440@60 run — **no 1080p60
+number exists in either direction**. The measurement procedure produces exactly that number and
+decides whether the ticket is filed at all.
+
+**7. Draw-on-arrival, with the coalescing in Core and the 33 ms timer KEPT as a fallback.** New
+`INdiViewerBridge.VideoFrameReady`, raised on the pump thread **after** the native frame is freed
+(the metadata path's existing ordering rule, `rc392:438-441`) and after the Connected transition.
+The handler does one `Interlocked.Exchange` and at most one `BeginInvokeOnMainThread` — newest-frame-
+wins, so a busy UI thread drops intermediate frames instead of queueing 60 invalidates a second.
+**The coalescing lives in `ViewerViewModel`, not in `ViewerView`:** a XAML-instantiated `ContentView`
+has no DI constructor, so giving it the bridge or the overlay service would mean a service locator,
+which `CLAUDE.md` forbids. The timer stays at 33 ms in this PR so a hole in the new wiring degrades
+to today's latency rather than to a blank canvas — both `ViewerView` hosts (`ViewerPage` and the
+Expanded pane) and the #384 full-screen path ride on it. Expected gain: 0-50 ms → 0-17 ms.
+
+**8. The latency readout reuses #417 Part A's `Trace` seam — fifth refusal of a parallel store.**
+Two new tag constants on `DiagnosticOverlayService` next to `DiscoveryLogTag`/`NavigationLogTag`:
+`LatencyLogTag = "NDI-Lat"` (1 Hz, `recvToDrawMs` / `senderToDrawMs`) and `LinkLogTag = "NDI-Link"`.
+Separate tags, one seam. Sink only — **never** `DiagnosticLogBuffer`, with one approved exception:
+an **edge-triggered** link entry on a band or weak/not-weak change, which is the only way to read
+the radio at a venue with no PC. `NdiVideoFrame` gains `ReceivedAtTickMillis` (monotonic, single
+clock) and `TimestampIsSynthesized`, **defaulting to `true`** so the unsafe answer is never the
+default (#392 RC1's rule); a sender→draw figure from a synthesized timestamp measures nothing and
+would read as a suspiciously *good* number, so it is reported as `-1`.
+
+**9. Audio output (`AudioTrack` low-latency mode, buffer sizing, backlog drain) is OUT.** The
+symptom is picture vs. the room's PA and the tablet's speaker is not in that loop;
+`PerformanceModeLowLatency` is a request that, with the existing `minBytes * 2` buffer and blocking
+writes, can trade a visible symptom for an audible one. Ticket text written, blocked on one product
+answer: does anyone listen on the tablet at all?
+
+**10. Sequencing.** #407 → (#417 Part A, parallel) → **PR-A `bugfix/415-drop-rate-and-link`** →
+**PR-B `bugfix/416-latency-draw-on-arrival`, cut from PR-A's branch** (both edit `VideoPumpLoop`).
+PR-A and **#417 Part B may be authored in parallel** — proven zero line overlap, see ruling 1. If
+Part A stalls, PR-A still ships minus the `NDI-Link` logcat line; PR-B cannot, because the readout
+*is* its deliverable. Neither PR closes #410, #408, #420 or #417's landscape blocks.
+
+**Expectation set for Niels, to be confirmed (no web access this session):** ~80-150 ms
+glass-to-glass on a good 5 GHz link at 1080p60 with full NDI; NDI|HX adds ~100-300 ms at the
+*sender*; Smooth's win is that it **fits** a bad link, not that it is inherently faster (the repo's
+own "lower latency" claim at `rc392:709-714` is an assertion this gate did not verify). Sub-50 ms is
+not reachable on a tablet over Wi-Fi with a CPU decode and a compositing display stack — the app-side
+share is the ~17 ms PR-B removes, and the 2.4 GHz / −78 dBm / 6 Mbit/s church link was two orders of
+magnitude short of what the default profile asked for. No code change fixes that.
