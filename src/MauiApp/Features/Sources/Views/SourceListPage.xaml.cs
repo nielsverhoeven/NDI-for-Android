@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using NdiForAndroid.Features.DiagOverlay.Services;
 using NdiForAndroid.Features.Navigation.Services;
 using NdiForAndroid.Features.Sources.ViewModels;
 using NdiForAndroid.Features.Viewer.Services;
@@ -10,6 +11,7 @@ public partial class SourceListPage : ContentPage
 {
     private readonly IWindowSizeClassService _windowSizeClassService;
     private readonly ViewerFullScreenChromeController _fullScreenChromeController;
+    private readonly IDiagnosticOverlayService? _diagnostics;
 
     private bool _isPageVisible;
     private bool _isPaneFullScreen;
@@ -18,13 +20,15 @@ public partial class SourceListPage : ContentPage
     public SourceListPage(
         SourceListViewModel viewModel,
         IWindowSizeClassService windowSizeClassService,
-        ViewerFullScreenChromeController fullScreenChromeController)
+        ViewerFullScreenChromeController fullScreenChromeController,
+        IDiagnosticOverlayService? diagnostics = null)
     {
         InitializeComponent();
         BindingContext = viewModel;
 
         _windowSizeClassService = windowSizeClassService;
         _fullScreenChromeController = fullScreenChromeController;
+        _diagnostics = diagnostics;
         _windowSizeClassService.Changed += OnWindowSizeClassChanged;
         viewModel.PropertyChanged += OnSourceListViewModelPropertyChanged;
         ApplySizeClass(_windowSizeClassService.Current);
@@ -33,25 +37,43 @@ public partial class SourceListPage : ContentPage
     protected override void OnAppearing()
     {
         base.OnAppearing();
+        var t0 = Environment.TickCount64;
+        _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "page.appearing.begin", "name=SourceList");
         _isPageVisible = true;
 
+        var refreshStartedAt = Environment.TickCount64;
+        _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "sourcelist.refresh.begin");
         if (BindingContext is SourceListViewModel vm && vm.RefreshCommand.CanExecute(null))
             vm.RefreshCommand.Execute(null);
+        _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "sourcelist.refresh.end", $"ms={Environment.TickCount64 - refreshStartedAt}");
 
         // Resume the embedded pane's render loop only when it is actually shown.
         if (_windowSizeClassService.Current == WindowSizeClass.Expanded)
+        {
+            var paneStartedAt = Environment.TickCount64;
+            _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "sourcelist.pane.start.begin");
             ViewerPane.StartRendering();
+            _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "sourcelist.pane.start.end", $"ms={Environment.TickCount64 - paneStartedAt}");
+        }
 
+        var paneAttachStartedAt = Environment.TickCount64;
+        _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "sourcelist.paneattach.begin");
         AttachPaneIfReady();
+        _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "sourcelist.paneattach.end", $"ms={Environment.TickCount64 - paneAttachStartedAt}");
+
+        _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "page.appearing.end", $"name=SourceList ms={Environment.TickCount64 - t0}");
     }
 
     protected override void OnDisappearing()
     {
+        var t0 = Environment.TickCount64;
+        _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "page.disappearing.begin", "name=SourceList");
         _isPageVisible = false;
         // Always stop the pane's render loop when the page (or the app) goes away.
         ViewerPane.StopRendering();
         _fullScreenChromeController.Detach();
         base.OnDisappearing();
+        _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "page.disappearing.end", $"name=SourceList ms={Environment.TickCount64 - t0}");
     }
 
     protected override bool OnBackButtonPressed()
@@ -96,10 +118,17 @@ public partial class SourceListPage : ContentPage
     /// <summary>Layout plumbing only: 2*/3* two-pane split on Expanded, single column otherwise.</summary>
     private void ApplySizeClass(WindowSizeClass sizeClass)
     {
+        var t0 = Environment.TickCount64;
+        _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "sourcelist.applysizeclass.begin",
+            $"class={sizeClass} fullscreen={_isPaneFullScreen}");
+
         // A size-class change mid-full-screen must never restore the list column under the
         // video — full screen covers the whole window until the user exits it.
         if (_isPaneFullScreen)
+        {
+            _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "sourcelist.applysizeclass.end", $"ms={Environment.TickCount64 - t0}");
             return;
+        }
 
         if (sizeClass == WindowSizeClass.Expanded)
         {
@@ -117,6 +146,8 @@ public partial class SourceListPage : ContentPage
             ViewerPane.IsVisible = false;
             ViewerPane.StopRendering();
         }
+
+        _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "sourcelist.applysizeclass.end", $"ms={Environment.TickCount64 - t0}");
     }
 
     /// <summary>Full screen covers the whole window, not just the pane: collapses the header row

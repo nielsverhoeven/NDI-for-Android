@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using NdiForAndroid.Features.DiagOverlay.Services;
 using NdiForAndroid.Features.Navigation.ViewModels;
 using NdiForAndroid.Features.Viewer.ViewModels;
 using NdiForAndroid.Services;
@@ -18,6 +19,7 @@ public sealed class ViewerFullScreenChromeController
     private readonly IImmersiveModeService _immersiveMode;
     private readonly AdaptiveShellStateViewModel _shellState;
     private readonly IOrientationLockService _orientationLock;
+    private readonly IDiagnosticOverlayService? _diagnostics;
 
     private Page? _page;
     private ViewerViewModel? _viewModel;
@@ -31,19 +33,27 @@ public sealed class ViewerFullScreenChromeController
     public ViewerFullScreenChromeController(
         IImmersiveModeService immersiveMode,
         AdaptiveShellStateViewModel shellState,
-        IOrientationLockService orientationLock)
+        IOrientationLockService orientationLock,
+        IDiagnosticOverlayService? diagnostics = null)
     {
         _immersiveMode = immersiveMode;
         _shellState = shellState;
         _orientationLock = orientationLock;
+        _diagnostics = diagnostics;
     }
 
     /// <summary>Wires chrome ownership to <paramref name="page"/>/<paramref name="viewModel"/>. Idempotent
     /// and safe to call repeatedly with the same pair (e.g. a revisited singleton host page).</summary>
     public void Attach(Page page, ViewerViewModel viewModel)
     {
+        var t0 = Environment.TickCount64;
+        _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "chrome.attach.begin");
+
         if (ReferenceEquals(_page, page) && ReferenceEquals(_viewModel, viewModel))
+        {
+            _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "chrome.attach.end", $"ms={Environment.TickCount64 - t0}");
             return;
+        }
 
         Detach();
 
@@ -52,6 +62,7 @@ public sealed class ViewerFullScreenChromeController
         _viewModel.PropertyChanged += OnViewModelPropertyChanged;
 
         ApplyChrome(_viewModel.IsFullScreen);
+        _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "chrome.attach.end", $"ms={Environment.TickCount64 - t0}");
     }
 
     /// <summary>
@@ -63,6 +74,9 @@ public sealed class ViewerFullScreenChromeController
     /// </summary>
     public void Detach()
     {
+        var t0 = Environment.TickCount64;
+        _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "chrome.detach.begin");
+
         if (_viewModel is not null)
         {
             _viewModel.PropertyChanged -= OnViewModelPropertyChanged;
@@ -76,6 +90,8 @@ public sealed class ViewerFullScreenChromeController
 
         _page = null;
         _viewModel = null;
+
+        _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "chrome.detach.end", $"ms={Environment.TickCount64 - t0}");
     }
 
     /// <summary>Full screen's Back handling: delegates to <see cref="ViewerViewModel.HandleBackButtonPress"/>
