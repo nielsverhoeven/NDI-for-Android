@@ -18,7 +18,8 @@ public class ConnectionHintPolicyTests
 
     [Theory]
     [InlineData(15.1f, 9.9f, true)]
-    [InlineData(15f, 9.9f, false)]
+    [InlineData(15f, 9.9f, true)]
+    [InlineData(14.9f, 9.9f, false)]
     [InlineData(30f, 10f, false)]
     public void IsGood_Theory(float fps, float dropPercent, bool expected)
     {
@@ -86,7 +87,7 @@ public class ConnectionHintPolicyTests
     }
 
     [Fact]
-    public void Next_WhileActive_InBetweenSampleKeepsHint()
+    public void Next_WhileActive_InBetweenSample_KeepsTheHintAndPreservesTheGoodRun()
     {
         var state = new ConnectionHintPolicy.State(0, 3, true);
 
@@ -94,7 +95,9 @@ public class ConnectionHintPolicyTests
 
         Assert.True(state.IsHintActive);
         Assert.Equal(0, state.WeakRun);
-        Assert.Equal(0, state.GoodRun);
+        // #415 round 2: a dead-band sample must not destroy the clear run. With a per-second rate,
+        // one 20 % second every few samples otherwise pinned an active hint on forever.
+        Assert.Equal(3, state.GoodRun);
     }
 
     [Fact]
@@ -113,5 +116,86 @@ public class ConnectionHintPolicyTests
     public void HintText_Active_Smooth_OmitsSuggestion()
     {
         Assert.Equal("Connection weak", ConnectionHintPolicy.HintText(true, QualityProfile.Smooth));
+    }
+
+    [Fact]
+    public void Next_SpikyButRecoveringLink_StillClearsTheHint()
+    {
+        // Five genuinely weak seconds raise the hint...
+        var state = ConnectionHintPolicy.State.Idle;
+        foreach (var drop in new[] { 35f, 35f, 35f, 35f, 35f })
+            state = ConnectionHintPolicy.Next(state, 30f, drop);
+        Assert.True(state.IsHintActive);
+
+        // ...then the link recovers to ~7 % average, with single seconds in the 10-30 % dead band.
+        // Before the fix each of those zeroed the clear run and the hint never cleared at all.
+        foreach (var drop in new[] { 4f, 14f, 6f, 3f, 12f, 5f, 11f, 4f })
+            state = ConnectionHintPolicy.Next(state, 30f, drop);
+
+        Assert.False(state.IsHintActive);
+    }
+
+    [Theory]
+    [InlineData(35f, 5f)]   // weak second alternating with a good one
+    [InlineData(35f, 14f)]  // weak second alternating with a dead-band one
+    public void Next_JitteryLink_NeverRaisesTheHint(float weakDrop, float otherDrop)
+    {
+        var state = ConnectionHintPolicy.State.Idle;
+
+        for (var i = 0; i < 40; i++)
+            state = ConnectionHintPolicy.Next(state, 30f, i % 2 == 0 ? weakDrop : otherDrop);
+
+        Assert.False(state.IsHintActive);
+    }
+
+    [Fact]
+    public void Next_MediocreLink_KeepsAnActiveHintUp()
+    {
+        // The dead band exists so that a link losing 20 % of frames is not declared healthy.
+        var state = new ConnectionHintPolicy.State(0, 0, true);
+
+        for (var i = 0; i < 30; i++)
+            state = ConnectionHintPolicy.Next(state, 30f, 20f);
+
+        Assert.True(state.IsHintActive);
+    }
+
+    [Fact]
+    public void Next_ExactlyAtTheFpsThreshold_CanStillClearTheHint()
+    {
+        var state = new ConnectionHintPolicy.State(0, 0, true);
+
+        for (var i = 0; i < ConnectionHintPolicy.GoodSamplesToClear; i++)
+            state = ConnectionHintPolicy.Next(state, ConnectionHintPolicy.GoodFpsThreshold, 0f);
+
+        Assert.False(state.IsHintActive);
+    }
+
+    [Fact]
+    public void Next_WeakWithoutDrops_LatchesNoDropEvidence()
+    {
+        // Receiver up, source silent: weak by the fps arm, nothing lost. The radio is not implicated.
+        var state = ConnectionHintPolicy.State.Idle;
+
+        for (var i = 0; i < 5; i++)
+            state = ConnectionHintPolicy.Next(state, 0f, 0f);
+
+        Assert.True(state.IsHintActive);
+        Assert.False(state.SawDropEvidence);
+    }
+
+    [Fact]
+    public void Next_WeakWithDrops_LatchesEvidence_AndForgetsItWhenTheHintClears()
+    {
+        var state = ConnectionHintPolicy.State.Idle;
+        for (var i = 0; i < 5; i++)
+            state = ConnectionHintPolicy.Next(state, 5f, 40f);
+        Assert.True(state.SawDropEvidence);
+
+        for (var i = 0; i < 5; i++)
+            state = ConnectionHintPolicy.Next(state, 30f, 0f);
+
+        Assert.False(state.IsHintActive);
+        Assert.False(state.SawDropEvidence);
     }
 }
