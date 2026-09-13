@@ -62,6 +62,20 @@ public interface INdiViewerBridge
     /// <summary>Raised (on the pump thread) when the source echoes a tally state change.</summary>
     event EventHandler<NdiTallyEcho>? TallyEchoChanged;
 
+    /// <summary>
+    /// Raised on the video pump thread, after the native frame has been freed, once a newly
+    /// captured frame is visible to <see cref="GetLatestFrame"/>. Exists so the viewer can draw on
+    /// arrival instead of polling a 33 ms timer (#416).
+    /// <para>
+    /// Fires at the source frame rate — up to 60/s — on the thread a stop joins. A handler must
+    /// therefore do nothing but post a single coalesced invalidate: no allocation, no lock, no UI
+    /// work, no blocking call, and never a call back into this bridge. It carries no payload on
+    /// purpose: the frame is re-read on the UI thread, so a subscriber that falls behind sees the
+    /// newest frame rather than a queue of stale ones.
+    /// </para>
+    /// </summary>
+    event EventHandler? VideoFrameReady;
+
     /// <summary>Reports this receiver's tally state upstream to the source (retained across reconnects).</summary>
     void SetTally(bool onProgram, bool onPreview);
 

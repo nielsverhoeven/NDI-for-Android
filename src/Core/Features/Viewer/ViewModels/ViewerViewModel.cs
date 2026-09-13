@@ -199,6 +199,7 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
         _lifecycle.OrientationChanged += OnOrientationChanged;
         _bridge.ConnectionStateChanged += OnBridgeConnectionStateChanged;
         _bridge.TallyEchoChanged += OnBridgeTallyEchoChanged;
+        _bridge.VideoFrameReady += OnBridgeVideoFrameReady;
         PtzEndpointForm.EndpointSaved += OnPtzEndpointSaved;
     }
 
@@ -422,6 +423,7 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
         _lifecycle.OrientationChanged -= OnOrientationChanged;
         _bridge.ConnectionStateChanged -= OnBridgeConnectionStateChanged;
         _bridge.TallyEchoChanged -= OnBridgeTallyEchoChanged;
+        _bridge.VideoFrameReady -= OnBridgeVideoFrameReady;
 
         // The ownership token's dual: at most one ViewModel may drive the shared bridge, so the one
         // that owns the receiver must hand it back when it goes away. ViewerPage disposes this

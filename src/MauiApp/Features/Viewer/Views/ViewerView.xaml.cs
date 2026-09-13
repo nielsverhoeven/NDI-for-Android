@@ -16,13 +16,15 @@ namespace NdiForAndroid.Features.Viewer.Views;
 /// </summary>
 public partial class ViewerView : ContentView
 {
-    // Rendering plumbing only (allowed in code-behind): a ~30 fps pull loop that
-    // invalidates the canvas when the bridge has produced a newer frame, and a
-    // paint handler that blits the ARGB int[] into a reusable SKBitmap.
+    // Rendering plumbing only (allowed in code-behind): frames are presented on arrival — the
+    // ViewModel raises FrameReady on the UI thread, already coalesced — with a ~30 fps timer kept
+    // as a fallback so a hole in the event wiring degrades to the old behaviour rather than to a
+    // blank canvas (#416).
     private IDispatcherTimer? _renderTimer;
     private NdiVideoFrame? _pendingFrame;
     private long _lastRenderedTimestamp = -1;
     private SKBitmap? _frameBitmap;
+    private bool _isRenderingActive;
 
     private ViewerViewModel? _boundViewModel;
 
@@ -34,9 +36,11 @@ public partial class ViewerView : ContentView
         SizeChanged += (_, _) => UpdateLayoutVisibility();
     }
 
-    /// <summary>Starts (or resumes) the ~30 fps frame pull loop. Idempotent.</summary>
+    /// <summary>Enables presentation: draw-on-arrival plus the ~30 fps fallback pull. Idempotent.</summary>
     public void StartRendering()
     {
+        _isRenderingActive = true;
+
         if (_renderTimer is null)
         {
             _renderTimer = Dispatcher.CreateTimer();
@@ -47,9 +51,11 @@ public partial class ViewerView : ContentView
         _renderTimer.Start();
     }
 
-    /// <summary>Stops the frame pull loop. Safe to call when not rendering.</summary>
+    /// <summary>Disables presentation. Safe to call when not rendering. The FrameReady handler is
+    /// gated on the same flag, so a frame arriving after the host page disappeared paints nothing.</summary>
     public void StopRendering()
     {
+        _isRenderingActive = false;
         _renderTimer?.Stop();
     }
 
@@ -70,6 +76,7 @@ public partial class ViewerView : ContentView
         if (_boundViewModel is not null)
         {
             _boundViewModel.PropertyChanged -= OnViewModelPropertyChanged;
+            _boundViewModel.FrameReady -= OnFrameReady;
             _boundViewModel = null;
         }
 
@@ -84,12 +91,18 @@ public partial class ViewerView : ContentView
         base.OnBindingContextChanged();
 
         if (_boundViewModel is not null)
+        {
             _boundViewModel.PropertyChanged -= OnViewModelPropertyChanged;
+            _boundViewModel.FrameReady -= OnFrameReady;
+        }
 
         _boundViewModel = BindingContext as ViewerViewModel;
 
         if (_boundViewModel is not null)
+        {
             _boundViewModel.PropertyChanged += OnViewModelPropertyChanged;
+            _boundViewModel.FrameReady += OnFrameReady;
+        }
 
         UpdateLayoutVisibility();
     }
@@ -127,9 +140,17 @@ public partial class ViewerView : ContentView
         }
     }
 
-    private void OnRenderTick(object? sender, EventArgs e)
+    /// <summary>Draw-on-arrival (#416). Already on the UI thread and already coalesced by the
+    /// ViewModel, so this is a single presentation attempt — never a loop and never a dispatch.</summary>
+    private void OnFrameReady(object? sender, EventArgs e) => PresentLatestFrame();
+
+    /// <summary>Fallback pull. Once the event path is current this costs one property read and one
+    /// long comparison per tick, because the timestamp dedupe below short-circuits it.</summary>
+    private void OnRenderTick(object? sender, EventArgs e) => PresentLatestFrame();
+
+    private void PresentLatestFrame()
     {
-        if (BindingContext is not ViewerViewModel viewModel)
+        if (!_isRenderingActive || BindingContext is not ViewerViewModel viewModel)
             return;
 
         var frame = viewModel.CurrentFrame;
@@ -172,5 +193,11 @@ public partial class ViewerView : ContentView
         // SkiaSharp 4 retires the paint-only DrawBitmap overload; Default sampling (nearest
         // neighbour, no mipmaps) is what that overload used, so the output is unchanged.
         canvas.DrawBitmap(_frameBitmap, dest, SKSamplingOptions.Default);
+
+        // #416 instrumentation, developer mode only. One call, no branching here: the throttle, the
+        // arithmetic and the developer-mode gate all live in the Core ViewModel so they are
+        // unit-testable and so this stays rendering plumbing (rule 3).
+        _boundViewModel?.ReportFrameDrawn(
+            frame.ReceivedAtTickMillis, frame.CapturedAtEpochMillis, frame.TimestampIsSynthesized);
     }
 }

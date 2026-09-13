@@ -67,6 +67,8 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
     private int _frameWidth;
     private int _frameHeight;
     private long _frameTimestampMillis;
+    private long _frameReceivedAtTicks;
+    private bool _frameTimestampIsSynthesized = true;
 
     private volatile float _measuredFps;
     private volatile float _droppedFramePercent;
@@ -102,6 +104,9 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
 
     /// <inheritdoc />
     public event EventHandler<NdiTallyEcho>? TallyEchoChanged;
+
+    /// <inheritdoc />
+    public event EventHandler? VideoFrameReady;
 
     /// <inheritdoc />
     public bool IsAudioEnabled
@@ -252,6 +257,8 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
                 _frameWidth = 0;
                 _frameHeight = 0;
                 _frameTimestampMillis = 0;
+                _frameReceivedAtTicks = 0;
+                _frameTimestampIsSynthesized = true;
             }
 
             _audioSink.Stop(); // safe when not started
@@ -308,7 +315,9 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
             // The record wraps the CURRENT front buffer without copying. It is
             // immutable-by-convention: callers must not mutate the pixels, and the
             // array may be recycled by the pump after the double buffer cycles twice.
-            return new NdiVideoFrame(_frameWidth, _frameHeight, _frontPixels, _frameTimestampMillis);
+            return new NdiVideoFrame(
+                _frameWidth, _frameHeight, _frontPixels, _frameTimestampMillis,
+                _frameReceivedAtTicks, _frameTimestampIsSynthesized);
         }
     }
 
@@ -426,6 +435,13 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
                         hasEverConnected = true;
                         frameTimes.Enqueue(now);
                         TransitionState(ConnectionState.Connected);
+
+                        // After the free and after the state transition, never before: a handler may
+                        // synchronously stop the receiver (the loop's own _running re-check below
+                        // covers that), and the first frame must be observable as Connected before
+                        // anything is asked to draw it. One delegate invoke — the interface contract
+                        // forbids the handler doing anything but posting a coalesced invalidate.
+                        VideoFrameReady?.Invoke(this, EventArgs.Empty);
                         break;
 
                     case NdiFrameType.Metadata:
@@ -525,9 +541,15 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
         }
 
         // NDI timestamps are 100 ns units since the Unix epoch; INT64_MAX = undefined.
-        var timestampMillis = video.timestamp is > 0 and < long.MaxValue
+        var senderStamped = video.timestamp is > 0 and < long.MaxValue;
+        var timestampMillis = senderStamped
             ? video.timestamp / 10_000
             : DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+
+        // Monotonic receive mark, on the same clock the paint handler reads at draw time (#416).
+        // TickCount64 rather than the wall clock: a latency must survive an NTP step, and this is
+        // already the clock the pump uses for _maxFrameGapMs.
+        var receivedAtTicks = Environment.TickCount64;
 
         lock (_frameLock)
         {
@@ -535,6 +557,8 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
             _frameWidth = width;
             _frameHeight = height;
             _frameTimestampMillis = timestampMillis;
+            _frameReceivedAtTicks = receivedAtTicks;
+            _frameTimestampIsSynthesized = !senderStamped;
         }
     }
 
