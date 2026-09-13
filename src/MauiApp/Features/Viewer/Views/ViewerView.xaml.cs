@@ -173,6 +173,15 @@ public partial class ViewerView : ContentView
         if (!_isRenderingActive || _boundViewModel is null)
             return;
 
+        // Second layer over the bridge's prologue blank: Stop / CancelRetry / FailReconnect all
+        // mean "do not paint", and this also covers the one case the bridge cannot — a pane
+        // retired by ReleaseIfDisowned, where no stop happened at all because the frames now
+        // belong to another ViewerViewModel and must keep flowing for it. Without this, that
+        // pane blanks for a single frame on IsStopped and then repaints the new owner's live
+        // video under its own "Stopped" badge.
+        if (_boundViewModel.IsStopped)
+            return;
+
         var frame = _boundViewModel.CurrentFrame;
         if (frame is null || frame.CapturedAtEpochMillis == _lastRenderedTimestamp)
             return;

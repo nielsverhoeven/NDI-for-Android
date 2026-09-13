@@ -169,8 +169,8 @@ Standard bridge pattern:
 
 1. Define discovery/viewer/output bridge interfaces in `src/Core/NdiBridge/INdiBridges.cs`; plain C# models in `src/Core/NdiBridge/NdiBridgeModels.cs` and `QualityProfile.cs`.
 2. Implement bridge classes in `src/MauiApp/NdiBridge/` (file split below). All `[DllImport("ndi")]` declarations live in the interop layer only.
-3. Bridge events (`ConnectionStateChanged`, `TallyEchoChanged`, `OutputStatusChanged`, `VideoFrameReady`) are raised on pump/background threads — subscribers marshal to the UI thread (`IMainThreadDispatcher` in Core ViewModels). `VideoFrameReady` (#416) is the only **per-frame** event: it fires at the source frame rate, up to 60/s, on the thread a stop joins, and carries no payload. Its handler may do nothing but post one coalesced invalidate — no allocation beyond that post, no lock, no blocking call, and never a call back into the bridge. The raise is wrapped in its own try/catch inside the pump, because the pump's loop-wide catch reports any escaping exception as a lost stream.
-4. `INavigationHandoffService` stops the **viewer** receiver (`StopReceiver()`) when leaving the View tab. It does **not** touch the output sender: once started, `INdiOutputBridge` output keeps streaming across tab switches and app backgrounding via `ScreenShareForegroundService`, and stops only via the in-app Stop button or the persistent notification's Stop action.
+3. Bridge events (`ConnectionStateChanged`, `TallyEchoChanged`, `OutputStatusChanged`, `VideoFrameReady`) are raised on pump/background threads — `ConnectionStateChanged` is also raised in the caller's own turn by `StartReceiver`/`StopReceiverAsync`, so assume any thread — subscribers marshal to the UI thread (`IMainThreadDispatcher` in Core ViewModels). `VideoFrameReady` is the only **per-frame** event: it fires at the source frame rate, up to 60/s, on the thread a stop joins, and carries no payload. Its handler may do nothing but post one coalesced invalidate — no allocation beyond that post, no lock, no blocking call, and never a call back into the bridge. The raise is wrapped in its own try/catch inside the pump, because the pump's loop-wide catch reports any escaping exception as a lost stream.
+4. `INavigationHandoffService` *requests* a stop of the **viewer** receiver (`StopReceiverAsync()`) when leaving the View tab; the request's synchronous prologue runs in the navigation turn and the native teardown runs on the bridge's lifecycle worker, so navigation never waits on a pump join (#408/#417). It does **not** touch the output sender: once started, `INdiOutputBridge` output keeps streaming across tab switches and app backgrounding via `ScreenShareForegroundService`, and stops only via the in-app Stop button or the persistent notification's Stop action.
 
 ### Bridge file layout (`src/MauiApp/NdiBridge/`)
 
@@ -265,7 +265,7 @@ Session state (`AppStateSnapshot.StreamName`/`IsOutputActive`, `src/Core/Feature
 
 ```csharp
 ConnectionState GetConnectionState();
-event EventHandler<ConnectionState>? ConnectionStateChanged; // raised on the pump thread
+event EventHandler<ConnectionState>? ConnectionStateChanged; // raised on any thread — see below
 ```
 
 - `ConnectionState { Connecting, Connected, Disconnected, Stalled }` is a **plain C# enum** defined
@@ -274,8 +274,8 @@ event EventHandler<ConnectionState>? ConnectionStateChanged; // raised on the pu
   receiver that has never delivered a frame is not the same condition as a connected sender that
   has stopped sending video, and only the former is a reconnect candidate.
 - Drop detection is an **internal bridge concern** (originally anticipated in #233, delivered with the real bridge in #277): the video pump in `src/MauiApp/NdiBridge/NdiViewerBridge.cs` demotes `Connected → Stalled` when no video frame has arrived for 3 s (the transport is still up; a receiver that never delivered a frame stays `Connecting`), and to `Disconnected` when `NDIlib_recv_get_no_connections` reports 0 after a connection previously existed.
-- `ConnectionStateChanged`, `TallyEchoChanged` and `VideoFrameReady` are raised on the pump thread; the `ViewerViewModel` marshals resulting observable mutations through `IMainThreadDispatcher` and still calls `GetConnectionState()` from its `TimeProvider`-driven state machine, so the ViewModel remains fully testable against `Mock<INdiViewerBridge>` with no native library. `VideoFrameReady` (#416) is per-frame and payload-free: `ViewerViewModel.Rendering.cs` coalesces it with an `Interlocked` flag — cleared *before* the raise, so a frame arriving during a paint queues the next post instead of being dropped — to at most one queued main-thread post, and the View re-reads `GetLatestFrame()` on the UI thread, so a UI thread that falls behind the source drops intermediate frames instead of queueing stale ones. The post is gated on both `IsPlaying` and a View actually rendering (`SetRenderingActive`, written only by `ViewerView.StartRendering`/`StopRendering`/`Teardown`/`OnBindingContextChanged`).
-- The viewer bridge runs **two dedicated pump threads** per receiver (video+metadata, audio) with an atomic running flag; thread joins are never performed while holding the state lock, and the latest decoded frame is exposed through a copy-free front/back double buffer.
+- `ConnectionStateChanged`, `TallyEchoChanged` and `VideoFrameReady` are raised on the pump thread; `ConnectionStateChanged` is additionally raised from the bridge's lifecycle worker and from the caller's own turn (`StartReceiver` / `StopReceiverAsync` apply their postconditions synchronously — see "Receiver lifecycle queue" in `.github/KNOWLEDGE-BASE.md`). Subscribers must therefore assume *any* thread: the `ViewerViewModel` marshals every resulting observable mutation through `IMainThreadDispatcher` and still calls `GetConnectionState()` from its `TimeProvider`-driven state machine, so the ViewModel remains fully testable against `Mock<INdiViewerBridge>` with no native library. `VideoFrameReady` is per-frame and payload-free: `ViewerViewModel.Rendering.cs` coalesces it with an `Interlocked` flag — cleared *before* the raise, so a frame arriving during a paint queues the next post instead of being dropped — to at most one queued main-thread post, and the View re-reads `GetLatestFrame()` on the UI thread, so a UI thread that falls behind the source drops intermediate frames instead of queueing stale ones. The post is gated on both `IsPlaying` and a View actually rendering (`SetRenderingActive`, written only by `ViewerView.StartRendering`/`StopRendering`/`Teardown`/`OnBindingContextChanged`).
+- The viewer bridge runs **two dedicated pump threads** per receiver (video+metadata, audio) with an atomic running flag; thread joins are never performed while holding the state lock, and the latest decoded frame is exposed through a copy-free front/back double buffer. Every lifecycle operation (start, stop, quality restart, dispose) is serialized on a single task chain inside the bridge, split into a synchronous prologue in the caller's turn — ownership token, intentional-stop tag, blank front buffer, `Disconnected` state — and a queued native core on a worker thread (#408/#420).
 
 ### Viewer reconnection component (Issue #233)
 
@@ -289,7 +289,7 @@ graph TB
     POLL["ViewerViewModel TimeProvider poll"] --> GCS["INdiViewerBridge.GetConnectionState()"]
     GCS -->|Connected| PLAY["IsPlaying playback"]
     GCS -->|Disconnected while playing and not user Stop| WINDOW["15s retry window"]
-    WINDOW --> ATTEMPT["Every 2s: StopReceiver then StartReceiver(SourceId)"]
+    WINDOW --> ATTEMPT["Every 2s: StopReceiverAsync then StartReceiver(SourceId) — both requests, ordered by the bridge's lifecycle queue"]
     ATTEMPT -->|first Connected| PLAY
     ATTEMPT -->|window elapsed| FAILED["Stopped/error state + Reconnect command"]
     WINDOW --> DISP["IMainThreadDispatcher marshals observable mutations"]

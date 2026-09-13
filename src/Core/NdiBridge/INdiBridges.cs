@@ -33,8 +33,48 @@ public interface INdiDiscoveryBridge
 /// </summary>
 public interface INdiViewerBridge
 {
+    /// <summary>
+    /// Requests a receiver for <paramref name="sourceId"/>. Returns once the request has been
+    /// recorded: <see cref="ReceiverGeneration"/> is bumped, the requested quality profile is
+    /// published (so a <see cref="SetQualityProfile"/> that lands before the receiver exists is not
+    /// lost), the previous receiver's frames stop being handed out by
+    /// <see cref="GetLatestFrame"/>, and <see cref="GetConnectionState"/> is
+    /// <see cref="ConnectionState.Disconnected"/> with
+    /// <see cref="ReceiverStopReason.Intentional"/> — all before this returns. The native teardown
+    /// of any previous receiver and the create/connect then run, in that order, on the bridge's
+    /// single lifecycle worker.
+    /// <para>
+    /// The outcome arrives through <see cref="ConnectionStateChanged"/> and never by polling
+    /// <see cref="GetConnectionState"/> straight after this call: at that point the bridge reports
+    /// <see cref="ConnectionState.Disconnected"/>, not
+    /// <see cref="ConnectionState.Connecting"/> — the receiver has not been created yet.
+    /// </para>
+    /// </summary>
     void StartReceiver(string sourceId, QualityProfile qualityProfile = QualityProfile.Balanced);
-    void StopReceiver();
+
+    /// <summary>
+    /// Requests a stop. The synchronous part happens in the caller's turn, so it is ordered against
+    /// whatever the caller does next, and it establishes four postconditions callers depend on:
+    /// the pump threads are unwinding; <see cref="GetLatestFrame"/> returns <c>null</c> (so no
+    /// render loop, frame-ready signal or second ViewModel can paint another frame of the stream
+    /// just ended); <see cref="GetConnectionState"/> is
+    /// <see cref="ConnectionState.Disconnected"/>; and every <c>Disconnected</c> raised from here
+    /// until the teardown completes is tagged <see cref="ReceiverStopReason.Intentional"/>, so no
+    /// reconnect window opens on a stop the app requested.
+    /// <para>
+    /// The native part — joining the pump threads, <c>recv_destroy</c>, releasing the runtime
+    /// handle, stopping the audio sink — runs on the bridge's single lifecycle worker; the returned
+    /// task completes when it has. Audio therefore fades up to a few hundred milliseconds after the
+    /// video surface goes blank.
+    /// </para>
+    /// <para>
+    /// Callers that merely want the receiver gone must NOT await this on the UI thread — use
+    /// <c>StopReceiverAsync().FireAndForget()</c>. Never await or block on it from a bridge event
+    /// handler: those can run on a pump thread and the worker joins that thread.
+    /// </para>
+    /// </summary>
+    Task StopReceiverAsync();
+
     void SetQualityProfile(QualityProfile profile);
     ConnectionState GetConnectionState();
 
@@ -56,10 +96,24 @@ public interface INdiViewerBridge
     float GetMeasuredFps();
     QualityProfile ActiveQualityProfile { get; }
 
-    /// <summary>Raised (on the pump thread) when the receiver's connection state changes.</summary>
+    /// <summary>
+    /// Raised when the receiver's connection state changes. <b>Any thread:</b> a pump thread, the
+    /// implementation's lifecycle worker, or the caller's own thread during
+    /// <see cref="StartReceiver"/> / <see cref="StopReceiverAsync"/> — those two apply their
+    /// synchronous postconditions in the caller's turn and raise from there. Subscribers must
+    /// marshal every observable mutation to the UI thread (<c>IMainThreadDispatcher</c> in Core),
+    /// must not block, and must not assume they are off the UI thread.
+    /// <para>
+    /// A handler must also not synchronously read other members of this interface and expect it to
+    /// be cheap: the implementation may raise this while holding the lock it holds across the
+    /// native receiver create/connect, so <see cref="ActiveQualityProfile"/>,
+    /// <see cref="SetTally"/> and the PTZ members can block for that duration. Post, do not read.
+    /// </para>
+    /// </summary>
     event EventHandler<ConnectionState>? ConnectionStateChanged;
 
-    /// <summary>Raised (on the pump thread) when the source echoes a tally state change.</summary>
+    /// <summary>Raised (on a pump thread) when the source echoes a tally state change. Subscribers
+    /// marshal to the UI thread.</summary>
     event EventHandler<NdiTallyEcho>? TallyEchoChanged;
 
     /// <summary>

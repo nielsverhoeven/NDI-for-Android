@@ -44,6 +44,9 @@ public class ViewerViewModelTests
         _ptzControllerFactoryMock
             .Setup(f => f.Create(It.IsAny<PtzEndpoint?>()))
             .Returns(_ptzControllerMock.Object);
+        _bridgeMock
+            .Setup(b => b.StopReceiverAsync())
+            .Returns(Task.CompletedTask);
     }
 
     private ViewerViewModel CreateSut() => new(
@@ -118,7 +121,7 @@ public class ViewerViewModelTests
 
         sut.StopCommand.Execute(null);
 
-        _bridgeMock.Verify(b => b.StopReceiver(), Times.Once);
+        _bridgeMock.Verify(b => b.StopReceiverAsync(), Times.Once);
         Assert.False(sut.IsPlaying);
         Assert.Equal("Stopped.", sut.StatusMessage);
     }
@@ -753,7 +756,7 @@ public class ViewerViewModelTests
         sut.BeginReconnectWindow();
         _timeProvider.Advance(TimeSpan.FromSeconds(2));
 
-        _bridgeMock.Verify(b => b.StopReceiver(), Times.Once);
+        _bridgeMock.Verify(b => b.StopReceiverAsync(), Times.Once);
         _bridgeMock.Verify(b => b.StartReceiver("src-1", QualityProfile.High), Times.Once);
         _bridgeMock.Verify(b => b.StartReceiver("src-1", QualityProfile.Balanced), Times.Never);
     }
@@ -796,7 +799,7 @@ public class ViewerViewModelTests
         // The bridge was already Connected when the tick fired, so the attempt completes the window
         // instead of destroying a healthy receiver.
         _bridgeMock.Verify(b => b.StartReceiver(It.IsAny<string>(), It.IsAny<QualityProfile>()), Times.Never);
-        _bridgeMock.Verify(b => b.StopReceiver(), Times.Never);
+        _bridgeMock.Verify(b => b.StopReceiverAsync(), Times.Never);
         Assert.Equal(0, sut.RetryRemainingSeconds);
     }
 
@@ -816,10 +819,148 @@ public class ViewerViewModelTests
         Assert.Equal("Connection lost. Reconnection failed.", sut.StatusMessage);
         Assert.True(sut.IsStopped);
         _bridgeMock.Verify(b => b.StartReceiver("src-1", QualityProfile.Balanced), Times.Exactly(7));
-        _bridgeMock.Verify(b => b.StopReceiver(), Times.Exactly(8)); // 7 attempts + the terminal stop
+        _bridgeMock.Verify(b => b.StopReceiverAsync(), Times.Exactly(8)); // 7 attempts + the terminal stop
 
         _timeProvider.Advance(TimeSpan.FromSeconds(30));
         _bridgeMock.Verify(b => b.StartReceiver("src-1", QualityProfile.Balanced), Times.Exactly(7));
+    }
+
+    [Fact]
+    public void RunAttempt_DoesNotPollConnectionStateAfterStartingTheReceiver()
+    {
+        var sut = CreatePlayingSut();
+        sut.BeginReconnectWindow();
+        _bridgeMock.Invocations.Clear();
+
+        _timeProvider.Advance(TimeSpan.FromSeconds(2));
+
+        _bridgeMock.Verify(b => b.StopReceiverAsync(), Times.Once);
+        _bridgeMock.Verify(b => b.StartReceiver("src-1", QualityProfile.Balanced), Times.Once);
+
+        // The post-start poll was deleted: StartReceiver's next invocation on the mock must be the
+        // ReceiverGeneration read RunAttempt does immediately after it, never GetConnectionState —
+        // nothing can interleave between two adjacent statements of the same synchronous method.
+        // (The connection-hint stats watchdog also polls GetConnectionState once a second, so a
+        // raw call count over this 2s window is not a useful assertion on its own.)
+        var invocations = _bridgeMock.Invocations.ToList();
+        var startIndex = invocations.FindIndex(i => i.Method.Name == nameof(INdiViewerBridge.StartReceiver));
+        Assert.True(startIndex >= 0, "StartReceiver was not invoked.");
+        Assert.True(startIndex + 1 < invocations.Count, "No invocation followed StartReceiver.");
+        Assert.Equal("get_ReceiverGeneration", invocations[startIndex + 1].Method.Name);
+    }
+
+    [Fact]
+    public void RunAttempt_RequestsTheStopBeforeTheStart()
+    {
+        var sut = CreatePlayingSut();
+        var order = new List<string>();
+        _bridgeMock.Setup(b => b.StopReceiverAsync()).Callback(() => order.Add("StopReceiverAsync")).Returns(Task.CompletedTask);
+        _bridgeMock.Setup(b => b.StartReceiver(It.IsAny<string>(), It.IsAny<QualityProfile>())).Callback(() => order.Add("StartReceiver"));
+
+        sut.BeginReconnectWindow();
+        _timeProvider.Advance(TimeSpan.FromSeconds(2));
+
+        Assert.Equal(new[] { "StopReceiverAsync", "StartReceiver" }, order);
+    }
+
+    [Fact]
+    public void Stop_RequestsTheBridgeStopBeforeAnnouncingIsStopped()
+    {
+        var sut = CreatePlayingSut();
+        var order = new List<string>();
+        _bridgeMock.Setup(b => b.StopReceiverAsync())
+            .Callback(() => order.Add("StopReceiverAsync"))
+            .Returns(Task.CompletedTask);
+        sut.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(ViewerViewModel.IsStopped) && sut.IsStopped)
+                order.Add("IsStopped");
+        };
+
+        sut.StopCommand.Execute(null);
+
+        // The bridge blanks its front frame buffer in StopReceiverAsync's synchronous prologue and
+        // the View blanks its canvas on IsStopped; inverting these would leave a window in which
+        // GetLatestFrame() still hands out the last live frame after the canvas was cleared (#348).
+        Assert.Equal(new[] { "StopReceiverAsync", "IsStopped" }, order);
+    }
+
+    [Fact]
+    public void StopCommand_DoesNotWaitForTheBridgeTeardown()
+    {
+        // A teardown that never finishes: if any call site awaits it, this test hangs or the
+        // assertions below fail.
+        var neverCompletes = new TaskCompletionSource().Task;
+        _bridgeMock.Setup(b => b.StopReceiverAsync()).Returns(neverCompletes);
+        var sut = CreatePlayingSut();
+
+        // Bounded on purpose: run the act on a pool thread and wait here. If a call site ever
+        // awaits the teardown, this fails as a red test instead of hanging the test process — and a
+        // hung CI job produces no usable output (#408).
+        var act = Task.Run(() => sut.StopCommand.Execute(null));
+        Assert.True(act.Wait(TimeSpan.FromSeconds(2)), "Stop() blocked on the bridge teardown.");
+        act.GetAwaiter().GetResult(); // surface a genuine exception as itself, not as a timeout
+
+        Assert.False(sut.IsPlaying);
+        Assert.True(sut.IsStopped);
+        Assert.Equal("Stopped.", sut.StatusMessage);
+    }
+
+    [Fact]
+    public void CancelRetryCommand_DoesNotWaitForTheBridgeTeardown()
+    {
+        var neverCompletes = new TaskCompletionSource().Task;
+        _bridgeMock.Setup(b => b.StopReceiverAsync()).Returns(neverCompletes);
+        var sut = CreatePlayingSut();
+        sut.BeginReconnectWindow();
+
+        // Bounded on purpose: run the act on a pool thread and wait here. If a call site ever
+        // awaits the teardown, this fails as a red test instead of hanging the test process — and a
+        // hung CI job produces no usable output (#408).
+        var act = Task.Run(() => sut.CancelRetryCommand.Execute(null));
+        Assert.True(act.Wait(TimeSpan.FromSeconds(2)), "CancelRetry blocked on the bridge teardown.");
+        act.GetAwaiter().GetResult(); // surface a genuine exception as itself, not as a timeout
+
+        Assert.Equal("Reconnection cancelled.", sut.StatusMessage);
+        Assert.True(sut.IsStopped);
+    }
+
+    [Fact]
+    public void FailReconnect_DoesNotWaitForTheBridgeTeardown()
+    {
+        var neverCompletes = new TaskCompletionSource().Task;
+        _bridgeMock.Setup(b => b.StopReceiverAsync()).Returns(neverCompletes);
+        var sut = CreatePlayingSut();
+
+        // Bounded on purpose: run the act on a pool thread and wait here. If a call site ever
+        // awaits the teardown, this fails as a red test instead of hanging the test process — and a
+        // hung CI job produces no usable output (#408). MsFakeTimeProvider.Advance invokes the timer
+        // callback on the advancing thread, so both statements run inside the same Task.Run.
+        var act = Task.Run(() =>
+        {
+            sut.BeginReconnectWindow();
+            _timeProvider.Advance(TimeSpan.FromSeconds(15));
+        });
+        Assert.True(act.Wait(TimeSpan.FromSeconds(2)), "FailReconnect blocked on the bridge teardown.");
+        act.GetAwaiter().GetResult(); // surface a genuine exception as itself, not as a timeout
+
+        Assert.Equal("Connection lost. Reconnection failed.", sut.StatusMessage);
+        Assert.True(sut.CanReconnect);
+    }
+
+    [Fact]
+    public void Dispose_DoesNotWaitForTheBridgeTeardown()
+    {
+        var neverCompletes = new TaskCompletionSource().Task;
+        _bridgeMock.Setup(b => b.StopReceiverAsync()).Returns(neverCompletes);
+        var sut = CreatePlayingSut();
+
+        // Bounded on purpose: run the act on a pool thread and wait here. If a call site ever
+        // awaits the teardown, this fails as a red test instead of hanging the test process — and a
+        // hung CI job produces no usable output (#408).
+        var act = Task.Run(() => sut.Dispose());
+        Assert.True(act.Wait(TimeSpan.FromSeconds(2)), "Dispose blocked on the bridge teardown.");
+        act.GetAwaiter().GetResult(); // surface a genuine exception as itself, not as a timeout
     }
 
     [Fact]
@@ -954,7 +1095,7 @@ public class ViewerViewModelTests
         Assert.False(sut.IsReconnecting);
         Assert.True(sut.IsStopped);
         Assert.True(sut.CanReconnect);
-        _bridgeMock.Verify(b => b.StopReceiver(), Times.AtLeastOnce);
+        _bridgeMock.Verify(b => b.StopReceiverAsync(), Times.AtLeastOnce);
 
         sut.IsPlaying = true; // the only guard term the sticky user-stop flag has to beat
         _bridgeMock.Raise(b => b.ConnectionStateChanged += null, _bridgeMock.Object, ConnectionState.Disconnected);
@@ -1046,7 +1187,7 @@ public class ViewerViewModelTests
         Assert.True(pane.CanReconnect);
         Assert.Equal("Stopped.", pane.StatusMessage);
         // The receiver belongs to the other ViewModel now — demoting must never stop it.
-        _bridgeMock.Verify(b => b.StopReceiver(), Times.Never);
+        _bridgeMock.Verify(b => b.StopReceiverAsync(), Times.Never);
         Assert.True(pushed.IsPlaying);
     }
 
@@ -1057,7 +1198,7 @@ public class ViewerViewModelTests
 
         sut.Dispose();
 
-        _bridgeMock.Verify(b => b.StopReceiver(), Times.Once);
+        _bridgeMock.Verify(b => b.StopReceiverAsync(), Times.Once);
     }
 
     [Fact]
@@ -1073,7 +1214,7 @@ public class ViewerViewModelTests
 
         stale.Dispose();
 
-        _bridgeMock.Verify(b => b.StopReceiver(), Times.Never);
+        _bridgeMock.Verify(b => b.StopReceiverAsync(), Times.Never);
         Assert.True(current.IsPlaying);
     }
 
@@ -1127,7 +1268,7 @@ public class ViewerViewModelTests
 
         Assert.False(sut.IsReconnecting);
         Assert.True(sut.IsPlaying);
-        _bridgeMock.Verify(b => b.StopReceiver(), Times.Never);
+        _bridgeMock.Verify(b => b.StopReceiverAsync(), Times.Never);
     }
 
     [Fact]
