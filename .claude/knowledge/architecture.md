@@ -31,6 +31,102 @@ unconditionally. Rule 5's intent is to keep Android APIs out of **Core** and out
 
 ## Verdicts log
 
+### 2026-09-13 (round 2) — PR #425 `bugfix/408-async-receiver-lifecycle` (#417B / #408 / #420) re-gate
+
+**APPROVE-WITH-CHANGES.** Verdict file: `verdict-408-round2.md` (15 rulings, `requiredChanges`
+RC15–RC29, 10 accepted residuals, 1 deferred issue, 2 new product questions, merge order for
+#425/#424/#426). Re-gate of head `4cee287` after an adversarial review found 1 P1, 2 P2 and 11 P3
+and recommended do-not-merge. Outcome: 13 fix-now, 1 defer, 1 partial reject. The queue mechanism
+itself is accepted as implemented — chain atomicity, fault isolation, off-thread execution,
+`_stopDepth` bracketing, the ownership token, the handle/refcount discipline and the per-frame free
+discipline all hold.
+
+**The one architectural rule this round establishes, and the reason all three P1/P2 findings exist:**
+
+> Splitting a lifecycle operation into a synchronous prologue and a queued native core is correct.
+> Moving the operation's **observable postconditions** into the core is not. Anything a caller
+> orders other work against belongs in the prologue, in the caller's turn.
+
+For `NdiViewerBridge` those postconditions are now, explicitly, four: the ownership token
+(`_receiverGeneration`), the intentional-stop tag (`_stopDepth`), a **blank front frame buffer**,
+and a **`Disconnected` connection state**. The implementation had the first two in the prologue and
+the last two on the worker; each omission re-broke a shipped fix.
+
+1. **P1 — the frame buffers.** `StopReceiverAsync`'s prologue did not blank them, so `Stop` /
+   `CancelRetry` / `FailReconnect` set `IsStopped` while `GetLatestFrame()` still handed out the last
+   live frame — the render loop repainted it 3–12 times and then left it frozen under the "Stopped"
+   badge. A deterministic regression of #348 (Nielsen #1). Ruled: fix in the **bridge** (blank the
+   front buffer in the prologue under `_frameLock`), not only in the View — a View-side
+   `if (IsStopped) return` cannot cover a *second* `ViewerViewModel` whose own `IsStopped` is false
+   (the Expanded pane, the navigation handoff, #410) and does not make the bridge's own documented
+   postcondition true. Ship **both**: the View guard additionally closes the pre-existing
+   `ReleaseIfDisowned` case, where no stop happens at all.
+2. **The prologue blank alone is insufficient.** `VideoPumpLoop` re-reads `_running` only at the top
+   of the loop, so a pump already inside `NDIlib_recv_capture_v3` republishes one frame *after* the
+   blank — and one frame is the whole defect. `CopyVideoFrame`'s swap is therefore gated on
+   `_running` **read inside `_frameLock`**, against a write that happens **before** the prologue
+   takes that lock: the only two orders are publish-then-blank (blank wins) and blank-then-skip. No
+   new generation flag — `_running` already is the stopping flag. `_backPixels` must **not** be
+   blanked in the prologue (the pump copies into it through the field with no lock held; nulling it
+   faults a pump mid-copy).
+3. **P2-1 — the connection state.** Ruled **both** halves, not the reviewer's one: transition to
+   `Disconnected` synchronously in the prologue (tagged `Intentional`, `_stopDepth` incremented
+   first) **and** suppress non-`Disconnected` transitions while `_stopDepth > 0`. Suppression alone
+   closes the interleaving found and leaves the *class* open, because three shipped consumers were
+   written against the postcondition and not against that interleaving: `CompleteReconnect`'s "the
+   bridge agrees right now" guard, `RunAttempt`'s pre-check, and
+   `CheckForSustainedConnecting`'s correctness argument. Applying `CompleteReconnect`'s own rule —
+   *remove the interleaving class instead of guarding one instance of it.*
+4. **`ConnectionStateChanged` is now a three-thread event**: pump thread, lifecycle worker, and the
+   caller's own turn. The third is a *restoration* (the pre-#408 synchronous stop raised it on the
+   UI thread), and inline re-entry was checked on all seven call paths — each is rejected by an
+   existing guard (`Intentional` tag, `_reconnectState`, `IsPlaying`, `_userInitiatedStop`,
+   unsubscribed, or the not-yet-re-claimed ownership token). The enabling constraint: **no lock may
+   be held when a prologue calls `TransitionState`**, so each prologue statement is its own closed
+   lock block. The raise is now also try-wrapped — a subscriber's exception on the worker would
+   otherwise cancel the create queued behind a teardown in the same item and leave the viewer at
+   "Connecting…" forever.
+5. **P2-2 — the requested quality profile.** `SetQualityProfile` gates its restart on `_recv`, which
+   is zero for the entire queue window (and for the whole initial connect), so a profile picked then
+   was silently dropped. Ruled the minimal fix: publish the requested profile in `StartReceiver`'s
+   prologue and have `StartReceiverCore` **read the field instead of its captured argument**.
+   Rejected the "publish a requested source id and enqueue unconditionally" alternative — that is a
+   parallel second store of a fact `_activeSourceId` already holds (same ruling as round-1 ruling 15,
+   RC8, and 2026-09-12 #384 slice-3 item 8).
+6. **`_stateLock` must not appear in the stop prologue.** `StartReceiverCore` holds `_stateLock`
+   across `NDIlib_recv_create_v3` + `recv_connect`, so the shipped
+   `lock (_stateLock) _running = false;` put a native-duration block on the UI thread inside the one
+   method whose purpose is to remove them. `_running` is `volatile` and every lock-free interleaving
+   is safe, because the queued stop is ordered behind the executing start and is the authority that
+   joins and destroys. The start prologue keeps one `_stateLock` acquisition (the profile publish) as
+   an accepted residual.
+7. **`Dispose` + `_disposed`.** A `_disposed` guard on the public entry points is right, but
+   `Dispose()` calls `StopReceiverAsync()` *after* setting the flag — a naive guard turns `Dispose`
+   into a no-op and leaks every pump thread. Split out a private `RequestStop()` that both use. A
+   `_disposed` early-out in `StartReceiverCore` also collapses `Dispose`'s wait from "the whole
+   backlog" (a dozen items × two 250 ms joins during a reconnect loop) to "the item in flight".
+8. **Deferred, not rejected:** extracting the chain into a Core `SerialWorkQueue` for three
+   deterministic tests (FIFO, fault isolation, off-thread). It is behaviour-neutral but re-authors
+   the exact 15 lines this round's review proved correct *for the right reason*, in a window where
+   two other PRs are about to rebase onto the same file. Do it once #424/#426 land and
+   `NdiViewerBridge.cs` is quiet. Note for the next reader:
+   `TaskContinuationOptions.RunContinuationsAsynchronously` is **not** what keeps the work off the
+   caller's thread — the absence of `ExecuteSynchronously` plus `TaskScheduler.Default` is.
+9. **Rejected (partially):** the review's claim that all five new "does not wait" tests hang instead
+   of failing. Four do and are bounded with `Task.Run(...).Wait(2s)` (`[Fact(Timeout)]` is not a
+   substitute — xUnit cannot interrupt a synchronous test); the fifth never awaits the
+   never-completing task and cannot hang. It has a different defect (CS1998).
+10. **Merge order: #425 → #424 → #426.** #425 merges first and rebases for nothing: it is the
+    correctness fix and the largest restructure, and #426's draw-on-arrival path depends on #425's
+    publish gate for its own correctness. #424 and #426 rebase onto it; binding rebase instructions
+    (keep the publish gate first inside `_frameLock`, make `CopyVideoFrame` return `bool` and gate
+    `VideoFrameReady` on it, move the `IsStopped` guard into `PresentLatestFrame`) are in the verdict
+    file's §9.
+11. **Scope unchanged:** #410 stays open and is not helped by any of this — the handoff still stops
+    the receiver without bumping the ownership token. Two new product questions: the audio tail is
+    now audible on its own (video blanks instantly, audio ~400 ms later) and a disowned pane now
+    stays black instead of repainting the new owner's video.
+
 ### 2026-09-13 — #417 navigation slowness / #408 UI-thread `StopReceiver()` / #420 concurrent stop (gate)
 
 **APPROVE-WITH-CHANGES.** Two PRs, ordered. Verdict file: `verdict-417.md` (19 rulings, Part A plan,

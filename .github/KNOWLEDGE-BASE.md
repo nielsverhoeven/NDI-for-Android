@@ -266,9 +266,9 @@ Release notes: `docs/features/automatic-viewer-reconnection-retry/release-notes.
 
 Auto-reconnect for up to **15s** when an active NDI connection drops unexpectedly. User-initiated `Stop` never auto-retries; explicit `Reconnect` restarts with the last `SourceId`. All timing is `TimeProvider`-driven and all observable mutations marshal to the UI thread — the ViewModel stays in Core (MAUI-free) and unit-testable.
 
-The trigger is `INdiViewerBridge.ConnectionStateChanged(Disconnected)` with `GetLastStopReason() == ReceiverStopReason.ConnectionLost`, forwarded by `ViewerViewModel.OnBridgeConnectionStateChanged` into `CheckForUnexpectedDrop()`; every explicit `StopReceiver()` (user Stop, internal restart, quality-profile bandwidth change, navigation handoff) reports `Intentional` and can never open a window. The window is completed by whichever sees the connection first — the bridge's `Connected` event or the attempt loop's own pre-restart poll. Both funnel through the same guarded `CompleteReconnect()`, which re-reads the bridge and refuses to declare success against a receiver that is not `Connected`, or on behalf of a ViewModel that no longer owns it. Full screen is **kept** while retrying — the countdown shows in the in-video `viewer.reconnectBadge` — and is exited when the window ends, whether it expires or the user cancels it — never while the countdown is running.
+The trigger is `INdiViewerBridge.ConnectionStateChanged(Disconnected)` with `GetLastStopReason() == ReceiverStopReason.ConnectionLost`, forwarded by `ViewerViewModel.OnBridgeConnectionStateChanged` into `CheckForUnexpectedDrop()`; every explicit `StopReceiverAsync()` (user Stop, internal restart, quality-profile bandwidth change, navigation handoff) reports `Intentional` — from the instant the call returns, not from when the native teardown finishes — and can never open a window. The window is completed by whichever sees the connection first — the bridge's `Connected` event or the attempt loop's own pre-restart poll. Both funnel through the same guarded `CompleteReconnect()`, which re-reads the bridge and refuses to declare success against a receiver that is not `Connected`, or on behalf of a ViewModel that no longer owns it. Full screen is **kept** while retrying — the countdown shows in the in-video `viewer.reconnectBadge` — and is exited when the window ends, whether it expires or the user cancels it — never while the countdown is running.
 
-A ViewModel only acts on a drop while it still **owns** the receiver (`INdiViewerBridge.ReceiverGeneration`, bumped by every `StartReceiver`): the bridge is a singleton and the Expanded two-pane `PaneViewer` stays alive and subscribed behind a pushed `ViewerPage`, so without the token two ViewModels would run two reconnect loops against one receiver. Alongside the edge trigger there is a level backstop: five consecutive 1 s stats samples with the bridge stuck in `Connecting` — which, because the bridge reports a live-but-silent source as `Stalled`, means only "a receiver was created and never delivered a frame" — and only after it has been `Connected` once, also open a window. That is how a drop superseded by a restart is recovered. A stalled source never opens one: recreating a receiver cannot make a sender send video. Both terminal exits — the window expiring and the user cancelling — call `StopReceiver()` and set `IsStopped`, so no orphan receiver is ever left pumping behind a terminal message. The token's dual is enforced too: a ViewModel that is disposed hands its receiver back (`ViewerViewModel.Dispose`), and a ViewModel still playing when it loses the token puts itself in the Stopped state on the next 1 s sample (`ReleaseIfDisowned`) rather than painting and narrating a stream it no longer owns.
+A ViewModel only acts on a drop while it still **owns** the receiver (`INdiViewerBridge.ReceiverGeneration`, bumped by every `StartReceiver`): the bridge is a singleton and the Expanded two-pane `PaneViewer` stays alive and subscribed behind a pushed `ViewerPage`, so without the token two ViewModels would run two reconnect loops against one receiver. Alongside the edge trigger there is a level backstop: five consecutive 1 s stats samples with the bridge stuck in `Connecting` — which, because the bridge reports a live-but-silent source as `Stalled`, means only "a receiver was created and never delivered a frame" — and only after it has been `Connected` once, also open a window. That is how a drop superseded by a restart is recovered. A stalled source never opens one: recreating a receiver cannot make a sender send video. Both terminal exits — the window expiring and the user cancelling — call `StopReceiverAsync()` and set `IsStopped`, so no orphan receiver is ever left pumping behind a terminal message. The token's dual is enforced too: a ViewModel that is disposed hands its receiver back (`ViewerViewModel.Dispose`), and a ViewModel still playing when it loses the token puts itself in the Stopped state on the next 1 s sample (`ReleaseIfDisowned`) rather than painting and narrating a stream it no longer owns.
 
 ### Bridge contract
 | Member | Path | Notes |
@@ -276,9 +276,42 @@ A ViewModel only acts on a drop while it still **owns** the receiver (`INdiViewe
 | `ConnectionState { Connecting, Connected, Disconnected, Stalled }` | `src/Core/NdiBridge/NdiBridgeModels.cs` | Plain C# enum — no NDI SDK types cross the bridge. `Connecting` means "receiver created, no frame yet"; `Stalled` means "transport up, no video for >3 s". `Stalled` is declared last so `Connecting` keeps value 0 |
 | `ConnectionState GetConnectionState()` | `src/Core/NdiBridge/INdiBridges.cs` (`INdiViewerBridge`) | Polled by the VM state machine to detect drops |
 | `ReceiverStopReason { Intentional, ConnectionLost }` | `src/Core/NdiBridge/NdiBridgeModels.cs` | Why the last `Disconnected` transition happened; `Intentional` is the default (value 0) |
-| `ReceiverStopReason GetLastStopReason()` | `src/Core/NdiBridge/INdiBridges.cs` (`INdiViewerBridge`) | Lets the VM tell a genuine drop from any deliberate `StopReceiver()` call |
+| `ReceiverStopReason GetLastStopReason()` | `src/Core/NdiBridge/INdiBridges.cs` (`INdiViewerBridge`) | Lets the VM tell a genuine drop from any deliberate `StopReceiverAsync()` call |
 | `long ReceiverGeneration { get; }` | `src/Core/NdiBridge/INdiBridges.cs` (`INdiViewerBridge`) | Ownership token: bumped by every `StartReceiver`; lets a ViewModel tell whether the receiver it started is still the one the shared bridge runs |
-| Real impl | `src/MauiApp/NdiBridge/NdiViewerBridge.cs` | Superseded the stub in #277: 3 s frame-arrival watchdog + `recv_get_no_connections` inside the video pump; also raises `ConnectionStateChanged` on the pump thread |
+| Real impl | `src/MauiApp/NdiBridge/NdiViewerBridge.cs` | Superseded the stub in #277: 3 s frame-arrival watchdog + `recv_get_no_connections` inside the video pump; raises `ConnectionStateChanged` from a pump thread, from its lifecycle worker, or from the caller's own turn — see the receiver lifecycle queue below |
+
+### Receiver lifecycle queue (#408 / #420 — PR #425)
+
+Every receiver lifecycle operation — start, stop, quality restart, dispose — goes through **one
+serialized task chain inside `NdiViewerBridge`** (`_lifecycleTail` + `EnqueueLifecycle`). A task
+chain, not a `SemaphoreSlim`: `SemaphoreSlim` does not document FIFO release for async waiters and
+ordering is the whole invariant — `_recv` is a single field, `NdiRuntime`'s handle refcount is
+process-wide and shared with the discovery/output bridges, and the audio sink is a singleton, so a
+stop that lands after a start destroys the wrong receiver.
+
+Each operation is split into a **synchronous prologue** (the caller's turn) and a **queued core**
+(the lifecycle worker, never the caller's thread and never a pump thread):
+
+| | Prologue — synchronous, in the caller's turn | Queued core — lifecycle worker |
+|---|---|---|
+| `StopReceiverAsync()` | `_stopDepth++`; `_running = false`; blank the front frame buffer; `TransitionState(Disconnected)` | join both pumps (unbounded — a timed join before `recv_destroy` is a native use-after-free), `recv_destroy`, `ReleaseHandle`, release `_backPixels`, `_audioSink.Stop()` |
+| `StartReceiver(...)` | `_receiverGeneration++`; `_stopDepth++`; `_running = false`; publish the requested `QualityProfile`; blank the front frame buffer; `TransitionState(Disconnected)` | `StopReceiverCore` then `StartReceiverCore` in one item, so nothing can interleave between the teardown and the create |
+
+**The prologue is where the postconditions live.** Anything a caller orders other work against must
+be applied there, not on the worker: the ownership token, the `Intentional` tag, the blank front
+buffer and the `Disconnected` state. Moving any of them onto the worker re-breaks a shipped fix —
+the frame blank is #348's "no live video under the Stopped badge", and the `Disconnected` state is
+what `ViewerViewModel.CompleteReconnect`'s "the bridge agrees right now" guard reads. While
+`_stopDepth > 0`, `TransitionState` applies **only** `Disconnected`, so a pump that is still
+unwinding cannot promote a receiver that is about to be destroyed. `CopyVideoFrame`'s buffer swap is
+gated on `_running` **inside `_frameLock`**, which is what stops a pump republishing a frame between
+the prologue's blank and the core.
+
+Nothing awaits a stop on the UI thread: the five `ViewerViewModel` call sites and the navigation
+handoff use `StopReceiverAsync().FireAndForget()` (the handoff *returns* the task so AppShell can
+time it out for diagnostics only). The one blocking caller is `NdiViewerBridge.Dispose()`, whose
+only caller is the DI container at shutdown; calling it from a pump thread deadlocks by design, and
+that is enforced by documentation, not by code.
 
 ### `IMainThreadDispatcher` abstraction (NEW)
 | Item | Path | Notes |
@@ -297,7 +330,7 @@ builder.Services.AddSingleton<IMainThreadDispatcher, MauiMainThreadDispatcher>()
 ### `ViewerViewModel` (`src/Core/Features/Viewer/ViewModels/ViewerViewModel.cs`)
 State machine: `Idle → Connecting → Connected → Dropped → Retrying(countdown) → {Reconnected | Failed}`.
 - Ctor injects `INdiViewerBridge`, `TimeProvider`, `IMainThreadDispatcher`.
-- Timers (all `TimeProvider.CreateTimer`): monitor poll (1s) detects drops; attempt loop (2s) does full `StopReceiver→StartReceiver`, stops on first `Connected`; countdown (1s) drives remaining-seconds text.
+- Timers (all `TimeProvider.CreateTimer`): monitor poll (1s) detects drops; attempt loop (2s) does a full `StopReceiverAsync→StartReceiver` request pair, stops on first `Connected`; countdown (1s) drives remaining-seconds text.
 - Window: 15s total; terminal failure after expiry.
 
 | Member | Type | Purpose |
