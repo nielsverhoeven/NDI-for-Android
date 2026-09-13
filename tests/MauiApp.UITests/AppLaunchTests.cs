@@ -194,7 +194,7 @@ public sealed class AppLaunchTests : UiTestBase
     });
 
     [RetryableSkippableFact]
-    public void AdaptiveNavigation_ExpandedRailPlacement_NeverShowsBottomNavigationBar() => Run(app =>
+    public void AdaptiveNavigation_RailPlacement_NeverShowsBottomNavigationBar_OnLaunchAndRotation() => Run(app =>
     {
         try
         {
@@ -206,42 +206,47 @@ public sealed class AppLaunchTests : UiTestBase
             app.ResetToHome();
             app.Rotate(ScreenOrientation.Landscape);
             AssertNoBottomNavigationBarForRailPlacement(app, "after rotating from portrait into landscape");
+        }
+        finally
+        {
+            try { app.Rotate(ScreenOrientation.Portrait); } catch { }
+        }
+    });
+
+    [RetryableSkippableFact]
+    public void AdaptiveNavigation_RailPlacement_NeverShowsBottomNavigationBar_AfterTwoPaneFullScreen() => Run(app =>
+    {
+        try
+        {
+            app.ResetToHome();
+            app.Rotate(ScreenOrientation.Landscape);
 
             var widthDp = app.WindowSize.Width / app.Metrics.Density;
             var sizeClass = WindowSizeClassService.Classify(widthDp);
+            Skip.If(sizeClass != WindowSizeClass.Expanded,
+                $"The two-pane pane only renders on an Expanded window (>840dp); this device measures {sizeClass} ({widthDp:0}dp) in landscape.");
 
-            if (sizeClass != WindowSizeClass.Expanded)
-            {
-                var message = $"The two-pane pane only renders on an Expanded window (>840dp); " +
-                    $"this device measures {sizeClass} ({widthDp:0}dp) in landscape, so the " +
-                    "full-screen-on-the-pane checkpoint was not exercised.";
-                _output.WriteLine(message);
-                Console.WriteLine(message);
-            }
-            else
-            {
-                app.Navigation.GoTo(NavDestination.View);
-                app.Sources.WaitUntilVisible();
+            app.Navigation.GoTo(NavDestination.View);
+            app.Sources.WaitUntilVisible();
 
-                Skip.If(app.Sources.SourceCount == 0,
-                    "No NDI sources discovered on this network; the two-pane full-screen invariant needs a playing source.");
+            Skip.If(app.Sources.SourceCount == 0,
+                "No NDI sources discovered on this network; the two-pane full-screen invariant needs a playing source.");
 
-                app.Sources.WatchSource();
-                Assert.True(app.Sources.IsViewerPaneVisible, "The two-pane viewer pane did not appear on an Expanded window");
+            app.Sources.WatchSource();
+            Assert.True(app.Sources.IsViewerPaneVisible, "The two-pane viewer pane did not appear on an Expanded window");
 
-                app.Viewer.WaitUntilPlaying();
-                app.Viewer.ToggleFullScreen();
-                app.Viewer.WaitUntilFullScreen();
-                AssertNoBottomNavigationBarForRailPlacement(app, "while the two-pane pane is full screen", railIsVisible: false);
+            app.Viewer.WaitUntilPlaying();
+            app.Viewer.ToggleFullScreen();
+            app.Viewer.WaitUntilFullScreen();
+            AssertNoBottomNavigationBarForRailPlacement(app, "while the two-pane pane is full screen", railIsVisible: false);
 
-                app.Viewer.ExitFullScreen();
-                app.Viewer.WaitUntilPlaying();
+            app.Viewer.ExitFullScreen();
+            app.Viewer.WaitUntilPlaying();
 
-                // Shell recomputes tab-bar visibility a beat after the chrome restore; sampling the
-                // tree before that would let the defect through unnoticed.
-                Thread.Sleep(Timeouts.OrientationSettle);
-                AssertNoBottomNavigationBarForRailPlacement(app, "after exiting full screen on the two-pane pane");
-            }
+            // Shell recomputes tab-bar visibility a beat after the chrome restore; sampling the
+            // tree before that would let the defect through unnoticed.
+            Thread.Sleep(Timeouts.OrientationSettle);
+            AssertNoBottomNavigationBarForRailPlacement(app, "after exiting full screen on the two-pane pane");
         }
         finally
         {
