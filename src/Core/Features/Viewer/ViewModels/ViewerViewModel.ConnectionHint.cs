@@ -32,6 +32,11 @@ public partial class ViewerViewModel
     private void StopStatsWatchdog()
     {
         _statsTimer?.Change(Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
+        // The counter is otherwise reset only by CheckForSustainedConnecting's else-branch, which
+        // cannot run while the timer is parked. Without this it would still be four samples deep
+        // when playback resumes, and the first sample after the next StartReceiver — Connecting is
+        // the normal state for about a second after every start — would open a spurious window.
+        _sustainedConnectingSamples = 0;
         ResetConnectionHint();
     }
 
@@ -54,6 +59,7 @@ public partial class ViewerViewModel
     /// <summary>Applies one 1 s stats sample. Public so tests (and any host) can push samples directly. Main thread only.</summary>
     public void ApplyConnectionSample(bool connected, float fps, float dropPercent)
     {
+        ReleaseIfDisowned();
         CheckForSustainedConnecting();
 
         // Not a judgement about the link while (re)connecting or when nothing is being received
@@ -75,11 +81,15 @@ public partial class ViewerViewModel
     /// re-stamps the bridge to Connecting/Intentional, and the fresh receiver's connection-lost check
     /// can never fire because it has never been connected (<c>hasEverConnected</c> in the video pump).
     /// The receiver then sits in Connecting forever while this ViewModel still claims to be playing.
-    /// Sustained Connecting is that state and nothing else:
-    /// an intentional stop leaves the bridge <see cref="ConnectionState.Disconnected"/>, so a
-    /// navigation handoff can never trip this; a source that never connected at all leaves
-    /// <c>_hasConnectedSinceStart</c> false, so the initial-connect experience is unchanged; and a
-    /// ViewModel the bridge has been taken from fails the ownership term.
+    /// Because the bridge reports a live-but-silent source as <see cref="ConnectionState.Stalled"/>,
+    /// <see cref="ConnectionState.Connecting"/> means exactly one thing — "a receiver was created and
+    /// has not delivered a frame yet" — so sustained Connecting on a ViewModel that has been
+    /// Connected since its own Start, still owns the receiver, and is not already in a window, is
+    /// the superseded-drop state and nothing else. A video stall does not reach it (Stalled is not
+    /// Connecting); an intentional stop leaves the bridge <see cref="ConnectionState.Disconnected"/>,
+    /// so a navigation handoff can never trip this; a source that never connected at all leaves
+    /// <c>_hasConnectedSinceStart</c> false, so the initial-connect experience is unchanged (#413);
+    /// and a ViewModel the bridge has been taken from fails the ownership term.
     /// </summary>
     private void CheckForSustainedConnecting()
     {
@@ -101,6 +111,48 @@ public partial class ViewerViewModel
         }
 
         _sustainedConnectingSamples = 0;
+    }
+
+    /// <summary>
+    /// The ownership token's dual, checked once a second on the existing stats watchdog. A
+    /// ViewModel is disowned the instant another one asks the bridge for a receiver
+    /// (<see cref="INdiViewerBridge.ReceiverGeneration"/>). From then on it may not drive the
+    /// bridge — but until this runs it still *claims* to play: it paints the new owner's frames
+    /// through <see cref="CurrentFrame"/> under its own <see cref="SourceId"/>, and every drop path
+    /// rejects it on ownership, so it can never open a reconnect window again. That is exactly the
+    /// #348 / Nielsen-#1 dead end this feature exists to remove, reached through the feature's own
+    /// guard. Level-triggered on purpose: there is no single edge to hook — a pushed ViewerPage
+    /// being popped, a deep link to another source, and another ViewModel's quality-profile restart
+    /// all produce it — and the watchdog already ticks on every playing ViewModel.
+    /// Never calls StopReceiver(): the receiver belongs to another ViewModel now. Leaves exactly the
+    /// surface a user Stop leaves, so there is always a status line and one control (Reconnect),
+    /// and records no connection-history event: this stream did not end, it changed hands.
+    /// Note this does NOT cover the navigation handoff (#410) — StopReceiver() does not bump the
+    /// token, so a pane whose bridge was stopped behind its back still owns it.
+    /// </summary>
+    private void ReleaseIfDisowned()
+    {
+        if (!IsPlaying || !HasEverClaimedReceiver || OwnsActiveReceiver)
+            return;
+
+        DisposeTimers();
+        _reconnectState = ReconnectState.Idle;
+        // Sticky, exactly as CancelRetry: a Disconnected raised by the new owner must not open a
+        // window here. Start() and BeginReconnectWindow() clear it when the user comes back.
+        _userInitiatedStop = true;
+        IsReconnecting = false;
+        IsPlaying = false; // before BeginExitFullScreen — RC5's compact auto-re-enter gate
+        IsStopped = true;
+        IsTallyProgram = false;
+        IsPtzSupported = false;
+        StopPtz();
+        BeginExitFullScreen();
+        CanReconnect = true;
+        RetryRemainingSeconds = ReconnectConstants.RetryWindowSeconds;
+        RetryStatusMessage = null;
+        // Same copy as Stop(): from the user's point of view this pane stopped playing. Naming the
+        // cause is a copy change that belongs with the badge wording (#412), not here.
+        StatusMessage = "Stopped.";
     }
 
     private void ResetConnectionHint()

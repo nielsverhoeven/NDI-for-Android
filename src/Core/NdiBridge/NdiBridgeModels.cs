@@ -24,6 +24,15 @@ public enum ConnectionState
 
     /// <summary>The receiver has no active connection.</summary>
     Disconnected,
+
+    /// <summary>The transport connection is up but no video frame has arrived for longer than the
+    /// bridge's stall threshold (<c>NdiViewerBridge.StalledAfterMs</c>) — a sender on standby, one
+    /// mid-reconfiguration, an audio-only stretch, or a stream starved by the network. Distinct
+    /// from <see cref="Connecting"/> on purpose: a stall is not a failed connection attempt, and
+    /// recreating the receiver cannot make a sender send video, so the viewer's reconnect logic
+    /// must be able to tell the two apart. Declared last so <see cref="Connecting"/> keeps enum
+    /// value 0 (mocks and defaults depend on it).</summary>
+    Stalled,
 }
 
 /// <summary>

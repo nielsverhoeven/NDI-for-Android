@@ -458,7 +458,12 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
                         if (GetConnectionState() == ConnectionState.Connected
                             && now - lastVideoTicks > StalledAfterMs)
                         {
-                            TransitionState(ConnectionState.Connecting);
+                            // Still connected, just not sending video: Stalled, not Connecting.
+                            // Connecting must mean "a receiver was created and has not delivered a
+                            // frame yet" and nothing else — that is what lets ViewerViewModel treat
+                            // sustained Connecting as a drop that was superseded by a restart
+                            // (ViewerViewModel.ConnectionHint.CheckForSustainedConnecting).
+                            TransitionState(ConnectionState.Stalled);
                         }
 
                         if (connectionLost)
