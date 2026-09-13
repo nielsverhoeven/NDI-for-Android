@@ -31,6 +31,102 @@ unconditionally. Rule 5's intent is to keep Android APIs out of **Core** and out
 
 ## Verdicts log
 
+### 2026-09-13 (round 2) — PR #425 `bugfix/408-async-receiver-lifecycle` (#417B / #408 / #420) re-gate
+
+**APPROVE-WITH-CHANGES.** Verdict file: `verdict-408-round2.md` (15 rulings, `requiredChanges`
+RC15–RC29, 10 accepted residuals, 1 deferred issue, 2 new product questions, merge order for
+#425/#424/#426). Re-gate of head `4cee287` after an adversarial review found 1 P1, 2 P2 and 11 P3
+and recommended do-not-merge. Outcome: 13 fix-now, 1 defer, 1 partial reject. The queue mechanism
+itself is accepted as implemented — chain atomicity, fault isolation, off-thread execution,
+`_stopDepth` bracketing, the ownership token, the handle/refcount discipline and the per-frame free
+discipline all hold.
+
+**The one architectural rule this round establishes, and the reason all three P1/P2 findings exist:**
+
+> Splitting a lifecycle operation into a synchronous prologue and a queued native core is correct.
+> Moving the operation's **observable postconditions** into the core is not. Anything a caller
+> orders other work against belongs in the prologue, in the caller's turn.
+
+For `NdiViewerBridge` those postconditions are now, explicitly, four: the ownership token
+(`_receiverGeneration`), the intentional-stop tag (`_stopDepth`), a **blank front frame buffer**,
+and a **`Disconnected` connection state**. The implementation had the first two in the prologue and
+the last two on the worker; each omission re-broke a shipped fix.
+
+1. **P1 — the frame buffers.** `StopReceiverAsync`'s prologue did not blank them, so `Stop` /
+   `CancelRetry` / `FailReconnect` set `IsStopped` while `GetLatestFrame()` still handed out the last
+   live frame — the render loop repainted it 3–12 times and then left it frozen under the "Stopped"
+   badge. A deterministic regression of #348 (Nielsen #1). Ruled: fix in the **bridge** (blank the
+   front buffer in the prologue under `_frameLock`), not only in the View — a View-side
+   `if (IsStopped) return` cannot cover a *second* `ViewerViewModel` whose own `IsStopped` is false
+   (the Expanded pane, the navigation handoff, #410) and does not make the bridge's own documented
+   postcondition true. Ship **both**: the View guard additionally closes the pre-existing
+   `ReleaseIfDisowned` case, where no stop happens at all.
+2. **The prologue blank alone is insufficient.** `VideoPumpLoop` re-reads `_running` only at the top
+   of the loop, so a pump already inside `NDIlib_recv_capture_v3` republishes one frame *after* the
+   blank — and one frame is the whole defect. `CopyVideoFrame`'s swap is therefore gated on
+   `_running` **read inside `_frameLock`**, against a write that happens **before** the prologue
+   takes that lock: the only two orders are publish-then-blank (blank wins) and blank-then-skip. No
+   new generation flag — `_running` already is the stopping flag. `_backPixels` must **not** be
+   blanked in the prologue (the pump copies into it through the field with no lock held; nulling it
+   faults a pump mid-copy).
+3. **P2-1 — the connection state.** Ruled **both** halves, not the reviewer's one: transition to
+   `Disconnected` synchronously in the prologue (tagged `Intentional`, `_stopDepth` incremented
+   first) **and** suppress non-`Disconnected` transitions while `_stopDepth > 0`. Suppression alone
+   closes the interleaving found and leaves the *class* open, because three shipped consumers were
+   written against the postcondition and not against that interleaving: `CompleteReconnect`'s "the
+   bridge agrees right now" guard, `RunAttempt`'s pre-check, and
+   `CheckForSustainedConnecting`'s correctness argument. Applying `CompleteReconnect`'s own rule —
+   *remove the interleaving class instead of guarding one instance of it.*
+4. **`ConnectionStateChanged` is now a three-thread event**: pump thread, lifecycle worker, and the
+   caller's own turn. The third is a *restoration* (the pre-#408 synchronous stop raised it on the
+   UI thread), and inline re-entry was checked on all seven call paths — each is rejected by an
+   existing guard (`Intentional` tag, `_reconnectState`, `IsPlaying`, `_userInitiatedStop`,
+   unsubscribed, or the not-yet-re-claimed ownership token). The enabling constraint: **no lock may
+   be held when a prologue calls `TransitionState`**, so each prologue statement is its own closed
+   lock block. The raise is now also try-wrapped — a subscriber's exception on the worker would
+   otherwise cancel the create queued behind a teardown in the same item and leave the viewer at
+   "Connecting…" forever.
+5. **P2-2 — the requested quality profile.** `SetQualityProfile` gates its restart on `_recv`, which
+   is zero for the entire queue window (and for the whole initial connect), so a profile picked then
+   was silently dropped. Ruled the minimal fix: publish the requested profile in `StartReceiver`'s
+   prologue and have `StartReceiverCore` **read the field instead of its captured argument**.
+   Rejected the "publish a requested source id and enqueue unconditionally" alternative — that is a
+   parallel second store of a fact `_activeSourceId` already holds (same ruling as round-1 ruling 15,
+   RC8, and 2026-09-12 #384 slice-3 item 8).
+6. **`_stateLock` must not appear in the stop prologue.** `StartReceiverCore` holds `_stateLock`
+   across `NDIlib_recv_create_v3` + `recv_connect`, so the shipped
+   `lock (_stateLock) _running = false;` put a native-duration block on the UI thread inside the one
+   method whose purpose is to remove them. `_running` is `volatile` and every lock-free interleaving
+   is safe, because the queued stop is ordered behind the executing start and is the authority that
+   joins and destroys. The start prologue keeps one `_stateLock` acquisition (the profile publish) as
+   an accepted residual.
+7. **`Dispose` + `_disposed`.** A `_disposed` guard on the public entry points is right, but
+   `Dispose()` calls `StopReceiverAsync()` *after* setting the flag — a naive guard turns `Dispose`
+   into a no-op and leaks every pump thread. Split out a private `RequestStop()` that both use. A
+   `_disposed` early-out in `StartReceiverCore` also collapses `Dispose`'s wait from "the whole
+   backlog" (a dozen items × two 250 ms joins during a reconnect loop) to "the item in flight".
+8. **Deferred, not rejected:** extracting the chain into a Core `SerialWorkQueue` for three
+   deterministic tests (FIFO, fault isolation, off-thread). It is behaviour-neutral but re-authors
+   the exact 15 lines this round's review proved correct *for the right reason*, in a window where
+   two other PRs are about to rebase onto the same file. Do it once #424/#426 land and
+   `NdiViewerBridge.cs` is quiet. Note for the next reader:
+   `TaskContinuationOptions.RunContinuationsAsynchronously` is **not** what keeps the work off the
+   caller's thread — the absence of `ExecuteSynchronously` plus `TaskScheduler.Default` is.
+9. **Rejected (partially):** the review's claim that all five new "does not wait" tests hang instead
+   of failing. Four do and are bounded with `Task.Run(...).Wait(2s)` (`[Fact(Timeout)]` is not a
+   substitute — xUnit cannot interrupt a synchronous test); the fifth never awaits the
+   never-completing task and cannot hang. It has a different defect (CS1998).
+10. **Merge order: #425 → #424 → #426.** #425 merges first and rebases for nothing: it is the
+    correctness fix and the largest restructure, and #426's draw-on-arrival path depends on #425's
+    publish gate for its own correctness. #424 and #426 rebase onto it; binding rebase instructions
+    (keep the publish gate first inside `_frameLock`, make `CopyVideoFrame` return `bool` and gate
+    `VideoFrameReady` on it, move the `IsStopped` guard into `PresentLatestFrame`) are in the verdict
+    file's §9.
+11. **Scope unchanged:** #410 stays open and is not helped by any of this — the handoff still stops
+    the receiver without bumping the ownership token. Two new product questions: the audio tail is
+    now audible on its own (video blanks instantly, audio ~400 ms later) and a disowned pane now
+    stays black instead of repainting the new owner's video.
+
 ### 2026-09-13 — #417 navigation slowness / #408 UI-thread `StopReceiver()` / #420 concurrent stop (gate)
 
 **APPROVE-WITH-CHANGES.** Two PRs, ordered. Verdict file: `verdict-417.md` (19 rulings, Part A plan,
@@ -5057,3 +5153,108 @@ touching `NdiViewerBridge.cs`, `ReceiverStatsMath.cs`, `ViewerViewModel.cs`,
 `DiagnosticOverlayService.cs` and `MauiProgram.cs` in this round**, because
 `bugfix/416-latency-draw-on-arrival` is cut from this PR's head and owns regions in exactly those
 files. Merge order is unchanged: **#424 first, then #416's branch rebased onto the merged result.**
+
+### 2026-09-13 — #416 round 2: adversarial review of PR #426 (`79666dd`, base `3dc1688`)
+
+**APPROVE-WITH-CHANGES.** Verdict file: `verdict-416-round2.md` — 8 required changes
+(**RC-B11..RC-B18**), 11 fix-now rulings, 3 deferred/rejected, 8 accepted residuals, 1 new product
+question. RC-B1..RC-B9 were implemented as specified; the raise point and the coalescing (the two
+hard parts) are correct and no paint-after-stop, lost last frame, leaked subscription, deadlock or
+leaked native frame could be constructed. Read-only gate; line numbers against the `lat416`
+worktree.
+
+**1. The real defect is a *missing* gate, not a wrong one: per-frame posts were gated on `IsPlaying`,
+not on "a View is rendering".** `StopRendering()` only flipped the **View's** `_isRenderingActive`
+(`ViewerView.xaml.cs:56-60`), so a backgrounded app or a hidden Expanded pane kept the whole chain
+pump → `Interlocked` → `BeginInvokeOnMainThread` → `FrameReady` → `PresentLatestFrame` running at up
+to 60 Hz and returned at the *last* statement. Nothing stops the receiver on pause by design
+(`ViewerViewModel.OnAppPaused` only calls `ForceExitFullScreen`), so this is steady state, not a
+transient. Before draw-on-arrival, `StopRendering()` stopped the only frame-driven UI work there
+was.
+
+**2. The gate is ViewModel-owned state written by the View (`SetRenderingActive`), NOT a bridge
+subscription moved into `StartRendering`/`StopRendering`.** Three reasons, in order of weight:
+(a) **failure mode** — a host that forgets to open the flag degrades to the 33 ms fallback pull,
+which is exactly what ruling 13 kept the timer for, whereas a forgotten `+=` silently deletes
+draw-on-arrival with no symptom; (b) subscription symmetry across four `StartRendering` and three
+`StopRendering` call sites needs its own "already subscribed" state, at which point it *is* the flag
+plus a subscription, and it would contradict RC-B6's provably symmetric ctor/`Dispose` pair;
+(c) the View already owns this fact — the defect is only that the gate sat one layer *below* the
+dispatch it must suppress. **Single writer, and it is the View:** verified that all five paths which
+hide a `ViewerView` already call `StopRendering` (`ViewerPage.xaml.cs:57`, `SourceListPage.xaml.cs:73`,
+`:140`, `:147`, plus `Teardown` at `:69`), including mere backgrounding. A second writer in
+`OnAppPaused` was **rejected** — two owners for one flag is the #384 chrome-suppression bug class,
+and resume is already safe because `StartRendering` restarts the timer, which paints within 33 ms.
+
+**3. The per-frame raise is wrapped; the diagnostic is one-shot per pump run.** `VideoPumpLoop`'s
+`try` wraps the whole `while (_running)` loop and reports **any** escaping exception as
+`ConnectionLost` → a spurious 15 s reconnect window on a link that never dropped. The file already
+states this rule for its own stats logcat line. `ConnectionStateChanged`/`TallyEchoChanged` stay
+unwrapped: identical hazard, three orders of magnitude less exposure (a state change vs. 60/s), and
+filing a ticket would invite a sweeping "wrap every raise" change to a file three PRs are queued on
+— **accepted residual, no ticket.** The fault log line is carried in a `VideoPumpLoop` **local**
+(`frameReadyFaultLogged`), the third application of "per-receiver, pump-thread-only state is a local,
+not a field".
+
+**4. A latency may only be measured on a paint a new frame caused.** `OnPaintSurface` is an Android
+`onDraw`: it also runs for a `HeightRequest` change, a size-class/full-screen relayout, a rotation, a
+surface re-create on resume and a theme switch, each re-blitting the **stale** `_pendingFrame`. With
+the 1 Hz throttle publishing whichever paint is first past the window, one rotation was enough to put
+an arbitrarily large `recvToDrawMs` into `NDI-Lat` — and RC-B10's own acceptance rule is
+"`recvToDrawMs` > 40 ms ⇒ investigate before merging", so the number this PR exists to produce could
+silently fail its own gate. Fix: a `_frameAwaitingReport` flag set by `PresentLatestFrame` and
+**captured-and-cleared at the top of `OnPaintSurface`, before the early return** — a paint that draws
+nothing must not leave the flag armed for the next repaint. "Pass `isNewFrame` from
+`PresentLatestFrame`" is not implementable: the invalidate returns and `onDraw` happens later.
+
+**5. The paint rate is deliberately NOT capped.** `SKCanvasView.InvalidateSurface()` maps to Android
+`View.invalidate()`, whose traversal is scheduled on the next vsync — repeated invalidates inside one
+vsync interval collapse into a single `onDraw`. So paints/s = `min(source fps, display refresh)`,
+never one per invalidate, and the PR cannot produce an unbounded raster rate. A minimum inter-paint
+interval would re-introduce the deterministic 0-N ms wait that #416 exists to remove. The doubled
+per-second raster cost (8.3 MB copy + scaled CPU raster per paint) is the intended trade; it is
+**conditionally accepted on device evidence** (before/after app CPU share, `gfxinfo` janky share,
+`Choreographer: Skipped`, plus a backgrounded-while-playing leg that proves the P1 fix). If the
+numbers do not hold, the follow-up is the §T1 pooled-buffer/`SKGLView` work — which removes the
+*copy* — not a paint cap, and the choice is Niels's, not a developer's.
+
+**6. The 1 Hz throttle moves to the injected `TimeProvider`; the measurement stays on
+`Environment.TickCount64`.** Two clocks in one method, with the reason written into the code: the
+throttle is a **cadence** and must be test-controllable (the old version needed 100 iterations to
+finish inside a real second and made "traces again after a second" untestable — this repo already
+paid for wall-clock-dependent tests in #380); `recvToDrawMs` is a **duration** and must share the
+clock the pump stamped the frame with.
+
+**7. Doc drift was worse than reported: eight replacements, not five.** Beyond `docs/architecture.md`
+`:172`/`:277`, `.github/KNOWLEDGE-BASE.md` `:37`/`:84` and `CLAUDE.md:95`, the "~30 fps" model also
+lives in the **canonical render-model sentence** at `docs/architecture.md:159` and in
+`docs/ndi-sdk-coverage.md:22`, plus two in-code comments (`ViewerViewModel.CurrentFrame`'s doc,
+`ViewerView.xaml`'s Stopped-overlay comment). `VideoFrameReady` is now the **fourth** pump-thread
+event and the only per-frame one; its handler contract (one coalesced post, no lock, no blocking
+call, never a call back into the bridge) and the wrapped raise are now stated in all three
+rule-bearing documents, not only in the interface XML doc. The `StopReceiver()` drift in
+`ViewerViewModel.ConnectionHint.cs` is **PR #425's** to fix — not duplicated here.
+
+**8. Test gaps that let a wrong implementation pass: five new assertions plus two gate tests.** Tests
+5-8 would pass against a `ReportFrameDrawn` that ignores `receivedAtTickMillis` entirely; the
+`ReceivedAtTickMillis == 0` branch (the `NdiVideoFrame` default) was untested; there was no
+"no post after `Stop()`" test and no test pinning the **clear-before-raise** ordering that makes the
+coalescing correct (reversing those two statements kept the suite green). Added, plus the P1
+regression test in its own right: **a stopped View costs zero dispatches for 60 consecutive pump
+frames.**
+
+**9. Composition with the two concurrent branches.** #424's round-2 head (`6387018`) overlaps only
+`DiagnosticOverlayService`'s tag block, where all four tags coexist. #425's stop prologue (blank the
+front buffer under `_frameLock`, hold `Disconnected` while a stop is pending, gate the pump's
+publish) and this PR's gates are **independent AND-terms on different chains** — #425 guarantees
+`GetLatestFrame()` is `null` after a stop prologue so nothing paints; RC-B11 guarantees no post is
+queued when no View renders. Neither subsumes the other and **neither may be dropped in the rebase**:
+`OnBridgeVideoFrameReady`'s gate is the *union* of every term present on both branches.
+
+**10. Merge order: #424 → #425 → #426, and #426 rebases twice.** #425 goes second because its
+invariant is the correctness-bearing one and must not be rebased *over* by a latency PR, and because
+the second rebase is cheaper for #426 (one raise site plus RC-B2's two reset lines, which follow
+#425's `_frameLock` block into `StopReceiverCore`; its `INdiBridges.cs` hunk is a different region).
+#426 rebases onto `6387018` now so CI runs on a current base, retargets to `integration` once #424
+merges, and rebases again after #425. Nothing here goes into `main`; whichever PR carries the chain
+there owes a green, linked, non-pending `emulator-tests.yml` run (#299).

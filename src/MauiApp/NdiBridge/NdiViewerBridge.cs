@@ -17,8 +17,11 @@ namespace NdiForAndroid.NdiBridge;
 public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
 {
     private const string ReceiverName = "NDI for Android Viewer";
-    private const uint VideoCaptureTimeoutMs = 1000;
-    private const uint AudioCaptureTimeoutMs = 500;
+    // NDIlib_recv_capture_v3 returns the instant a frame is queued, so a 60 fps source never
+    // reaches this timeout; it only bounds how long a pump idles (and therefore a queued lifecycle
+    // stop's thread join) on a silent receiver.
+    private const uint VideoCaptureTimeoutMs = 250;
+    private const uint AudioCaptureTimeoutMs = 250;
     private const long StalledAfterMs = 3000;
     private const long StatsIntervalMs = 1000;
     private const long FpsWindowMs = 1000;
@@ -36,6 +39,20 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
     /// <summary>Guards _connectionState; kept separate so events are raised lock-free.</summary>
     private readonly object _connectionLock = new();
 
+    /// <summary>Guards <see cref="_lifecycleTail"/> only. Never held across any native call.</summary>
+    private readonly object _lifecycleLock = new();
+
+    /// <summary>
+    /// Tail of the receiver-lifecycle chain. Every start and stop appends a continuation here, so
+    /// the native teardown/create pairs execute one at a time and in request order, on the thread
+    /// pool, never on the caller's thread. A task chain rather than a <see cref="SemaphoreSlim"/>:
+    /// SemaphoreSlim does not document FIFO release order for async waiters, and ordering is the
+    /// invariant this exists to provide — <c>_recv</c> is a single field, <see cref="NdiRuntime"/>'s
+    /// handle refcount is process-wide, and the audio sink is a singleton, so a stop that lands
+    /// after a start destroys the wrong receiver.
+    /// </summary>
+    private Task _lifecycleTail = Task.CompletedTask;
+
     private IntPtr _recv;
     private Thread? _videoThread;
     private Thread? _audioThread;
@@ -46,11 +63,12 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
     private ConnectionState _connectionState = ConnectionState.Disconnected;
     private ReceiverStopReason _lastStopReason = ReceiverStopReason.Intentional;
 
-    /// <summary>Non-zero while a caller-requested <see cref="StopReceiver"/> is tearing the
+    /// <summary>Non-zero while a caller-requested <see cref="StopReceiverAsync"/> is tearing the
     /// receiver down. Every Disconnected transition raised inside that window is intentional by
     /// definition — including one the video pump raises from its own connection-lost check between
     /// <c>_running = false</c> and the thread join. A depth counter, not a flag: an event handler
-    /// running on a pump thread may call StopReceiver re-entrantly.</summary>
+    /// running on a pump thread may itself call <see cref="StopReceiverAsync"/>, enqueuing another
+    /// stop while this one is still tearing down.</summary>
     private int _stopDepth;
 
     /// <summary>Backs <see cref="ReceiverGeneration"/>. Guarded by <see cref="_connectionLock"/> and
@@ -67,6 +85,8 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
     private int _frameWidth;
     private int _frameHeight;
     private long _frameTimestampMillis;
+    private long _frameReceivedAtTicks;
+    private bool _frameTimestampIsSynthesized = true;
 
     private volatile float _measuredFps;
     private volatile float _droppedFramePercent;
@@ -80,7 +100,9 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
     private bool _tallyOnPreview;
     private NdiTallyEcho? _lastTallyEcho;
 
-    private bool _disposed;
+    // volatile: written on the disposing thread (the DI container, UI thread on Android) and read
+    // on the lifecycle worker by StartReceiverCore's early-out.
+    private volatile bool _disposed;
 
     public NdiViewerBridge(
         NdiRuntime runtime,
@@ -104,6 +126,9 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
     public event EventHandler<NdiTallyEcho>? TallyEchoChanged;
 
     /// <inheritdoc />
+    public event EventHandler? VideoFrameReady;
+
+    /// <inheritdoc />
     public bool IsAudioEnabled
     {
         get => _audioEnabled;
@@ -113,22 +138,88 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
     /// <inheritdoc />
     public bool IsPtzSupported => _isPtzSupported;
 
+    /// <inheritdoc />
     public void StartReceiver(string sourceId, QualityProfile qualityProfile = QualityProfile.Balanced)
     {
         if (string.IsNullOrWhiteSpace(sourceId))
             throw new ArgumentException("Source id is required.", nameof(sourceId));
 
-        // Ownership token: the most recent caller to ask for a receiver owns it. Bumped here — before
-        // the stop/create and before the two failure returns below — so a second ViewModel taking the
-        // bridge over always disowns the first, even when both asked for the same source id.
-        lock (_connectionLock) _receiverGeneration++;
+        // Before the _stopDepth increment, not after: a guard placed later would leak the depth
+        // counter, because nothing would be enqueued to run StopReceiverCore's balancing finally.
+        if (_disposed)
+            return;
 
-        // Full clean stop of any existing receiver before creating a new one.
-        StopReceiver();
+        lock (_connectionLock)
+        {
+            // Ownership token: bumped in the caller's turn — before anything is queued, before the
+            // transition below and before any failure path — so a caller that reads
+            // ReceiverGeneration straight after this call reads its own generation, and a second
+            // ViewModel taking the bridge over always disowns the first, even for the same source
+            // id. Also what makes the Disconnected raised below harmless to a ViewModel mid
+            // quality-profile change: it is not the owner for the duration of that one statement.
+            _receiverGeneration++;
+
+            // The implicit stop of the outgoing receiver, signalled and tagged exactly as
+            // RequestStop does. StopReceiverCore's finally decrements this.
+            _stopDepth++;
+        }
+
+        // See RequestStop: volatile, and deliberately not under _stateLock.
+        _running = false;
+
+        // Published synchronously so a SetQualityProfile that lands while this start sits in the
+        // queue is not lost. SetQualityProfile's own restart is gated on _recv, which is zero for
+        // the whole queue window, so without this the user's pick is silently dropped and the
+        // receiver is created at the previous bandwidth tier (#408). StartReceiverCore reads this
+        // field rather than its captured argument, so the last writer wins and the two are
+        // serialized by this lock. This is the one prologue statement that can briefly block on a
+        // concurrently executing StartReceiverCore's native create; see acceptedResiduals.
+        lock (_stateLock) _qualityProfile = qualityProfile;
+
+        // Same reason as the stop's blank: a source switch must never paint the previous source's
+        // last frame as the new source's first. The old synchronous StopReceiver() inside
+        // StartReceiver did this too.
+        lock (_frameLock)
+        {
+            _frontPixels = null;
+            _frameWidth = 0;
+            _frameHeight = 0;
+            _frameTimestampMillis = 0;
+        }
+
+        // The implicit stop's postcondition, identical to RequestStop's and identical to what the
+        // pre-#408 inline StopReceiver() produced here. Tagged Intentional (_stopDepth > 0) and
+        // raised with no lock held.
+        TransitionState(ConnectionState.Disconnected);
+
+        // One queued item, so no other lifecycle operation can interleave between the teardown of
+        // the old receiver and the creation of the new one.
+        EnqueueLifecycle(() =>
+        {
+            StopReceiverCore();
+            StartReceiverCore(sourceId, qualityProfile);
+        });
+    }
+
+    /// <summary>
+    /// The native half of a start. Lifecycle worker only; the previous receiver is already fully
+    /// torn down when this runs.
+    /// </summary>
+    private void StartReceiverCore(string sourceId, QualityProfile qualityProfile)
+    {
+        // Queued starts become no-ops once Dispose has run. Without this, Dispose's wait is bounded
+        // by the whole backlog — up to a dozen items during an active reconnect loop, each with two
+        // 250 ms joins — instead of by the item in flight, and a start that slipped through would
+        // create a receiver nothing will ever destroy.
+        if (_disposed)
+            return;
 
         lock (_stateLock)
         {
-            _qualityProfile = qualityProfile;
+            // Read, do not write. The requested profile was published by StartReceiver's prologue
+            // and may since have been superseded by a SetQualityProfile that landed while this item
+            // waited in the queue; the captured argument is stale in exactly that case (#408).
+            qualityProfile = _qualityProfile;
 
             if (!_runtime.EnsureInitialized())
             {
@@ -169,6 +260,30 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
                 NdiNativeMethods.NDIlib_recv_connect(_recv, ref source);
                 NdiConnectionMetadata.Apply(_recv, isSender: false, sessionName: "viewer");
             }
+            catch
+            {
+                // EnsureInitialized bumped NdiRuntime's process-wide handle refcount. That count is
+                // shared with the discovery and output bridges and gates NDIlib_destroy, so leaking
+                // one entry permanently blocks a library re-init (a discovery-server change) —
+                // round-1 ruling 2(b) is what makes that load-bearing. Before the lifecycle queue a
+                // throw here propagated to the UI-thread caller and was at least visible; the chain
+                // now swallows it, so the release has to be explicit.
+                // Scoped to the create/connect region ON PURPOSE: no pump thread has been started
+                // yet at this point. It must NEVER be widened past the two Thread.Start() calls
+                // below — destroying the handle under a running pump is a native use-after-free,
+                // which is a worse bug than the one being fixed (rule 6).
+                if (_recv != IntPtr.Zero)
+                {
+                    NdiNativeMethods.NDIlib_recv_destroy(_recv);
+                    _recv = IntPtr.Zero;
+                }
+
+                _runtime.ReleaseHandle();
+                _activeSourceId = null;
+                _running = false;
+                TransitionState(ConnectionState.Disconnected);
+                throw; // EnqueueLifecycle logs it (RC20)
+            }
             finally
             {
                 // The SDK copies the create/connect strings — safe to free now.
@@ -180,6 +295,15 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
             ApplyTallyLocked();
 
             _activeSourceId = sourceId;
+
+            // A stop landed while this create ran: do not start the pumps and do not reopen
+            // CopyVideoFrame's publish gate. The stop queued behind this item owns the teardown
+            // and destroys _recv; leaving _running false keeps the prologue's blank true.
+            bool stopPendingAfterCreate;
+            lock (_connectionLock) stopPendingAfterCreate = _stopDepth > 0;
+            if (stopPendingAfterCreate)
+                return;
+
             _running = true;
             TransitionState(ConnectionState.Connecting);
 
@@ -204,10 +328,88 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
         }
     }
 
-    public void StopReceiver()
+    /// <inheritdoc />
+    public Task StopReceiverAsync()
     {
+        // After Dispose the chain must not accept new work: Dispose returns once the chain has
+        // drained, so an item appended afterwards would create or destroy state that nothing will
+        // ever clean up again.
+        if (_disposed)
+            return Task.CompletedTask;
+
+        return RequestStop();
+    }
+
+    /// <summary>
+    /// A stop's synchronous prologue plus the enqueue of its native half. Split out from
+    /// <see cref="StopReceiverAsync"/> so <see cref="Dispose"/> can still run a stop *after* it has
+    /// set <see cref="_disposed"/> — the public entry point deliberately refuses to enqueue then.
+    /// </summary>
+    private Task RequestStop()
+    {
+        // Synchronous prologue, in the caller's turn. FOUR things must be true the instant this
+        // returns, because callers order other work against them:
+        //  - every Disconnected raised from here until the teardown completes is tagged
+        //    Intentional, so no reconnect window opens on a stop the app requested;
+        //  - the pumps are unwinding;
+        //  - GetLatestFrame() returns null, so no consumer — the View's 33 ms render timer, a
+        //    frame-ready signal already in flight, or a *second* ViewerViewModel's pane, whose own
+        //    IsStopped is false — can paint one more frame of a stream the app has just ended
+        //    (#348 / Nielsen #1);
+        //  - GetConnectionState() is Disconnected, which is the postcondition
+        //    ViewerViewModel.CompleteReconnect's "the bridge agrees right now" guard,
+        //    RunAttempt's pre-check and CheckForSustainedConnecting's correctness argument were
+        //    all written against.
+        // Only the *native* half (thread joins, recv_destroy, the runtime handle) is queued. The
+        // _stopDepth decrement lives in StopReceiverCore's finally, so the Intentional tag spans
+        // the thread hop.
         lock (_connectionLock) _stopDepth++;
 
+        // Deliberately NOT under _stateLock. StartReceiverCore holds that lock across
+        // NDIlib_recv_create_v3 + NDIlib_recv_connect, so taking it here would put a native call
+        // of unbounded duration on the UI thread inside the one method whose entire purpose is to
+        // keep native work off it (#408). No lock is needed: _running is volatile, and every
+        // interleaving with a concurrently executing StartReceiverCore is safe because the stop
+        // this prologue enqueues is ordered *behind* that start on the lifecycle chain and is the
+        // authority that joins the pumps and destroys the handle.
+        _running = false;
+
+        // Blanking the front buffer HERE, not on the worker, is what makes "the pumps are
+        // unwinding" observable to every consumer at once. The pump publishes under this same lock
+        // and re-reads _running inside it (CopyVideoFrame), and the write above happens before
+        // this lock is taken, so there is no interleaving in which a publish survives this blank:
+        // either the pump took the lock first and this blank runs after its swap, or it takes the
+        // lock afterwards and sees _running == false.
+        // _backPixels is deliberately left alone — it is pump-owned and CopyVideoFrame copies into
+        // it through the field with no lock held, so nulling it here would fault a pump mid-copy.
+        // StopReceiverCore nulls it after the joins, when no pump exists.
+        lock (_frameLock)
+        {
+            _frontPixels = null;
+            _frameWidth = 0;
+            _frameHeight = 0;
+            _frameTimestampMillis = 0;
+            _frameReceivedAtTicks = 0;
+            _frameTimestampIsSynthesized = true;
+        }
+
+        // Restores the pre-#408 postcondition: the old synchronous StopReceiver() had already set
+        // Disconnected before it returned. Raised on the caller's thread — which is also what the
+        // synchronous stop did — and with no lock held, so a subscriber that re-enters the bridge
+        // can neither deadlock nor observe a half-applied stop. _stopDepth was incremented first,
+        // so this is tagged Intentional by construction.
+        TransitionState(ConnectionState.Disconnected);
+
+        return EnqueueLifecycle(StopReceiverCore);
+    }
+
+    /// <summary>
+    /// The native half of a stop. Runs only on the lifecycle worker, never on the caller's thread
+    /// and never on a pump thread. Idempotent: a second queued stop finds null thread fields and a
+    /// zero handle and does nothing.
+    /// </summary>
+    private void StopReceiverCore()
+    {
         try
         {
             Thread? videoThread;
@@ -222,8 +424,11 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
                 _audioThread = null;
             }
 
-            // Join OUTSIDE the state lock (legacy deadlock lesson). Skip self-join in
-            // case an event handler running on a pump thread calls StopReceiver.
+            // Join OUTSIDE the state lock (legacy deadlock lesson). Unbounded on purpose: a timed
+            // join followed by NDIlib_recv_destroy while a pump is inside NDIlib_recv_capture_v3
+            // is a native use-after-free. Bounded in practice by VideoCaptureTimeoutMs /
+            // AudioCaptureTimeoutMs. The self-join guard is retained as defence: this method is
+            // only ever reached from the thread pool, so it can no longer trigger.
             if (videoThread is not null && !ReferenceEquals(videoThread, Thread.CurrentThread))
                 videoThread.Join();
             if (audioThread is not null && !ReferenceEquals(audioThread, Thread.CurrentThread))
@@ -245,6 +450,8 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
                 _lastTallyEcho = null;
             }
 
+            // Idempotent after the prologue's blank; _backPixels can only be released here,
+            // because only here is it certain no pump thread is copying into it.
             lock (_frameLock)
             {
                 _frontPixels = null;
@@ -252,6 +459,8 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
                 _frameWidth = 0;
                 _frameHeight = 0;
                 _frameTimestampMillis = 0;
+                _frameReceivedAtTicks = 0;
+                _frameTimestampIsSynthesized = true;
             }
 
             _audioSink.Stop(); // safe when not started
@@ -259,6 +468,8 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
         }
         finally
         {
+            // After TransitionState, exactly as before the split: the Disconnected raised above is
+            // still inside the intentional-stop window.
             lock (_connectionLock) _stopDepth--;
         }
     }
@@ -273,13 +484,25 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
             _qualityProfile = profile;
 
             // Bandwidth is a create-time setting on the receiver — applying a new
-            // tier requires recreating it with the same source.
-            if (_recv != IntPtr.Zero && bandwidthChanged)
+            // tier requires recreating it with the same source. Restart only when a receiver
+            // both exists and is still wanted: while a stop is queued but not yet run, _recv and
+            // _activeSourceId still name the outgoing receiver, so restarting from them would
+            // reconnect to the previous source after a switch, or resurrect a receiver the app
+            // just stopped. Nothing is lost by skipping it: the profile is published above and
+            // the queued StartReceiverCore reads that field.
+            bool stopPending;
+            lock (_connectionLock) stopPending = _stopDepth > 0;
+
+            if (_recv != IntPtr.Zero && bandwidthChanged && !stopPending)
                 restartSourceId = _activeSourceId;
         }
 
         if (restartSourceId is not null)
+        {
+            // StartReceiver is queued now, but it bumps ReceiverGeneration synchronously, so a
+            // caller's conditional re-claim of ownership still observes the bump in its own turn.
             StartReceiver(restartSourceId, profile);
+        }
     }
 
     public ConnectionState GetConnectionState()
@@ -308,7 +531,9 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
             // The record wraps the CURRENT front buffer without copying. It is
             // immutable-by-convention: callers must not mutate the pixels, and the
             // array may be recycled by the pump after the double buffer cycles twice.
-            return new NdiVideoFrame(_frameWidth, _frameHeight, _frontPixels, _frameTimestampMillis);
+            return new NdiVideoFrame(
+                _frameWidth, _frameHeight, _frontPixels, _frameTimestampMillis,
+                _frameReceivedAtTicks, _frameTimestampIsSynthesized);
         }
     }
 
@@ -334,7 +559,7 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
 
     // ── PTZ ──────────────────────────────────────────────────────────────────
     // All passthroughs hold the state lock so the recv handle cannot be
-    // destroyed mid-call; StopReceiver only destroys under the same lock.
+    // destroyed mid-call; StopReceiverCore only destroys under the same lock.
 
     public bool PtzPanTiltSpeed(float panSpeed, float tiltSpeed)
     {
@@ -375,7 +600,19 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
     {
         if (_disposed) return;
         _disposed = true;
-        StopReceiver();
+
+        // The one place that blocks: app shutdown must not leave a pump thread reading managed
+        // state that is about to go away. Never call Dispose from the UI thread during normal
+        // operation, and never from a bridge event handler — the queued teardown joins the pump
+        // threads, so a pump-thread caller would deadlock on itself.
+        // Bounded by the item in flight plus one join pair, NOT by the length of the backlog:
+        // _disposed is already set, so every queued start is now a no-op (StartReceiverCore's
+        // early-out) and every queued stop behind it finds null thread fields and a zero handle.
+        // During an active reconnect loop the backlog can be a dozen items, which without that
+        // early-out would be seconds on the UI thread at shutdown.
+        // RequestStop, not StopReceiverAsync: the public entry point refuses to enqueue once
+        // _disposed is set.
+        RequestStop().GetAwaiter().GetResult();
     }
 
     // ── Video pump ───────────────────────────────────────────────────────────
@@ -392,6 +629,10 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
         // StopReceiver/StartReceiver, and no other thread can read or write them.
         long lastTotalVideoFrames = 0;
         long lastDroppedVideoFrames = 0;
+
+        // One diagnostic line per pump run if a VideoFrameReady subscriber ever throws. A local for
+        // the same reason the counters above are locals: per-receiver, pump-thread-only state.
+        var frameReadyFaultLogged = false;
 
         try
         {
@@ -426,6 +667,13 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
                         hasEverConnected = true;
                         frameTimes.Enqueue(now);
                         TransitionState(ConnectionState.Connected);
+
+                        // After the free and after the state transition, never before: a handler may
+                        // synchronously stop the receiver (the loop's own _running re-check below
+                        // covers that), and the first frame must be observable as Connected before
+                        // anything is asked to draw it. One delegate invoke — the interface contract
+                        // forbids the handler doing anything but posting a coalesced invalidate.
+                        RaiseVideoFrameReady(ref frameReadyFaultLogged);
                         break;
 
                     case NdiFrameType.Metadata:
@@ -500,6 +748,47 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
         }
     }
 
+    // Wrapped because VideoPumpLoop's catch wraps the entire while(_running) loop and reports ANY
+    // escaping exception as a lost connection; a subscriber fault must not open a spurious reconnect
+    // window on a link that never dropped. The diagnostic is one-shot per pump run — a per-frame log
+    // line at up to 60/s would be worse than the bug it reports.
+    private void RaiseVideoFrameReady(ref bool frameReadyFaultLogged)
+    {
+        try
+        {
+            VideoFrameReady?.Invoke(this, EventArgs.Empty);
+        }
+        catch (Exception ex)
+        {
+            if (frameReadyFaultLogged)
+                return;
+
+            frameReadyFaultLogged = true;
+
+            try
+            {
+                Android.Util.Log.Warn("NDI-Bridge",
+                    $"VideoFrameReady subscriber fault: type={ex.GetType().Name} msg={ex.Message}");
+            }
+            catch
+            {
+                // Logging is best-effort; must never throw back into the pump's catch.
+            }
+
+            try
+            {
+                _diagnostics?.Trace(
+                    DiagnosticOverlayService.LatencyLogTag,
+                    "viewer.framereadyfault",
+                    $"type={ex.GetType().Name} msg={ex.Message}");
+            }
+            catch
+            {
+                // Diagnostics are best-effort; must never throw back into the pump's catch.
+            }
+        }
+    }
+
     private void CopyVideoFrame(ref NdiVideoFrameV2Native video)
     {
         var width = video.xres;
@@ -525,16 +814,37 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
         }
 
         // NDI timestamps are 100 ns units since the Unix epoch; INT64_MAX = undefined.
-        var timestampMillis = video.timestamp is > 0 and < long.MaxValue
+        var senderStamped = video.timestamp is > 0 and < long.MaxValue;
+        var timestampMillis = senderStamped
             ? video.timestamp / 10_000
             : DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
+        // Monotonic receive mark, on the same clock the paint handler reads at draw time (#416).
+        // TickCount64 rather than the wall clock: a latency must survive an NTP step, and this is
+        // already the clock the pump uses for _maxFrameGapMs.
+        var receivedAtTicks = Environment.TickCount64;
+
         lock (_frameLock)
         {
+            // Publish gate. A stop's prologue sets _running = false and then blanks the front
+            // buffer under this lock; without this check a pump that was already inside
+            // NDIlib_recv_capture_v3 at that moment swaps one more live frame back in *after* the
+            // blank — and because nothing invalidates the canvas again once the buffers are gone,
+            // that frame stays frozen on screen under the "Stopped" badge (#348, #408). One
+            // republished frame is enough to reproduce the whole defect.
+            // Read inside the lock, against a write that happens before the prologue takes it, so
+            // the only two orders are publish-then-blank (blank wins) and blank-then-skip.
+            // The already-completed copy into _backPixels is wasted: one frame, on a receiver that
+            // is going away.
+            if (!_running)
+                return;
+
             (_frontPixels, _backPixels) = (_backPixels, _frontPixels);
             _frameWidth = width;
             _frameHeight = height;
             _frameTimestampMillis = timestampMillis;
+            _frameReceivedAtTicks = receivedAtTicks;
+            _frameTimestampIsSynthesized = !senderStamped;
         }
     }
 
@@ -691,6 +1001,19 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
         bool changed;
         lock (_connectionLock)
         {
+            // A stop has been requested and its queued teardown has not run yet (#408). A pump that
+            // is still unwinding must not *promote* the state of a receiver that is about to be
+            // destroyed: its loop condition is only re-read at the top, so a frame already queued
+            // natively is still delivered after _running = false, and ViewerViewModel reads this
+            // field to decide whether a Connected event is real (CompleteReconnect's third guard,
+            // RunAttempt's pre-check). Before the lifecycle queue the stop's own Disconnected had
+            // already landed by the time any such event could reach the UI thread.
+            // Disconnected is always allowed through, so the stop's own transition and a pump's
+            // connection-lost demotion both still apply — the latter re-tagged Intentional below,
+            // exactly as before.
+            if (_stopDepth > 0 && newState != ConnectionState.Disconnected)
+                return;
+
             changed = _connectionState != newState;
             _connectionState = newState;
             _lastStopReason = _stopDepth > 0 ? ReceiverStopReason.Intentional : stopReason;
@@ -712,7 +1035,70 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
             }
         }
 
-        ConnectionStateChanged?.Invoke(this, newState);
+        // A subscriber's exception must never break the receiver lifecycle. This is raised from
+        // three kinds of thread now: a pump thread (where the pump's catch would misreport the
+        // fault as a lost stream), the lifecycle worker (where it would abort the create queued
+        // behind a teardown in the same item, leaving the viewer at "Connecting..." forever with
+        // nothing on screen to say so), and a caller's own turn (Stop/Start/handoff/Dispose).
+        try
+        {
+            ConnectionStateChanged?.Invoke(this, newState);
+        }
+        catch
+        {
+            // A subscriber's fault is the subscriber's problem; the bridge's own state is already
+            // committed above.
+        }
+    }
+
+    /// <summary>
+    /// Appends one lifecycle operation to the chain. The continuation swallows everything: a fault
+    /// here must never break the chain for every later operation, and the pump-safety rule (a
+    /// background-thread exception is fatal in .NET) applies to this worker too.
+    /// Note for the next reader: <see cref="TaskContinuationOptions.RunContinuationsAsynchronously"/>
+    /// is not what keeps <paramref name="work"/> off the caller's thread — it governs the
+    /// *created* task's own continuations. What keeps the work off the caller's thread is the
+    /// absence of <c>ExecuteSynchronously</c> together with <see cref="TaskScheduler.Default"/>,
+    /// which queues even when the antecedent is already completed. Do not "simplify" either away.
+    /// </summary>
+    private Task EnqueueLifecycle(Action work)
+    {
+        lock (_lifecycleLock)
+        {
+            var next = _lifecycleTail.ContinueWith(
+                _ =>
+                {
+                    try
+                    {
+                        work();
+                    }
+                    catch (Exception ex)
+                    {
+                        // Never fault the chain — every later start and stop would inherit the
+                        // fault — and never kill the process, since an unhandled exception on a
+                        // background thread is fatal in .NET. But never silently either: a fault
+                        // here can leave the viewer at "Connecting..." forever, and RC18's
+                        // non-throwing event raise removes the only realistic thrower without
+                        // making the rest diagnosable. Not gated on developer mode: this is an
+                        // error, not a probe, and it can happen at most once per lifecycle
+                        // operation.
+                        try
+                        {
+                            Android.Util.Log.Error("NDI-Bridge", $"Lifecycle operation faulted: {ex}");
+                        }
+                        catch
+                        {
+                            // Logging is best-effort.
+                        }
+                    }
+                },
+                CancellationToken.None,
+                TaskContinuationOptions.RunContinuationsAsynchronously,
+                TaskScheduler.Default);
+
+            _lifecycleTail = next;
+            return next;
+        }
     }
 
     /// <summary>Must hold <see cref="_stateLock"/>.</summary>
