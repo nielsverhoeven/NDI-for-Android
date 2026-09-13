@@ -266,11 +266,15 @@ Release notes: `docs/features/automatic-viewer-reconnection-retry/release-notes.
 
 Auto-reconnect for up to **15s** when an active NDI connection drops unexpectedly. User-initiated `Stop` never auto-retries; explicit `Reconnect` restarts with the last `SourceId`. All timing is `TimeProvider`-driven and all observable mutations marshal to the UI thread — the ViewModel stays in Core (MAUI-free) and unit-testable.
 
+The trigger is `INdiViewerBridge.ConnectionStateChanged(Disconnected)` with `GetLastStopReason() == ReceiverStopReason.ConnectionLost`, forwarded by `ViewerViewModel.OnBridgeConnectionStateChanged` into `CheckForUnexpectedDrop()`; every explicit `StopReceiver()` (user Stop, internal restart, quality-profile bandwidth change, navigation handoff) reports `Intentional` and can never open a window. The window is completed by the bridge's `Connected` event, not by the attempt loop's own poll. Full screen is **kept** while retrying — the countdown shows in the in-video `viewer.reconnectBadge` — and is exited only when the window expires.
+
 ### Bridge contract
 | Member | Path | Notes |
 |--------|------|-------|
 | `ConnectionState { Connecting, Connected, Disconnected }` | `src/Core/NdiBridge/NdiBridgeModels.cs` | Plain C# enum — no NDI SDK types cross the bridge |
 | `ConnectionState GetConnectionState()` | `src/Core/NdiBridge/INdiBridges.cs` (`INdiViewerBridge`) | Polled by the VM state machine to detect drops |
+| `ReceiverStopReason { Intentional, ConnectionLost }` | `src/Core/NdiBridge/NdiBridgeModels.cs` | Why the last `Disconnected` transition happened; `Intentional` is the default (value 0) |
+| `ReceiverStopReason GetLastStopReason()` | `src/Core/NdiBridge/INdiBridges.cs` (`INdiViewerBridge`) | Lets the VM tell a genuine drop from any deliberate `StopReceiver()` call |
 | Real impl | `src/MauiApp/NdiBridge/NdiViewerBridge.cs` | Superseded the stub in #277: 3 s frame-arrival watchdog + `recv_get_no_connections` inside the video pump; also raises `ConnectionStateChanged` on the pump thread |
 
 ### `IMainThreadDispatcher` abstraction (NEW)
