@@ -152,6 +152,99 @@ RC3 complete the window on `Connected`; RC4 drop `BeginExitFullScreen()` from
 `TestIds.ViewerReconnectBadge` + the badge in `ViewerView.xaml`; RC7 the test set that follows from
 RC3-RC6; RC8 documentation redirect.
 
+### 2026-09-13 — #392 round 2: adversarial review of the implemented PR #407 (`cc3e1a4`)
+
+**APPROVE-WITH-CHANGES (10 more, RC9-RC18).** RC1-RC8 are present and literally implemented; every
+defect below is a **gap the round-1 verdict did not cover**, not a deviation from it. Rulings:
+10 fix-now, 2 defer, 1 reject. Verdict file: `verdict-392-round2.md`.
+
+The shape of my own miss: RC3 wired a *single-shot, globally-scoped* bridge signal into a state
+machine that (a) more than one live ViewModel subscribes to, (b) has no level-triggered backstop, and
+(c) leaves the receiver running in its terminal state. I gated the *signal* and the *UI composition*
+and did not gate the *subscriber set* or the *terminal lifecycle*.
+
+**1. Ownership is now an architectural invariant, and it needed a bridge-side identity (RC9/RC10).**
+`INdiViewerBridge` is a singleton (`MauiProgram.cs:63`) running one receiver, but several
+`ViewerViewModel` instances are alive and subscribed at once: the Expanded two-pane `PaneViewer` is a
+transient VM owned by the *singleton* `SourceListViewModel` (`SourceListViewModel.cs:45-46`, `:124-126`),
+never disposed, permanently subscribed — and `HomeViewModel.StartViewingLastSourceAsync`
+(`HomeViewModel.cs:169-177`) pushes a `ViewerPage` (a second transient VM) unconditionally, Expanded
+included. Before this PR `CheckForUnexpectedDrop()` had no production caller, so a background VM was a
+passive observer; RC3 turned it into an active bridge driver. Two reconnect loops then thrash one
+receiver every 2 s and the user can end up watching source A's video under source B's "Connected."
+The team already knew half of this — `SourceListViewModel.cs:71-78` guards exactly one route (the
+size-class change).
+**Invariant, now recorded: at most one ViewerViewModel may drive the shared bridge, and the bridge
+decides which.** The seam is `INdiViewerBridge.ReceiverGeneration`, a monotonic token bumped by every
+`StartReceiver` call; each ViewModel records it immediately after its own start and compares before
+acting. `ActiveSourceId` was considered and **rejected**: `Start()` persists `SourceId` as
+`LastViewerSourceId` (`ViewerViewModel.cs:319`) and "Resume watching" replays exactly that id, so the
+two competing ViewModels usually hold the *same* source id — the discriminator has to be call
+identity, not source identity. A VM-only `_ownsReceiver` flag was rejected for the reason the reviewer
+gave: both VMs "own" after the switch. Note the token must also be re-claimed after
+`SetQualityProfile`, because a bandwidth change recreates the receiver inside the bridge
+(`NdiViewerBridge.cs:255-272`).
+
+**2. A terminal state must release the receiver (RC11/RC12).** `FailReconnect()` disposed the timers
+and wrote the terminal message but never called `StopReceiver()`, so the pump — which deliberately
+survives a `ConnectionLost` so NDI can recover on its own — kept running forever. `ViewerView.OnRenderTick`
+(`ViewerView.xaml.cs:130-142`) polls `CurrentFrame` **ungated by `IsPlaying`**, so a source that came
+back at t+25 s repainted live moving video underneath "Connection lost. Reconnection failed." That is
+the exact Nielsen-#1 failure the #348 Stopped badge exists to prevent, and RC3 made it reachable on
+every unrecovered drop. `CancelRetry()` had the identical hole plus two of its own: it was not sticky
+(the next `ConnectionLost` re-opened the window the user had just dismissed) and it left
+`CanReconnect == false` with `IsPlaying == false`, i.e. **no control on screen at all**
+(`PlaybackControlsView.xaml:86-87` hides the Stop row). Rule for this ViewModel from now on: *every
+path that ends playback stops the receiver, raises the video-surface badge and leaves exactly one
+affordance* — `Stop()` was the only one that already did.
+
+**3. Edge-triggered + globally-scoped needs a level backstop (RC15).** `_lastStopReason` is a single
+global flag written on **every** transition (`NdiViewerBridge.cs:645-653`) and read on a *later* UI
+thread turn than the event that set it. Any restart in between (quality-profile bandwidth change,
+source switch, resume restore) re-stamps the bridge to `Connecting`/`Intentional`, and the fresh
+receiver's `hasEverConnected` gate (`:439`) means it can never report the loss again — the drop is lost
+permanently and the viewer sits on a frozen frame claiming to be connected. The reviewer's one-line
+backstop cannot fire for that case (the guard's first two terms fail), and a bridge-side
+"`Connecting` → `Disconnected` after N s" was **rejected**: it edits the pump/lifecycle code and
+changes initial-connect behaviour for every user. Accepted instead: the ViewModel treats **sustained
+`Connecting`** (5 × the existing 1 s stats sample, comfortably past the bridge's own 3 s stall
+demotion) as a drop, gated on `_hasConnectedSinceStart` (so the initial connect is untouched) and on
+`OwnsActiveReceiver` (without which the backstop would re-open the P1-1 hole through the back door).
+`Disconnected` never trips it, so D6 stays closed. General principle for this repo: *a one-shot signal
+carried across a thread hop needs a level-triggered re-check on the same seam* — the 1 s stats
+watchdog was already there and cost nothing.
+
+**4. The completer had no guard at all (RC14).** `CompleteReconnect()` checked neither
+`_reconnectState` nor `GetConnectionState()`, so an attempt tick landing one queue slot ahead of a
+pump-raised `Connected` destroyed a healthy receiver and the stale event then declared success against
+a `Connecting` bridge, disposing the timers — "Connected." on a dead stream with no retry UI. The
+`_reconnectState == Failed` half of the guard is untestable today (below) and ships as a documented
+defensive guard.
+
+**5. Test-infrastructure limit, recorded.** `FakeMainThreadDispatcher`
+(`src/Core/Services/IMainThreadDispatcher.cs:13-16`) invokes inline; Android's
+`MainThread.BeginInvokeOnMainThread` always posts a later turn. Every nested dispatch in the viewer
+(`OnBridgeConnectionStateChanged → CompleteReconnect → its callback`, `TickCountdown → FailReconnect`)
+collapses to one turn, so **ordering defects are structurally invisible to the unit suite**. I refused
+to accept a test that pretends to cover one. Follow-up F2 (queued fake with `Drain()`).
+
+**Deferred, with follow-ups filed:** the UI-thread `Thread.Join` per automatic attempt (F1 — the fix
+is a threading-model change to the state machine; pre-existing; each block stays under the ANR
+threshold once the double loop is closed); the queued dispatcher fake (F2); the handoff leaving
+`IsPlaying == true` on a VM whose bridge was stopped behind its back (F3 — round 1's `optional 4`,
+now harmless thanks to the ownership token but still a modelling defect); the dead
+`_wasPlayingBeforeResume` resume-restore branch (F4 — `_wasPlayingBeforeResume` is assigned only
+`value` in `OnIsPlayingChanged`, so `_wasPlayingBeforeResume && !IsPlaying` is identically false and
+`ViewerViewModel.cs:219-246` is unreachable; my RC3 comment claimed that branch and is corrected by
+RC16); the badge wording on a non-user terminal state (F5); initial connect to an unreachable source
+showing "Connecting…" forever (F6).
+
+**Process note (RC8 check).** `.claude/knowledge/architecture.md` appearing on the implementation
+branch is **legitimate**: it is this architect-owned file carrying my own round-1 verdict entry,
+transported by the teamlead — not the developer-written `decision-log.md` that RC8 refused for the
+fourth time. The distinction that matters is authorship, not location: agents write their own
+knowledge files, implementers write none.
+
 ### 2026-09-13 — #401 e2e assertion: no bottom navigation bar in the rail placement (fit-check)
 
 **APPROVE-WITH-CHANGES (4).** Test-project-only, no production file touched, correct class

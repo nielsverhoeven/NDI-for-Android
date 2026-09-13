@@ -268,6 +268,8 @@ Auto-reconnect for up to **15s** when an active NDI connection drops unexpectedl
 
 The trigger is `INdiViewerBridge.ConnectionStateChanged(Disconnected)` with `GetLastStopReason() == ReceiverStopReason.ConnectionLost`, forwarded by `ViewerViewModel.OnBridgeConnectionStateChanged` into `CheckForUnexpectedDrop()`; every explicit `StopReceiver()` (user Stop, internal restart, quality-profile bandwidth change, navigation handoff) reports `Intentional` and can never open a window. The window is completed by the bridge's `Connected` event, not by the attempt loop's own poll. Full screen is **kept** while retrying — the countdown shows in the in-video `viewer.reconnectBadge` — and is exited only when the window expires.
 
+A ViewModel only acts on a drop while it still **owns** the receiver (`INdiViewerBridge.ReceiverGeneration`, bumped by every `StartReceiver`): the bridge is a singleton and the Expanded two-pane `PaneViewer` stays alive and subscribed behind a pushed `ViewerPage`, so without the token two ViewModels would run two reconnect loops against one receiver. Alongside the edge trigger there is a level backstop: five consecutive 1 s stats samples with the bridge stuck in `Connecting` (and only after it has been `Connected` once) also open a window, which is how a drop that was superseded by a restart is recovered. Both terminal exits — the window expiring and the user cancelling — call `StopReceiver()` and set `IsStopped`, so no orphan receiver is ever left pumping behind a terminal message.
+
 ### Bridge contract
 | Member | Path | Notes |
 |--------|------|-------|
@@ -275,6 +277,7 @@ The trigger is `INdiViewerBridge.ConnectionStateChanged(Disconnected)` with `Get
 | `ConnectionState GetConnectionState()` | `src/Core/NdiBridge/INdiBridges.cs` (`INdiViewerBridge`) | Polled by the VM state machine to detect drops |
 | `ReceiverStopReason { Intentional, ConnectionLost }` | `src/Core/NdiBridge/NdiBridgeModels.cs` | Why the last `Disconnected` transition happened; `Intentional` is the default (value 0) |
 | `ReceiverStopReason GetLastStopReason()` | `src/Core/NdiBridge/INdiBridges.cs` (`INdiViewerBridge`) | Lets the VM tell a genuine drop from any deliberate `StopReceiver()` call |
+| `long ReceiverGeneration { get; }` | `src/Core/NdiBridge/INdiBridges.cs` (`INdiViewerBridge`) | Ownership token: bumped by every `StartReceiver`; lets a ViewModel tell whether the receiver it started is still the one the shared bridge runs |
 | Real impl | `src/MauiApp/NdiBridge/NdiViewerBridge.cs` | Superseded the stub in #277: 3 s frame-arrival watchdog + `recv_get_no_connections` inside the video pump; also raises `ConnectionStateChanged` on the pump thread |
 
 ### `IMainThreadDispatcher` abstraction (NEW)
