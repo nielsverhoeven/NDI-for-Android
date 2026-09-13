@@ -4980,3 +4980,80 @@ own "lower latency" claim at `rc392:709-714` is an assertion this gate did not v
 not reachable on a tablet over Wi-Fi with a CPU decode and a compositing display stack — the app-side
 share is the ~17 ms PR-B removes, and the 2.4 GHz / −78 dBm / 6 Mbit/s church link was two orders of
 magnitude short of what the default profile asked for. No code change fixes that.
+
+### 2026-09-13 — #415 round 2 (PR #424, head `3dc1688`) — post-implementation re-gate
+
+**APPROVE-WITH-CHANGES, round 2.** RC-A1…RC-A12 are implemented; an adversarial review found 0 P1,
+3 P2, 12 P3. Ruled: **9 fix-now, 4 defer, 2 reject**, with 10 new required changes RC-A13…RC-A22 in
+`verdict-415-round2.md`. Two of the three P2s are **my** errors from the first gate, recorded here so
+the same reasoning is not repeated:
+
+**1. Hysteresis must be reasoned about in BOTH directions when a value becomes a rate.** Ruling 5
+("a single-second blip can only reset a run — it can never flip the hint") is true for the *show*
+direction and exactly inverted for the *clear* direction: `ConnectionHintPolicy.Next` cleared an
+active hint only on 5 consecutive `IsGood` samples and **zeroed the good run on any dead-band
+(10–30 %) sample**. Under the old lifetime average that band was almost never visited; a per-second
+rate lands in it constantly, so an active hint could never clear on a link averaging ~7 % loss. Fix:
+make the dead band's *effect* asymmetric — a dead-band sample **resets the weak run** (so the show
+direction is unchanged and a blip still cannot flip the hint) and **leaves the good run untouched**
+(it contradicts weakness; it does not demonstrate health). Also `IsGood`'s fps term becomes `>=` so
+the two arms partition the fps axis — `fps < 15` weak / `fps > 15` good left exactly 15.0 fps
+permanently neutral, which under the new rule means an active hint could never clear at all.
+
+**2. Smoothing is policy, not telemetry.** Rejected an EMA / rolling mean inside `UpdateStats`: the
+`NdiStats` line's `drop=` must keep equalling `dDropped/dTotal` or the one device check that decides
+whether every drop figure in the app is inflated becomes unreadable, and bridge-side smoothing is
+untestable (no seam through the P/Invoke layer). Hysteresis belongs in the pure Core policy.
+
+**3. A diagnostic may state facts; it may not assert a cause it cannot support.** `IsWeakLink`
+classified **any** 2.4 GHz association as weak at any RSSI and any PHY rate, and `HintText` never
+checked *which* arm of `IsWeak` fired — so a receiver that was up while the sender sent nothing
+(weak by the fps arm, 0 % drops) told an operator on a healthy 2.4 GHz AP "2.4 GHz / weak signal —
+switch to Smooth", i.e. a false cause plus a suggestion that costs a visible reconnect and cannot
+help. Fix, three parts: (a) the band leaves `IsWeakLink`, which now means "the radio *measures* weak"
+(RSSI ≤ −70 or PHY ≤ 50 Mbit/s, with the two sentinel guards); (b) the band survives as a
+**qualifier** — "Connection weak on 2.4 GHz" — because 2.4 GHz's real failure mode is airtime
+congestion, which is invisible in both RSSI and PHY rate, so dropping the band entirely would lose
+real signal; (c) radio attribution requires **drop evidence**, latched in a new
+`ConnectionHintPolicy.State.SawDropEvidence` so a spiky rate cannot make the copy flicker. Result is
+three tiers ordered by claim strength: measured-weak radio + drops → band + signal; drops on a
+2.4 GHz radio that measures fine → band as a fact; anything else → the generic copy. **`Stalled`
+needs no special case:** ruling 10 stands (the detector must still fire, because a dead link and an
+idle sender are indistinguishable at the ViewModel), but with no drop evidence it can never be
+attributed to the Wi-Fi. That is the safe default for the unanswered product question; the distinct
+"Source is sending no video" copy stays with the #412 wording work.
+
+**4. A network *diagnostic* samples the association, not the default route.** The API 31+ branch read
+`ConnectivityManager.ActiveNetwork`, which answers "where do my packets go" — the wrong question, and
+wrong exactly when the feature matters: with a VPN up the active network is the tunnel, and at a
+closed venue AP (the #415 case) Wi-Fi has no internet so mobile data carries the default route. Both
+yielded `NetworkLinkSnapshot.Unknown` with no indication the feature had gone inert, and the two API
+branches disagreed about the same radio. Fix: keep the capability read as the preferred
+(non-deprecated) probe, and fall back to `WifiManager.ConnectionInfo` on **all** API levels behind one
+documented CA1422 suppression — the association read is deprecated but not removed, and is the only
+synchronous API that answers "what radio am I on" when Wi-Fi is not the default route. Rejected:
+`cm.GetAllNetworks()` enumeration (itself deprecated at 31, and redundant given the fallback) and
+`RegisterNetworkCallback` (the right long-term answer, but it turns a stateless service into a
+lifecycle-owning singleton with a thread-safety surface, for a diagnostic line). The two Java peers
+per second (`ActiveNetwork`, `GetNetworkCapabilities`) plus the `WifiInfo` are now `using`-scoped.
+
+**5. Deferred, not absorbed.** Two follow-up issues with text written: tracing the link while
+*connecting* and after a failed connect (today `TraceLink` sits behind the `!connected` guard, so the
+radio cannot explain why you never connected — the feature's stated purpose), and a repo-wide
+`.gitattributes` (`* text=auto`) for the pre-existing CRLF-in-index noise, which must be its own
+renormalise-only commit and never ride inside a feature diff. Deferred without an issue:
+`WeakRssiDbm = −70` (re-tune on device evidence only; now guarded by the drop-evidence rule) and the
+drop-counter subset-vs-disjoint question, which is **promoted to a hard gate before anything
+containing this change is promoted to `main`** — `WeakDropPercentThreshold = 30` sits directly on top
+of it. Rejected: the 0 % reading for a totally starved interval (deliberate; residual 2's wording was
+too strong and is amended — a reading can *understate*, it can never be out of range) and `Trace` on
+the UI thread at 1 Hz in developer mode (identical to #422's navigation probes, gated twice,
+exception-swallowing).
+
+**6. Scope discipline for the concurrent sibling.** Round 2 touches only
+`ConnectionHintPolicy.cs`, `ViewerViewModel.ConnectionHint.cs`,
+`Platforms/Android/Services/AndroidNetworkLinkService.cs` and three test files. **RC-A21 forbids
+touching `NdiViewerBridge.cs`, `ReceiverStatsMath.cs`, `ViewerViewModel.cs`,
+`DiagnosticOverlayService.cs` and `MauiProgram.cs` in this round**, because
+`bugfix/416-latency-draw-on-arrival` is cut from this PR's head and owns regions in exactly those
+files. Merge order is unchanged: **#424 first, then #416's branch rebased onto the merged result.**

@@ -39,6 +39,10 @@ public partial class ViewerViewModel
         // when playback resumes, and the first sample after the next StartReceiver — Connecting is
         // the normal state for about a second after every start — would open a spurious window.
         _sustainedConnectingSamples = 0;
+        // Forget the last traced link as well, so a stop/start on the same band and classification
+        // writes a fresh "Link" entry for the new attempt instead of nothing at all. An operator who
+        // restarts playback to reproduce a problem must see the radio line for *that* attempt.
+        _lastTracedLink = null;
         ResetConnectionHint();
     }
 
@@ -78,8 +82,10 @@ public partial class ViewerViewModel
     /// <summary>
     /// Applies one 1 s stats sample together with the link it was taken on. Main thread only.
     /// <paramref name="connected"/> means "the receiver is up" — Connected or Stalled — not "frames
-    /// are arriving". <paramref name="link"/> only ever changes the hint's wording: nothing here
-    /// calls SetQualityProfile.
+    /// are arriving".
+    /// <paramref name="link"/> only ever changes the hint's wording, and only when the weak run
+    /// actually lost frames: nothing here calls SetQualityProfile, and a receiver that is up while
+    /// the source sends nothing is never attributed to the radio.
     /// </summary>
     public void ApplyConnectionSample(bool connected, float fps, float dropPercent, NetworkLinkSnapshot link)
     {
@@ -97,7 +103,8 @@ public partial class ViewerViewModel
         TraceLink(link);
 
         _hintState = ConnectionHintPolicy.Next(_hintState, fps, dropPercent);
-        ConnectionHint = ConnectionHintPolicy.HintText(_hintState.IsHintActive, QualityProfile, link);
+        ConnectionHint = ConnectionHintPolicy.HintText(
+            _hintState.IsHintActive, QualityProfile, link, _hintState.SawDropEvidence);
     }
 
     /// <summary>
@@ -211,6 +218,9 @@ public partial class ViewerViewModel
 
         if (_diagnostics.IsDeveloperMode)
         {
+            // weak= is the *measured* radio classification (RSSI / PHY rate) — not the band, and not
+            // the hint. A 2.4 GHz link at -45 dBm reads weak=False here and still gets the band named
+            // in the copy when frames are being lost.
             _diagnostics.Trace(
                 DiagnosticOverlayService.LinkLogTag,
                 "viewer.link",
