@@ -76,10 +76,11 @@
                            SemanticProperties.Description="On program" />
                 </Border>
 
-                <!-- Stopped overlay (#348): the render loop keeps polling CurrentFrame and would
-                     otherwise leave the last live frame frozen on screen with no status text and
-                     no controls (Nielsen #1 — indistinguishable from a live feed). The code-behind
-                     also clears the retained bitmap when IsStopped becomes true. -->
+                <!-- Stopped overlay (#348): the presenter only repaints on a *new* frame timestamp
+                     (draw-on-arrival plus the 33 ms fallback pull), so without this the last live
+                     frame would stay frozen on screen with no status text and no controls
+                     (Nielsen #1 — indistinguishable from a live feed). The code-behind also clears
+                     the retained bitmap when IsStopped becomes true. -->
                 <Border AutomationId="{x:Static t:TestIds.ViewerStoppedBadge}"
                         IsVisible="{Binding IsStopped}"
                         InputTransparent="True"

@@ -81,8 +81,10 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
     private bool _isAudioEnabled;
 
     /// <summary>
-    /// Latest decoded frame from the bridge; polled by the View's render loop
-    /// (~30 fps). No change notification — the frame's timestamp is the dedupe key.
+    /// Latest decoded frame from the bridge. Read by the View's presenter on every frame-arrival
+    /// (<see cref="FrameReady"/>) and on every 33 ms fallback tick — pushed *and* polled since #416.
+    /// No change notification: the frame's timestamp is the dedupe key, and a per-frame
+    /// PropertyChanged would defeat the coalescing.
     /// </summary>
     public NdiVideoFrame? CurrentFrame => _bridge.GetLatestFrame();
 
