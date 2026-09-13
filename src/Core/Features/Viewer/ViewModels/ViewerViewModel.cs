@@ -266,14 +266,9 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
 
             _bridge.StartReceiver(SourceId, QualityProfile);
             _receiverGeneration = _bridge.ReceiverGeneration;
-            var state = _bridge.GetConnectionState();
-            if (state == ConnectionState.Connected)
-            {
-                IsPlaying = true;
-                IsReconnecting = false;
-                StatusMessage = "Connected.";
-                RetryStatusMessage = null;
-            }
+
+            // The receiver is still Connecting when StartReceiver returns; OnBridgeConnectionStateChanged
+            // completes the reconnect window once the bridge actually observes Connected.
         }
     }
 
@@ -379,7 +374,7 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
         DisposeTimers();
         _reconnectState = ReconnectState.Idle;
         _bridge.SetTally(onProgram: false, onPreview: false);
-        _bridge.StopReceiver();
+        _bridge.StopReceiverAsync().FireAndForget();
         BeginExitFullScreen();
 
         // Record disconnection for history tracking
@@ -425,7 +420,7 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
         // this dying ViewModel does not re-enter its own handler, while every other subscriber
         // still sees the (Intentional) Disconnected.
         if (OwnsActiveReceiver)
-            _bridge.StopReceiver();
+            _bridge.StopReceiverAsync().FireAndForget();
 
         ForceExitFullScreen();
         DisposePtz();
@@ -524,19 +519,15 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
 
         try
         {
-            _bridge.StopReceiver();
+            // Both calls only *request* work now; the bridge's lifecycle chain guarantees the stop
+            // completes before the start creates, so the pair stays correctly ordered without this
+            // method — or the UI thread — waiting for a pump join.
+            _bridge.StopReceiverAsync().FireAndForget();
 
             if (!string.IsNullOrEmpty(SourceId))
             {
                 _bridge.StartReceiver(SourceId, QualityProfile);
                 _receiverGeneration = _bridge.ReceiverGeneration;
-                var state = _bridge.GetConnectionState();
-
-                if (state == ConnectionState.Connected)
-                {
-                    CompleteReconnect();
-                    return;
-                }
             }
         }
         catch
@@ -634,7 +625,7 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
         // underneath "Connection lost. Reconnection failed." (#348, Nielsen #1). The resulting
         // Disconnected is tagged Intentional by the bridge's stop-depth counter and this method
         // has already left _reconnectState at Failed, so it cannot re-open the window.
-        _bridge.StopReceiver();
+        _bridge.StopReceiverAsync().FireAndForget();
         // Before BeginExitFullScreen: on a compact device the exit only *requests* portrait, so
         // IsFullScreen stays true for up to 3s — the in-video Stopped badge is the only thing on
         // screen during that window.
@@ -664,7 +655,7 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
         IsPlaying = false;
         // Same terminal contract as FailReconnect: no receiver left pumping behind a cancelled
         // message, and the video surface says so instead of holding a frozen frame.
-        _bridge.StopReceiver();
+        _bridge.StopReceiverAsync().FireAndForget();
         IsStopped = true;
         BeginExitFullScreen();
         // Cancel must not be a dead end: the Reconnect button is the only control still on screen

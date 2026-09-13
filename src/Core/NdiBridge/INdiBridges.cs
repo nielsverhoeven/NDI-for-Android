@@ -33,8 +33,31 @@ public interface INdiDiscoveryBridge
 /// </summary>
 public interface INdiViewerBridge
 {
+    /// <summary>
+    /// Requests a receiver for <paramref name="sourceId"/>. Returns once the request has been
+    /// recorded — <see cref="ReceiverGeneration"/> is bumped before this returns, so a caller may
+    /// read it immediately — while the native teardown of any previous receiver and the
+    /// create/connect run, in that order, on the bridge's single lifecycle worker. The outcome
+    /// arrives through <see cref="ConnectionStateChanged"/>; it never arrives by polling
+    /// <see cref="GetConnectionState"/> straight after this call (the receiver is still
+    /// Connecting at that point).
+    /// </summary>
     void StartReceiver(string sourceId, QualityProfile qualityProfile = QualityProfile.Balanced);
-    void StopReceiver();
+
+    /// <summary>
+    /// Requests a stop. The synchronous part — signalling the pump threads and tagging every
+    /// resulting Disconnected as <see cref="ReceiverStopReason.Intentional"/> — happens in the
+    /// caller's turn, so it is ordered against whatever the caller does next. The native part
+    /// (joining the pump threads, <c>recv_destroy</c>, releasing the runtime handle) runs on the
+    /// bridge's single lifecycle worker; the returned task completes when it has.
+    /// <para>
+    /// Callers that merely want the receiver gone must NOT await this on the UI thread — use
+    /// <c>StopReceiverAsync().FireAndForget()</c>. Never await or block on it from a bridge event
+    /// handler: those run on a pump thread and the worker joins that thread.
+    /// </para>
+    /// </summary>
+    Task StopReceiverAsync();
+
     void SetQualityProfile(QualityProfile profile);
     ConnectionState GetConnectionState();
 

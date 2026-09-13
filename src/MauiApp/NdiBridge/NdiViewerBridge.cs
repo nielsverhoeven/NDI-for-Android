@@ -16,8 +16,11 @@ namespace NdiForAndroid.NdiBridge;
 public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
 {
     private const string ReceiverName = "NDI for Android Viewer";
-    private const uint VideoCaptureTimeoutMs = 1000;
-    private const uint AudioCaptureTimeoutMs = 500;
+    // NDIlib_recv_capture_v3 returns the instant a frame is queued, so a 60 fps source never
+    // reaches this timeout; it only bounds how long a pump idles (and therefore a queued lifecycle
+    // stop's thread join) on a silent receiver.
+    private const uint VideoCaptureTimeoutMs = 250;
+    private const uint AudioCaptureTimeoutMs = 250;
     private const long StalledAfterMs = 3000;
     private const long StatsIntervalMs = 1000;
     private const long FpsWindowMs = 1000;
@@ -35,6 +38,20 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
     /// <summary>Guards _connectionState; kept separate so events are raised lock-free.</summary>
     private readonly object _connectionLock = new();
 
+    /// <summary>Guards <see cref="_lifecycleTail"/> only. Never held across any native call.</summary>
+    private readonly object _lifecycleLock = new();
+
+    /// <summary>
+    /// Tail of the receiver-lifecycle chain. Every start and stop appends a continuation here, so
+    /// the native teardown/create pairs execute one at a time and in request order, on the thread
+    /// pool, never on the caller's thread. A task chain rather than a <see cref="SemaphoreSlim"/>:
+    /// SemaphoreSlim does not document FIFO release order for async waiters, and ordering is the
+    /// invariant this exists to provide — <c>_recv</c> is a single field, <see cref="NdiRuntime"/>'s
+    /// handle refcount is process-wide, and the audio sink is a singleton, so a stop that lands
+    /// after a start destroys the wrong receiver.
+    /// </summary>
+    private Task _lifecycleTail = Task.CompletedTask;
+
     private IntPtr _recv;
     private Thread? _videoThread;
     private Thread? _audioThread;
@@ -45,11 +62,12 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
     private ConnectionState _connectionState = ConnectionState.Disconnected;
     private ReceiverStopReason _lastStopReason = ReceiverStopReason.Intentional;
 
-    /// <summary>Non-zero while a caller-requested <see cref="StopReceiver"/> is tearing the
+    /// <summary>Non-zero while a caller-requested <see cref="StopReceiverAsync"/> is tearing the
     /// receiver down. Every Disconnected transition raised inside that window is intentional by
     /// definition — including one the video pump raises from its own connection-lost check between
     /// <c>_running = false</c> and the thread join. A depth counter, not a flag: an event handler
-    /// running on a pump thread may call StopReceiver re-entrantly.</summary>
+    /// running on a pump thread may itself call <see cref="StopReceiverAsync"/>, enqueuing another
+    /// stop while this one is still tearing down.</summary>
     private int _stopDepth;
 
     /// <summary>Backs <see cref="ReceiverGeneration"/>. Guarded by <see cref="_connectionLock"/> and
@@ -112,19 +130,42 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
     /// <inheritdoc />
     public bool IsPtzSupported => _isPtzSupported;
 
+    /// <inheritdoc />
     public void StartReceiver(string sourceId, QualityProfile qualityProfile = QualityProfile.Balanced)
     {
         if (string.IsNullOrWhiteSpace(sourceId))
             throw new ArgumentException("Source id is required.", nameof(sourceId));
 
-        // Ownership token: the most recent caller to ask for a receiver owns it. Bumped here — before
-        // the stop/create and before the two failure returns below — so a second ViewModel taking the
-        // bridge over always disowns the first, even when both asked for the same source id.
-        lock (_connectionLock) _receiverGeneration++;
+        lock (_connectionLock)
+        {
+            // Ownership token: bumped in the caller's turn — before anything is queued and before
+            // any failure path below — so a caller that reads ReceiverGeneration straight after
+            // this call reads its own generation, and a second ViewModel taking the bridge over
+            // always disowns the first, even for the same source id.
+            _receiverGeneration++;
 
-        // Full clean stop of any existing receiver before creating a new one.
-        StopReceiver();
+            // The implicit stop of the outgoing receiver, signalled and tagged exactly as
+            // StopReceiverAsync does. StopReceiverCore's finally decrements this.
+            _stopDepth++;
+        }
 
+        lock (_stateLock) _running = false;
+
+        // One queued item, so no other lifecycle operation can interleave between the teardown of
+        // the old receiver and the creation of the new one.
+        EnqueueLifecycle(() =>
+        {
+            StopReceiverCore();
+            StartReceiverCore(sourceId, qualityProfile);
+        });
+    }
+
+    /// <summary>
+    /// The native half of a start. Lifecycle worker only; the previous receiver is already fully
+    /// torn down when this runs.
+    /// </summary>
+    private void StartReceiverCore(string sourceId, QualityProfile qualityProfile)
+    {
         lock (_stateLock)
         {
             _qualityProfile = qualityProfile;
@@ -203,10 +244,27 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
         }
     }
 
-    public void StopReceiver()
+    /// <inheritdoc />
+    public Task StopReceiverAsync()
     {
+        // Synchronous prologue, in the caller's turn. Two things must be true the instant this
+        // returns, because callers order other work against them: the pumps are unwinding (no
+        // further frames reach the UI), and every Disconnected raised from here until the teardown
+        // completes is tagged Intentional, so no reconnect window opens on a stop the app requested.
+        // The decrement lives in StopReceiverCore's finally, so the tag spans the thread hop.
         lock (_connectionLock) _stopDepth++;
+        lock (_stateLock) _running = false;
 
+        return EnqueueLifecycle(StopReceiverCore);
+    }
+
+    /// <summary>
+    /// The native half of a stop. Runs only on the lifecycle worker, never on the caller's thread
+    /// and never on a pump thread. Idempotent: a second queued stop finds null thread fields and a
+    /// zero handle and does nothing.
+    /// </summary>
+    private void StopReceiverCore()
+    {
         try
         {
             Thread? videoThread;
@@ -221,8 +279,11 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
                 _audioThread = null;
             }
 
-            // Join OUTSIDE the state lock (legacy deadlock lesson). Skip self-join in
-            // case an event handler running on a pump thread calls StopReceiver.
+            // Join OUTSIDE the state lock (legacy deadlock lesson). Unbounded on purpose: a timed
+            // join followed by NDIlib_recv_destroy while a pump is inside NDIlib_recv_capture_v3
+            // is a native use-after-free. Bounded in practice by VideoCaptureTimeoutMs /
+            // AudioCaptureTimeoutMs. The self-join guard is retained as defence: this method is
+            // only ever reached from the thread pool, so it can no longer trigger.
             if (videoThread is not null && !ReferenceEquals(videoThread, Thread.CurrentThread))
                 videoThread.Join();
             if (audioThread is not null && !ReferenceEquals(audioThread, Thread.CurrentThread))
@@ -258,6 +319,8 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
         }
         finally
         {
+            // After TransitionState, exactly as before the split: the Disconnected raised above is
+            // still inside the intentional-stop window.
             lock (_connectionLock) _stopDepth--;
         }
     }
@@ -278,7 +341,11 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
         }
 
         if (restartSourceId is not null)
+        {
+            // StartReceiver is queued now, but it bumps ReceiverGeneration synchronously, so a
+            // caller's conditional re-claim of ownership still observes the bump in its own turn.
             StartReceiver(restartSourceId, profile);
+        }
     }
 
     public ConnectionState GetConnectionState()
@@ -333,7 +400,7 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
 
     // ── PTZ ──────────────────────────────────────────────────────────────────
     // All passthroughs hold the state lock so the recv handle cannot be
-    // destroyed mid-call; StopReceiver only destroys under the same lock.
+    // destroyed mid-call; StopReceiverCore only destroys under the same lock.
 
     public bool PtzPanTiltSpeed(float panSpeed, float tiltSpeed)
     {
@@ -374,7 +441,12 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
     {
         if (_disposed) return;
         _disposed = true;
-        StopReceiver();
+
+        // The one place that blocks: app shutdown must not leave a pump thread reading managed
+        // state that is about to go away. Never call Dispose from the UI thread during normal
+        // operation, and never from a bridge event handler — the queued teardown joins the pump
+        // threads, so a pump-thread caller would deadlock on itself.
+        StopReceiverAsync().GetAwaiter().GetResult();
     }
 
     // ── Video pump ───────────────────────────────────────────────────────────
@@ -690,6 +762,30 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
         }
 
         ConnectionStateChanged?.Invoke(this, newState);
+    }
+
+    /// <summary>
+    /// Appends one lifecycle operation to the chain. The continuation swallows everything: a fault
+    /// here must never break the chain for every later operation, and the pump-safety rule (a
+    /// background-thread exception is fatal in .NET) applies to this worker too.
+    /// </summary>
+    private Task EnqueueLifecycle(Action work)
+    {
+        lock (_lifecycleLock)
+        {
+            var next = _lifecycleTail.ContinueWith(
+                _ =>
+                {
+                    try { work(); }
+                    catch { /* never fault the chain; never kill the process */ }
+                },
+                CancellationToken.None,
+                TaskContinuationOptions.RunContinuationsAsynchronously,
+                TaskScheduler.Default);
+
+            _lifecycleTail = next;
+            return next;
+        }
     }
 
     /// <summary>Must hold <see cref="_stateLock"/>.</summary>
