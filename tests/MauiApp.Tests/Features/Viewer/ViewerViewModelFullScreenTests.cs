@@ -675,4 +675,54 @@ public class ViewerViewModelFullScreenTests
         _orientationLockMock.Verify(o => o.RequestLandscape(), Times.Never);
         _orientationLockMock.Verify(o => o.RequestPortrait(), Times.Never);
     }
+
+    [Fact]
+    public void ReconnectWindow_OnCompactLandscapeDevice_StaysFullScreenAndNeverRequestsPortrait()
+    {
+        SetCompactDevice(isLandscape: true);
+        var sut = CreateSut();
+        sut.IsPlaying = true;
+        Assert.True(sut.IsFullScreen);
+
+        sut.BeginReconnectWindow();
+
+        Assert.True(sut.IsFullScreen);
+        _orientationLockMock.Verify(o => o.RequestPortrait(), Times.Never);
+    }
+
+    [Fact]
+    public void ReconnectWindow_WhenItExpires_ExitsFullScreenOnATablet()
+    {
+        var sut = CreateSut();
+        sut.IsPlaying = true;
+        sut.IsFullScreen = true;
+
+        sut.BeginReconnectWindow();
+        _timeProvider.Advance(TimeSpan.FromSeconds(15));
+
+        Assert.False(sut.IsFullScreen);
+        Assert.False(sut.IsPlaying);
+        Assert.True(sut.CanReconnect);
+        _orientationLockMock.Verify(o => o.Release(), Times.AtLeastOnce());
+    }
+
+    [Fact]
+    public void ReconnectWindow_WhenItExpires_RequestsPortraitOnACompactLandscapeDevice()
+    {
+        SetCompactDevice(isLandscape: true);
+        var sut = CreateSut();
+        sut.IsPlaying = true;
+        Assert.True(sut.IsFullScreen);
+
+        sut.BeginReconnectWindow();
+        _timeProvider.Advance(TimeSpan.FromSeconds(15));
+
+        _orientationLockMock.Verify(o => o.RequestPortrait(), Times.Once());
+        Assert.True(sut.IsFullScreen);
+
+        _lifecycleMock.Setup(l => l.IsLandscape).Returns(false);
+        _lifecycleMock.Raise(l => l.OrientationChanged += null, false);
+
+        Assert.False(sut.IsFullScreen);
+    }
 }

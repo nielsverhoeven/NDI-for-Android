@@ -142,6 +142,7 @@ public class ViewerViewModelTests
     public void CheckForUnexpectedDrop_WhenDisconnectedAndNotUserStop_BeginsReconnectWindow()
     {
         _bridgeMock.Setup(b => b.GetConnectionState()).Returns(ConnectionState.Disconnected);
+        _bridgeMock.Setup(b => b.GetLastStopReason()).Returns(ReceiverStopReason.ConnectionLost);
 
         var sut = CreateSut();
         sut.IsPlaying = true;
@@ -163,6 +164,61 @@ public class ViewerViewModelTests
         sut.CheckForUnexpectedDrop();
 
         Assert.False(sut.IsReconnecting);
+    }
+
+    [Fact]
+    public void OnBridgeConnectionStateChanged_Disconnected_TriggersCheckForUnexpectedDrop()
+    {
+        _bridgeMock.Setup(b => b.GetConnectionState()).Returns(ConnectionState.Disconnected);
+        _bridgeMock.Setup(b => b.GetLastStopReason()).Returns(ReceiverStopReason.ConnectionLost);
+        var sut = CreatePlayingSut();
+
+        _bridgeMock.Raise(b => b.ConnectionStateChanged += null, _bridgeMock.Object, ConnectionState.Disconnected);
+
+        Assert.True(sut.IsReconnecting);
+    }
+
+    [Fact]
+    public void OnBridgeConnectionStateChanged_DisconnectedWithIntentionalReason_DoesNotBeginReconnectWindow()
+    {
+        _bridgeMock.Setup(b => b.GetConnectionState()).Returns(ConnectionState.Disconnected);
+        _bridgeMock.Setup(b => b.GetLastStopReason()).Returns(ReceiverStopReason.Intentional);
+        var sut = CreatePlayingSut();
+
+        _bridgeMock.Raise(b => b.ConnectionStateChanged += null, _bridgeMock.Object, ConnectionState.Disconnected);
+
+        Assert.False(sut.IsReconnecting);
+    }
+
+    [Fact]
+    public void CheckForUnexpectedDrop_WhenLastStopReasonIsIntentional_DoesNotBeginReconnectWindow()
+    {
+        _bridgeMock.Setup(b => b.GetConnectionState()).Returns(ConnectionState.Disconnected);
+        _bridgeMock.Setup(b => b.GetLastStopReason()).Returns(ReceiverStopReason.Intentional);
+        var sut = CreateSut();
+        sut.IsPlaying = true;
+
+        sut.CheckForUnexpectedDrop();
+
+        Assert.False(sut.IsReconnecting);
+    }
+
+    [Fact]
+    public void OnBridgeConnectionStateChanged_ConnectedDuringReconnectWindow_CompletesTheWindow()
+    {
+        var sut = CreatePlayingSut(); // GetConnectionState left un-setup -> the attempt loop can never self-complete
+        sut.BeginReconnectWindow();
+        Assert.True(sut.IsReconnecting);
+
+        _bridgeMock.Raise(b => b.ConnectionStateChanged += null, _bridgeMock.Object, ConnectionState.Connected);
+
+        Assert.False(sut.IsReconnecting);
+        Assert.True(sut.IsPlaying);
+        Assert.Equal("Connected.", sut.StatusMessage);
+        Assert.Null(sut.RetryStatusMessage);
+
+        _timeProvider.Advance(TimeSpan.FromSeconds(30));
+        _bridgeMock.Verify(b => b.StartReceiver(It.IsAny<string>(), It.IsAny<QualityProfile>()), Times.Never);
     }
 
     [Fact]
@@ -831,6 +887,7 @@ public class ViewerViewModelTests
         Assert.False(sut.IsReconnecting);
 
         _bridgeMock.Setup(b => b.GetConnectionState()).Returns(ConnectionState.Disconnected);
+        _bridgeMock.Setup(b => b.GetLastStopReason()).Returns(ReceiverStopReason.ConnectionLost);
         sut.CheckForUnexpectedDrop();
 
         Assert.True(sut.IsReconnecting);
@@ -849,6 +906,7 @@ public class ViewerViewModelTests
         sut.SourceId = "src-1"; // re-runs Start
 
         _bridgeMock.Setup(b => b.GetConnectionState()).Returns(ConnectionState.Disconnected);
+        _bridgeMock.Setup(b => b.GetLastStopReason()).Returns(ReceiverStopReason.ConnectionLost);
         sut.CheckForUnexpectedDrop();
 
         Assert.True(sut.IsReconnecting);
