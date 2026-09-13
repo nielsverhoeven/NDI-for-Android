@@ -31,6 +31,109 @@ unconditionally. Rule 5's intent is to keep Android APIs out of **Core** and out
 
 ## Verdicts log
 
+### 2026-09-13 — #417 navigation slowness / #408 UI-thread `StopReceiver()` / #420 concurrent stop (gate)
+
+**APPROVE-WITH-CHANGES.** Two PRs, ordered. Verdict file: `verdict-417.md` (19 rulings, Part A plan,
+14 `requiredChanges`, 7 new tests, 10 accepted residuals, 3 open product questions). Part A line
+numbers are against this checkout (`ac19e011`); **Part B's are against PR #407's branch
+(`rc392`, `86d8866`)**, because five of the six `StopReceiver()` call sites only exist there.
+No shell was available this session, so the four issue bodies could not be read — scope is taken
+from the briefing, the three investigation reports and the 2026-09-13 device timing log. Re-gate
+any ruling an issue body contradicts.
+
+**1. The ordering guarantee, split in three — this is the ruling the whole design turns on.**
+"The outgoing receiver is stopped before the next *navigation* proceeds" is **not** load-bearing:
+both render loops are stopped by the outgoing page itself (`ViewerPage.xaml.cs:44`,
+`SourceListPage.xaml.cs:52`) and nothing on any incoming page reads the receiver. "A stop completes
+before the next *`StartReceiver`*" **is** load-bearing, for three native reasons that had not been
+written down anywhere: `_recv` is a single field, so a late destroy kills the *new* receiver;
+`NdiRuntime._activeHandles` (`NdiRuntime.cs:24,94,104-111`) is a process-wide refcount shared with
+the discovery and output bridges, so a late `ReleaseHandle()` can call `NDIlib_destroy()` under a
+live receiver whenever a discovery-server change is pending; and the audio sink is a singleton, so a
+late `_audioSink.Stop()` silences a receiver that has already restarted. The send session is *not*
+coupled — `StartReStreamFromSourceAsync` owns its own receiver (`INdiBridges.cs:129-134`) — except
+through that refcount. **Consequence: the invariant belongs inside the bridge, not in any caller.**
+
+**2. Shape: rejected `Task.Run` per call site; adopted one serialized lifecycle chain.** Wrapping
+six call sites does not fix #420 — it *creates* it (six concurrent stoppers where the UI thread
+today serialises five), and it breaks the ordering the `_receiverGeneration` token and the
+`_stopDepth` intent tag depend on. Adopted instead: `Task StopReceiverAsync()` whose **synchronous
+prologue** (signal the pumps, bump `_stopDepth`) runs in the caller's turn and whose native half
+(joins, `recv_destroy`, `ReleaseHandle`) is appended to a single chain; `StartReceiver` appends
+`StopReceiverCore(); StartReceiverCore(...)` as one item. **The chain is an explicit
+`_lifecycleTail.ContinueWith`, not a `SemaphoreSlim`** — SemaphoreSlim does not *document* FIFO
+release for async waiters, and ordering is the entire invariant. Same rule as RC19: a correctness
+argument that turns on undocumented runtime behaviour is not an argument.
+
+**3. Rename what changed contract; leave what did not.** `StopReceiver()` → `StopReceiverAsync()`
+on `INdiViewerBridge`: its contract genuinely changes from "the receiver is gone when I return" to
+"the stop is requested and ordered", and RC22's rule says the model must say so. `StartReceiver`
+keeps its `void` signature: it has **never** completed synchronously in any observable sense (#392
+RC3 — "only the bridge can observe a real (re)connection"), and the one thing callers read
+synchronously, `ReceiverGeneration`, stays synchronous because the bump moves into the prologue.
+This halves the Moq churn and leaves all 18 `StartReceiver` assertions untouched.
+
+**4. The joins stay unbounded; the *capture timeouts* shrink instead.** A `Join(timeout)` followed
+by `NDIlib_recv_destroy` while a pump sits inside `NDIlib_recv_capture_v3` is a native
+use-after-free — strictly worse than the freeze. `VideoCaptureTimeoutMs` 1000 → 250 and
+`AudioCaptureTimeoutMs` 500 → 250 bound the join *in practice*. CPU cost on a 60 fps source:
+**zero** — `recv_capture_v3` returns the instant a frame is queued, so the loop already runs at
+16.7 ms and never reaches the timeout. The delta exists only on a silent receiver (video 1→4
+wake-ups/s, audio 2→4), each wake costing a `switch`, one `recv_get_no_connections` and a queue
+trim. This is load-bearing now, not polish: with a queue, the teardown floor is what bounds how long
+a start waits behind a stop.
+
+**5. `RunAttempt` stays synchronous and on the UI thread.** Only the bridge calls move off it — no
+`async void`, no awaits inside the reconnect state machine, so RC19's "dispatch at the thread
+boundary, never between two private UI-thread methods" survives verbatim and #407's synchronous
+`CompleteReconnect`/`FailReconnect` need no change. Its post-start `GetConnectionState()` poll is
+deleted (RC3 proved it can never read `Connected`).
+
+**6. The deferral (#417 cause 1) and the `OnShellNavigated` fallback, fixed by one mechanism.**
+`RunNavigatingHandoffAsync` becomes synchronous: it writes `_currentPrimaryDestination` and
+`_handoffInProgress` **before** `deferral.Complete()` (so the fallback branch stays dead on that
+path), then fires the handoff detached. The 3 s `WaitAsync` survives as a **diagnostic only**. The
+un-wrapped `await` at `AppShell.xaml.cs:375` gets the same treatment — and deliberately **no
+`Task.Run`**: the handoff's synchronous part is now only the stop *request*, which must run in the
+UI-thread turn so it is ordered against the incoming page. Recorded behaviour change:
+`_handoffInProgress` is now set and cleared in one turn, so
+`EnsurePrimaryDestinationVisibleAsync` is no longer suppressed during a handoff — the #393 rotation
+scenarios are on the device checklist because of it.
+
+**7. Part A's seam: extend `IDiagnosticOverlayService`, do not add `INavigationTrace`.** The
+existing service already owns the developer-mode gate (`DiagnosticOverlayService.cs:19,29-38`) and
+already delegates the platform write to a Core interface with an Android logcat implementation and a
+Noop elsewhere (`IDiagnosticLogSink`, registered `MauiProgram.cs:113-114,129,142`). A second trace
+service would duplicate the gate, the sink and the DI wiring — the same "no parallel second store"
+ruling this log has made four times. One method added: `Trace(string tag, string phase, string?
+detail = null)`, tag `NDI-Nav`, payload `t=<Environment.TickCount64> <phase> k=v…`, sink-only
+(**never** `DiagnosticLogBuffer` — 200-entry ring with per-entry regex redaction, and a tab switch
+emits ~25 lines). Cost when developer mode is off: one volatile bool read; detail strings are built
+only inside `if (IsDeveloperMode)`. 35 probe sites specified with file:line, all Core constructor
+additions optional-with-default so **no existing unit test's construction changes**. Part A
+deliberately does **not** touch `NdiViewerBridge` — the one file PR #407 also edits.
+
+**8. Sequencing: Part A first and independent; Part B strictly after PR #407 merges.** Part A is
+additive, behaviour-neutral, has zero file overlap with #407, and is the only way to name the two
+unexplained landscape blocks — which on the Release build are the *larger* share of the measured
+time (landscape Stream→Settings 1448 ms with **no receiver at all**, vs. viewer→Home 723 ms with
+one). Part B cannot be authored against `integration`: `FailReconnect`'s terminal stop,
+`CancelRetry`'s stop and `Dispose`'s ownership-gated stop are #407's RC11/RC12/RC20 and exist
+nowhere else, so a Part-B patch written here would silently leave three of the six #408 sites
+un-fixed and then collide with #407 on four files and eight of its tests.
+
+**Closes: #417 cause 1, #408, #420. Explicitly does not close #410** (the handoff still stops the
+receiver without bumping the ownership token, so a pane still owns a receiver that no longer
+exists — round 3's note holds), nor the unexplained landscape blocks, which are Part A's job.
+**Recorded as untested on purpose:** the lifecycle chain has no unit coverage — `tests/MauiApp.Tests`
+references only `src/Core` and there is no seam — so it is covered by the device checklist and the
+e2e gate rather than by a test that pretends, same as RC19/RC22's bridge half.
+
+**Moq trap the developer must be told about:** `Task`-returning mock members return **`null`**, not
+`Task.CompletedTask`; without `_bridgeMock.Setup(b => b.StopReceiverAsync()).Returns(Task.CompletedTask)`
+in four fixture constructors, `.FireAndForget()` throws and ~20 existing tests fail with an
+unrelated-looking `NullReferenceException`.
+
 ### 2026-09-13 — #392 wire `CheckForUnexpectedDrop()` to a production caller (deep review)
 
 **APPROVE-WITH-CHANGES (8).** Option A is the right shape: the detection primitive already exists on
