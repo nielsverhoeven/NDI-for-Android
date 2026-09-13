@@ -39,6 +39,7 @@ public class ViewerViewModelRenderingTests
         _sourceRepoMock.Setup(r => r.GetCachedSourcesAsync()).ReturnsAsync(new List<NdiSource>());
         _ptzControllerFactoryMock.Setup(f => f.Create(It.IsAny<PtzEndpoint?>())).Returns(_ptzControllerMock.Object);
         _bridgeMock.Setup(b => b.GetConnectionState()).Returns(ConnectionState.Connected);
+        _connectionHistoryMock.Setup(h => h.RecordDisconnectedAsync()).Returns(Task.CompletedTask);
     }
 
     private ViewerViewModel CreateSut(IMainThreadDispatcher? dispatcher = null, IDiagnosticOverlayService? diagnostics = null) => new(
@@ -48,15 +49,29 @@ public class ViewerViewModelRenderingTests
         _immersiveModeMock.Object, _announcerMock.Object, _orientationLockMock.Object,
         networkLink: null, diagnostics: diagnostics);
 
-    private ViewerViewModel CreatePlayingSut(IMainThreadDispatcher? dispatcher = null, IDiagnosticOverlayService? diagnostics = null)
+    private ViewerViewModel CreatePlayingSut(
+        IMainThreadDispatcher? dispatcher = null,
+        IDiagnosticOverlayService? diagnostics = null,
+        bool renderingActive = true)
     {
         var sut = CreateSut(dispatcher, diagnostics);
         sut.SourceId = "src-1";
         Assert.True(sut.IsPlaying);
+        // Production equivalent of the host page's ViewerView.StartRendering().
+        sut.SetRenderingActive(renderingActive);
         return sut;
     }
 
     private void RaiseVideoFrameReady() => _bridgeMock.Raise(b => b.VideoFrameReady += null, EventArgs.Empty);
+
+    private static long ParseTracedLong(string message, string key)
+    {
+        var start = message.IndexOf(key, StringComparison.Ordinal);
+        Assert.True(start >= 0, $"'{key}' not found in: {message}");
+        start += key.Length;
+        var end = message.IndexOf(' ', start);
+        return long.Parse(end < 0 ? message[start..] : message[start..end]);
+    }
 
     [Fact]
     public void FrameReady_IsRaisedOncePerBridgeFrame_WhilePlaying()
@@ -123,6 +138,70 @@ public class ViewerViewModelRenderingTests
     }
 
     [Fact]
+    public void FrameReady_IsNotPosted_WhenNoViewIsRendering()
+    {
+        var queue = new List<Action>();
+        var sut = CreatePlayingSut(new QueueingDispatcher(queue), renderingActive: false);
+
+        for (var i = 0; i < 60; i++) // one second of a 60 fps source
+            RaiseVideoFrameReady();
+
+        Assert.Empty(queue);
+    }
+
+    [Fact]
+    public void FrameReady_StopsPosting_AfterStopRendering()
+    {
+        var queue = new List<Action>();
+        var sut = CreatePlayingSut(new QueueingDispatcher(queue));
+
+        RaiseVideoFrameReady();
+        Assert.Single(queue); // a renderer is attached
+        queue[0]();
+        queue.Clear();
+
+        sut.SetRenderingActive(false); // ViewerView.StopRendering(): page disappeared / pane hidden
+
+        for (var i = 0; i < 60; i++)
+            RaiseVideoFrameReady();
+
+        Assert.Empty(queue);
+    }
+
+    [Fact]
+    public void FrameReady_IsNotRaisedAfterStop()
+    {
+        var sut = CreatePlayingSut();
+        var count = 0;
+        sut.FrameReady += (_, _) => count++;
+
+        sut.StopCommand.Execute(null);
+
+        for (var i = 0; i < 5; i++) // frames the dying pump may still raise during the join
+            RaiseVideoFrameReady();
+
+        Assert.Equal(0, count);
+    }
+
+    [Fact]
+    public void FrameReady_AFrameArrivingDuringThePaint_QueuesTheNextPost()
+    {
+        var queue = new List<Action>();
+        var sut = CreatePlayingSut(new QueueingDispatcher(queue));
+        // The pump delivers the next frame while the UI thread is still inside the paint.
+        sut.FrameReady += (_, _) => RaiseVideoFrameReady();
+
+        RaiseVideoFrameReady();
+        Assert.Single(queue);
+
+        var post = queue[0];
+        queue.Clear();
+        post();
+
+        Assert.Single(queue);
+    }
+
+    [Fact]
     public void ReportFrameDrawn_WhenDeveloperModeOff_TracesNothing()
     {
         var sinkMock = new Mock<IDiagnosticLogSink>();
@@ -185,6 +264,58 @@ public class ViewerViewModelRenderingTests
         Assert.NotNull(captured);
         Assert.Contains("recvToDrawMs=", captured);
         Assert.DoesNotContain("senderToDrawMs=-1", captured);
+    }
+
+    [Fact]
+    public void ReportFrameDrawn_MeasuresRecvToDrawOnTheDeviceClock()
+    {
+        var sinkMock = new Mock<IDiagnosticLogSink>();
+        string? captured = null;
+        sinkMock.Setup(s => s.Debug(DiagnosticOverlayService.LatencyLogTag, It.IsAny<string>()))
+            .Callback<string, string>((_, message) => captured = message);
+        var sut = CreateSut(diagnostics: new DiagnosticOverlayService(sinkMock.Object) { IsDeveloperMode = true });
+
+        sut.ReportFrameDrawn(
+            Environment.TickCount64 - 5000, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), timestampIsSynthesized: true);
+
+        Assert.NotNull(captured);
+        // A range, not an equality: the same ambient clock the pump stamps with is read here.
+        Assert.InRange(ParseTracedLong(captured, "recvToDrawMs="), 4900, 5500);
+    }
+
+    [Fact]
+    public void ReportFrameDrawn_UnstampedFrame_ReportsRecvToDrawAsUnavailable()
+    {
+        var sinkMock = new Mock<IDiagnosticLogSink>();
+        string? captured = null;
+        sinkMock.Setup(s => s.Debug(DiagnosticOverlayService.LatencyLogTag, It.IsAny<string>()))
+            .Callback<string, string>((_, message) => captured = message);
+        var sut = CreateSut(diagnostics: new DiagnosticOverlayService(sinkMock.Object) { IsDeveloperMode = true });
+
+        // NdiVideoFrame.ReceivedAtTickMillis defaults to 0 = "not stamped".
+        sut.ReportFrameDrawn(0, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), timestampIsSynthesized: true);
+
+        Assert.NotNull(captured);
+        Assert.Contains("recvToDrawMs=-1", captured);
+    }
+
+    [Fact]
+    public void ReportFrameDrawn_TracesAgainAfterOneSecond()
+    {
+        var sinkMock = new Mock<IDiagnosticLogSink>();
+        var sut = CreateSut(diagnostics: new DiagnosticOverlayService(sinkMock.Object) { IsDeveloperMode = true });
+        var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+
+        sut.ReportFrameDrawn(Environment.TickCount64, now, timestampIsSynthesized: true);
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(999));
+        sut.ReportFrameDrawn(Environment.TickCount64, now, timestampIsSynthesized: true);
+
+        sinkMock.Verify(s => s.Debug(DiagnosticOverlayService.LatencyLogTag, It.IsAny<string>()), Times.Once);
+
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(2));
+        sut.ReportFrameDrawn(Environment.TickCount64, now, timestampIsSynthesized: true);
+
+        sinkMock.Verify(s => s.Debug(DiagnosticOverlayService.LatencyLogTag, It.IsAny<string>()), Times.Exactly(2));
     }
 
     /// <summary>Dispatcher test double that queues actions instead of invoking them, to simulate a
