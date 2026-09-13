@@ -289,6 +289,15 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
             ApplyTallyLocked();
 
             _activeSourceId = sourceId;
+
+            // A stop landed while this create ran: do not start the pumps and do not reopen
+            // CopyVideoFrame's publish gate. The stop queued behind this item owns the teardown
+            // and destroys _recv; leaving _running false keeps the prologue's blank true.
+            bool stopPendingAfterCreate;
+            lock (_connectionLock) stopPendingAfterCreate = _stopDepth > 0;
+            if (stopPendingAfterCreate)
+                return;
+
             _running = true;
             TransitionState(ConnectionState.Connecting);
 
@@ -465,8 +474,16 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
             _qualityProfile = profile;
 
             // Bandwidth is a create-time setting on the receiver — applying a new
-            // tier requires recreating it with the same source.
-            if (_recv != IntPtr.Zero && bandwidthChanged)
+            // tier requires recreating it with the same source. Restart only when a receiver
+            // both exists and is still wanted: while a stop is queued but not yet run, _recv and
+            // _activeSourceId still name the outgoing receiver, so restarting from them would
+            // reconnect to the previous source after a switch, or resurrect a receiver the app
+            // just stopped. Nothing is lost by skipping it: the profile is published above and
+            // the queued StartReceiverCore reads that field.
+            bool stopPending;
+            lock (_connectionLock) stopPending = _stopDepth > 0;
+
+            if (_recv != IntPtr.Zero && bandwidthChanged && !stopPending)
                 restartSourceId = _activeSourceId;
         }
 

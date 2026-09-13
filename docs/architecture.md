@@ -169,7 +169,7 @@ Standard bridge pattern:
 
 1. Define discovery/viewer/output bridge interfaces in `src/Core/NdiBridge/INdiBridges.cs`; plain C# models in `src/Core/NdiBridge/NdiBridgeModels.cs` and `QualityProfile.cs`.
 2. Implement bridge classes in `src/MauiApp/NdiBridge/` (file split below). All `[DllImport("ndi")]` declarations live in the interop layer only.
-3. Bridge events (`ConnectionStateChanged`, `TallyEchoChanged`, `OutputStatusChanged`) are raised on pump/background threads — subscribers marshal to the UI thread (`IMainThreadDispatcher` in Core ViewModels).
+3. Bridge events (`ConnectionStateChanged`, `TallyEchoChanged`, `OutputStatusChanged`) are raised on pump/background threads — `ConnectionStateChanged` is also raised in the caller's own turn by `StartReceiver`/`StopReceiverAsync`, so assume any thread — subscribers marshal to the UI thread (`IMainThreadDispatcher` in Core ViewModels).
 4. `INavigationHandoffService` *requests* a stop of the **viewer** receiver (`StopReceiverAsync()`) when leaving the View tab; the request's synchronous prologue runs in the navigation turn and the native teardown runs on the bridge's lifecycle worker, so navigation never waits on a pump join (#408/#417). It does **not** touch the output sender: once started, `INdiOutputBridge` output keeps streaming across tab switches and app backgrounding via `ScreenShareForegroundService`, and stops only via the in-app Stop button or the persistent notification's Stop action.
 
 ### Bridge file layout (`src/MauiApp/NdiBridge/`)
@@ -265,7 +265,7 @@ Session state (`AppStateSnapshot.StreamName`/`IsOutputActive`, `src/Core/Feature
 
 ```csharp
 ConnectionState GetConnectionState();
-event EventHandler<ConnectionState>? ConnectionStateChanged; // raised on the pump thread
+event EventHandler<ConnectionState>? ConnectionStateChanged; // raised on any thread — see below
 ```
 
 - `ConnectionState { Connecting, Connected, Disconnected, Stalled }` is a **plain C# enum** defined
