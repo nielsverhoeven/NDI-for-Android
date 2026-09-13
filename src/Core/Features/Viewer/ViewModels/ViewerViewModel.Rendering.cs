@@ -13,7 +13,12 @@ public partial class ViewerViewModel
     /// thread and cleared on the UI thread — Interlocked only, never a plain assignment.</summary>
     private int _framePostPending;
 
-    private long _lastLatencyTraceTicks;
+    // Written on the UI thread by SetRenderingActive, read on the pump thread — volatile, not locked.
+    private volatile bool _isRenderingActive;
+
+    // Wall-clock millisecond mark of the last traced latency line, on the injected TimeProvider.
+    // Nullable so the first call always traces without a magic-zero sentinel.
+    private long? _lastLatencyTraceMillis;
 
     /// <summary>
     /// Raised on the UI thread when a newly arrived frame is ready to draw (#416). The View's render
@@ -23,18 +28,14 @@ public partial class ViewerViewModel
     /// </summary>
     public event EventHandler? FrameReady;
 
-    /// <summary>
-    /// Video pump thread. Stays O(1) and allocation-free: it runs up to 60 times a second on the
-    /// thread a stop joins, so anything more expensive here lengthens every teardown (#408).
-    /// </summary>
+    /// <summary>Set by the View's StartRendering/StopRendering/Teardown; the View is the only writer.</summary>
+    public void SetRenderingActive(bool active) => _isRenderingActive = active;
+
+    // Video pump thread, up to 60/s. Not allocation-free: the closure below allocates a delegate
+    // per post and the Android dispatcher an additional JNI Runnable.
     private void OnBridgeVideoFrameReady(object? sender, EventArgs e)
     {
-        // IsPlaying is written on the UI thread and read here unsynchronised on purpose. A bool read
-        // cannot tear; a stale read costs one extra post or one missed one, and the View's fallback
-        // timer covers a missed one. The gate matters because two ViewerViewModels can be alive at
-        // once (the pushed ViewerPage and the Expanded pane) and both are subscribed to this
-        // singleton bridge.
-        if (!IsPlaying)
+        if (!IsPlaying || !_isRenderingActive)
             return;
 
         // Newest-frame-wins: at most one post is queued at any time. Without this a 60 fps source on
@@ -65,10 +66,16 @@ public partial class ViewerViewModel
         if (_diagnostics?.IsDeveloperMode != true)
             return;
 
-        var nowTicks = Environment.TickCount64;
-        if (nowTicks - _lastLatencyTraceTicks < LatencyTraceIntervalMs)
+        // The throttle is a cadence and uses the injected TimeProvider (deterministic under
+        // FakeTimeProvider); the measurement below is a duration and stays on Environment.TickCount64,
+        // the clock the pump stamped the frame with. Do not merge these into one clock.
+        var nowMillis = _timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
+        if (_lastLatencyTraceMillis is { } lastTraceMillis
+            && nowMillis - lastTraceMillis < LatencyTraceIntervalMs)
             return;
-        _lastLatencyTraceTicks = nowTicks;
+        _lastLatencyTraceMillis = nowMillis;
+
+        var nowTicks = Environment.TickCount64;
 
         // Single clock, no assumption about the sender: the only latency this app may state without
         // a caveat. It spans pump copy -> buffer swap -> coalesced UI post -> paint, i.e. exactly the

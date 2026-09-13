@@ -402,6 +402,10 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
         long lastTotalVideoFrames = 0;
         long lastDroppedVideoFrames = 0;
 
+        // One diagnostic line per pump run if a VideoFrameReady subscriber ever throws. A local for
+        // the same reason the counters above are locals: per-receiver, pump-thread-only state.
+        var frameReadyFaultLogged = false;
+
         try
         {
             while (_running)
@@ -441,7 +445,7 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
                         // covers that), and the first frame must be observable as Connected before
                         // anything is asked to draw it. One delegate invoke — the interface contract
                         // forbids the handler doing anything but posting a coalesced invalidate.
-                        VideoFrameReady?.Invoke(this, EventArgs.Empty);
+                        RaiseVideoFrameReady(ref frameReadyFaultLogged);
                         break;
 
                     case NdiFrameType.Metadata:
@@ -513,6 +517,37 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
             // A pump thread must never take down the process (unhandled exceptions on
             // background threads are fatal in .NET). Report loss of the stream instead.
             TransitionState(ConnectionState.Disconnected, ReceiverStopReason.ConnectionLost);
+        }
+    }
+
+    // Wrapped because VideoPumpLoop's catch wraps the entire while(_running) loop and reports ANY
+    // escaping exception as a lost connection; a subscriber fault must not open a spurious reconnect
+    // window on a link that never dropped. The diagnostic is one-shot per pump run — a per-frame log
+    // line at up to 60/s would be worse than the bug it reports.
+    private void RaiseVideoFrameReady(ref bool frameReadyFaultLogged)
+    {
+        try
+        {
+            VideoFrameReady?.Invoke(this, EventArgs.Empty);
+        }
+        catch (Exception ex)
+        {
+            if (frameReadyFaultLogged)
+                return;
+
+            frameReadyFaultLogged = true;
+
+            try
+            {
+                _diagnostics?.Trace(
+                    DiagnosticOverlayService.LatencyLogTag,
+                    "viewer.framereadyfault",
+                    $"type={ex.GetType().Name} msg={ex.Message}");
+            }
+            catch
+            {
+                // Diagnostics are best-effort; must never throw back into the pump's catch.
+            }
         }
     }
 

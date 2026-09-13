@@ -26,6 +26,10 @@ public partial class ViewerView : ContentView
     private SKBitmap? _frameBitmap;
     private bool _isRenderingActive;
 
+    // True when the next paint is one a newly arrived frame caused; only such a paint is measured
+    // (OnPaintSurface also runs for relayout/rotation/theme repaints of a stale frame).
+    private bool _frameAwaitingReport;
+
     private ViewerViewModel? _boundViewModel;
 
     public ViewerView()
@@ -36,10 +40,13 @@ public partial class ViewerView : ContentView
         SizeChanged += (_, _) => UpdateLayoutVisibility();
     }
 
-    /// <summary>Enables presentation: draw-on-arrival plus the ~30 fps fallback pull. Idempotent.</summary>
+    /// <summary>Enables presentation: draw-on-arrival plus the ~30 fps fallback pull. Idempotent.
+    /// Also opens the ViewModel's pump-side gate, so the pump stops posting to a View that is not
+    /// rendering.</summary>
     public void StartRendering()
     {
         _isRenderingActive = true;
+        _boundViewModel?.SetRenderingActive(true);
 
         if (_renderTimer is null)
         {
@@ -51,11 +58,12 @@ public partial class ViewerView : ContentView
         _renderTimer.Start();
     }
 
-    /// <summary>Disables presentation. Safe to call when not rendering. The FrameReady handler is
-    /// gated on the same flag, so a frame arriving after the host page disappeared paints nothing.</summary>
+    /// <summary>Disables presentation. Safe to call when not rendering. Closes both gates: the
+    /// ViewModel stops posting per-frame invalidates and the two local triggers stop presenting.</summary>
     public void StopRendering()
     {
         _isRenderingActive = false;
+        _boundViewModel?.SetRenderingActive(false);
         _renderTimer?.Stop();
     }
 
@@ -73,8 +81,12 @@ public partial class ViewerView : ContentView
             _renderTimer = null;
         }
 
+        _isRenderingActive = false;
+        _frameAwaitingReport = false;
+
         if (_boundViewModel is not null)
         {
+            _boundViewModel.SetRenderingActive(false);
             _boundViewModel.PropertyChanged -= OnViewModelPropertyChanged;
             _boundViewModel.FrameReady -= OnFrameReady;
             _boundViewModel = null;
@@ -92,6 +104,9 @@ public partial class ViewerView : ContentView
 
         if (_boundViewModel is not null)
         {
+            // A ViewModel this View no longer presents must not be left with its gate open — the
+            // Expanded pane's PaneViewer is a never-disposed singleton and would keep posting.
+            _boundViewModel.SetRenderingActive(false);
             _boundViewModel.PropertyChanged -= OnViewModelPropertyChanged;
             _boundViewModel.FrameReady -= OnFrameReady;
         }
@@ -102,6 +117,9 @@ public partial class ViewerView : ContentView
         {
             _boundViewModel.PropertyChanged += OnViewModelPropertyChanged;
             _boundViewModel.FrameReady += OnFrameReady;
+            // Re-assert the host's current state: {Binding PaneViewer} resolves only on the first
+            // Expanded "Watch" tap, long after StartRendering() ran.
+            _boundViewModel.SetRenderingActive(_isRenderingActive);
         }
 
         UpdateLayoutVisibility();
@@ -136,6 +154,7 @@ public partial class ViewerView : ContentView
         {
             _pendingFrame = null;
             _lastRenderedTimestamp = -1;
+            _frameAwaitingReport = false;
             VideoCanvas.InvalidateSurface();
         }
     }
@@ -150,15 +169,16 @@ public partial class ViewerView : ContentView
 
     private void PresentLatestFrame()
     {
-        if (!_isRenderingActive || BindingContext is not ViewerViewModel viewModel)
+        if (!_isRenderingActive || _boundViewModel is null)
             return;
 
-        var frame = viewModel.CurrentFrame;
+        var frame = _boundViewModel.CurrentFrame;
         if (frame is null || frame.CapturedAtEpochMillis == _lastRenderedTimestamp)
             return;
 
         _lastRenderedTimestamp = frame.CapturedAtEpochMillis;
         _pendingFrame = frame;
+        _frameAwaitingReport = true;
         VideoCanvas.InvalidateSurface();
     }
 
@@ -166,6 +186,11 @@ public partial class ViewerView : ContentView
     {
         var canvas = e.Surface.Canvas;
         canvas.Clear(SKColors.Black);
+
+        // Captured and cleared before the early return below, so a paint that draws nothing does
+        // not leave the flag armed for a later, frame-less repaint.
+        var isNewFrame = _frameAwaitingReport;
+        _frameAwaitingReport = false;
 
         var frame = _pendingFrame;
         if (frame is null || frame.Width <= 0 || frame.Height <= 0)
@@ -194,10 +219,12 @@ public partial class ViewerView : ContentView
         // neighbour, no mipmaps) is what that overload used, so the output is unchanged.
         canvas.DrawBitmap(_frameBitmap, dest, SKSamplingOptions.Default);
 
-        // #416 instrumentation, developer mode only. One call, no branching here: the throttle, the
-        // arithmetic and the developer-mode gate all live in the Core ViewModel so they are
-        // unit-testable and so this stays rendering plumbing (rule 3).
-        _boundViewModel?.ReportFrameDrawn(
-            frame.ReceivedAtTickMillis, frame.CapturedAtEpochMillis, frame.TimestampIsSynthesized);
+        // Only the first paint of a new frame is measured — a relayout/rotation repaint of a stale
+        // frame would otherwise report an inflated latency.
+        if (isNewFrame)
+        {
+            _boundViewModel?.ReportFrameDrawn(
+                frame.ReceivedAtTickMillis, frame.CapturedAtEpochMillis, frame.TimestampIsSynthesized);
+        }
     }
 }
