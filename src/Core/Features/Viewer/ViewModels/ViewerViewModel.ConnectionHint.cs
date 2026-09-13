@@ -1,6 +1,8 @@
 using System.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
+using NdiForAndroid.Features.DiagOverlay.Services;
 using NdiForAndroid.NdiBridge;
+using NdiForAndroid.Services;
 
 namespace NdiForAndroid.Features.Viewer.ViewModels;
 
@@ -40,15 +42,27 @@ public partial class ViewerViewModel
         ResetConnectionHint();
     }
 
-    /// <summary>Timer callback (thread-pool thread): read the bridge's lock-free counters here, mutate observable state on the UI thread.</summary>
+    /// <summary>Timer callback (thread-pool thread): read the bridge's lock-free counters and the
+    /// device's link here, mutate observable state on the UI thread.</summary>
     private void SampleConnectionStats()
     {
         try
         {
-            var connected = _bridge.GetConnectionState() == ConnectionState.Connected;
+            var state = _bridge.GetConnectionState();
+
+            // Stalled counts as "the receiver is up": it is the state a starved link spends most of
+            // its time in, and treating it as not-connected would both wipe an active hint and reset
+            // the five-sample run on every demotion. This is not a claim that frames are arriving —
+            // the fps term says that, and on a stall it reads 0.
+            var connected = state is ConnectionState.Connected or ConnectionState.Stalled;
             var fps = _bridge.GetMeasuredFps();
             var dropPercent = _bridge.GetDroppedFramePercent();
-            _dispatcher.BeginInvokeOnMainThread(() => ApplyConnectionSample(connected, fps, dropPercent));
+
+            // The only place the link is read: a thread-pool thread at 1 Hz. Never the UI thread
+            // (this is a binder round-trip) and never a pump thread.
+            var link = _networkLink?.GetSnapshot() ?? NetworkLinkSnapshot.Unknown;
+
+            _dispatcher.BeginInvokeOnMainThread(() => ApplyConnectionSample(connected, fps, dropPercent, link));
         }
         catch
         {
@@ -56,22 +70,34 @@ public partial class ViewerViewModel
         }
     }
 
-    /// <summary>Applies one 1 s stats sample. Public so tests (and any host) can push samples directly. Main thread only.</summary>
+    /// <summary>Applies one 1 s stats sample with no link information. Kept so existing hosts and
+    /// tests can push samples directly. Main thread only.</summary>
     public void ApplyConnectionSample(bool connected, float fps, float dropPercent)
+        => ApplyConnectionSample(connected, fps, dropPercent, NetworkLinkSnapshot.Unknown);
+
+    /// <summary>
+    /// Applies one 1 s stats sample together with the link it was taken on. Main thread only.
+    /// <paramref name="connected"/> means "the receiver is up" — Connected or Stalled — not "frames
+    /// are arriving". <paramref name="link"/> only ever changes the hint's wording: nothing here
+    /// calls SetQualityProfile.
+    /// </summary>
+    public void ApplyConnectionSample(bool connected, float fps, float dropPercent, NetworkLinkSnapshot link)
     {
         ReleaseIfDisowned();
         CheckForSustainedConnecting();
 
-        // Not a judgement about the link while (re)connecting or when nothing is being received
-        // (also keeps the hint off the x86 emulator, where the bridge never reports Connected).
+        // Not a judgement about the link while (re)connecting or when the receiver is down (also
+        // keeps the hint off the x86 emulator, where the bridge never reports Connected).
         if (!IsPlaying || IsReconnecting || !connected)
         {
             ResetConnectionHint();
             return;
         }
 
+        TraceLink(link);
+
         _hintState = ConnectionHintPolicy.Next(_hintState, fps, dropPercent);
-        ConnectionHint = ConnectionHintPolicy.HintText(_hintState.IsHintActive, QualityProfile);
+        ConnectionHint = ConnectionHintPolicy.HintText(_hintState.IsHintActive, QualityProfile, link);
     }
 
     /// <summary>
@@ -159,5 +185,51 @@ public partial class ViewerViewModel
     {
         _hintState = ConnectionHintPolicy.State.Idle;
         ConnectionHint = null;
+    }
+
+    private NetworkLinkSnapshot? _lastTracedLink;
+
+    /// <summary>
+    /// Two outputs, deliberately different in cadence. (1) One developer-mode logcat line per stats
+    /// sample under <see cref="DiagnosticOverlayService.LinkLogTag"/> — sink only, never the log
+    /// buffer. (2) One in-app Diagnostic Log entry when the band or the weak/not-weak classification
+    /// changes, so the buffer's 200-entry ring gets a handful of entries per session instead of one
+    /// per second.
+    /// </summary>
+    private void TraceLink(NetworkLinkSnapshot link)
+    {
+        if (_diagnostics is null || !link.IsWifi)
+            return;
+
+        var changed = _lastTracedLink is null
+            || _lastTracedLink.Band != link.Band
+            || ConnectionHintPolicy.IsWeakLink(_lastTracedLink) != ConnectionHintPolicy.IsWeakLink(link);
+        _lastTracedLink = link;
+
+        if (changed)
+            _diagnostics.LogBuffer.Add("Link", FormatLink(link));
+
+        if (_diagnostics.IsDeveloperMode)
+        {
+            _diagnostics.Trace(
+                DiagnosticOverlayService.LinkLogTag,
+                "viewer.link",
+                $"band={link.Band} rssi={link.Rssi} speedMbps={link.LinkSpeedMbps} " +
+                $"std={link.Standard} weak={ConnectionHintPolicy.IsWeakLink(link)}");
+        }
+    }
+
+    /// <summary>
+    /// One line for the in-app Diagnostic Log, e.g. <c>Wi-Fi 2.4 GHz, -78 dBm, 6 Mbit/s</c>.
+    /// Comma-separated on purpose: DiagnosticLogBuffer redacts anything matching its IPv6 pattern, so
+    /// a "key:value" form here would be mangled.
+    /// </summary>
+    internal static string FormatLink(NetworkLinkSnapshot link)
+    {
+        var rssi = link.Rssi == NetworkLinkSnapshot.UnknownRssi ? "? dBm" : $"{link.Rssi} dBm";
+        var speed = link.LinkSpeedMbps == NetworkLinkSnapshot.UnknownLinkSpeed
+            ? "? Mbit/s"
+            : $"{link.LinkSpeedMbps} Mbit/s";
+        return $"Wi-Fi {ConnectionHintPolicy.LinkDescription(link)}, {rssi}, {speed}";
     }
 }

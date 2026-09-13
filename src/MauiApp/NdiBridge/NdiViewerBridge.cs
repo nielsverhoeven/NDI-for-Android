@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using NdiForAndroid.Features.DiagOverlay.Services;
+using NdiForAndroid.Features.Viewer;
 using NdiForAndroid.NdiBridge.Interop;
 using NdiForAndroid.Services;
 
@@ -386,6 +387,12 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
         long lastStatsTicks = 0;
         var hasEverConnected = false;
 
+        // Previous stats tick's cumulative performance counters. Locals, not fields: a receiver has
+        // exactly one video pump, so a new receiver starts from zero with no reset needed in
+        // StopReceiver/StartReceiver, and no other thread can read or write them.
+        long lastTotalVideoFrames = 0;
+        long lastDroppedVideoFrames = 0;
+
         try
         {
             while (_running)
@@ -481,7 +488,7 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
                 if (_running && now - lastStatsTicks >= StatsIntervalMs)
                 {
                     lastStatsTicks = now;
-                    UpdateStats(recv, sourceId);
+                    UpdateStats(recv, sourceId, ref lastTotalVideoFrames, ref lastDroppedVideoFrames);
                 }
             }
         }
@@ -547,12 +554,25 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
         }
     }
 
-    private void UpdateStats(IntPtr recv, string sourceId)
+    /// <summary>
+    /// One stats tick, on the video pump thread. The two ref parameters carry the previous tick's
+    /// cumulative counters in and this tick's out; owned by <see cref="VideoPumpLoop"/>'s stack
+    /// frame, so they need no lock and no reset on stop.
+    /// </summary>
+    private void UpdateStats(
+        IntPtr recv,
+        string sourceId,
+        ref long lastTotalVideoFrames,
+        ref long lastDroppedVideoFrames)
     {
         NdiNativeMethods.NDIlib_recv_get_performance(recv, out var total, out var dropped);
-        _droppedFramePercent = total.video_frames > 0
-            ? (float)(dropped.video_frames * 100.0 / total.video_frames)
-            : 0f;
+
+        var totalDelta = total.video_frames - lastTotalVideoFrames;
+        var droppedDelta = dropped.video_frames - lastDroppedVideoFrames;
+        lastTotalVideoFrames = total.video_frames;
+        lastDroppedVideoFrames = dropped.video_frames;
+
+        _droppedFramePercent = ReceiverStatsMath.DropPercent(totalDelta, droppedDelta);
 
         if (_diagnostics is not null)
         {
@@ -568,13 +588,16 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
             // Developer mode only (persisted Settings toggle): one logcat line per second so
             // soak tests can measure fps / drops / frame gaps with `adb logcat -s NdiStats`.
             // Runs on the pump thread — must never throw into VideoPumpLoop, whose catch
-            // would report the failure as a lost stream.
+            // would report the failure as a lost stream. dTotal/dDropped are this interval's
+            // deltas (what drop= is computed from); total/dropped remain the receiver's
+            // lifetime counters.
             if (_diagnostics.IsDeveloperMode)
             {
                 try
                 {
                     Android.Util.Log.Debug("NdiStats",
                         $"src=\"{sourceId}\" fps={_measuredFps:0} drop={_droppedFramePercent:0.00}% " +
+                        $"dTotal={totalDelta} dDropped={droppedDelta} " +
                         $"total={total.video_frames} dropped={dropped.video_frames} " +
                         $"maxGapMs={_maxFrameGapMs} res={width}x{height} profile={_qualityProfile}");
                 }
