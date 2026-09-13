@@ -13,6 +13,9 @@ public sealed class DiagnosticOverlayService : IDiagnosticOverlayService
     /// <summary>logcat tag of the navigation timing probes (<c>adb logcat -s NDI-Nav</c>).</summary>
     public const string NavigationLogTag = "NDI-Nav";
 
+    /// <summary>logcat tag of the per-sample Wi-Fi link line (<c>adb logcat -s NDI-Link</c>).</summary>
+    public const string LinkLogTag = "NDI-Link";
+
     private readonly IDiagnosticLogSink? _logSink;
     private ViewerDiagnosticSnapshot _viewerDiagnostics = new(0f, 0f, 0, 0, string.Empty);
     private DiscoveryDiagnosticSnapshot _discoveryDiagnostics = new("No discovery run yet", 0, null);

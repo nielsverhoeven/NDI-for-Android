@@ -117,6 +117,7 @@ public static class MauiProgram
 
 #if ANDROID
         builder.Services.AddSingleton<IMulticastLockService, AndroidMulticastLockService>();
+        builder.Services.AddSingleton<INetworkLinkService, AndroidNetworkLinkService>();
         builder.Services.AddSingleton<IScreenSharePlatformService, AndroidScreenSharePlatformService>();
         builder.Services.AddSingleton<ISettingsPlatformService, AndroidSettingsPlatformService>();
         builder.Services.AddSingleton<INdiPlatformBootstrap, AndroidNsdBootstrap>();
@@ -130,6 +131,7 @@ public static class MauiProgram
         builder.Services.AddSingleton<IUserPromptService, MauiUserPromptService>();
 #else
         builder.Services.AddSingleton<IMulticastLockService, NoopMulticastLockService>();
+        builder.Services.AddSingleton<INetworkLinkService, NoopNetworkLinkService>();
         builder.Services.AddSingleton<IScreenSharePlatformService, NoopScreenSharePlatformService>();
         builder.Services.AddSingleton<ISettingsPlatformService, DefaultSettingsPlatformService>();
         builder.Services.AddSingleton<INdiPlatformBootstrap, DefaultNdiPlatformBootstrap>();
