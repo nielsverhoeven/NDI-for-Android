@@ -2,6 +2,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using NdiForAndroid.Features.AppState.Models;
 using NdiForAndroid.Features.AppState.Repositories;
+using NdiForAndroid.Features.DiagOverlay.Services;
 using NdiForAndroid.Features.Navigation.Models;
 using NdiForAndroid.Features.Navigation.Services;
 using NdiForAndroid.Features.Settings.Services;
@@ -23,6 +24,7 @@ public partial class SourceListViewModel : ObservableObject
     private readonly IWindowSizeClassService _windowSizeClassService;
     private readonly Func<ViewerViewModel> _viewerViewModelFactory;
     private readonly IMainThreadDispatcher _dispatcher;
+    private readonly IDiagnosticOverlayService? _diagnostics;
 
     [ObservableProperty]
     private IReadOnlyList<NdiSource> _sources = Array.Empty<NdiSource>();
@@ -53,7 +55,8 @@ public partial class SourceListViewModel : ObservableObject
         IAppStateRepository appStateRepo,
         IWindowSizeClassService windowSizeClassService,
         Func<ViewerViewModel> viewerViewModelFactory,
-        IMainThreadDispatcher dispatcher)
+        IMainThreadDispatcher dispatcher,
+        IDiagnosticOverlayService? diagnostics = null)
     {
         _repository     = repository;
         _navigation     = navigation;
@@ -63,6 +66,7 @@ public partial class SourceListViewModel : ObservableObject
         _windowSizeClassService = windowSizeClassService;
         _viewerViewModelFactory = viewerViewModelFactory;
         _dispatcher     = dispatcher;
+        _diagnostics    = diagnostics;
 
         _refreshService.SnapshotReady += OnSnapshotReady;
         _windowSizeClassService.Changed += OnWindowSizeClassChanged;
@@ -83,10 +87,16 @@ public partial class SourceListViewModel : ObservableObject
         // bound state (Architecture Rule 4).
         _dispatcher.BeginInvokeOnMainThread(() =>
         {
+            var t0 = Environment.TickCount64;
+            _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "discovery.snapshot.apply.begin",
+                $"count={snapshot.Sources.Count} status={snapshot.Status}");
+
             Sources      = snapshot.Sources;
             ErrorMessage = snapshot.Status == DiscoveryStatus.Failure ? snapshot.ErrorMessage : null;
             IsRefreshing = false;
             UpdateDiscoveryModeLabel();
+
+            _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "discovery.snapshot.apply.end", $"ms={Environment.TickCount64 - t0}");
         });
     }
 
