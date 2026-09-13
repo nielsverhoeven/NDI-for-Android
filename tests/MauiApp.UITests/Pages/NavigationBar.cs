@@ -157,6 +157,38 @@ public sealed class NavigationBar
         return description.EndsWith(", selected", StringComparison.Ordinal);
     }
 
+    /// <summary>True when Shell's native bottom navigation bar is <b>on screen</b>.</summary>
+    /// <remarks>
+    /// <para>
+    /// Presence in the tree is deliberately not the predicate. Shell keeps its
+    /// <c>BottomNavigationView</c> in the hierarchy and flips it to <c>GONE</c> under the rail's
+    /// single-section <c>FlyoutItem</c>s, so an "exists anywhere" check could report a bar that is
+    /// correctly hidden. Every other lookup in this suite filters the same way
+    /// (<see cref="Resolve"/>, <c>PageObject.IsPresent</c>).
+    /// </para>
+    /// <para>
+    /// Matched by resource-id, not by class name: <c>BottomNavigationView</c> extends
+    /// <c>FrameLayout</c> and therefore reports <c>android.widget.FrameLayout</c> as its
+    /// accessibility class — which is exactly what the live device dump of the defect showed. The
+    /// <c>navigation_bar_item_</c> ids belong to the Material menu-item views inside the bar; the
+    /// <c>bottomtab</c> id is Shell's own container for it.
+    /// </para>
+    /// </remarks>
+    public bool HasBottomNavigationBar()
+    {
+        const string xpath =
+            "//*[contains(@resource-id,'navigation_bar_item_') or contains(@resource-id,'bottomtab')]";
+
+        try
+        {
+            return _driver.FindElements(By.XPath(xpath)).Any(Displayed);
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
     private IWebElement? Resolve(string id, string label)
     {
         try
