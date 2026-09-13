@@ -464,8 +464,12 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
 
     /// <summary>True while the receiver this ViewModel started is still the one the shared bridge is
     /// running. False for any ViewerViewModel another instance has taken the bridge from; such a
-    /// ViewModel must never drive the bridge, or two reconnect loops fight over one receiver and the
-    /// user sees one source's video labelled with another source's status.</summary>
+    /// ViewModel must never open or complete a reconnect window nor narrate the bridge's state as its
+    /// own (the drop trigger, the sustained-Connecting backstop, CompleteReconnect and the "Connected."
+    /// status are gated on this), or two reconnect loops fight over one receiver and the user sees one
+    /// source's video labelled with another source's status. User-initiated Stop and the attempt loop
+    /// of an already-open window are deliberately not gated: they act on this ViewModel's own
+    /// session, and ReleaseIfDisowned retires a disowned ViewModel within one stats sample.</summary>
     private bool OwnsActiveReceiver => _bridge.ReceiverGeneration == _receiverGeneration;
 
     /// <summary>True once this ViewModel has asked the bridge for a receiver at least once. A
