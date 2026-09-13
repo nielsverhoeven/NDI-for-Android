@@ -198,4 +198,26 @@ public class ConnectionHintPolicyTests
         Assert.False(state.IsHintActive);
         Assert.False(state.SawDropEvidence);
     }
+
+    [Fact]
+    public void Next_AbandonedWeakRun_DoesNotCarryDropEvidenceIntoALaterHint()
+    {
+        // A jittery link: every weak second that lost frames is followed by a dead-band second, so
+        // no hint is ever raised. When the source then goes silent, the fps-only hint must not
+        // inherit the drop evidence of those abandoned runs.
+        var state = ConnectionHintPolicy.State.Idle;
+        for (var i = 0; i < 20; i++)
+        {
+            state = ConnectionHintPolicy.Next(state, 5f, 35f);
+            state = ConnectionHintPolicy.Next(state, 30f, 14f);
+        }
+
+        Assert.False(state.IsHintActive);
+
+        for (var i = 0; i < 5; i++)
+            state = ConnectionHintPolicy.Next(state, 0f, 0f);
+
+        Assert.True(state.IsHintActive);
+        Assert.False(state.SawDropEvidence);
+    }
 }

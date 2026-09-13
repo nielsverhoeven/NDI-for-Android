@@ -166,7 +166,9 @@ public static class ConnectionHintPolicy
             return new State(0, good, active, active && state.SawDropEvidence);
         }
 
-        return new State(0, state.GoodRun, state.IsHintActive, state.SawDropEvidence);
+        // A dead-band sample abandons the weak run; the evidence it gathered must not outlive it,
+        // or a later fps-only hint would be attributed to the radio.
+        return new State(0, state.GoodRun, state.IsHintActive, state.IsHintActive && state.SawDropEvidence);
     }
 
     /// <summary>Hint text for the active profile, or null when no hint should show.</summary>
