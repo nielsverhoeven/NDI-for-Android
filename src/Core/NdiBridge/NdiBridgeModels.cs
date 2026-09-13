@@ -24,6 +24,34 @@ public enum ConnectionState
 
     /// <summary>The receiver has no active connection.</summary>
     Disconnected,
+
+    /// <summary>The transport connection is up but no video frame has arrived for longer than the
+    /// bridge's stall threshold (<c>NdiViewerBridge.StalledAfterMs</c>) — a sender on standby, one
+    /// mid-reconfiguration, an audio-only stretch, or a stream starved by the network. Distinct
+    /// from <see cref="Connecting"/> on purpose: a stall is not a failed connection attempt, and
+    /// recreating the receiver cannot make a sender send video, so the viewer's reconnect logic
+    /// must be able to tell the two apart. Declared last so <see cref="Connecting"/> keeps enum
+    /// value 0 (mocks and defaults depend on it).</summary>
+    Stalled,
+}
+
+/// <summary>
+/// Why the receiver most recently transitioned to <see cref="ConnectionState.Disconnected"/>.
+/// Meaningless while <see cref="INdiViewerBridge.GetConnectionState"/> reports anything else.
+/// <see cref="Intentional"/> is deliberately the default value: an implementation that has not
+/// classified the stop must never be able to trigger an automatic reconnect window.
+/// </summary>
+public enum ReceiverStopReason
+{
+    /// <summary>An explicit, intentional stop requested by application code — the user's Stop
+    /// button, an internal restart (source switch, quality-profile bandwidth change, a reconnect
+    /// attempt), or a navigation handoff. Never an unexpected drop.</summary>
+    Intentional,
+
+    /// <summary>The pump thread detected the live connection was lost on its own
+    /// (<c>recv_get_no_connections</c> reached 0 after having been connected, or the pump thread
+    /// faulted) — a genuine unexpected-drop candidate.</summary>
+    ConnectionLost,
 }
 
 /// <summary>A single NDI Discovery Server endpoint (host + port).</summary>

@@ -20,7 +20,14 @@ internal static class ReconnectConstants
     public const int RetryWindowSeconds = 15;
     public const int RetryAttemptIntervalSeconds = 2;
     public const int CountdownTickIntervalSeconds = 1;
-    public const int DropDetectionGraceSeconds = 3;
+
+    /// <summary>How many consecutive 1 s stats samples may report a bridge stuck in
+    /// <see cref="ConnectionState.Connecting"/> before the level-triggered backstop opens a retry
+    /// window. Five is a *latency* budget, not a stall budget: a receiver that has not produced its
+    /// first frame five capture cycles after being created is not going to
+    /// (<c>NdiViewerBridge.VideoCaptureTimeoutMs</c> is 1 s). A source that is connected but silent
+    /// reports <see cref="ConnectionState.Stalled"/> and never reaches this counter.</summary>
+    public const int SustainedConnectingSamples = 5;
 }
 
 public partial class ViewerViewModel : ObservableObject, IDisposable
@@ -78,6 +85,7 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
 
     // Reconnect state
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsFullScreenRetryVisible))]
     private bool _isReconnecting;
 
     [ObservableProperty]
@@ -92,8 +100,21 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
     private ITimer? _countdownTimer;
     private ITimer? _attemptTimer;
     private volatile bool _userInitiatedStop;
+
+    /// <summary>True once the bridge has reported Connected at least once since this ViewModel last
+    /// called Start(). Arms the level-triggered drop backstop: a receiver that has never connected
+    /// is an initial-connect attempt, not a drop, and must keep today's behaviour.</summary>
+    private bool _hasConnectedSinceStart;
+
     private string? _lastSourceId;
     private bool _wasPlayingBeforeResume;
+
+    /// <summary>Generation of the receiver this ViewModel last asked the bridge to start
+    /// (<see cref="INdiViewerBridge.ReceiverGeneration"/>). The bridge is a singleton and more than
+    /// one ViewerViewModel is alive at once — the Expanded two-pane <c>PaneViewer</c> is never
+    /// disposed and a pushed ViewerPage gets its own transient instance — so "the bridge reported a
+    /// drop" is not on its own a statement about *this* ViewModel's stream. -1 = never started one.</summary>
+    private long _receiverGeneration = -1;
 
     // Quality profile selection — manual only (#330/#331: no automatic degradation; the
     // stats watchdog in ViewerViewModel.ConnectionHint.cs only feeds ConnectionHint).
@@ -191,9 +212,27 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
             // PTZ support is only known once connection metadata has arrived.
             IsPtzSupported = _bridge.IsPtzSupported;
 
+            // Arms the level-triggered drop backstop (see CheckForSustainedConnecting).
+            if (state == ConnectionState.Connected)
+                _hasConnectedSinceStart = true;
+
             // Minimal status refresh; drop handling stays with the reconnect state machine.
-            if (IsPlaying && !IsReconnecting && state == ConnectionState.Connected)
+            // Ownership-gated: this event reaches every subscribed ViewModel, and one the bridge has
+            // been taken from must not narrate another ViewModel's connection under its own
+            // SourceId. ReleaseIfDisowned reconciles it within a second, but it must not lie in the
+            // meantime — with a deep link to a different source that is one source's video labelled
+            // with another source's status.
+            if (IsPlaying && !IsReconnecting && OwnsActiveReceiver && state == ConnectionState.Connected)
                 StatusMessage = "Connected.";
+
+            // Only the bridge can observe a real (re)connection: StartReceiver returns while the
+            // receiver is still Connecting, so the attempt loop's own poll right after it never
+            // sees Connected.
+            if (state == ConnectionState.Connected && IsReconnecting)
+                CompleteReconnect();
+
+            if (state == ConnectionState.Disconnected)
+                CheckForUnexpectedDrop();
         });
     }
 
@@ -226,6 +265,7 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
             catch { /* Silent fail – will default to Balanced */ }
 
             _bridge.StartReceiver(SourceId, QualityProfile);
+            _receiverGeneration = _bridge.ReceiverGeneration;
             var state = _bridge.GetConnectionState();
             if (state == ConnectionState.Connected)
             {
@@ -290,6 +330,7 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
         }
 
         _userInitiatedStop = false;
+        _hasConnectedSinceStart = false; // a new receiver has not connected yet (see CheckForSustainedConnecting)
         _lastSourceId = SourceId;
         CanReconnect = false; // clears the "watch again" affordance left over from a previous Stop (#348)
 
@@ -325,6 +366,7 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
         StartPtz(cached);
 
         _bridge.StartReceiver(SourceId, QualityProfile);
+        _receiverGeneration = _bridge.ReceiverGeneration;
         _bridge.SetTally(onProgram: true, onPreview: false);
         IsPlaying = true;
         StatusMessage = "Connecting...";
@@ -370,6 +412,21 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
         _lifecycle.OrientationChanged -= OnOrientationChanged;
         _bridge.ConnectionStateChanged -= OnBridgeConnectionStateChanged;
         _bridge.TallyEchoChanged -= OnBridgeTallyEchoChanged;
+
+        // The ownership token's dual: at most one ViewModel may drive the shared bridge, so the one
+        // that owns the receiver must hand it back when it goes away. ViewerPage disposes this
+        // ViewModel once its page has left the nav stack (ViewerPage.xaml.cs:52-57) but never stops
+        // the bridge, and the navigation handoff only fires on a primary-destination change — so
+        // without this, Back out of a pushed viewer leaves a receiver pumping video *and audio*
+        // with no ViewModel driving it, and any other live ViewerViewModel (the Expanded PaneViewer
+        // is never disposed) is left permanently disowned: painting frames it does not own under
+        // "Connected.", unable to ever auto-reconnect. Ownership-gated, so disposing a background
+        // ViewModel can never stop the foreground one's stream. Placed after the unsubscribes so
+        // this dying ViewModel does not re-enter its own handler, while every other subscriber
+        // still sees the (Intentional) Disconnected.
+        if (OwnsActiveReceiver)
+            _bridge.StopReceiver();
+
         ForceExitFullScreen();
         DisposePtz();
     }
@@ -397,6 +454,7 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
             _reconnectState = ReconnectState.InWindow;
             _userInitiatedStop = false;
             IsReconnecting = true;
+            IsStopped = false; // a retry is not a stopped stream: never show "Stopped" and a countdown together
             RetryRemainingSeconds = ReconnectConstants.RetryWindowSeconds;
             RetryStatusMessage = $"Reconnecting... {RetryRemainingSeconds}s remaining";
             StartCountdown();
@@ -404,13 +462,33 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
         });
     }
 
+    /// <summary>True while the receiver this ViewModel started is still the one the shared bridge is
+    /// running. False for any ViewerViewModel another instance has taken the bridge from; such a
+    /// ViewModel must never open or complete a reconnect window nor narrate the bridge's state as its
+    /// own (the drop trigger, the sustained-Connecting backstop, CompleteReconnect and the "Connected."
+    /// status are gated on this), or two reconnect loops fight over one receiver and the user sees one
+    /// source's video labelled with another source's status. User-initiated Stop and the attempt loop
+    /// of an already-open window are deliberately not gated: they act on this ViewModel's own
+    /// session, and ReleaseIfDisowned retires a disowned ViewModel within one stats sample.</summary>
+    private bool OwnsActiveReceiver => _bridge.ReceiverGeneration == _receiverGeneration;
+
+    /// <summary>True once this ViewModel has asked the bridge for a receiver at least once. A
+    /// ViewModel that never did was never an owner and therefore cannot be *dis*owned — without
+    /// this term the level check in <see cref="ReleaseIfDisowned"/> would fire on any ViewModel
+    /// whose <see cref="IsPlaying"/> was set without a Start(), which is how much of the unit suite
+    /// constructs a "playing" viewer.</summary>
+    private bool HasEverClaimedReceiver => _receiverGeneration >= 0;
+
     /// <summary>
     /// Call from a background callback to check if connection was unexpectedly dropped.
     /// </summary>
     public void CheckForUnexpectedDrop()
     {
         var connState = _bridge.GetConnectionState();
-        if (connState == ConnectionState.Disconnected && IsPlaying && !_userInitiatedStop && _reconnectState == ReconnectState.Idle)
+        if (connState == ConnectionState.Disconnected
+            && _bridge.GetLastStopReason() == ReceiverStopReason.ConnectionLost
+            && OwnsActiveReceiver
+            && IsPlaying && !_userInitiatedStop && _reconnectState == ReconnectState.Idle)
         {
             BeginReconnectWindow();
         }
@@ -432,6 +510,15 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
         if (_reconnectState != ReconnectState.InWindow && _reconnectState != ReconnectState.Attempting)
             return;
 
+        // The receiver can recover on its own between ticks: the pump keeps running through a
+        // ConnectionLost, so a frame may have arrived and moved the bridge to Connected. Tearing it
+        // down here would destroy a healthy connection and hand the window a Connecting bridge.
+        if (_bridge.GetConnectionState() == ConnectionState.Connected)
+        {
+            CompleteReconnect();
+            return;
+        }
+
         _reconnectState = ReconnectState.Attempting;
         RetryStatusMessage = "Attempting reconnect...";
 
@@ -442,6 +529,7 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
             if (!string.IsNullOrEmpty(SourceId))
             {
                 _bridge.StartReceiver(SourceId, QualityProfile);
+                _receiverGeneration = _bridge.ReceiverGeneration;
                 var state = _bridge.GetConnectionState();
 
                 if (state == ConnectionState.Connected)
@@ -460,20 +548,40 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
             _reconnectState = ReconnectState.InWindow;
     }
 
+    /// <summary>
+    /// Ends the current reconnect window as a success. Main-thread only, and deliberately **not**
+    /// wrapped in <see cref="IMainThreadDispatcher"/>: both callers — the
+    /// <see cref="OnBridgeConnectionStateChanged"/> dispatcher body and <see cref="RunAttempt"/>,
+    /// itself posted to the main thread — are already on it. The wrapper used to post this body one
+    /// turn later, so a countdown expiry queued *behind* the bridge's Connected event could run
+    /// *in front* of it: the window completed, then FailReconnect stopped the healthy,
+    /// just-reconnected receiver and wrote "Connection lost. Reconnection failed." over it. Running
+    /// in the caller's turn removes that interleaving class instead of guarding one instance of it.
+    /// </summary>
     private void CompleteReconnect()
     {
-        _dispatcher.BeginInvokeOnMainThread(() =>
-        {
-            // Success is terminal for this reconnect window; leaving the state machine at Idle
-            // (rather than a dedicated "Successful" state) lets the next drop open a new window.
-            _reconnectState = ReconnectState.Idle;
-            IsReconnecting = false;
-            IsPlaying = true;
-            StatusMessage = "Connected.";
-            RetryRemainingSeconds = 0;
-            RetryStatusMessage = null;
-            DisposeTimers();
-        });
+        // Defensive, not load-bearing: after RC19 no queued terminal transition can exist, but the
+        // invariants still hold — a failed window is terminal, only the owner may declare success,
+        // and success is only real if the bridge agrees right now (the event that got us here may
+        // be stale because an attempt tick restarted the receiver).
+        if (_reconnectState == ReconnectState.Failed)
+            return;
+
+        if (!OwnsActiveReceiver)
+            return;
+
+        if (_bridge.GetConnectionState() != ConnectionState.Connected)
+            return;
+
+        // Success is terminal for this reconnect window; leaving the state machine at Idle
+        // (rather than a dedicated "Successful" state) lets the next drop open a new window.
+        _reconnectState = ReconnectState.Idle;
+        IsReconnecting = false;
+        IsPlaying = true;
+        StatusMessage = "Connected.";
+        RetryRemainingSeconds = 0;
+        RetryStatusMessage = null;
+        DisposeTimers();
     }
 
     // --- FR4: 1s countdown ---
@@ -503,18 +611,42 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
 
     // --- FR5: Expiry / fail ---
 
+    /// <summary>
+    /// Ends the current reconnect window as a failure. Main-thread only and, like
+    /// <see cref="CompleteReconnect"/>, deliberately not dispatcher-wrapped: its only caller
+    /// (<see cref="TickCountdown"/>) already runs on the main thread.
+    /// </summary>
     private void FailReconnect()
     {
-        _dispatcher.BeginInvokeOnMainThread(() =>
-        {
-            DisposeTimers();
-            _reconnectState = ReconnectState.Failed;
-            IsReconnecting = false;
-            IsPlaying = false;
-            StatusMessage = "Connection lost. Reconnection failed.";
-            RetryStatusMessage = null;
-            CanReconnect = true;
-        });
+        // Symmetric with CompleteReconnect's guards and, like them, defensive after RC19 —
+        // TickCountdown evaluated the same condition earlier in this same turn. The invariant is
+        // what matters: only an open window may be failed, never an Idle or already-completed one.
+        if (_reconnectState != ReconnectState.InWindow && _reconnectState != ReconnectState.Attempting)
+            return;
+
+        DisposeTimers();
+        _reconnectState = ReconnectState.Failed;
+        IsReconnecting = false;
+        IsPlaying = false;
+        // Failed is terminal: never leave a receiver pumping behind the terminal message. The
+        // pump survives a ConnectionLost (that is what lets NDI recover on its own), so without
+        // this the orphan keeps burning battery and, if the source returns, repaints live video
+        // underneath "Connection lost. Reconnection failed." (#348, Nielsen #1). The resulting
+        // Disconnected is tagged Intentional by the bridge's stop-depth counter and this method
+        // has already left _reconnectState at Failed, so it cannot re-open the window.
+        _bridge.StopReceiver();
+        // Before BeginExitFullScreen: on a compact device the exit only *requests* portrait, so
+        // IsFullScreen stays true for up to 3s — the in-video Stopped badge is the only thing on
+        // screen during that window.
+        IsStopped = true;
+        // Playback has definitively ended, so leave full screen the way Stop() already does.
+        // Idempotent; on a compact device in landscape this requests portrait and completes on
+        // the resulting orientation change. Doing it here and not when the window opens is what
+        // keeps a transient drop from force-rotating the device.
+        BeginExitFullScreen();
+        StatusMessage = "Connection lost. Reconnection failed.";
+        RetryStatusMessage = null;
+        CanReconnect = true;
     }
 
     // --- FR6: Cancel retry ---
@@ -525,10 +657,24 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
         NotifyControlInteraction();
         DisposeTimers();
         _reconnectState = ReconnectState.Idle;
+        // The user has opted out of *this* drop. Without this the bridge's next ConnectionLost
+        // re-opens, a second later, the window the user just dismissed.
+        _userInitiatedStop = true;
         IsReconnecting = false;
-        CanReconnect = false;
+        IsPlaying = false;
+        // Same terminal contract as FailReconnect: no receiver left pumping behind a cancelled
+        // message, and the video surface says so instead of holding a frozen frame.
+        _bridge.StopReceiver();
+        IsStopped = true;
+        BeginExitFullScreen();
+        // Cancel must not be a dead end: the Reconnect button is the only control still on screen
+        // once IsPlaying is false (PlaybackControlsView.xaml:86-87 hides the Stop row).
+        CanReconnect = true;
         RetryRemainingSeconds = ReconnectConstants.RetryWindowSeconds;
-        RetryStatusMessage = "Reconnection cancelled.";
+        RetryStatusMessage = null;
+        // RetryStatusMessage is only rendered inside the IsReconnecting stack, so the old
+        // assignment was invisible the instant it was made — this belongs on the status line.
+        StatusMessage = "Reconnection cancelled.";
     }
 
     // --- FR7: Reconnect command ---
@@ -581,7 +727,17 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
         if (requested is not { } profile || QualityProfile == profile) return;
 
         QualityProfile = profile;
+        // A bandwidth-tier change recreates the receiver inside the bridge
+        // (NdiViewerBridge.SetQualityProfile -> StartReceiver), which bumps the ownership token —
+        // re-claim it, or this ViewModel silently stops being the bridge's client. Conditional,
+        // because Balanced and High map to the same bandwidth tier (NdiViewerBridge.MapBandwidth),
+        // so that change restarts nothing and bumps nothing: re-recording unconditionally would let
+        // a ViewModel that never asked the bridge for a receiver claim ownership of another's — the
+        // exact inversion the token exists to prevent.
+        var generationBeforeProfileChange = _bridge.ReceiverGeneration;
         _bridge.SetQualityProfile(profile);
+        if (_receiverGeneration == generationBeforeProfileChange)
+            _receiverGeneration = _bridge.ReceiverGeneration;
 
         // Persist quality profile to source (if connected)
         if (!string.IsNullOrEmpty(SourceId))

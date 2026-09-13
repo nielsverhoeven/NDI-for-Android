@@ -25,6 +25,7 @@ public partial class ViewerViewModel
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(AreControlsVisible))]
+    [NotifyPropertyChangedFor(nameof(IsFullScreenRetryVisible))]
     private bool _isFullScreen;
 
     [ObservableProperty]
@@ -45,6 +46,11 @@ public partial class ViewerViewModel
     /// available AND the user has opened the camera layer. The root overlay's own
     /// <see cref="AreControlsVisible"/> binding still gates all of it for auto-hide.</summary>
     public bool IsFullScreenPtzVisible => IsPtzControlActive && IsPtzLayerVisible;
+
+    /// <summary>Gates the in-video reconnect badge. The windowed Deck/Sheet already shows the
+    /// countdown through PlaybackControlsView, and the full-screen overlay auto-hides, so full
+    /// screen is the one layout with nowhere else to put it.</summary>
+    public bool IsFullScreenRetryVisible => IsFullScreen && IsReconnecting;
 
     protected override void OnPropertyChanged(PropertyChangedEventArgs e)
     {
