@@ -11,6 +11,7 @@ public partial class ViewerViewModel
 
     private ITimer? _statsTimer;
     private ConnectionHintPolicy.State _hintState = ConnectionHintPolicy.State.Idle;
+    private int _sustainedConnectingSamples;
 
     /// <summary>
     /// "Connection weak — try Smooth" while the bridge reports sustained low fps / high drops;
@@ -53,6 +54,8 @@ public partial class ViewerViewModel
     /// <summary>Applies one 1 s stats sample. Public so tests (and any host) can push samples directly. Main thread only.</summary>
     public void ApplyConnectionSample(bool connected, float fps, float dropPercent)
     {
+        CheckForSustainedConnecting();
+
         // Not a judgement about the link while (re)connecting or when nothing is being received
         // (also keeps the hint off the x86 emulator, where the bridge never reports Connected).
         if (!IsPlaying || IsReconnecting || !connected)
@@ -63,6 +66,41 @@ public partial class ViewerViewModel
 
         _hintState = ConnectionHintPolicy.Next(_hintState, fps, dropPercent);
         ConnectionHint = ConnectionHintPolicy.HintText(_hintState.IsHintActive, QualityProfile);
+    }
+
+    /// <summary>
+    /// Level-triggered backstop for the edge-triggered drop signal. A <c>Disconnected(ConnectionLost)</c>
+    /// transition can be superseded before the UI thread reads it: any restart — a quality-profile
+    /// bandwidth change, a source switch, the resume restore, the attempt loop's own final attempt —
+    /// re-stamps the bridge to Connecting/Intentional, and the fresh receiver's connection-lost check
+    /// can never fire because it has never been connected (<c>hasEverConnected</c> in the video pump).
+    /// The receiver then sits in Connecting forever while this ViewModel still claims to be playing.
+    /// Sustained Connecting is that state and nothing else:
+    /// an intentional stop leaves the bridge <see cref="ConnectionState.Disconnected"/>, so a
+    /// navigation handoff can never trip this; a source that never connected at all leaves
+    /// <c>_hasConnectedSinceStart</c> false, so the initial-connect experience is unchanged; and a
+    /// ViewModel the bridge has been taken from fails the ownership term.
+    /// </summary>
+    private void CheckForSustainedConnecting()
+    {
+        if (IsPlaying
+            && !IsReconnecting
+            && !_userInitiatedStop
+            && _hasConnectedSinceStart
+            && _reconnectState == ReconnectState.Idle
+            && OwnsActiveReceiver
+            && _bridge.GetConnectionState() == ConnectionState.Connecting)
+        {
+            if (++_sustainedConnectingSamples >= ReconnectConstants.SustainedConnectingSamples)
+            {
+                _sustainedConnectingSamples = 0;
+                BeginReconnectWindow();
+            }
+
+            return;
+        }
+
+        _sustainedConnectingSamples = 0;
     }
 
     private void ResetConnectionHint()

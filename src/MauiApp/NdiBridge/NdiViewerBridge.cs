@@ -52,6 +52,11 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
     /// running on a pump thread may call StopReceiver re-entrantly.</summary>
     private int _stopDepth;
 
+    /// <summary>Backs <see cref="ReceiverGeneration"/>. Guarded by <see cref="_connectionLock"/> and
+    /// deliberately not by <see cref="_stateLock"/>: the state lock is held across the native
+    /// create/connect calls, and this must stay readable from the UI thread without blocking on them.</summary>
+    private long _receiverGeneration;
+
     // Latest-frame double buffer. The pump copies each native frame into _backPixels
     // (only ever touched by the pump thread) and swaps front/back references under
     // _frameLock. GetLatestFrame hands out the front reference without copying —
@@ -111,6 +116,11 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
     {
         if (string.IsNullOrWhiteSpace(sourceId))
             throw new ArgumentException("Source id is required.", nameof(sourceId));
+
+        // Ownership token: the most recent caller to ask for a receiver owns it. Bumped here — before
+        // the stop/create and before the two failure returns below — so a second ViewModel taking the
+        // bridge over always disowns the first, even when both asked for the same source id.
+        lock (_connectionLock) _receiverGeneration++;
 
         // Full clean stop of any existing receiver before creating a new one.
         StopReceiver();
@@ -279,6 +289,12 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
     public ReceiverStopReason GetLastStopReason()
     {
         lock (_connectionLock) return _lastStopReason;
+    }
+
+    /// <inheritdoc />
+    public long ReceiverGeneration
+    {
+        get { lock (_connectionLock) return _receiverGeneration; }
     }
 
     public NdiVideoFrame? GetLatestFrame()

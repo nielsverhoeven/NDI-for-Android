@@ -43,6 +43,13 @@ public interface INdiViewerBridge
     /// to cache it.</summary>
     ReceiverStopReason GetLastStopReason();
 
+    /// <summary>Monotonic id of the receiver this bridge was last asked to run. Incremented by every
+    /// <see cref="StartReceiver"/> call, successful or not. A caller that reads it straight after its
+    /// own <see cref="StartReceiver"/> can tell, later, whether the receiver it asked for is still
+    /// the one this (shared, single-receiver) bridge is driving — the bridge is a singleton and more
+    /// than one ViewModel can be alive and subscribed at the same time. 0 before the first call.</summary>
+    long ReceiverGeneration { get; }
+
     NdiVideoFrame? GetLatestFrame();
     float GetDroppedFramePercent();
     (int Width, int Height) GetActualResolution();
