@@ -50,7 +50,7 @@ public class NdiNavigationHandoffServiceTests
     }
 
     [Fact]
-    public async Task HandlePrimaryDestinationChangeAsync_LeavingView_ReturnsTheBridgesStopTaskWithoutBlocking()
+    public void HandlePrimaryDestinationChangeAsync_LeavingView_ReturnsTheBridgesStopTaskWithoutBlocking()
     {
         var neverCompletes = new TaskCompletionSource().Task;
         _viewerBridgeMock.Setup(b => b.StopReceiverAsync()).Returns(neverCompletes);
@@ -58,6 +58,8 @@ public class NdiNavigationHandoffServiceTests
 
         var task = sut.HandlePrimaryDestinationChangeAsync(PrimaryNavDestination.View, PrimaryNavDestination.Home);
 
+        // It must be the *bridge's* task, not a swallowed one — that is what makes AppShell's
+        // diagnostic WaitAsync(3s) mean anything.
         Assert.False(task.IsCompleted);
         _viewerBridgeMock.Verify(b => b.StopReceiverAsync(), Times.Once);
     }

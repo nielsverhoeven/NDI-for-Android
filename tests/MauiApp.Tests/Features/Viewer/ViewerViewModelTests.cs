@@ -864,6 +864,28 @@ public class ViewerViewModelTests
     }
 
     [Fact]
+    public void Stop_RequestsTheBridgeStopBeforeAnnouncingIsStopped()
+    {
+        var sut = CreatePlayingSut();
+        var order = new List<string>();
+        _bridgeMock.Setup(b => b.StopReceiverAsync())
+            .Callback(() => order.Add("StopReceiverAsync"))
+            .Returns(Task.CompletedTask);
+        sut.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(ViewerViewModel.IsStopped) && sut.IsStopped)
+                order.Add("IsStopped");
+        };
+
+        sut.StopCommand.Execute(null);
+
+        // The bridge blanks its front frame buffer in StopReceiverAsync's synchronous prologue and
+        // the View blanks its canvas on IsStopped; inverting these would leave a window in which
+        // GetLatestFrame() still hands out the last live frame after the canvas was cleared (#348).
+        Assert.Equal(new[] { "StopReceiverAsync", "IsStopped" }, order);
+    }
+
+    [Fact]
     public void StopCommand_DoesNotWaitForTheBridgeTeardown()
     {
         // A teardown that never finishes: if any call site awaits it, this test hangs or the
@@ -872,7 +894,12 @@ public class ViewerViewModelTests
         _bridgeMock.Setup(b => b.StopReceiverAsync()).Returns(neverCompletes);
         var sut = CreatePlayingSut();
 
-        sut.StopCommand.Execute(null);
+        // Bounded on purpose: run the act on a pool thread and wait here. If a call site ever
+        // awaits the teardown, this fails as a red test instead of hanging the test process — and a
+        // hung CI job produces no usable output (#408).
+        var act = Task.Run(() => sut.StopCommand.Execute(null));
+        Assert.True(act.Wait(TimeSpan.FromSeconds(2)), "Stop() blocked on the bridge teardown.");
+        act.GetAwaiter().GetResult(); // surface a genuine exception as itself, not as a timeout
 
         Assert.False(sut.IsPlaying);
         Assert.True(sut.IsStopped);
@@ -887,7 +914,12 @@ public class ViewerViewModelTests
         var sut = CreatePlayingSut();
         sut.BeginReconnectWindow();
 
-        sut.CancelRetryCommand.Execute(null);
+        // Bounded on purpose: run the act on a pool thread and wait here. If a call site ever
+        // awaits the teardown, this fails as a red test instead of hanging the test process — and a
+        // hung CI job produces no usable output (#408).
+        var act = Task.Run(() => sut.CancelRetryCommand.Execute(null));
+        Assert.True(act.Wait(TimeSpan.FromSeconds(2)), "CancelRetry blocked on the bridge teardown.");
+        act.GetAwaiter().GetResult(); // surface a genuine exception as itself, not as a timeout
 
         Assert.Equal("Reconnection cancelled.", sut.StatusMessage);
         Assert.True(sut.IsStopped);
@@ -900,8 +932,17 @@ public class ViewerViewModelTests
         _bridgeMock.Setup(b => b.StopReceiverAsync()).Returns(neverCompletes);
         var sut = CreatePlayingSut();
 
-        sut.BeginReconnectWindow();
-        _timeProvider.Advance(TimeSpan.FromSeconds(15));
+        // Bounded on purpose: run the act on a pool thread and wait here. If a call site ever
+        // awaits the teardown, this fails as a red test instead of hanging the test process — and a
+        // hung CI job produces no usable output (#408). MsFakeTimeProvider.Advance invokes the timer
+        // callback on the advancing thread, so both statements run inside the same Task.Run.
+        var act = Task.Run(() =>
+        {
+            sut.BeginReconnectWindow();
+            _timeProvider.Advance(TimeSpan.FromSeconds(15));
+        });
+        Assert.True(act.Wait(TimeSpan.FromSeconds(2)), "FailReconnect blocked on the bridge teardown.");
+        act.GetAwaiter().GetResult(); // surface a genuine exception as itself, not as a timeout
 
         Assert.Equal("Connection lost. Reconnection failed.", sut.StatusMessage);
         Assert.True(sut.CanReconnect);
@@ -914,7 +955,12 @@ public class ViewerViewModelTests
         _bridgeMock.Setup(b => b.StopReceiverAsync()).Returns(neverCompletes);
         var sut = CreatePlayingSut();
 
-        Assert.Null(Record.Exception(() => sut.Dispose()));
+        // Bounded on purpose: run the act on a pool thread and wait here. If a call site ever
+        // awaits the teardown, this fails as a red test instead of hanging the test process — and a
+        // hung CI job produces no usable output (#408).
+        var act = Task.Run(() => sut.Dispose());
+        Assert.True(act.Wait(TimeSpan.FromSeconds(2)), "Dispose blocked on the bridge teardown.");
+        act.GetAwaiter().GetResult(); // surface a genuine exception as itself, not as a timeout
     }
 
     [Fact]
