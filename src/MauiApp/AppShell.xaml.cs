@@ -393,9 +393,15 @@ public partial class AppShell : Shell
         // it is today.
         _currentPrimaryDestination = to;
         _handoffInProgress = false;
-        deferral.Complete();
+        // Traced BEFORE Complete(), not after: MAUI can resume the navigation inline from inside
+        // deferral.Complete(), so OnShellNavigated may run re-entrantly and emit shell.navigated
+        // first — which the #417 parser would read as a nested navigation. Functionally safe either
+        // way (_currentPrimaryDestination is already `to`, so the fallback branch stays dead), but
+        // the log has to stay parseable. ms= therefore measures navigating.begin -> deferral
+        // released, which is the interval that matters.
         _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "shell.deferral.complete",
             $"nav={navSeq} ms={Environment.TickCount64 - _navStartedAtTicks}");
+        deferral.Complete();
 
         RunHandoffDetached(navSeq, from, to);
     }

@@ -124,11 +124,14 @@ public partial class ViewerViewModel
     /// guard. Level-triggered on purpose: there is no single edge to hook — a pushed ViewerPage
     /// being popped, a deep link to another source, and another ViewModel's quality-profile restart
     /// all produce it — and the watchdog already ticks on every playing ViewModel.
-    /// Never calls StopReceiver(): the receiver belongs to another ViewModel now. Leaves exactly the
+    /// Never stops the receiver: it belongs to another ViewModel now. Leaves exactly the
     /// surface a user Stop leaves, so there is always a status line and one control (Reconnect),
     /// and records no connection-history event: this stream did not end, it changed hands.
-    /// Note this does NOT cover the navigation handoff (#410) — StopReceiver() does not bump the
-    /// token, so a pane whose bridge was stopped behind its back still owns it.
+    /// The View stops painting as soon as <see cref="ViewerViewModel.IsStopped"/> is set
+    /// (ViewerView.OnRenderTick), so this pane does not keep showing the new owner's video.
+    /// Note this does NOT cover the navigation handoff (#410) —
+    /// <see cref="INdiViewerBridge.StopReceiverAsync"/> does not bump the token, so a pane whose
+    /// bridge was stopped behind its back still owns it.
     /// </summary>
     private void ReleaseIfDisowned()
     {

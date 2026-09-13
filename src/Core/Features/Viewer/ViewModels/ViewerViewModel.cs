@@ -24,9 +24,10 @@ internal static class ReconnectConstants
     /// <summary>How many consecutive 1 s stats samples may report a bridge stuck in
     /// <see cref="ConnectionState.Connecting"/> before the level-triggered backstop opens a retry
     /// window. Five is a *latency* budget, not a stall budget: a receiver that has not produced its
-    /// first frame five capture cycles after being created is not going to
-    /// (<c>NdiViewerBridge.VideoCaptureTimeoutMs</c> is 1 s). A source that is connected but silent
-    /// reports <see cref="ConnectionState.Stalled"/> and never reaches this counter.</summary>
+    /// first frame five seconds after it was created is not going to. The unit is the stats sample,
+    /// not the bridge's capture timeout — <c>NdiViewerBridge.VideoCaptureTimeoutMs</c> is 250 ms, so
+    /// five samples are roughly twenty capture cycles. A source that is connected but silent reports
+    /// <see cref="ConnectionState.Stalled"/> and never reaches this counter.</summary>
     public const int SustainedConnectingSamples = 5;
 }
 
