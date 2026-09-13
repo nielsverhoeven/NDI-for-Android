@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.Input;
 using NdiForAndroid.Features.AppState.Models;
 using NdiForAndroid.Features.AppState.Repositories;
 using NdiForAndroid.Features.ConnectionHistory.Services;
+using NdiForAndroid.Features.DiagOverlay.Services;
 using NdiForAndroid.Features.Viewer.Models;
 using NdiForAndroid.Features.Ptz.Services;
 using NdiForAndroid.Features.Ptz.ViewModels;
@@ -48,6 +49,8 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
     private readonly IImmersiveModeService _immersiveMode;
     private readonly IScreenReaderAnnouncer _announcer;
     private readonly IOrientationLockService _orientationLock;
+    private readonly INetworkLinkService? _networkLink;
+    private readonly IDiagnosticOverlayService? _diagnostics;
 
     [ObservableProperty]
     private string? _sourceId;
@@ -166,7 +169,12 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
         PtzEndpointFormViewModel ptzEndpointForm,
         IImmersiveModeService immersiveMode,
         IScreenReaderAnnouncer announcer,
-        IOrientationLockService orientationLock)
+        IOrientationLockService orientationLock,
+        // Optional with a default so no existing test's construction changes (fixtures call this
+        // constructor positionally). Both are registered singletons, so ActivatorUtilities fills
+        // them in the app.
+        INetworkLinkService? networkLink = null,
+        IDiagnosticOverlayService? diagnostics = null)
     {
         _bridge = bridge;
         _timeProvider = timeProvider;
@@ -180,6 +188,8 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
         _immersiveMode = immersiveMode;
         _announcer = announcer;
         _orientationLock = orientationLock;
+        _networkLink = networkLink;
+        _diagnostics = diagnostics;
         RetryRemainingSeconds = ReconnectConstants.RetryWindowSeconds;
         StatusMessage = "Select a source on Home to start viewing.";
         _isAudioEnabled = bridge.IsAudioEnabled; // backing field: don't push the default back to the bridge
