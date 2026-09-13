@@ -268,7 +268,11 @@ ConnectionState GetConnectionState();
 event EventHandler<ConnectionState>? ConnectionStateChanged; // raised on the pump thread
 ```
 
-- `ConnectionState { Connecting, Connected, Disconnected }` is a **plain C# enum** defined in `src/Core/NdiBridge/NdiBridgeModels.cs`, alongside `DiscoveryMode`. No NDI SDK type crosses the bridge boundary (Dependency Rule 5).
+- `ConnectionState { Connecting, Connected, Disconnected, Stalled }` is a **plain C# enum** defined
+  in `src/Core/NdiBridge/NdiBridgeModels.cs`, alongside `DiscoveryMode`. No NDI SDK type crosses the
+  bridge boundary (Dependency Rule 5). `Connecting` and `Stalled` are deliberately separate: a
+  receiver that has never delivered a frame is not the same condition as a connected sender that
+  has stopped sending video, and only the former is a reconnect candidate.
 - Drop detection is an **internal bridge concern** (originally anticipated in #233, delivered with the real bridge in #277): the video pump in `src/MauiApp/NdiBridge/NdiViewerBridge.cs` demotes `Connected → Connecting` when no video frame has arrived for 3 s, and to `Disconnected` when `NDIlib_recv_get_no_connections` reports 0 after a connection previously existed.
 - `ConnectionStateChanged` and `TallyEchoChanged` are raised on the pump thread; the `ViewerViewModel` marshals resulting observable mutations through `IMainThreadDispatcher` and still calls `GetConnectionState()` from its `TimeProvider`-driven state machine, so the ViewModel remains fully testable against `Mock<INdiViewerBridge>` with no native library.
 - The viewer bridge runs **two dedicated pump threads** per receiver (video+metadata, audio) with an atomic running flag; thread joins are never performed while holding the state lock, and the latest decoded frame is exposed through a copy-free front/back double buffer.

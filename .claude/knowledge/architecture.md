@@ -245,6 +245,86 @@ transported by the teamlead — not the developer-written `decision-log.md` that
 fourth time. The distinction that matters is authorship, not location: agents write their own
 knowledge files, implementers write none.
 
+### 2026-09-13 — #392 round 3 (final): second adversarial review of PR #407 (`86d8866`)
+
+**APPROVE-WITH-CHANGES (10 more, RC19-RC28).** RC9-RC18 are present and literally implemented;
+every round-1 and round-2 finding is closed. Rulings: 8 fix-now, 1 defer, 0 reject. Verdict file:
+`verdict-392-round3.md`. This round is meant to be the last, so where round 2 added point guards
+this round removes the conditions that made them necessary.
+
+The shape of my round-2 miss, in one line each: I guarded an ordering instead of removing it; I
+introduced an ownership rule without its dual; and I built an exact-sounding guard on an enum member
+that means two different things.
+
+**1. A state machine must not depend on dispatcher semantics (RC19).** `CompleteReconnect()` and
+`FailReconnect()` both wrapped their bodies in `IMainThreadDispatcher` although **every** caller is
+already on the UI thread (`OnBridgeConnectionStateChanged`'s body, `RunAttempt` and `TickCountdown`
+are all posted). The extra hop bought nothing and cost the ordering guarantee: a countdown expiry
+queued behind the bridge's `Connected` event could run in front of it, so the window completed and
+RC11's new terminal stop then killed the healthy, just-reconnected receiver under "Connection lost.
+Reconnection failed." Whether that is reachable depends on whether MAUI's
+`MainThread.BeginInvokeOnMainThread` short-circuits when already on the main thread — and **a
+correctness argument that turns on an undocumented platform optimisation is not an argument.** Both
+methods now run in their caller's turn; the symmetric `FailReconnect` guard and RC14b's
+`CompleteReconnect` guards stay, explicitly labelled defensive. **Rule for this repo: dispatch at the
+thread boundary (a public entry point called from a pump/timer callback), never between two private
+UI-thread methods.** The two real boundaries — `BeginReconnectWindow()` and the bridge event handler —
+keep their hop.
+
+**2. Ownership needed its dual: release on dispose, self-demote when disowned (RC20/RC21).** Round 2
+recorded "at most one ViewerViewModel may drive the shared bridge, and the bridge decides which", but
+said nothing about what happens when the owner *goes away* or *loses*. Both gaps are reachable in
+four ordinary taps (Expanded: Watch in pane -> Home -> Resume watching -> Back): `ViewerPage`
+disposes its ViewModel without stopping the bridge (`ViewerPage.xaml.cs:52-57`), so the receiver kept
+pumping with nobody driving it, while the never-disposed `PaneViewer` was left on screen painting
+frames it did not own, saying "Connected.", and permanently unable to auto-reconnect — the exact
+#348 / Nielsen-#1 dead end #392 exists to remove, created by #392's own guard. Continuity on Back was
+checked and judged an **accident**, not a feature: `Dispose()` already models "this viewer is
+finished", no hand-off protocol exists anywhere, and on a phone the same path leaves an invisible
+receiver playing **audio**. Fixed as the invariant's dual — `Dispose()` stops the receiver *it owns*,
+and a still-playing ViewModel that has lost the token demotes itself to the Stopped state on the
+existing 1 s stats watchdog (`ReleaseIfDisowned`), never touching a bridge it no longer owns.
+**Adoption was rejected**: inheriting another ViewModel's receiver needs a source-identity
+precondition the bridge does not expose plus re-derivation of four flags the adopting VM never
+observed. **General principle, same as RC15's:** an ownership token needs a level-triggered
+reconciliation, because there is no single edge to hook (pop, deep link, another VM's quality
+restart). Note this does **not** close #410 — the navigation handoff stops the receiver without
+bumping the token, so the pane still *owns* a receiver that no longer exists.
+
+**3. A guard is only as exact as the signal it reads (RC22).** RC15 keyed the level backstop on
+sustained `ConnectionState.Connecting` and I asserted twice, in shipped source comments, that this is
+the superseded-drop state "and nothing else". It is not: the bridge also demotes a **still-connected**
+receiver to `Connecting` after 3 s without video (`NdiViewerBridge.cs:458-462`), so a >=5 s video
+stall opened a window, rebuilt the receiver seven times on the UI thread and could end on a false
+terminal failure — for a source that never disconnected. Rebuilding a receiver cannot make a sender
+send video, so escalating a stall is strictly harmful. Fixed by making the bridge say what it means:
+**`ConnectionState.Stalled`**, appended last (so `Connecting` keeps enum value 0 and Moq's default is
+unchanged), raised in place of `Connecting` by the stall demotion. `ConnectionState` has no `switch`
+anywhere and only three consumers, so the blast radius is one pump line plus doc updates.
+`Connecting` now means exactly "a receiver was created and has not delivered a frame yet", which is
+what makes RC15's guard provably exact instead of approximately true. A `HasConnections`/
+`GetConnectionStats()` query was **rejected**: it needs a cached pump field with its own reset
+discipline and leaves the enum still lying, so the guard would read "Connecting AND not really
+connecting". **Rule: when a guard needs a distinction, add the distinction to the model — do not
+approximate it with a second field.** The accepted cost is a product residual (a connected-but-silent
+source shows a frozen picture under "Connected."), recorded in `openForUser` and filed as F7.
+
+**Smaller invariant repairs.** The ownership token was re-recorded unconditionally after
+`SetQualityProfile`, but Balanced and High map to the same bandwidth tier, so that call restarts
+nothing and bumps nothing — a non-owner could claim ownership by tapping a quality button (RC23). The
+sustained-`Connecting` counter survived a stop, so a window could open on the first sample after a
+restart (RC24). `CompleteReconnect` and the `"Connected."` status branch had no ownership term, so a
+disowned ViewModel could declare success and narrate another ViewModel's connection under its own
+`SourceId` (RC25).
+
+**Test-infrastructure note.** RC19-RC25 cost **one** existing-test edit (a rename), because
+`ReleaseIfDisowned` carries a `HasEverClaimedReceiver` (`_receiverGeneration >= 0`) term: a ViewModel
+that never asked the bridge for a receiver was never an owner and so cannot be disowned. That is the
+honest semantics *and* it leaves every `CreateSut() + IsPlaying = true` test — which is most of the
+full-screen suite — untouched. Seven new tests; RC19's guards and RC22's bridge half stay explicitly
+untested (private methods / no unit tests in `src/MauiApp`) rather than covered by a test that
+pretends.
+
 ### 2026-09-13 — #401 e2e assertion: no bottom navigation bar in the rail placement (fit-check)
 
 **APPROVE-WITH-CHANGES (4).** Test-project-only, no production file touched, correct class
