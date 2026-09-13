@@ -69,6 +69,91 @@ public sealed class AppLaunchTests : UiTestBase
         Assert.True(app.Viewer.HasVideoSurface, "The viewer opened without a video surface");
     });
 
+    /// <summary>
+    /// Every assertion in this test is preceded by an explicit wait, because both
+    /// <c>PageObject.IsPresent</c> and <c>NavigationBar.IsPresent</c> deliberately do not wait:
+    /// <c>WaitUntilFullScreen()</c> after each enter (blocks on the overlay-exclusive
+    /// `viewer.fullScreen.qualityCycle`), <c>WaitUntilPlaying()</c> after each exit (blocks on
+    /// `viewer.stop`, i.e. the Deck/Sheet layout has actually re-rendered). This is required
+    /// change 4's anti-race measure applied to all four transitions, not only to the Back-button
+    /// one.
+    /// </summary>
+    [RetryableSkippableFact]
+    public void FullScreen_EnterViaButton_HidesChromeAndExitButtonWorks() => Run(app =>
+    {
+        app.ResetToHome();
+        app.Navigation.GoTo(NavDestination.View);
+        app.Sources.WaitUntilVisible();
+
+        Skip.If(app.Sources.SourceCount == 0,
+            "No NDI sources discovered on this network; full screen needs a playing source.");
+
+        app.Sources.WatchSource();
+        app.Viewer.WaitUntilVisible();
+        app.Viewer.WaitUntilPlaying();
+
+        app.Viewer.ToggleFullScreen();
+        app.Viewer.WaitUntilFullScreen();
+        Assert.True(app.Viewer.IsFullScreen, "Full screen did not engage after the toggle button");
+        Assert.False(app.Navigation.IsPresent(NavDestination.Home),
+            "The bottom tab bar / left rail is still on screen in full screen");
+
+        app.Viewer.ExitFullScreen();
+        app.Viewer.WaitUntilPlaying();
+        Assert.False(app.Viewer.IsFullScreen, "Full screen did not exit after the overlay's exit button");
+        Assert.True(app.Navigation.IsPresent(NavDestination.Home),
+            "Navigation chrome was not restored after exiting full screen");
+
+        app.Viewer.ToggleFullScreen();
+        app.Viewer.WaitUntilFullScreen();
+        Assert.True(app.Viewer.IsFullScreen, "Full screen did not re-engage for the Back-button check");
+
+        app.PressBackButton();
+        app.Viewer.WaitUntilPlaying();
+        Assert.False(app.Viewer.IsFullScreen, "Back button did not exit full screen");
+        Assert.True(app.Navigation.IsPresent(NavDestination.Home),
+            "Navigation chrome was not restored after Back exited full screen");
+    });
+
+    /// <summary>
+    /// #383/#384 slice 3: on a compact (phone-class) device, rotating to landscape while playing
+    /// enters full screen in place with no page transition, and rotating back exits it. Skipped on
+    /// a device that reports as tablet-class (`SmallestWidthDp >= 600`, mirroring
+    /// `ViewerControlLayout.IsCompactDevice`) — tablets never auto-enter/exit full screen on
+    /// rotation by design (see the up-front design consult, decision (b)), so this assertion does
+    /// not apply there.
+    /// </summary>
+    [RetryableSkippableFact]
+    public void Viewer_RotatedToLandscape_EntersFullScreenInPlace() => Run(app =>
+    {
+        app.ResetToHome();
+        app.Navigation.GoTo(NavDestination.View);
+        app.Sources.WaitUntilVisible();
+
+        Skip.If(app.Sources.SourceCount == 0,
+            "No NDI sources discovered on this network; rotation-driven full screen needs a playing source.");
+
+        Skip.If(app.Metrics.SmallestWidthDp >= 600,
+            "Rotation-driven full screen is compact-device-only (#384 slice 3); this device reports " +
+            $"sw={app.Metrics.SmallestWidthDp:0}dp, i.e. tablet-class.");
+
+        app.Sources.WatchSource();
+        app.Viewer.WaitUntilVisible();
+        app.Viewer.WaitUntilPlaying();
+
+        app.Rotate(ScreenOrientation.Landscape);
+        app.Viewer.WaitUntilFullScreen();
+        Assert.True(app.Viewer.IsFullScreen, "Rotating to landscape did not enter full screen in place");
+        Assert.False(app.Navigation.IsPresent(NavDestination.Home),
+            "The bottom tab bar / left rail is still on screen in full screen");
+
+        app.Rotate(ScreenOrientation.Portrait);
+        app.Viewer.WaitUntilPlaying();
+        Assert.False(app.Viewer.IsFullScreen, "Rotating back to portrait did not exit full screen");
+        Assert.True(app.Navigation.IsPresent(NavDestination.Home),
+            "Navigation chrome was not restored after rotating back to portrait");
+    });
+
     [RetryableSkippableTheory]
     [InlineData(ScreenOrientation.Portrait)]
     [InlineData(ScreenOrientation.Landscape)]

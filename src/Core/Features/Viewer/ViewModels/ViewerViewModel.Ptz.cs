@@ -43,9 +43,17 @@ public partial class ViewerViewModel
     /// </summary>
     public bool IsPtzControlActive => IsPtzSupported || HasPtzOverride;
 
-    partial void OnIsPtzSupportedChanged(bool value) => OnPropertyChanged(nameof(IsPtzControlActive));
+    partial void OnIsPtzSupportedChanged(bool value)
+    {
+        OnPropertyChanged(nameof(IsPtzControlActive));
+        OnPropertyChanged(nameof(IsFullScreenPtzVisible));
+    }
 
-    partial void OnHasPtzOverrideChanged(bool value) => OnPropertyChanged(nameof(IsPtzControlActive));
+    partial void OnHasPtzOverrideChanged(bool value)
+    {
+        OnPropertyChanged(nameof(IsPtzControlActive));
+        OnPropertyChanged(nameof(IsFullScreenPtzVisible));
+    }
 
     partial void StartPtz(NdiSource? source)
     {

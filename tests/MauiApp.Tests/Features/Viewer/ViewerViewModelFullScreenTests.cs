@@ -27,6 +27,7 @@ public class ViewerViewModelFullScreenTests
     private readonly Mock<IScreenReaderAnnouncer> _announcerMock = new();
     private readonly Mock<IPtzControllerFactory> _ptzControllerFactoryMock = new();
     private readonly Mock<IPtzController> _ptzControllerMock = new();
+    private readonly Mock<IOrientationLockService> _orientationLockMock = new();
 
     public ViewerViewModelFullScreenTests()
     {
@@ -48,7 +49,16 @@ public class ViewerViewModelFullScreenTests
         _bridgeMock.Object, _timeProvider, _dispatcher, _appStateRepoMock.Object,
         _lifecycleMock.Object, _sourceRepoMock.Object, _connectionHistoryMock.Object,
         _ptzControllerFactoryMock.Object, new PtzEndpointFormViewModel(_ptzControllerFactoryMock.Object),
-        _immersiveModeMock.Object, _announcerMock.Object);
+        _immersiveModeMock.Object, _announcerMock.Object, _orientationLockMock.Object);
+
+    /// <summary>Configures the lifecycle mock as a compact (phone-class) device at the given
+    /// orientation. Tests that never call this exercise the tablet/"unknown" path (SmallestWidthDp
+    /// defaults to 0 via Moq), matching every pre-#384-slice-3 test unmodified.</summary>
+    private void SetCompactDevice(bool isLandscape)
+    {
+        _lifecycleMock.Setup(l => l.SmallestWidthDp).Returns(360);
+        _lifecycleMock.Setup(l => l.IsLandscape).Returns(isLandscape);
+    }
 
     [Fact]
     public void ToggleFullScreenCommand_WhilePlaying_SetsIsFullScreenTrue()
@@ -95,16 +105,31 @@ public class ViewerViewModelFullScreenTests
     }
 
     [Fact]
-    public void HideControlsOverlay_WhileFullScreen_HidesOverlayAfterThreeSeconds()
+    public void HideControlsOverlay_WhileFullScreen_HidesAfterTwoPointFiveSeconds()
     {
         var sut = CreateSut();
         sut.IsPlaying = true;
         sut.ToggleFullScreenCommand.Execute(null);
 
-        _timeProvider.Advance(TimeSpan.FromSeconds(3));
+        _timeProvider.Advance(TimeSpan.FromSeconds(2.5));
 
         Assert.False(sut.IsControlsOverlayVisible);
         Assert.False(sut.AreControlsVisible);
+    }
+
+    [Fact]
+    public void HideControlsOverlay_WithPtzLayerOpen_HidesAfterFiveSeconds()
+    {
+        var sut = CreateSut();
+        sut.IsPlaying = true;
+        sut.ToggleFullScreenCommand.Execute(null);
+        sut.TogglePtzLayerCommand.Execute(null);
+
+        _timeProvider.Advance(TimeSpan.FromSeconds(2.5));
+        Assert.True(sut.IsControlsOverlayVisible, "2.5s must not hide the overlay while the PTZ layer is open");
+
+        _timeProvider.Advance(TimeSpan.FromSeconds(2.5)); // total 5s
+        Assert.False(sut.IsControlsOverlayVisible);
     }
 
     [Fact]
@@ -121,7 +146,29 @@ public class ViewerViewModelFullScreenTests
     }
 
     [Fact]
-    public void ShowControlsOverlayCommand_WhileFullScreen_RevealsControlsAndResetsTimer()
+    public void ToggleControlsOverlayCommand_NotFullScreen_DoesNothing()
+    {
+        var sut = CreateSut();
+
+        sut.ToggleControlsOverlayCommand.Execute(null);
+
+        Assert.True(sut.IsControlsOverlayVisible);
+    }
+
+    [Fact]
+    public void ToggleControlsOverlayCommand_WhileVisible_HidesImmediately()
+    {
+        var sut = CreateSut();
+        sut.IsPlaying = true;
+        sut.ToggleFullScreenCommand.Execute(null);
+
+        sut.ToggleControlsOverlayCommand.Execute(null);
+
+        Assert.False(sut.IsControlsOverlayVisible);
+    }
+
+    [Fact]
+    public void ToggleControlsOverlayCommand_WhileHidden_ShowsAndRearmsTimer()
     {
         var sut = CreateSut();
         sut.IsPlaying = true;
@@ -129,12 +176,11 @@ public class ViewerViewModelFullScreenTests
         _timeProvider.Advance(TimeSpan.FromSeconds(3));
         Assert.False(sut.IsControlsOverlayVisible);
 
-        sut.ShowControlsOverlayCommand.Execute(null);
+        sut.ToggleControlsOverlayCommand.Execute(null);
 
         Assert.True(sut.IsControlsOverlayVisible);
 
         _timeProvider.Advance(TimeSpan.FromSeconds(3));
-
         Assert.False(sut.IsControlsOverlayVisible);
     }
 
@@ -187,6 +233,33 @@ public class ViewerViewModelFullScreenTests
     }
 
     [Fact]
+    public void Dispose_ReleasesOrientationLock()
+    {
+        var sut = CreateSut();
+
+        sut.Dispose();
+
+        _orientationLockMock.Verify(o => o.Release(), Times.AtLeastOnce);
+    }
+
+    [Fact]
+    public void Dispose_UnsubscribesFromAppPausedAndOrientationChanged()
+    {
+        var sut = CreateSut();
+        SetCompactDevice(isLandscape: false);
+        sut.IsPlaying = true;
+        sut.Dispose();
+
+        // A disposed ViewModel must not act on the event. Raising it on a Moq mock never throws,
+        // so the assertion has to be behavioural: if the handler were still attached it would set
+        // IsFullScreen (compact + playing + landscape).
+        _lifecycleMock.Setup(l => l.IsLandscape).Returns(true);
+        _lifecycleMock.Raise(l => l.OrientationChanged += null, true);
+
+        Assert.False(sut.IsFullScreen, "OrientationChanged still reached a disposed ViewerViewModel");
+    }
+
+    [Fact]
     public void OnIsPlayingChanged_True_CallsKeepScreenOnTrue()
     {
         var sut = CreateSut();
@@ -217,5 +290,389 @@ public class ViewerViewModelFullScreenTests
         sut.ToggleFullScreenCommand.Execute(null);
 
         _bridgeMock.Verify(b => b.StopReceiver(), Times.Never);
+    }
+
+    // ----- Orientation-driven full screen (#383/#384 slice 3) --------------
+
+    [Fact]
+    public void OrientationChanged_ToLandscape_CompactAndPlaying_EntersFullScreen()
+    {
+        var sut = CreateSut();
+        SetCompactDevice(isLandscape: false);
+        sut.IsPlaying = true;
+
+        _lifecycleMock.Raise(l => l.OrientationChanged += null, true);
+
+        Assert.True(sut.IsFullScreen);
+    }
+
+    [Fact]
+    public void OrientationChanged_ToLandscape_NotCompact_DoesNotEnterFullScreen()
+    {
+        var sut = CreateSut();
+        _lifecycleMock.Setup(l => l.SmallestWidthDp).Returns(800); // tablet
+        sut.IsPlaying = true;
+
+        _lifecycleMock.Raise(l => l.OrientationChanged += null, true);
+
+        Assert.False(sut.IsFullScreen);
+    }
+
+    [Fact]
+    public void OrientationChanged_ToLandscape_CompactButNotPlaying_DoesNotEnterFullScreen()
+    {
+        var sut = CreateSut();
+        SetCompactDevice(isLandscape: false);
+
+        _lifecycleMock.Raise(l => l.OrientationChanged += null, true);
+
+        Assert.False(sut.IsFullScreen);
+    }
+
+    [Fact]
+    public void OrientationChanged_ToPortrait_CompactAndFullScreen_ExitsFullScreen()
+    {
+        var sut = CreateSut();
+        SetCompactDevice(isLandscape: true);
+        sut.IsPlaying = true;
+        Assert.True(sut.IsFullScreen, "playback starting in landscape on a compact device auto-enters full screen");
+
+        _lifecycleMock.Raise(l => l.OrientationChanged += null, false);
+
+        Assert.False(sut.IsFullScreen);
+    }
+
+    [Fact]
+    public void ToggleFullScreenCommand_CompactDeviceInPortrait_RequestsLandscapeWithoutSettingFullScreenSynchronously()
+    {
+        var sut = CreateSut();
+        SetCompactDevice(isLandscape: false);
+        sut.IsPlaying = true;
+
+        sut.ToggleFullScreenCommand.Execute(null);
+
+        Assert.False(sut.IsFullScreen);
+        _orientationLockMock.Verify(o => o.RequestLandscape(), Times.Once);
+    }
+
+    [Fact]
+    public void OrientationChanged_AfterButtonRequestedLandscape_EntersFullScreenAndKeepsTheLandscapeLock()
+    {
+        var sut = CreateSut();
+        SetCompactDevice(isLandscape: false);
+        sut.IsPlaying = true;
+        sut.ToggleFullScreenCommand.Execute(null);
+
+        _lifecycleMock.Setup(l => l.IsLandscape).Returns(true);
+        _lifecycleMock.Raise(l => l.OrientationChanged += null, true);
+
+        Assert.True(sut.IsFullScreen);
+        _orientationLockMock.Verify(o => o.Release(), Times.Never);
+    }
+
+    [Fact]
+    public void ExitingAfterAButtonEnteredFullScreen_ReleasesTheOrientationLock()
+    {
+        var sut = CreateSut();
+        SetCompactDevice(isLandscape: false);
+        sut.IsPlaying = true;
+        sut.ToggleFullScreenCommand.Execute(null);          // requests landscape
+        _lifecycleMock.Setup(l => l.IsLandscape).Returns(true);
+        _lifecycleMock.Raise(l => l.OrientationChanged += null, true);   // enters, lock still held
+        _orientationLockMock.Verify(o => o.Release(), Times.Never);
+
+        sut.ToggleFullScreenCommand.Execute(null);          // requests portrait
+        _lifecycleMock.Setup(l => l.IsLandscape).Returns(false);
+        _lifecycleMock.Raise(l => l.OrientationChanged += null, false);  // exits
+
+        Assert.False(sut.IsFullScreen);
+        _orientationLockMock.Verify(o => o.Release(), Times.AtLeastOnce);
+    }
+
+    [Fact]
+    public void PendingLandscapeRequest_TimesOutAfterThreeSeconds_EntersFullScreenAndReleasesLock()
+    {
+        var sut = CreateSut();
+        SetCompactDevice(isLandscape: false);
+        sut.IsPlaying = true;
+        sut.ToggleFullScreenCommand.Execute(null);
+
+        _timeProvider.Advance(TimeSpan.FromSeconds(3));
+
+        Assert.True(sut.IsFullScreen);
+        _orientationLockMock.Verify(o => o.Release(), Times.Once);
+    }
+
+    [Fact]
+    public void ToggleFullScreenCommand_CompactDeviceInLandscape_RequestsPortraitAndStaysFullScreenUntilOrientationChanges()
+    {
+        var sut = CreateSut();
+        SetCompactDevice(isLandscape: true);
+        sut.IsPlaying = true;
+        Assert.True(sut.IsFullScreen, "playback starting in landscape on a compact device auto-enters full screen");
+
+        sut.ToggleFullScreenCommand.Execute(null); // requests exit
+
+        Assert.True(sut.IsFullScreen);
+        _orientationLockMock.Verify(o => o.RequestPortrait(), Times.Once);
+    }
+
+    [Fact]
+    public void OrientationChanged_AfterButtonRequestedPortrait_ExitsFullScreenAndReleasesLock()
+    {
+        var sut = CreateSut();
+        SetCompactDevice(isLandscape: true);
+        sut.IsPlaying = true;
+        Assert.True(sut.IsFullScreen, "playback starting in landscape on a compact device auto-enters full screen");
+        sut.ToggleFullScreenCommand.Execute(null);
+
+        _lifecycleMock.Setup(l => l.IsLandscape).Returns(false);
+        _lifecycleMock.Raise(l => l.OrientationChanged += null, false);
+
+        Assert.False(sut.IsFullScreen);
+        _orientationLockMock.Verify(o => o.Release(), Times.Once);
+    }
+
+    [Fact]
+    public void PendingPortraitRequest_TimesOutAfterThreeSeconds_ExitsFullScreenAndReleasesLock()
+    {
+        var sut = CreateSut();
+        SetCompactDevice(isLandscape: true);
+        sut.IsPlaying = true;
+        Assert.True(sut.IsFullScreen, "playback starting in landscape on a compact device auto-enters full screen");
+        sut.ToggleFullScreenCommand.Execute(null);
+
+        _timeProvider.Advance(TimeSpan.FromSeconds(3));
+
+        Assert.False(sut.IsFullScreen);
+        _orientationLockMock.Verify(o => o.Release(), Times.Once);
+    }
+
+    [Fact]
+    public void AppPaused_WhileFullScreen_ForcesExitAndReleasesOrientationLock()
+    {
+        var sut = CreateSut();
+        SetCompactDevice(isLandscape: true);
+        sut.IsPlaying = true;
+        Assert.True(sut.IsFullScreen, "playback starting in landscape on a compact device auto-enters full screen");
+
+        _lifecycleMock.Raise(l => l.AppPaused += null);
+
+        Assert.False(sut.IsFullScreen);
+        _orientationLockMock.Verify(o => o.Release(), Times.AtLeastOnce);
+    }
+
+    [Fact]
+    public void Stop_WhilePendingLandscapeRequestNotYetRotated_CancelsPendingRequestAndReleasesLock()
+    {
+        var sut = CreateSut();
+        sut.SourceId = "src-1";
+        SetCompactDevice(isLandscape: false);
+        sut.ToggleFullScreenCommand.Execute(null); // pending landscape, not yet full screen
+
+        sut.StopCommand.Execute(null);
+
+        Assert.False(sut.IsFullScreen);
+        _orientationLockMock.Verify(o => o.Release(), Times.Once);
+
+        // The rotation finally arrives after Stop() — must not resurrect full screen for a
+        // stream that is no longer playing.
+        _lifecycleMock.Setup(l => l.IsLandscape).Returns(true);
+        _lifecycleMock.Raise(l => l.OrientationChanged += null, true);
+
+        Assert.False(sut.IsFullScreen);
+    }
+
+    [Fact]
+    public void Stop_WhileFullScreenCompactAndLandscape_StopsReceiverBeforeRequestingPortrait()
+    {
+        var sut = CreateSut();
+        sut.SourceId = "src-1";
+        SetCompactDevice(isLandscape: true);
+        sut.ToggleFullScreenCommand.Execute(null);
+
+        var callOrder = new List<string>();
+        _bridgeMock.Setup(b => b.StopReceiver()).Callback(() => callOrder.Add("StopReceiver"));
+        _orientationLockMock.Setup(o => o.RequestPortrait()).Callback(() => callOrder.Add("RequestPortrait"));
+
+        sut.StopCommand.Execute(null);
+
+        Assert.Equal(new[] { "StopReceiver", "RequestPortrait" }, callOrder);
+        Assert.True(sut.IsFullScreen, "Still full screen — waiting for the portrait rotation");
+    }
+
+    [Fact]
+    public void TogglePtzLayerCommand_TogglesIsPtzLayerVisible()
+    {
+        var sut = CreateSut();
+        sut.IsPlaying = true;
+        sut.ToggleFullScreenCommand.Execute(null);
+
+        sut.TogglePtzLayerCommand.Execute(null);
+        Assert.True(sut.IsPtzLayerVisible);
+
+        sut.TogglePtzLayerCommand.Execute(null);
+        Assert.False(sut.IsPtzLayerVisible);
+    }
+
+    [Fact]
+    public void IsFullScreenPtzVisible_RequiresBothPtzControlActiveAndLayerVisible()
+    {
+        var sut = CreateSut();
+        sut.IsPlaying = true;
+        sut.ToggleFullScreenCommand.Execute(null);
+
+        Assert.False(sut.IsFullScreenPtzVisible); // layer closed by default
+
+        sut.TogglePtzLayerCommand.Execute(null);
+        Assert.False(sut.IsFullScreenPtzVisible); // layer open, but no PTZ support yet
+
+        sut.IsPtzSupported = true;
+        Assert.True(sut.IsFullScreenPtzVisible);
+    }
+
+    [Fact]
+    public void ExitingFullScreen_ResetsPtzLayerVisible()
+    {
+        var sut = CreateSut();
+        sut.IsPlaying = true;
+        sut.ToggleFullScreenCommand.Execute(null);
+        sut.TogglePtzLayerCommand.Execute(null);
+        Assert.True(sut.IsPtzLayerVisible);
+
+        sut.ToggleFullScreenCommand.Execute(null); // exits (tablet path, default mock)
+
+        Assert.False(sut.IsPtzLayerVisible);
+    }
+
+    [Fact]
+    public void HandleBackButtonPress_NotFullScreen_ReturnsFalse()
+    {
+        var sut = CreateSut();
+
+        Assert.False(sut.HandleBackButtonPress());
+    }
+
+    [Fact]
+    public void HandleBackButtonPress_WithPtzLayerOpen_ClosesLayerAndConsumes()
+    {
+        var sut = CreateSut();
+        sut.IsPlaying = true;
+        sut.ToggleFullScreenCommand.Execute(null);
+        sut.TogglePtzLayerCommand.Execute(null);
+
+        var consumed = sut.HandleBackButtonPress();
+
+        Assert.True(consumed);
+        Assert.False(sut.IsPtzLayerVisible);
+        Assert.True(sut.IsFullScreen, "The first Back closes the camera layer only, it must not also exit full screen");
+    }
+
+    [Fact]
+    public void HandleBackButtonPress_FullScreen_ExitsAndConsumes()
+    {
+        var sut = CreateSut();
+        sut.IsPlaying = true;
+        sut.ToggleFullScreenCommand.Execute(null);
+
+        var consumed = sut.HandleBackButtonPress();
+
+        Assert.True(consumed);
+        Assert.False(sut.IsFullScreen);
+    }
+
+    [Fact]
+    public void HandleBackButtonPress_DuringPendingPortrait_SwallowsSecondPress()
+    {
+        var sut = CreateSut();
+        SetCompactDevice(isLandscape: true);
+        sut.IsPlaying = true;
+        Assert.True(sut.IsFullScreen, "playback starting in landscape on a compact device auto-enters full screen");
+
+        var firstPress = sut.HandleBackButtonPress(); // requests portrait, pending
+        var secondPress = sut.HandleBackButtonPress(); // must not re-request
+
+        Assert.True(firstPress);
+        Assert.True(secondPress);
+        Assert.True(sut.IsFullScreen, "Still waiting for the portrait rotation");
+        _orientationLockMock.Verify(o => o.RequestPortrait(), Times.Once);
+    }
+
+    [Fact]
+    public void OrientationDrivenFullScreenTransitions_NeverCallStopReceiver()
+    {
+        var sut = CreateSut();
+        SetCompactDevice(isLandscape: false);
+        sut.IsPlaying = true;
+
+        sut.ToggleFullScreenCommand.Execute(null); // pending landscape
+        _lifecycleMock.Setup(l => l.IsLandscape).Returns(true);
+        _lifecycleMock.Raise(l => l.OrientationChanged += null, true); // enters
+        sut.ToggleFullScreenCommand.Execute(null); // pending portrait
+        _lifecycleMock.Setup(l => l.IsLandscape).Returns(false);
+        _lifecycleMock.Raise(l => l.OrientationChanged += null, false); // exits
+
+        _bridgeMock.Verify(b => b.StopReceiver(), Times.Never);
+    }
+
+    [Fact]
+    public void PlaybackStartingWhileAlreadyLandscape_OnCompactDevice_EntersFullScreenWithoutRequestingRotation()
+    {
+        var sut = CreateSut();
+        SetCompactDevice(isLandscape: true);
+
+        sut.IsPlaying = true;
+
+        Assert.True(sut.IsFullScreen);
+        _orientationLockMock.Verify(o => o.RequestLandscape(), Times.Never);
+    }
+
+    [Fact]
+    public void PlaybackStartingWhileAlreadyLandscape_OnTablet_StaysWindowed()
+    {
+        var sut = CreateSut();
+        _lifecycleMock.Setup(l => l.SmallestWidthDp).Returns(800);
+        _lifecycleMock.Setup(l => l.IsLandscape).Returns(true);
+
+        sut.IsPlaying = true;
+
+        Assert.False(sut.IsFullScreen);
+    }
+
+    [Fact]
+    public void EveryFullScreenExitPath_NeverCallsStopReceiver()
+    {
+        var sut = CreateSut();
+        SetCompactDevice(isLandscape: true);
+        sut.IsPlaying = true;                                   // auto-enters (required change 2)
+
+        sut.HandleBackButtonPress();                            // exit via Back -> pending portrait
+        _lifecycleMock.Setup(l => l.IsLandscape).Returns(false);
+        _lifecycleMock.Raise(l => l.OrientationChanged += null, false);
+
+        _lifecycleMock.Setup(l => l.IsLandscape).Returns(true);
+        _lifecycleMock.Raise(l => l.OrientationChanged += null, true);   // auto-enter again
+        sut.ToggleFullScreenCommand.Execute(null);              // exit -> pending portrait
+        _timeProvider.Advance(TimeSpan.FromSeconds(3));         // exit via the 3s fallback
+
+        _lifecycleMock.Raise(l => l.AppPaused += null);         // force-exit path
+        sut.ForceExitFullScreen();                              // Detach()'s path
+
+        _bridgeMock.Verify(b => b.StopReceiver(), Times.Never);
+    }
+
+    [Fact]
+    public void ToggleFullScreenCommand_OnATablet_NeverRequestsAnOrientation()
+    {
+        var sut = CreateSut();
+        _lifecycleMock.Setup(l => l.SmallestWidthDp).Returns(800);
+        sut.IsPlaying = true;
+
+        sut.ToggleFullScreenCommand.Execute(null);
+        sut.ToggleFullScreenCommand.Execute(null);
+
+        Assert.False(sut.IsFullScreen);
+        _orientationLockMock.Verify(o => o.RequestLandscape(), Times.Never);
+        _orientationLockMock.Verify(o => o.RequestPortrait(), Times.Never);
     }
 }

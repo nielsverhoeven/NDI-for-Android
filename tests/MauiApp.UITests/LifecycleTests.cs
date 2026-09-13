@@ -31,12 +31,12 @@ public sealed class LifecycleTests : DeviceInterruptionTestBase
     {
         EnterHoldState(app);
 
-        // Landscape lays the viewer out as a collapsed bottom sheet on this device profile, so
-        // viewer.stop (IsPlaying's signal) is not Displayed there — the status text is the one
-        // signal that holds across both placements.
+        // On a compact (phone-class) device, landscape while playing enters full screen in place
+        // (YouTube-style full screen): the deck/sheet controls and the status label give way to the
+        // auto-hiding overlay, so the viewer page being present is the "alive" signal in landscape;
+        // the status text is asserted again once portrait has exited full screen.
         app.Rotate(ScreenOrientation.Landscape);
         Assert.True(app.Viewer.IsVisible, "Viewer left the screen after rotating to landscape");
-        Assert.Equal("Connecting...", app.Viewer.Status);
 
         app.Rotate(ScreenOrientation.Portrait);
         Assert.True(app.Viewer.IsVisible, "Viewer left the screen after rotating back to portrait");

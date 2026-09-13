@@ -63,6 +63,12 @@ else
   echo "font scale already $FONT_SCALE"
 fi
 
+# A fresh AVD shows Android's one-time "Viewing full screen / swipe down to exit" cling the first time
+# an app enters immersive mode. That system window takes the focus and the accessibility tree, so
+# every locator under com.ndi.android: goes empty until someone taps "Got it". Mark it confirmed up
+# front, exactly like a device that has already seen it once.
+adb shell settings put secure immersive_mode_confirmations confirmed
+
 # Continuous logcat capture, started before install so nothing from app startup is missed.
 # `adb logcat -d` at the end of a run reads a 256K-ish ring buffer that UiAutomator2 fills with a
 # node dump per selector match — by the time a 3-10 minute run ends, the lines that explain an

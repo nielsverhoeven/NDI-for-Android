@@ -34,6 +34,7 @@ public class SourceListViewModelTests
     private readonly Mock<IPtzController> _ptzControllerMock = new();
     private readonly Mock<IImmersiveModeService> _immersiveModeMock = new();
     private readonly Mock<IScreenReaderAnnouncer> _announcerMock = new();
+    private readonly Mock<IOrientationLockService> _orientationLockMock = new();
 
     private int _viewerFactoryInvocations;
 
@@ -64,7 +65,8 @@ public class SourceListViewModelTests
             _ptzControllerFactoryMock.Object,
             new PtzEndpointFormViewModel(_ptzControllerFactoryMock.Object),
             _immersiveModeMock.Object,
-            _announcerMock.Object);
+            _announcerMock.Object,
+            _orientationLockMock.Object);
     }
 
     private SourceListViewModel CreateSut(

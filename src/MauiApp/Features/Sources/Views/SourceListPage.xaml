@@ -22,7 +22,7 @@
             <ColumnDefinition x:Name="PaneColumn" Width="0" />
         </Grid.ColumnDefinitions>
 
-        <VerticalStackLayout Grid.Row="0" Grid.ColumnSpan="2" Padding="16,8,16,0" Spacing="4">
+        <VerticalStackLayout x:Name="ListHeader" Grid.Row="0" Grid.ColumnSpan="2" Padding="16,8,16,0" Spacing="4">
             <Label Text="{Binding ActiveDiscoveryModeLabel}"
                    FontSize="12"
                    TextColor="{DynamicResource TextSecondary}" />

@@ -72,6 +72,9 @@ public sealed class NdiApp
     /// change, and querying immediately after the rotation returns the pre-rotation layout —
     /// which then fails a placement assertion for a reason that has nothing to do with the app.
     /// </remarks>
+    /// <summary>Presses the Android hardware/gesture Back button.</summary>
+    public void PressBackButton() => _driver.Navigate().Back();
+
     public void Rotate(ScreenOrientation orientation)
     {
         _driver.Orientation = orientation;
@@ -82,6 +85,13 @@ public sealed class NdiApp
         // implementation at that point (bottom tab bar to left rail). If that kills the app, the
         // next call reports "page did not become visible" against a device showing the launcher,
         // which points investigation at the page rather than at the rotation that caused it.
+        // The tree can be momentarily unreadable or id-less right after the settle pause: a rotation
+        // that enters full screen in place (compact devices, YouTube-style full screen) swaps the
+        // layout and toggles immersive mode a beat later. Poll before declaring the app gone.
+        var deadline = DateTime.UtcNow + Timeouts.Navigation;
+        while (!IsInForeground && DateTime.UtcNow < deadline)
+            Thread.Sleep(250);
+
         if (!IsInForeground)
             throw new InvalidOperationException(
                 $"The app stopped running while rotating to {orientation} — the foreground " +

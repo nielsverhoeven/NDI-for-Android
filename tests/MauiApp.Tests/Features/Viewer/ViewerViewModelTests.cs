@@ -28,6 +28,7 @@ public class ViewerViewModelTests
     private readonly Mock<IPtzController> _ptzControllerMock = new();
     private readonly Mock<IImmersiveModeService> _immersiveModeMock = new();
     private readonly Mock<IScreenReaderAnnouncer> _announcerMock = new();
+    private readonly Mock<IOrientationLockService> _orientationLockMock = new();
 
     public ViewerViewModelTests()
     {
@@ -49,7 +50,7 @@ public class ViewerViewModelTests
         _bridgeMock.Object, _timeProvider, _dispatcher, _appStateRepoMock.Object, _lifecycleMock.Object,
         _sourceRepoMock.Object, _connectionHistoryMock.Object,
         _ptzControllerFactoryMock.Object, new PtzEndpointFormViewModel(_ptzControllerFactoryMock.Object),
-        _immersiveModeMock.Object, _announcerMock.Object);
+        _immersiveModeMock.Object, _announcerMock.Object, _orientationLockMock.Object);
 
     /// <summary>Started on "src-1" (all mocked awaits complete synchronously); bridge call log
     /// cleared so tests count only the traffic they generate from here.</summary>
