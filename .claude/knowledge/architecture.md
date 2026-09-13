@@ -31,6 +31,174 @@ unconditionally. Rule 5's intent is to keep Android APIs out of **Core** and out
 
 ## Verdicts log
 
+### 2026-09-13 — #392 wire `CheckForUnexpectedDrop()` to a production caller (deep review)
+
+**APPROVE-WITH-CHANGES (8).** Option A is the right shape: the detection primitive already exists on
+the pump thread and the only missing pieces are intent-filtering and UI composition. Every evidence
+claim in the plan was re-derived from the live files and holds, with two exceptions noted below. The
+seam is approved as a **pull-style `GetLastStopReason()`**, not event args. What the plan gets wrong
+is (1) the enum's zero value, (2) a residual stop/drop race the pull seam leaves open, (3) a
+functional gap that makes the wired-up feature *always* end in "Reconnection failed." on a real
+device, and (4) the full-screen product choice.
+
+**Confirmed against the code.**
+
+- The pump does detect a genuine drop and raises `Disconnected`: `NdiViewerBridge.cs:417-427`
+  (`connectionLost = hasEverConnected && NDIlib_recv_get_no_connections(recv) == 0`), plus the
+  pump-loop `catch` at `:445-450`. `StalledAfterMs = 3000` (`:21`), `VideoCaptureTimeoutMs = 1000`
+  (`:19`).
+- `ViewerViewModel.OnBridgeConnectionStateChanged` (`ViewerViewModel.cs:187-198`) has no
+  `Disconnected` branch; `CheckForUnexpectedDrop()` (`:410-417`) has no production caller. Confirms
+  the 2026-09-12 #316 finding (this file, "New issue owed").
+- D6 is real and is the handoff: `NdiNavigationHandoffService.cs:20-21` calls a bare
+  `StopReceiver()`, never touches `_userInitiatedStop`/`IsPlaying`, and the resulting
+  `Connected → Disconnected` transition *does* raise the event (`TransitionState` raises on change,
+  `:623-649`). Wiring the raw event without an intent filter would open a retry window on every tab
+  switch away from View.
+- `FullScreenControlsOverlay.xaml` carries no `StatusMessage`/`RetryStatusMessage`/`CanReconnect`/
+  `IsReconnecting` binding (whole file checked) — the plan's evidence item 6 is correct. Its root
+  `Grid` is `IsVisible="{Binding AreControlsVisible}"` (`:8`), i.e. **everything in that file is
+  subject to the 2.5 s auto-hide**; a countdown placed there would vanish mid-window. The
+  always-visible precedent is the Stopped badge inside the video `Grid` (`ViewerView.xaml:83-97`),
+  which is not gated on `AreControlsVisible`.
+- `ReconnectConstants.DropDetectionGraceSeconds` (`ViewerViewModel.cs:23`) has exactly one hit
+  repo-wide — its own declaration. **Deletion confirmed.**
+- Rules 1-6 hold: `ReceiverStopReason` is a plain Core enum (rule 2, same precedent as
+  `ConnectionState`), the event still marshals through `IMainThreadDispatcher` (rule 4), no frame
+  path or `recv_free_*` call is touched (rule 6), Core stays MAUI-free, timing stays on
+  `TimeProvider`.
+
+**(a) Seam — pull, not event args. Approved as planned.** `docs/architecture.md:264` and the #233 D1
+decision (`docs/features/automatic-viewer-reconnection-retry/architecture.md:12-15`) put this
+contract on method-style `Get*()` getters with a change event alongside; `GetLastStopReason()` is
+that idiom. It is also the *safer* of the two under marshalling: `CheckForUnexpectedDrop()` already
+re-reads `GetConnectionState()` live at decision time, so a reason carried in the event args would
+mix one stale input with one live input in the same guard. With both read live, the interesting
+interleavings resolve correctly — a source that comes back on its own leaves the bridge `Connected`
+and the queued callback simply finds the guard false; an intentional restart leaves it `Connecting`,
+same outcome.
+**One hole remains, and it is the D6 case itself:** `StopReceiver()` sets `_running = false` and then
+**joins the pump threads outside the lock** (`NdiViewerBridge.cs:193-207`). A pump blocked in
+`recv_capture` can still raise `Disconnected(ConnectionLost)` inside that join window, after which
+`StopReceiver`'s own final `TransitionState(Disconnected)` (`:235`) no longer raises (state
+unchanged) but does overwrite the reason. Order the other way and the ViewModel reads
+`Disconnected + ConnectionLost` for a stop the navigation handoff requested — a reconnect window
+opens on a ViewModel whose page is gone and, if it succeeds, resurrects the receiver the handoff
+existed to release (#327's background-streaming contract). Required: coerce the reason to
+`Intentional` for the whole duration of a caller-requested stop (RC2).
+
+**(b) The pump keeps running after it reports the drop — and the attempt loop can never succeed.**
+`_running` stays true, so the receiver keeps capturing and NDI's own reconnect can restore the
+stream by itself. Meanwhile `RunAttempt` (`ViewerViewModel.cs:430-461`) does
+`StopReceiver()` → `StartReceiver()` → `GetConnectionState()`, and `StartReceiver` sets
+`Connecting` synchronously before it returns (`NdiViewerBridge.cs:165`). The state is therefore
+`Connecting` at the moment `RunAttempt` reads it, every time — the only way it could read
+`Connected` is if a video frame arrived in the microseconds between the two calls. **On a real
+device the 15 s window always expires in "Connection lost. Reconnection failed.", even when the
+source is back**, and each 2 s tick destroys a receiver that may have been mid-handshake. The unit
+tests do not catch this because `Mock<INdiViewerBridge>.GetConnectionState()` is stubbed to return
+`Connected` immediately (`ViewerViewModelTests.cs:723`, `:828`) — a state the real bridge cannot
+produce there. Fix: complete the window from the bridge's `Connected` event (RC3). The same edit
+un-sticks `OnAppResumed`'s restore path (`ViewerViewModel.cs:229-236`), which polls
+`GetConnectionState()` the same way and otherwise leaves "Restoring viewer..." on screen forever.
+
+**(c) Full screen: stay while retrying, exit on terminal failure. The plan's unconditional
+auto-exit is rejected.** `BeginExitFullScreen()` is not a neutral "leave full screen" on the device
+class that matters most: on a compact device in landscape it calls
+`_orientationLock.RequestPortrait()` (`ViewerViewModel.FullScreen.cs:210-213`), i.e. the app
+force-rotates the user's phone because a packet stopped arriving. `IsPlaying` stays true for the
+whole window (only `FailReconnect` clears it, `ViewerViewModel.cs:513`), so the moment the lock is
+released the compact invariant "IsFullScreen ⟺ landscape while playing" (#383/#384 decision (b),
+coded at `FullScreen.cs:60-77` and `:299-304`) pulls the device straight back into landscape and
+re-enters full screen — an oscillation, not a clean exit. On a tablet the exit is clean but
+permanent: nothing re-enters full screen on success, so a 2 s blip silently demotes the user out of
+the layout this repo deliberately modelled on YouTube (2026-09-06 #384/#383 consult, above).
+The split below keeps both properties: no forced rotation while the outcome is still unknown, and a
+single justified rotation once playback has definitively ended (`IsPlaying == false`, so no
+re-entry) — which is exactly what `Stop()` already does (`ViewerViewModel.cs:341`).
+The retry text cannot go in `FullScreenControlsOverlay.xaml` (auto-hide, above); it goes in the
+video `Grid` next to the Stopped badge, gated so it never double-renders with
+`PlaybackControlsView.xaml:72-79`. See RC4-RC6.
+
+**(d) Threading/rules.** No new lock ordering: `GetLastStopReason()` takes `_connectionLock` only,
+the stop-depth counter is set/cleared in two short `_connectionLock` acquisitions that never span
+the thread joins, and `TransitionState` still raises the event outside the lock. `StopReceiver`'s
+existing re-entrancy note ("an event handler running on a pump thread calls StopReceiver") is why
+RC2 uses a depth counter rather than a bool.
+
+**(e) Enum order — `Intentional` must be 0, and three existing tests get one setup line each.**
+Ordering a public Core enum so that Moq's default happens to mean "a drop was detected" is a
+test-framework detail leaking into a production contract, and it makes the *unsafe* answer the
+default: any future mock, fake or partially-initialised field that has not been told anything can
+open a 15 s retry loop that repeatedly calls `StartReceiver`. `ConnectionState` next to it is
+ordered semantically, not by test convenience. The cost is three one-line `Setup` additions
+(`ViewerViewModelTests.cs:142`, `:825`, `:840`), and they are an improvement: those tests then state
+the precondition they depend on instead of inheriting it invisibly.
+
+**(f) `DropDetectionGraceSeconds` deletion — confirmed** (no reader anywhere; no slot in this design
+once the bridge's own reason tagging is the trigger).
+
+**(g) Documentation — `.claude/knowledge/decision-log.md` is refused for the fourth time.** Same
+ruling as the 2026-09-12 #384 slice-3 gate (item 8 in that entry): `.claude/knowledge/` is
+agent-owned, a developer-written third decision store drifts. The "why" lives in the PR/issue and in
+this verdicts log; the durable factual line goes in `.github/KNOWLEDGE-BASE.md`'s
+**Automatic Viewer Reconnection** section (`:262-316`), which today documents the state machine but
+not its trigger.
+
+**Required changes (8), verbatim, in the scratchpad verdict file** —
+`verdict-392-401.md`: RC1 enum order + 3 test setups; RC2 stop-depth coercion in `NdiViewerBridge`;
+RC3 complete the window on `Connected`; RC4 drop `BeginExitFullScreen()` from
+`BeginReconnectWindow()`; RC5 add it to `FailReconnect()`; RC6 `IsFullScreenRetryVisible` +
+`TestIds.ViewerReconnectBadge` + the badge in `ViewerView.xaml`; RC7 the test set that follows from
+RC3-RC6; RC8 documentation redirect.
+
+### 2026-09-13 — #401 e2e assertion: no bottom navigation bar in the rail placement (fit-check)
+
+**APPROVE-WITH-CHANGES (4).** Test-project-only, no production file touched, correct class
+(`AppLaunchTests`), correct attribute, and the self-gating on `NavigationPolicyService` is the right
+call — it is the same computation the sibling test already performs (`AppLaunchTests.cs:160-191`),
+so the new test cannot fail on a device where rail placement is not reachable. Three defects in the
+assertion itself, one documentation redirect.
+
+- **The selector's class-name branch can never match.** `BottomNavigationView` extends
+  `FrameLayout`, which overrides `getAccessibilityClassName()` — UiAutomator therefore reports the
+  node as `android.widget.FrameLayout`, never
+  `com.google.android.material.bottomnavigation.BottomNavigationView`. The live #384 dump recorded
+  in this file agrees: the orphan bar is described as a **`FrameLayout` `[108,1093][1920,1200]`**
+  whose subtree carries `navigation_bar_item_*` ids (this file, 2026-09-13 #384 entry, item 2). So
+  the whole assertion currently rests on the resource-id branch alone. RC1 replaces the dead branch
+  with MAUI's own `bottomtab*` layout id.
+- **"Exists anywhere" is the wrong predicate, and the repo's own page objects say so.** The healthy
+  rail state is not "no bottom bar in the view tree" — item 2 of the #384 entry establishes that the
+  bar is `ShellItemRenderer`'s bottom view *flipping from `Gone` to `Visible`*, i.e. it exists and is
+  `GONE` when healthy. `PageObject.FindAll` is documented as returning elements "displayed or not"
+  (`PageObject.cs:257`), which is precisely why every other presence check in this suite filters —
+  `IsPresent` is `FindAll(id).Any(IsDisplayed)` (`:255`), `NavigationBar.Resolve` is
+  `FindElements(...).FirstOrDefault(Displayed)` (`NavigationBar.cs:164-173`), and the existing
+  full-screen chrome assertion uses that same `IsPresent`
+  (`AppLaunchTests.cs:98-99`). My own earlier wording "no `navigation_bar_item_*` node exists
+  anywhere" was about the *page source*, not the view hierarchy; an unfiltered
+  `FindElements().Count > 0` risks a permanent false positive. RC1 makes it "no **displayed**
+  node".
+- **A negative assertion needs a liveness partner or it passes vacuously.** `HasBottomNavigationBar`
+  returns `false` on any exception, and an unreadable/empty tree is indistinguishable from a healthy
+  one. RC2 adds the positive counterpart (the rail *is* on screen) at the three checkpoints where
+  the rail is expected to be visible — the same anti-vacuous-gate principle the #317 work applied to
+  the workflow.
+- **One settle before the post-exit assertion.** The #384 defect appears when Shell recomputes tab
+  visibility after `RestoreChrome()`; `WaitUntilPlaying()` returns on the Deck/Sheet re-render, which
+  can precede that recompute. Sampling too early produces a *false negative* — the regression test
+  silently stops catching the regression. RC3 adds the settle (`NavigationBar.GoTo`'s own
+  `Thread.Sleep(750)` exists for the same reason, `NavigationBar.cs:83`).
+- Checkpoint 3's double gate (rail placement **and** `WindowSizeClass.Expanded`) is correct:
+  `SourceListPage.xaml.cs:97-121` and `SourceListViewModel.cs:120-127` make the pane Expanded-only,
+  so on the Nexus 6 PR gate (Medium in landscape) it must log rather than fail.
+  `[RetryableSkippableFact]` is correct per the 2026-09-12 #317 amendment (rotation + `TryRestart()`,
+  not `am kill`/`pm revoke`).
+- **Step 5 (`decision-log.md`) is refused** — same ruling as #392 above. The implementer writes
+  nothing under `.claude/knowledge/`; rationale goes in the PR description, and the durable
+  test-suite context belongs to the `tester` agent's own `.claude/knowledge/testing.md`.
+
 ### 2026-09-13 — #384 orphaned View chip after pane full screen (fit-check)
 
 **APPROVE-WITH-CHANGES.** The suspected mechanism is confirmed — and the UI dump disproves the
