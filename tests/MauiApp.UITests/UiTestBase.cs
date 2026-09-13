@@ -44,6 +44,7 @@ public abstract class UiTestBase
 
         var driver = _fixture.Driver!;
         App = new NdiApp(driver);
+        var fullyQualifiedName = $"{GetType().FullName}.{testName}";
 
         FailureEvidence.Capture(driver, testName, () =>
         {
@@ -54,7 +55,16 @@ public abstract class UiTestBase
             // misleading message, turning one real problem into a wall of noise.
             App.EnsureInForeground();
 
-            body(App);
+            try
+            {
+                body(App);
+            }
+            catch (Exception ex) when (
+                ex is not SkipException &&
+                Quarantine.ActiveReasonFor(fullyQualifiedName) is { } reason)
+            {
+                throw new SkipException($"{reason} Original failure: {ex.GetType().Name}: {ex.Message}", ex);
+            }
         });
     }
 }

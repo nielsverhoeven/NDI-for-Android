@@ -1,8 +1,11 @@
+using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using NdiForAndroid.Features.AppState.Models;
 using NdiForAndroid.Features.AppState.Repositories;
 using NdiForAndroid.Features.Output.Repositories;
+using NdiForAndroid.Features.Sources.Models;
+using NdiForAndroid.Features.Sources.Repositories;
 using NdiForAndroid.NdiBridge;
 using NdiForAndroid.Services;
 
@@ -26,6 +29,8 @@ public partial class OutputViewModel : ObservableObject, IDisposable
     private readonly IOutputConfigurationRepository _configRepo;
     private readonly IMainThreadDispatcher _dispatcher;
     private readonly IScreenReaderAnnouncer _announcer;
+    private readonly ISourceRepository _sourceRepository;
+    private readonly IDiscoveryRefreshService _discoveryService;
 
     /// <summary>
     /// Gates screen-reader announcements from <see cref="SetStatus"/> so the constructor's
@@ -74,6 +79,8 @@ public partial class OutputViewModel : ObservableObject, IDisposable
     /// rather than broadcasting the selected local capture input.
     /// </summary>
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowReStreamSourcePicker))]
+    [NotifyPropertyChangedFor(nameof(ShowReStreamManualEntry))]
     private bool _isReStreamMode;
 
     /// <summary>
@@ -82,6 +89,35 @@ public partial class OutputViewModel : ObservableObject, IDisposable
     /// </summary>
     [ObservableProperty]
     private string? _reStreamSourceId;
+
+    /// <summary>
+    /// Live-discovered + cached NDI sources offered by the re-stream source Picker (#343 OUT-08).
+    /// Populated from <see cref="ISourceRepository.GetCachedSourcesAsync"/> on every
+    /// <see cref="LoadAsync"/> and kept current via <see cref="IDiscoveryRefreshService.SnapshotReady"/>.
+    /// </summary>
+    public ObservableCollection<NdiSource> AvailableReStreamSources { get; } = new();
+
+    /// <summary>True once <see cref="AvailableReStreamSources"/> has a real (non-placeholder) entry.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowReStreamSourcePicker))]
+    [NotifyPropertyChangedFor(nameof(ShowReStreamManualEntry))]
+    private bool _hasReStreamSources;
+
+    /// <summary>
+    /// The re-stream Picker's current selection. Setting it updates <see cref="ReStreamSourceId"/>
+    /// so every existing consumer of the raw id (bridge calls, stream-name derivation) is unaffected.
+    /// </summary>
+    [ObservableProperty]
+    private NdiSource? _selectedReStreamSource;
+
+    /// <summary>True while re-stream mode is active and at least one source can be picked from.</summary>
+    public bool ShowReStreamSourcePicker => IsReStreamMode && HasReStreamSources;
+
+    /// <summary>
+    /// True while re-stream mode is active and no source is cached/discovered yet — falls back to
+    /// the free-text Entry rather than showing an empty, unusable Picker.
+    /// </summary>
+    public bool ShowReStreamManualEntry => IsReStreamMode && !HasReStreamSources;
 
     public IReadOnlyList<VideoInputKind> AvailableInputKinds { get; } = new[]
     {
@@ -96,7 +132,9 @@ public partial class OutputViewModel : ObservableObject, IDisposable
         IAppLifecycleService lifecycle,
         IOutputConfigurationRepository configRepo,
         IMainThreadDispatcher dispatcher,
-        IScreenReaderAnnouncer announcer)
+        IScreenReaderAnnouncer announcer,
+        ISourceRepository sourceRepository,
+        IDiscoveryRefreshService discoveryService)
     {
         _bridge = bridge;
         _appStateRepo = appStateRepo;
@@ -104,10 +142,13 @@ public partial class OutputViewModel : ObservableObject, IDisposable
         _configRepo = configRepo;
         _dispatcher = dispatcher;
         _announcer = announcer;
+        _sourceRepository = sourceRepository;
+        _discoveryService = discoveryService;
         SetStatus("Tap Start to begin broadcasting from this device.");
 
         _lifecycle.AppResumed += OnAppResumed;
         _bridge.OutputStatusChanged += OnOutputStatusChanged;
+        _discoveryService.SnapshotReady += OnReStreamSourcesSnapshotReady;
 
         // The constructor's message is spoken to nobody — the page is not on screen yet (#345).
         _announceStatusChanges = true;
@@ -145,7 +186,121 @@ public partial class OutputViewModel : ObservableObject, IDisposable
             CaptureMicrophone = config.CaptureMicrophone;
         }
 
+        await RefreshReStreamSourcesAsync();
         await CorroborateWithBridgeAsync("Output active");
+    }
+
+    /// <summary>
+    /// Populates <see cref="AvailableReStreamSources"/> from the cached source registry (#343
+    /// OUT-08) — the same registry <see cref="HomeViewModel"/> reads for its "Last viewed" friendly
+    /// name. Live discovery updates arrive separately via <see cref="OnReStreamSourcesSnapshotReady"/>.
+    /// </summary>
+    private async Task RefreshReStreamSourcesAsync()
+    {
+        var cached = await _sourceRepository.GetCachedSourcesAsync();
+        ApplyReStreamSources(cached);
+    }
+
+    /// <summary>Raised on a background/pump thread whenever a discovery poll completes — marshal to
+    /// the UI thread before touching <see cref="AvailableReStreamSources"/> (Architecture Rule 4).
+    /// A failed poll carries an empty source list (DiscoveryRefreshService raises a Failure snapshot
+    /// with Array.Empty) and must never be allowed to empty the picker.</summary>
+    private void OnReStreamSourcesSnapshotReady(object? sender, DiscoverySnapshot snapshot)
+    {
+        if (snapshot.Status == DiscoveryStatus.Failure)
+            return;
+
+        _dispatcher.BeginInvokeOnMainThread(() => ApplyReStreamSources(snapshot.Sources));
+    }
+
+    /// <summary>
+    /// Merges <paramref name="sources"/> into <see cref="AvailableReStreamSources"/> by SourceId.
+    /// Deliberately additive: discovery polls every 5 seconds, and clearing a Picker's bound
+    /// ItemsSource resets its SelectedIndex to -1 — which would null SelectedReStreamSource (and
+    /// with it ReStreamSourceId) on every poll. A source that did not answer one poll (weak Wi-Fi,
+    /// source briefly busy) also stays selectable, which is the whole reason this list is a union
+    /// of the cached registry and live discovery rather than the latest snapshot.
+    /// </summary>
+    private void ApplyReStreamSources(IReadOnlyList<NdiSource> sources)
+    {
+        foreach (var source in sources)
+        {
+            var index = IndexOfReStreamSource(source.SourceId);
+            if (index < 0)
+            {
+                AvailableReStreamSources.Add(source);
+            }
+            else if (AvailableReStreamSources[index].LastSeenAtEpochMillis == 0)
+            {
+                // A synthesized raw-id placeholder (LastSeenAtEpochMillis == 0 is only ever set by
+                // SelectReStreamSourceById) has now been discovered for real — swap in the real
+                // entry so the Picker shows its friendly name instead of the raw id.
+                AvailableReStreamSources[index] = source;
+                if (string.Equals(SelectedReStreamSource?.SourceId, source.SourceId, StringComparison.Ordinal))
+                    SelectedReStreamSource = source;
+            }
+        }
+
+        HasReStreamSources = AvailableReStreamSources.Any(s => s.LastSeenAtEpochMillis != 0);
+
+        // A restored/preselected id with no Picker selection yet (first LoadAsync) — point the
+        // selection at it now that the list is populated.
+        if (SelectedReStreamSource is null && !string.IsNullOrWhiteSpace(ReStreamSourceId))
+            SelectReStreamSourceById(ReStreamSourceId);
+    }
+
+    private int IndexOfReStreamSource(string sourceId)
+    {
+        for (var i = 0; i < AvailableReStreamSources.Count; i++)
+        {
+            if (string.Equals(AvailableReStreamSources[i].SourceId, sourceId, StringComparison.Ordinal))
+                return i;
+        }
+
+        return -1;
+    }
+
+    /// <summary>
+    /// Points the Picker at the entry matching <paramref name="sourceId"/>. When the picker is the
+    /// visible control but the id is not in it yet — e.g. a source preselected from the Sources
+    /// page's Output button that this view model's cache/snapshot has not reconciled — a
+    /// placeholder showing the raw id is synthesized and selected, so the Picker is never blank for
+    /// a source the user just chose (Nielsen #6). With an empty registry the free-text Entry is the
+    /// visible control instead, so only ReStreamSourceId is set: synthesizing there would flip
+    /// HasReStreamSources and permanently hide the manual-entry fallback on this Singleton VM.
+    /// </summary>
+    private void SelectReStreamSourceById(string? sourceId)
+    {
+        if (string.IsNullOrWhiteSpace(sourceId))
+        {
+            SelectedReStreamSource = null;
+            ReStreamSourceId = null;
+            return;
+        }
+
+        var index = IndexOfReStreamSource(sourceId);
+        if (index >= 0)
+        {
+            SelectedReStreamSource = AvailableReStreamSources[index];
+            return;
+        }
+
+        if (HasReStreamSources)
+        {
+            var placeholder = new NdiSource(sourceId, sourceId, null, IsAvailable: false, LastSeenAtEpochMillis: 0);
+            AvailableReStreamSources.Insert(0, placeholder);
+            SelectedReStreamSource = placeholder;
+            return;
+        }
+
+        // Empty registry: the manual-entry Entry is what is on screen — set the id it binds to.
+        SelectedReStreamSource = null;
+        ReStreamSourceId = sourceId;
+    }
+
+    partial void OnSelectedReStreamSourceChanged(NdiSource? value)
+    {
+        ReStreamSourceId = value?.SourceId;
     }
 
     private async void OnAppResumed()
@@ -233,8 +388,8 @@ public partial class OutputViewModel : ObservableObject, IDisposable
         if (string.IsNullOrWhiteSpace(sourceId))
             return;
 
-        ReStreamSourceId = sourceId;
         IsReStreamMode = isReStreamMode;
+        SelectReStreamSourceById(sourceId);
         StreamName = "NDI-" + new string(sourceId.Where(char.IsLetterOrDigit).Take(32).ToArray());
         SetStatus("Re-stream mode: ready — tap Start to begin.");
     }
@@ -285,6 +440,12 @@ public partial class OutputViewModel : ObservableObject, IDisposable
         if (string.IsNullOrWhiteSpace(StreamName))
         {
             SetStatus("Please enter a stream name before starting output.", isError: true);
+            return;
+        }
+
+        if (IsReStreamMode && string.IsNullOrWhiteSpace(ReStreamSourceId))
+        {
+            SetStatus("Select a source to re-stream before starting output.", isError: true);
             return;
         }
 
@@ -371,5 +532,6 @@ public partial class OutputViewModel : ObservableObject, IDisposable
     {
         _lifecycle.AppResumed -= OnAppResumed;
         _bridge.OutputStatusChanged -= OnOutputStatusChanged;
+        _discoveryService.SnapshotReady -= OnReStreamSourcesSnapshotReady;
     }
 }

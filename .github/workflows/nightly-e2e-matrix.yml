@@ -1,0 +1,92 @@
+name: Nightly E2E Matrix
+
+on:
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch: {}
+  pull_request:
+    types: [labeled]
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    if: github.event_name != 'pull_request' || github.event.label.name == 'run-e2e-matrix'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Expanded (tablet) — the one size class no phone profile can ever reach. See §1 item 1.
+          - leg: expanded-tablet
+            avd_profile: 'pixel_c'
+            api_level: '35'
+            font_scale: '1.0'
+            test_filter: ''
+          # Font scale — core journeys only, on the existing Compact phone profile.
+          - leg: font-scale-1_3
+            avd_profile: 'Nexus 6'
+            api_level: '35'
+            font_scale: '1.3'
+            test_filter: 'FullyQualifiedName~FontScaleTests'
+          - leg: font-scale-2_0
+            avd_profile: 'Nexus 6'
+            api_level: '35'
+            font_scale: '2.0'
+            test_filter: 'FullyQualifiedName~FontScaleTests'
+    uses: ./.github/workflows/e2e-reusable.yml
+    with:
+      avd_profile: ${{ matrix.avd_profile }}
+      api_level: ${{ matrix.api_level }}
+      font_scale: ${{ matrix.font_scale }}
+      test_filter: ${{ matrix.test_filter }}
+      require_device: true
+      release_sign: true
+      # One artifact name per leg: all three legs build inside the SAME workflow run, and
+      # actions/upload-artifact returns 409 Conflict for a duplicate name in a run.
+      apk_artifact_name: android-apk-${{ matrix.leg }}
+    secrets: inherit
+
+  flake-report:
+    name: Aggregate flake statistics
+    needs: e2e
+    # Not `always()`: on a `labeled` event whose label is not run-e2e-matrix the `e2e` job is
+    # skipped, and this job would then fail downloading artifacts that were never produced.
+    if: always() && needs.e2e.result != 'skipped'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Job-level `permissions` REPLACES the workflow-level block instead of merging with it: every
+    # scope omitted here is set to `none`. `contents: read` is for actions/checkout, `actions: read`
+    # is what `gh run download` needs.
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Download this run's retry logs
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          pattern: emulator-diagnostics-*
+          path: current-run
+          merge-multiple: false
+
+      - name: Fetch retry logs from recent completed runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p history
+          python3 testing/e2e/scripts/fetch-recent-run-artifacts.py \
+            --repo "${{ github.repository }}" \
+            --workflow-file nightly-e2e-matrix.yml \
+            --pattern 'emulator-diagnostics-*' \
+            --max-runs 10 \
+            --out-dir history
+
+      - name: Aggregate and publish flake report
+        run: |
+          python3 testing/e2e/scripts/aggregate-flake-stats.py \
+            --scan-dir current-run --scan-dir history \
+            --flake-threshold 0.01 \
+            >> "$GITHUB_STEP_SUMMARY"

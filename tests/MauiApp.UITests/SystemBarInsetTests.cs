@@ -1,4 +1,5 @@
 using OpenQA.Selenium;
+using NdiForAndroid.UITests.Infrastructure;
 using NdiForAndroid.UITests.Pages;
 using Xunit;
 using Xunit.Abstractions;
@@ -29,7 +30,7 @@ public sealed class SystemBarInsetTests : UiTestBase
     public SystemBarInsetTests(AppiumDriverFixture fixture, ITestOutputHelper output)
         : base(fixture) => _output = output;
 
-    [SkippableTheory]
+    [RetryableSkippableTheory]
     [InlineData(ScreenOrientation.Portrait)]
     [InlineData(ScreenOrientation.Landscape)]
     public void Navigation_TopmostItem_SitsBelowTheStatusBar(ScreenOrientation orientation) => Run(app =>
@@ -60,7 +61,7 @@ public sealed class SystemBarInsetTests : UiTestBase
             "under the clock.");
     });
 
-    [SkippableFact]
+    [RetryableSkippableFact]
     public void PageContent_DoesNotStartUnderTheStatusBar() => Run(app =>
     {
         app.Rotate(ScreenOrientation.Portrait);

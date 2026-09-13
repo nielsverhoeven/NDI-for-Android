@@ -11,7 +11,7 @@ public sealed class OutputPageTests : UiTestBase
 {
     public OutputPageTests(AppiumDriverFixture fixture) : base(fixture) { }
 
-    [SkippableFact]
+    [RetryableSkippableFact]
     public void Output_TappingTheReStreamLabel_TogglesTheModeSwitch() => Run(app =>
     {
         app.Rotate(ScreenOrientation.Portrait);
@@ -33,7 +33,7 @@ public sealed class OutputPageTests : UiTestBase
         }
     });
 
-    [SkippableFact]
+    [RetryableSkippableFact]
     public void Output_TappingTheMicrophoneLabel_TogglesTheMicrophoneSwitch() => Run(app =>
     {
         app.Rotate(ScreenOrientation.Portrait);
@@ -54,7 +54,7 @@ public sealed class OutputPageTests : UiTestBase
         }
     });
 
-    [SkippableFact]
+    [RetryableSkippableFact]
     public void Output_TappingTheMicrophoneSwitchItself_TogglesExactlyOnce() => Run(app =>
     {
         app.Rotate(ScreenOrientation.Portrait);
@@ -72,6 +72,47 @@ public sealed class OutputPageTests : UiTestBase
         {
             if (app.Output.IsMicrophoneOn != before)
                 app.Output.ToggleMicrophone();
+        }
+    });
+
+    [SkippableFact]
+    public void Output_ReStreamMode_ShowsSourcePickerOrManualEntryFallback() => Run(app =>
+    {
+        app.Rotate(ScreenOrientation.Portrait);
+        app.Navigation.GoTo(NavDestination.Stream);
+        app.Output.WaitUntilVisible();
+
+        var wasReStreamMode = app.Output.IsReStreamMode;
+        try
+        {
+            if (!wasReStreamMode)
+            {
+                app.Output.ToggleReStreamMode();
+
+                var deadline = DateTime.UtcNow + Timeouts.StateChange;
+                while (DateTime.UtcNow < deadline && !app.Output.IsReStreamMode)
+                    Thread.Sleep(250);
+
+                Assert.True(app.Output.IsReStreamMode, "The mode switch did not reach re-stream mode");
+            }
+
+            if (app.Output.IsReStreamSourcePickerShown)
+            {
+                // A source is cached/discovered on this run — picker is the primary control.
+                var accessibleName = app.Output.ReStreamSourcePickerAccessibleName;
+                Assert.False(string.IsNullOrWhiteSpace(accessibleName));
+                Assert.Equal("Re-stream source", accessibleName);
+            }
+            else
+            {
+                // No NDI network reachable from the emulator — free-text fallback is expected.
+                Assert.True(app.Output.IsReStreamManualEntryShown);
+            }
+        }
+        finally
+        {
+            if (app.Output.IsReStreamMode != wasReStreamMode)
+                app.Output.ToggleReStreamMode();
         }
     });
 

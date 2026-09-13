@@ -87,15 +87,44 @@
                    AutomationId="{x:Static t:TestIds.OutputMicrophoneLabel}" />
         </HorizontalStackLayout>
 
-        <!-- Re-stream source selector (only visible in re-stream mode) -->
-        <Label Text="Re-stream Source ID"
+        <!-- Re-stream source selector (only visible in re-stream mode). Picker is the primary
+             control (Nielsen #6, #343 OUT-08): recognition over recall, reusing the Video Input
+             Picker's input-panel + chevron treatment above for consistency (Nielsen #4). The
+             free-text Entry is kept only as the empty-state fallback (ShowReStreamManualEntry) for
+             when no source is cached or discovered yet — the two controls are never both visible. -->
+        <Label Text="Re-stream Source"
                FontAttributes="Bold"
                IsVisible="{Binding IsReStreamMode}" />
+        <Border BackgroundColor="{DynamicResource InputBackground}"
+                Stroke="{DynamicResource BorderColor}"
+                StrokeShape="RoundRectangle 6"
+                Padding="12,0"
+                MinimumHeightRequest="48"
+                IsVisible="{Binding ShowReStreamSourcePicker}">
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="4">
+                <Picker Grid.Column="0"
+                        Title="Select a source"
+                        MinimumHeightRequest="48"
+                        AutomationId="{x:Static t:TestIds.OutputReStreamSourcePicker}"
+                        ItemsSource="{Binding AvailableReStreamSources}"
+                        SelectedItem="{Binding SelectedReStreamSource}"
+                        ItemDisplayBinding="{Binding ., Converter={StaticResource NdiSourceDisplayConverter}}"
+                        IsEnabled="{Binding IsOutputActive, Converter={StaticResource InverseBoolConverter}}"
+                        SemanticProperties.Description="Re-stream source" />
+                <!-- Decorative dropdown affordance; the accessible name/role lives on the Picker. -->
+                <Label Grid.Column="1" Text="&#x25BE;"
+                       VerticalOptions="Center"
+                       TextColor="{DynamicResource TextSecondary}"
+                       AutomationProperties.IsInAccessibleTree="False" />
+            </Grid>
+        </Border>
         <Entry Text="{Binding ReStreamSourceId}"
                AutomationId="{x:Static t:TestIds.OutputReStreamSourceId}"
-               Placeholder="Select a source on Sources page"
-               IsVisible="{Binding IsReStreamMode}"
-               IsEnabled="{Binding IsOutputActive, Converter={StaticResource InverseBoolConverter}}" />
+               Placeholder="No discovered sources yet — enter a source id manually"
+               MinimumHeightRequest="48"
+               IsVisible="{Binding ShowReStreamManualEntry}"
+               IsEnabled="{Binding IsOutputActive, Converter={StaticResource InverseBoolConverter}}"
+               SemanticProperties.Description="Re-stream source id" />
 
         <!-- Live status: connection count + program tally -->
         <HorizontalStackLayout Spacing="12"
@@ -127,6 +156,7 @@
                    VerticalOptions="Center" />
             <Label Text="{Binding StatusMessage}"
                    AutomationId="{x:Static t:TestIds.OutputStatus}"
+                   TextColor="{DynamicResource TextPrimary}"
                    VerticalOptions="Center">
                 <Label.Triggers>
                     <DataTrigger TargetType="Label" Binding="{Binding IsStatusError}" Value="True">

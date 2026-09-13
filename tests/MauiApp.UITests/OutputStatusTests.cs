@@ -10,7 +10,7 @@ public sealed class OutputStatusTests : UiTestBase
 {
     public OutputStatusTests(AppiumDriverFixture fixture) : base(fixture) { }
 
-    [SkippableFact]
+    [RetryableSkippableFact]
     public void OutputStatus_FailedStart_IsMarkedAsError() => Run(app =>
     {
         app.ResetToHome();

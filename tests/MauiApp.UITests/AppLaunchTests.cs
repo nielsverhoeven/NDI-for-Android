@@ -1,4 +1,6 @@
 using OpenQA.Selenium;
+using NdiForAndroid.Features.Navigation.Models;
+using NdiForAndroid.Features.Navigation.Services;
 using NdiForAndroid.Testing;
 using NdiForAndroid.UITests.Infrastructure;
 using NdiForAndroid.UITests.Pages;
@@ -20,7 +22,7 @@ public sealed class AppLaunchTests : UiTestBase
 {
     public AppLaunchTests(AppiumDriverFixture fixture) : base(fixture) { }
 
-    [SkippableFact]
+    [RetryableSkippableFact]
     public void AppLaunches_ShowsHomePageContent() => Run(app =>
     {
         app.ResetToHome();
@@ -33,7 +35,7 @@ public sealed class AppLaunchTests : UiTestBase
         Assert.False(string.IsNullOrWhiteSpace(app.Home.DiscoveryStatus), "Discovery status is blank");
     });
 
-    [SkippableFact]
+    [RetryableSkippableFact]
     public void Navigation_ToSettingsAndBackToHome_ShowsEachPage() => Run(app =>
     {
         // Starts from a known page: the session is shared, so without this the test inherits
@@ -48,7 +50,7 @@ public sealed class AppLaunchTests : UiTestBase
         app.Home.WaitUntilVisible();
     });
 
-    [SkippableFact]
+    [RetryableSkippableFact]
     public void Navigation_WatchOnASourceRow_OpensTheViewer() => Run(app =>
     {
         app.ResetToHome();
@@ -67,33 +69,128 @@ public sealed class AppLaunchTests : UiTestBase
         Assert.True(app.Viewer.HasVideoSurface, "The viewer opened without a video surface");
     });
 
-    [SkippableFact]
-    public void AdaptiveNavigation_InPortrait_PlacesNavigationAtTheBottom() => Run(app =>
+    /// <summary>
+    /// Every assertion in this test is preceded by an explicit wait, because both
+    /// <c>PageObject.IsPresent</c> and <c>NavigationBar.IsPresent</c> deliberately do not wait:
+    /// <c>WaitUntilFullScreen()</c> after each enter (blocks on the overlay-exclusive
+    /// `viewer.fullScreen.qualityCycle`), <c>WaitUntilPlaying()</c> after each exit (blocks on
+    /// `viewer.stop`, i.e. the Deck/Sheet layout has actually re-rendered). This is required
+    /// change 4's anti-race measure applied to all four transitions, not only to the Back-button
+    /// one.
+    /// </summary>
+    [RetryableSkippableFact]
+    public void FullScreen_EnterViaButton_HidesChromeAndExitButtonWorks() => Run(app =>
     {
-        app.Rotate(ScreenOrientation.Portrait);
+        app.ResetToHome();
+        app.Navigation.GoTo(NavDestination.View);
+        app.Sources.WaitUntilVisible();
 
-        var home = app.Navigation.Item(NavDestination.Home);
-        var window = app.WindowSize;
+        Skip.If(app.Sources.SourceCount == 0,
+            "No NDI sources discovered on this network; full screen needs a playing source.");
 
-        Assert.True(home.Location.Y > window.Height * 0.70,
-            $"Expected the Home nav item near the bottom in portrait. y={home.Location.Y}, height={window.Height}");
+        app.Sources.WatchSource();
+        app.Viewer.WaitUntilVisible();
+        app.Viewer.WaitUntilPlaying();
+
+        app.Viewer.ToggleFullScreen();
+        app.Viewer.WaitUntilFullScreen();
+        Assert.True(app.Viewer.IsFullScreen, "Full screen did not engage after the toggle button");
+        Assert.False(app.Navigation.IsPresent(NavDestination.Home),
+            "The bottom tab bar / left rail is still on screen in full screen");
+
+        app.Viewer.ExitFullScreen();
+        app.Viewer.WaitUntilPlaying();
+        Assert.False(app.Viewer.IsFullScreen, "Full screen did not exit after the overlay's exit button");
+        Assert.True(app.Navigation.IsPresent(NavDestination.Home),
+            "Navigation chrome was not restored after exiting full screen");
+
+        app.Viewer.ToggleFullScreen();
+        app.Viewer.WaitUntilFullScreen();
+        Assert.True(app.Viewer.IsFullScreen, "Full screen did not re-engage for the Back-button check");
+
+        app.PressBackButton();
+        app.Viewer.WaitUntilPlaying();
+        Assert.False(app.Viewer.IsFullScreen, "Back button did not exit full screen");
+        Assert.True(app.Navigation.IsPresent(NavDestination.Home),
+            "Navigation chrome was not restored after Back exited full screen");
     });
 
-    [SkippableFact]
-    public void AdaptiveNavigation_InLandscape_PlacesNavigationInTheLeftRail() => Run(app =>
+    /// <summary>
+    /// #383/#384 slice 3: on a compact (phone-class) device, rotating to landscape while playing
+    /// enters full screen in place with no page transition, and rotating back exits it. Skipped on
+    /// a device that reports as tablet-class (`SmallestWidthDp >= 600`, mirroring
+    /// `ViewerControlLayout.IsCompactDevice`) — tablets never auto-enter/exit full screen on
+    /// rotation by design (see the up-front design consult, decision (b)), so this assertion does
+    /// not apply there.
+    /// </summary>
+    [RetryableSkippableFact]
+    public void Viewer_RotatedToLandscape_EntersFullScreenInPlace() => Run(app =>
     {
+        app.ResetToHome();
+        app.Navigation.GoTo(NavDestination.View);
+        app.Sources.WaitUntilVisible();
+
+        Skip.If(app.Sources.SourceCount == 0,
+            "No NDI sources discovered on this network; rotation-driven full screen needs a playing source.");
+
+        Skip.If(app.Metrics.SmallestWidthDp >= 600,
+            "Rotation-driven full screen is compact-device-only (#384 slice 3); this device reports " +
+            $"sw={app.Metrics.SmallestWidthDp:0}dp, i.e. tablet-class.");
+
+        app.Sources.WatchSource();
+        app.Viewer.WaitUntilVisible();
+        app.Viewer.WaitUntilPlaying();
+
         app.Rotate(ScreenOrientation.Landscape);
+        app.Viewer.WaitUntilFullScreen();
+        Assert.True(app.Viewer.IsFullScreen, "Rotating to landscape did not enter full screen in place");
+        Assert.False(app.Navigation.IsPresent(NavDestination.Home),
+            "The bottom tab bar / left rail is still on screen in full screen");
+
+        app.Rotate(ScreenOrientation.Portrait);
+        app.Viewer.WaitUntilPlaying();
+        Assert.False(app.Viewer.IsFullScreen, "Rotating back to portrait did not exit full screen");
+        Assert.True(app.Navigation.IsPresent(NavDestination.Home),
+            "Navigation chrome was not restored after rotating back to portrait");
+    });
+
+    [RetryableSkippableTheory]
+    [InlineData(ScreenOrientation.Portrait)]
+    [InlineData(ScreenOrientation.Landscape)]
+    public void AdaptiveNavigation_MatchesPolicyForTheCurrentConfiguration(ScreenOrientation orientation) => Run(app =>
+    {
+        app.Rotate(orientation);
+
+        var widthDp = app.WindowSize.Width / app.Metrics.Density;
+        var sizeClass = WindowSizeClassService.Classify(widthDp);
+        var deviceOrientation = orientation == ScreenOrientation.Landscape
+            ? DeviceOrientation.Landscape
+            : DeviceOrientation.Portrait;
+
+        var policy = new NavigationPolicyService(new WindowSizeClassService());
+        var expected = policy.ResolvePlacement(deviceOrientation, sizeClass);
 
         var home = app.Navigation.Item(NavDestination.Home);
         var window = app.WindowSize;
 
-        Assert.True(home.Location.X < window.Width * 0.20,
-            $"Expected the Home nav item near the left edge in landscape. x={home.Location.X}, width={window.Width}");
-        Assert.True(home.Location.Y < window.Height * 0.60,
-            $"Expected the Home nav item in the left rail, not the bottom bar. y={home.Location.Y}, height={window.Height}");
+        if (expected == NavigationPlacementMode.LeftRail)
+        {
+            Assert.True(home.Location.X < window.Width * 0.20,
+                $"{sizeClass}/{orientation}: expected the left rail (x<20% of {window.Width}), " +
+                $"Home is at x={home.Location.X}");
+            Assert.True(home.Location.Y < window.Height * 0.60,
+                $"{sizeClass}/{orientation}: expected the left rail, not the bottom bar " +
+                $"(y<60% of {window.Height}), Home is at y={home.Location.Y}");
+        }
+        else
+        {
+            Assert.True(home.Location.Y > window.Height * 0.70,
+                $"{sizeClass}/{orientation}: expected the bottom tab bar (y>70% of {window.Height}), " +
+                $"Home is at y={home.Location.Y}");
+        }
     });
 
-    [SkippableFact]
+    [RetryableSkippableFact]
     public void AdaptiveNavigation_AllFourDestinations_ShowTheirOwnPage() => Run(app =>
     {
         app.Rotate(ScreenOrientation.Portrait);
@@ -113,7 +210,7 @@ public sealed class AppLaunchTests : UiTestBase
         app.Settings.WaitUntilVisible();
     });
 
-    [SkippableFact]
+    [RetryableSkippableFact]
     public void Rotating_WhileOnANonHomeTab_KeepsTheSameDestination() => Run(app =>
     {
         // The Appium session is shared: start from a known page and orientation rather than
@@ -138,7 +235,7 @@ public sealed class AppLaunchTests : UiTestBase
             "Rotating back to portrait must keep Stream selected (#393).");
     });
 
-    [SkippableFact]
+    [RetryableSkippableFact]
     public void Stream_TypedStreamName_SurvivesATabSwitch() => Run(app =>
     {
         app.ResetToHome();
@@ -159,7 +256,7 @@ public sealed class AppLaunchTests : UiTestBase
         Assert.Equal("E2E-Keep-Me", app.Output.StreamName);
     });
 
-    [SkippableFact]
+    [RetryableSkippableFact]
     public void Settings_AllFiveSections_AreReachable() => Run(app =>
     {
         app.ResetToHome();
@@ -177,7 +274,7 @@ public sealed class AppLaunchTests : UiTestBase
         }
     });
 
-    [SkippableFact]
+    [RetryableSkippableFact]
     public void Settings_CompactRail_SectionButtonsMeet48dp() => Run(app =>
     {
         // The Nexus 6 API 35 CI AVD is 411 dp wide in portrait — Compact — so this exercises
@@ -198,7 +295,7 @@ public sealed class AppLaunchTests : UiTestBase
         }
     });
 
-    [SkippableFact]
+    [RetryableSkippableFact]
     public void Settings_DiscoveryHost_SurvivesAnAppRestart() => Run(app =>
     {
         // Typing into the add-server Entry proves nothing: AddDiscoveryServerAsync clears it
@@ -248,7 +345,7 @@ public sealed class AppLaunchTests : UiTestBase
         }
     });
 
-    [SkippableFact]
+    [RetryableSkippableFact]
     public void Settings_DiscoveryEmptyState_TracksTheServerList() => Run(app =>
     {
         const string host = "10.255.255.2";
@@ -282,7 +379,7 @@ public sealed class AppLaunchTests : UiTestBase
             Assert.True(app.Settings.IsDiscoveryEmptyStateShown);
     });
 
-    [SkippableFact]
+    [RetryableSkippableFact]
     public void Settings_DeleteServer_DeclinedConfirmation_LeavesTheRow() => Run(app =>
     {
         const string host = "10.255.255.3";
@@ -313,7 +410,7 @@ public sealed class AppLaunchTests : UiTestBase
         }
     });
 
-    [SkippableFact]
+    [RetryableSkippableFact]
     public void Settings_DeveloperMode_TappingTheLabel_TogglesTheSwitch() => Run(app =>
     {
         app.ResetToHome();
@@ -335,7 +432,7 @@ public sealed class AppLaunchTests : UiTestBase
         }
     });
 
-    [SkippableFact]
+    [RetryableSkippableFact]
     public void Settings_DiscoveryServerRow_RendersEveryControl() => Run(app =>
     {
         // Regression guard for a row template overflowing its container: on a narrow detail panel

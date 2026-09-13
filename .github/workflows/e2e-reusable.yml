@@ -1,0 +1,393 @@
+name: E2E Reusable
+
+on:
+  workflow_call:
+    inputs:
+      app_ref:
+        description: 'Git ref to build the APK from. Blank = the calling workflow''s own ref.'
+        required: false
+        type: string
+        default: ''
+      avd_profile:
+        description: 'avdmanager device profile, e.g. "Nexus 6" or "pixel_c".'
+        required: false
+        type: string
+        default: 'Nexus 6'
+      api_level:
+        description: 'Android API level for the AVD system image.'
+        required: false
+        type: string
+        default: '35'
+      font_scale:
+        description: 'Device font scale applied via `adb shell settings put system font_scale` before install. "1.0" leaves the emulator default untouched.'
+        required: false
+        type: string
+        default: '1.0'
+      test_filter:
+        description: '`dotnet test --filter` expression. Blank runs everything.'
+        required: false
+        type: string
+        default: ''
+      a11y_max_violations:
+        description: 'Overrides A11Y_MAX_VIOLATIONS. Blank uses the in-code default (12).'
+        required: false
+        type: string
+        default: ''
+      expect_failure:
+        description: 'Regression-proof mode: the run is green only if a test FAILS.'
+        required: false
+        type: boolean
+        default: false
+      require_device:
+        description: 'Fatal (not skip) when no device is available. Always true for CI legs.'
+        required: false
+        type: boolean
+        default: true
+      release_sign:
+        description: 'Build a properly release-signed APK (needs the RELEASE_KEYSTORE_BASE64 secret). Only used when build_apk is true.'
+        required: false
+        type: boolean
+        default: true
+      build_apk:
+        description: 'Build the APK in this call. Set false when the caller already has a signed artifact to reuse (see apk_artifact_name).'
+        required: false
+        type: boolean
+        default: true
+      apk_artifact_name:
+        description: 'Artifact name to upload to (when build_apk is true) or download from (always). Must match an artifact already present in this workflow run when build_apk is false.'
+        required: false
+        type: string
+        default: 'android-apk'
+    secrets:
+      RELEASE_KEYSTORE_BASE64:
+        required: false
+      RELEASE_KEY_ALIAS:
+        required: false
+      RELEASE_KEY_PASSWORD:
+        required: false
+      RELEASE_KEYSTORE_PASSWORD:
+        required: false
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_VERSION: '10.0.301'
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Job 1: Build the APK on a plain runner (no emulator overhead). Skipped entirely
+  # when the caller already has a signed artifact to reuse (inputs.build_apk: false).
+  # ─────────────────────────────────────────────────────────────────────────────
+  build-apk:
+    name: Build Android APK
+    if: inputs.build_apk
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.app_ref || github.ref }}
+
+      - name: Report what is being built
+        run: |
+          echo "Building the app from: $(git rev-parse HEAD)"
+          git log -1 --format='  %h %s (%ci)'
+          if [ -n "${{ inputs.app_ref }}" ]; then
+            echo "NOTE: this is a non-default ref — tests will come from ${{ github.ref }}."
+          fi
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v6
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-e2e-${{ hashFiles('**/*.csproj') }}
+          restore-keys: ${{ runner.os }}-nuget-e2e-
+
+      - name: Install MAUI Android workload
+        run: dotnet workload install maui-android
+
+      - name: Restore dependencies
+        run: dotnet restore NdiForAndroid.sln --ignore-failed-sources
+
+      - name: Decode release keystore
+        id: keystore
+        if: inputs.release_sign
+        shell: bash
+        env:
+          KEYSTORE_B64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$KEYSTORE_B64" ]; then
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::RELEASE_KEYSTORE_BASE64 is not available; the APK will be debug-signed"
+            exit 0
+          fi
+          printf '%s' "$KEYSTORE_B64" | tr -d '\n\r ' | base64 -d > "$RUNNER_TEMP/release.keystore"
+          test -s "$RUNNER_TEMP/release.keystore"
+          echo "available=true" >> "$GITHUB_OUTPUT"
+
+      - name: Publish APK
+        shell: bash
+        env:
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+          RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+        run: |
+          SIGN_ARGS=()
+          if [ "${{ steps.keystore.outputs.available }}" = "true" ]; then
+            SIGN_ARGS+=(
+              /p:AndroidKeyStore=true
+              "/p:AndroidSigningKeyStore=$RUNNER_TEMP/release.keystore"
+              "/p:AndroidSigningKeyAlias=$RELEASE_KEY_ALIAS"
+              /p:AndroidSigningKeyPass=env:RELEASE_KEY_PASSWORD
+              /p:AndroidSigningStorePass=env:RELEASE_KEYSTORE_PASSWORD
+            )
+          fi
+
+          dotnet publish src/MauiApp/NdiForAndroid.csproj \
+            -f net10.0-android -c Release -o publish-output \
+            /p:AndroidPackageFormat=apk /p:AndroidUseToolchain=True \
+            "${SIGN_ARGS[@]}"
+
+      # No further fallback: an unsigned APK fails INSTALL_PARSE_FAILED_NO_CERTIFICATES on
+      # device, so finding no signed output is a build failure, not a reason to keep searching.
+      - name: Locate signed APK
+        run: |
+          APK_PATH=$(find publish-output -name "*-Signed.apk" | head -1)
+          if [ -z "$APK_PATH" ]; then
+            echo "No signed APK produced under publish-output:"
+            find publish-output -name "*.apk" || true
+            exit 1
+          fi
+          echo "APK_PATH=$APK_PATH" >> "$GITHUB_ENV"
+          echo "Built $(basename "$APK_PATH")"
+
+      - name: Remove keystore
+        if: always()
+        shell: bash
+        run: rm -f "$RUNNER_TEMP/release.keystore"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ inputs.apk_artifact_name }}
+          path: ${{ env.APK_PATH }}
+          retention-days: 1
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Job 2: Download the APK and run it on an Android emulator. Runs whether build-apk
+  # ran or was skipped — a skip means the artifact named apk_artifact_name already
+  # exists elsewhere in this workflow run (uploaded by the calling workflow).
+  # ─────────────────────────────────────────────────────────────────────────────
+  emulator-tests:
+    name: Android Emulator UI Tests
+    needs: build-apk
+    if: always() && (needs.build-apk.result == 'success' || needs.build-apk.result == 'skipped')
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    env:
+      APPIUM_SERVER_URL: http://127.0.0.1:4723/
+      E2E_REQUIRE_DEVICE: ${{ inputs.require_device }}
+      E2E_TEST_FILTER: ${{ inputs.test_filter }}
+      E2E_EXPECT_FAILURE: ${{ inputs.expect_failure }}
+      E2E_FONT_SCALE: ${{ inputs.font_scale }}
+      A11Y_MAX_VIOLATIONS: ${{ inputs.a11y_max_violations }}
+      # Unique per matrix leg — actions/upload-artifact fails the step if two jobs in the
+      # same run upload the same artifact name.
+      LEG_SLUG: ${{ inputs.avd_profile }}-api${{ inputs.api_level }}-fs${{ inputs.font_scale }}
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Java
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v6
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-uitests-${{ hashFiles('**/*.csproj') }}
+          restore-keys: ${{ runner.os }}-nuget-uitests-
+
+      - name: Restore UITests project
+        run: dotnet restore tests/MauiApp.UITests/NdiForAndroid.UITests.csproj
+
+      - name: Download APK artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ inputs.apk_artifact_name }}
+          path: apk
+
+      - name: Locate downloaded APK
+        run: |
+          APK_PATH=$(find "$PWD/apk" -name '*.apk' -type f -print -quit)
+          if [ -z "$APK_PATH" ]; then echo "No APK in artifact"; exit 1; fi
+          echo "APK_PATH=$APK_PATH" >> "$GITHUB_ENV"
+          echo "Using APK: $APK_PATH"
+
+      - name: Setup Node.js for Appium
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+
+      - name: Install Appium and UIAutomator2 driver
+        run: |
+          npm install -g appium
+          appium driver install uiautomator2
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Sanitise cache key fragments
+        id: cachekey
+        run: |
+          SAFE=$(echo "${{ inputs.avd_profile }}" | tr -c 'a-zA-Z0-9' '_')
+          FS=$(echo "${{ inputs.font_scale }}" | tr -c 'a-zA-Z0-9' '_')
+          echo "profile=$SAFE" >> "$GITHUB_OUTPUT"
+          echo "fontscale=$FS" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Android AVD and system image
+        uses: actions/cache@v6
+        id: avd-cache
+        with:
+          path: |
+            ~/.android/avd/*
+            ~/.android/adb*
+          key: avd-api${{ inputs.api_level }}-x86_64-${{ steps.cachekey.outputs.profile }}-fs${{ steps.cachekey.outputs.fontscale }}-v1
+
+      - name: Create AVD (only on cache miss)
+        if: steps.avd-cache.outputs.cache-hit != 'true'
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ inputs.api_level }}
+          arch: x86_64
+          profile: ${{ inputs.avd_profile }}
+          force-avd-creation: false
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: false
+          script: echo "AVD created and cached."
+
+      - name: Run emulator tests
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ inputs.api_level }}
+          arch: x86_64
+          profile: ${{ inputs.avd_profile }}
+          force-avd-creation: false
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          emulator-boot-timeout: 300
+          script: bash ./testing/e2e/scripts/run-emulator-tests.sh "$APK_PATH"
+
+      - name: Report e2e results
+        if: always()
+        run: bash .github/scripts/report-test-results.sh test-results
+
+      - name: Show Appium log on failure
+        if: failure()
+        run: |
+          LOG=test-results/appium.log
+          if [ ! -f "$LOG" ]; then
+            echo "No $LOG produced — Appium never started."
+            exit 0
+          fi
+          echo "===== appium.log (errors) ====="
+          grep -iE "error|failed|refused|could not|unable|exception" "$LOG" | head -40 || echo "(no error lines matched)"
+          echo "===== appium.log (last 60 lines) ====="
+          tail -60 "$LOG"
+
+      - name: Upload emulator test results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: emulator-test-results-${{ env.LEG_SLUG }}
+          path: test-results/*.trx
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: Upload emulator diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: emulator-diagnostics-${{ env.LEG_SLUG }}
+          path: |
+            test-results/*.log
+            test-results/*.txt
+            test-results/*.ndjson
+            test-results/failure-evidence/**
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: Failure summary
+        if: failure()
+        run: |
+          TRX=$(find test-results -name '*.trx' -type f -print -quit 2>/dev/null || true)
+          echo "=================== E2E FAILURE SUMMARY (${{ env.LEG_SLUG }}) ==================="
+          if [ -z "$TRX" ]; then
+            echo "No TRX produced — the suite did not run to completion."
+            exit 0
+          fi
+          python3 - "$TRX" <<'PY'
+          import sys, xml.etree.ElementTree as ET
+          from collections import OrderedDict
+          NS = '{http://microsoft.com/schemas/VisualStudio/TeamTest/2010}'
+          try:
+              root = ET.parse(sys.argv[1]).getroot()
+          except Exception as e:
+              print(f"Could not parse TRX: {e}"); sys.exit(0)
+          groups = OrderedDict()
+          for r in root.iter(f'{NS}UnitTestResult'):
+              if r.get('outcome') != 'Failed':
+                  continue
+              msg = st = ''
+              for m in r.iter(f'{NS}Message'):
+                  if m.text: msg = m.text.strip(); break
+              for s in r.iter(f'{NS}StackTrace'):
+                  if s.text: st = s.text.strip(); break
+              groups.setdefault((msg, st), []).append(r.get('testName') or '')
+          for (msg, st), names in groups.items():
+              print(f"\n--- {len(names)} test(s) failed with: ---")
+              print(msg or "(no message)")
+              if st:
+                  print("\nStack trace (first 15 frames):")
+                  print('\n'.join(st.splitlines()[:15]))
+              print(f"\nAffected: {', '.join(n.split('.')[-1] for n in names[:12])}")
+          PY
+          echo ""
+          if [ -s test-results/logcat-crash.txt ]; then
+            echo "----- logcat crash buffer (first 60 lines) -----"
+            head -60 test-results/logcat-crash.txt
+          else
+            echo "Crash buffer empty: the app did not abort with a Java/native crash."
+          fi
+          echo ""
+          if [ -s test-results/logcat-app.txt ]; then
+            echo "----- system activity for com.ndi.android (kills / ANRs / OOM) -----"
+            grep -E 'am_kill|lowmemorykiller|Killing|ANR in|force-stop|died|OutOfMemory' \
+              test-results/logcat-app.txt | tail -25 || echo "  (no kill, ANR or OOM lines found)"
+          fi
+          echo ""
+          if [ -s test-results/logcat-full.txt ]; then
+            echo "----- foreground handovers (whole run) -----"
+            grep -E 'START u0|moveTaskToBack|finishActivity|am_finish|Force removing|removeTask|TaskRemoved' \
+              test-results/logcat-full.txt | tail -40 || echo "  (no foreground-handover lines found)"
+          fi
+          echo "==========================================================="

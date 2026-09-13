@@ -146,6 +146,7 @@
     <converters:InverseBoolConverter x:Key="InverseBoolConverter" />
     <converters:DiscoveryServerStateColorConverter x:Key="DiscoveryServerStateColorConverter" />
     <converters:VideoInputKindDisplayConverter x:Key="VideoInputKindDisplayConverter" />
+    <converters:NdiSourceDisplayConverter x:Key="NdiSourceDisplayConverter" />
     <converters:LogLevelColorConverter x:Key="LogLevelColorConverter" />
 
     <!-- Static booleans -->

@@ -241,9 +241,11 @@ public partial class AppShell : Shell
     {
         if (e.PropertyName is nameof(AdaptiveShellStateViewModel.PlacementMode))
             ApplyPlacement();
+        else if (e.PropertyName is nameof(AdaptiveShellStateViewModel.IsChromeSuppressed))
+            ApplyPlacement(ensureDestination: false);
     }
 
-    private void ApplyPlacement()
+    private void ApplyPlacement(bool ensureDestination = true)
     {
         // Cleared before the flip below, never after: hiding PrimaryTabBar can drive Shell's
         // fallback navigation to completion synchronously, re-entering OnShellNavigated before
@@ -267,7 +269,7 @@ public partial class AppShell : Shell
                 return;
             }
 
-            FlyoutBehavior          = FlyoutBehavior.Locked;
+            FlyoutBehavior          = _stateViewModel.IsChromeSuppressed ? FlyoutBehavior.Disabled : FlyoutBehavior.Locked;
             PrimaryTabBar.IsVisible = false;
         }
         else
@@ -276,7 +278,12 @@ public partial class AppShell : Shell
             PrimaryTabBar.IsVisible = true;
         }
 
-        Dispatcher.Dispatch(async () => await EnsurePrimaryDestinationVisibleAsync());
+        // A full-screen viewer owns the whole window; a placement reconciliation must never
+        // navigate it away (the section-root/pane case — the pushed-page case is covered by the
+        // NavigationStack guard inside EnsurePrimaryDestinationVisibleAsync). Same intent as
+        // SourceListPage.ApplySizeClass's _isPaneFullScreen early return.
+        if (ensureDestination && !_stateViewModel.IsChromeSuppressed)
+            Dispatcher.Dispatch(async () => await EnsurePrimaryDestinationVisibleAsync());
     }
 
     // ── Navigation ───────────────────────────────────────────────────────────

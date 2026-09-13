@@ -119,6 +119,8 @@ public static class TestIds
     public const string ViewerReconnect       = "viewer.reconnect";
     public const string ViewerStop            = "viewer.stop";
     public const string ViewerFullScreenToggle = "viewer.fullScreenToggle";
+    public const string ViewerFullScreenOverlay = "viewer.fullScreen.overlay";
+    public const string ViewerFullScreenCamera  = "viewer.fullScreen.camera";
 
     // ── PTZ endpoint override form (#374) ────────────────────────────────────
 
@@ -151,6 +153,7 @@ public static class TestIds
     public const string OutputMicrophoneToggle = "output.microphoneToggle";
     public const string OutputMicrophoneLabel  = "output.microphoneLabel";
     public const string OutputReStreamSourceId = "output.reStreamSourceId";
+    public const string OutputReStreamSourcePicker = "output.reStreamSourcePicker";
     public const string OutputConnectionCount  = "output.connectionCount";
     public const string OutputOnAirTally       = "output.onAirTally";
     public const string OutputStatus           = "output.status";

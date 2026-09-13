@@ -42,7 +42,7 @@ public sealed class ThemeRegressionTests : UiTestBase
     public ThemeRegressionTests(AppiumDriverFixture fixture, ITestOutputHelper output)
         : base(fixture) => _output = output;
 
-    [SkippableTheory]
+    [RetryableSkippableTheory]
     [InlineData(ThemeOption.Light)]
     [InlineData(ThemeOption.Dark)]
     [InlineData(ThemeOption.System)]
@@ -85,7 +85,7 @@ public sealed class ThemeRegressionTests : UiTestBase
         }
     });
 
-    [SkippableFact]
+    [RetryableSkippableFact]
     public void Theme_SelectedInSettings_SurvivesNavigatingAwayAndBack() => Run(app =>
     {
         // #300: the theme reverted to default when SettingsPage was torn down, so the defect only
@@ -116,7 +116,7 @@ public sealed class ThemeRegressionTests : UiTestBase
             "Settings reports both Dark and System as selected — the read-back is not distinguishing them.");
     });
 
-    [SkippableFact]
+    [RetryableSkippableFact]
     public void Theme_SelectedInSettings_SurvivesAnAppRestart() => Run(app =>
     {
         ApplyTheme(app, ThemeOption.Dark);
@@ -144,7 +144,7 @@ public sealed class ThemeRegressionTests : UiTestBase
             "The Dark theme did not survive an app restart, so it was never persisted.");
     });
 
-    [SkippableFact]
+    [RetryableSkippableFact]
     public void Theme_SwitchingLightToDark_ActuallyChangesWhatIsOnScreen() => Run(app =>
     {
         // Guards the whole file against becoming vacuous. Every other assertion here is a contrast

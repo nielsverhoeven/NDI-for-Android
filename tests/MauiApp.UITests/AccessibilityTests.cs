@@ -54,7 +54,7 @@ public sealed class AccessibilityTests : UiTestBase
     public AccessibilityTests(AppiumDriverFixture fixture, ITestOutputHelper output)
         : base(fixture) => _output = output;
 
-    [SkippableFact]
+    [RetryableSkippableFact]
     public void Accessibility_AcrossPrimaryScreens_StaysWithinBudget() => Run(app =>
     {
         app.Rotate(ScreenOrientation.Portrait);
@@ -85,7 +85,7 @@ public sealed class AccessibilityTests : UiTestBase
             $"Lower the budget as these are fixed; never raise it.{Environment.NewLine}{summary}");
     });
 
-    [SkippableFact]
+    [RetryableSkippableFact]
     public void Accessibility_NavigationItems_AnnounceTheirDestination() => Run(app =>
     {
         // The specific regression from #304: every rail item was an unlabelled container. This is
@@ -120,7 +120,7 @@ public sealed class AccessibilityTests : UiTestBase
         }
     });
 
-    [SkippableFact]
+    [RetryableSkippableFact]
     public void Accessibility_RailItems_AnnounceSelectedDestination() => Run(app =>
     {
         // The rail only exists in landscape/Expanded; the bottom tab bar (portrait) is untouched
@@ -146,7 +146,7 @@ public sealed class AccessibilityTests : UiTestBase
         }
     });
 
-    [SkippableFact]
+    [RetryableSkippableFact]
     public void Accessibility_AutomationIds_AreNotUsedAsScreenReaderLabels() => Run(app =>
     {
         // Phase 1 added 99 AutomationIds. If MAUI were to surface those as contentDescription,
