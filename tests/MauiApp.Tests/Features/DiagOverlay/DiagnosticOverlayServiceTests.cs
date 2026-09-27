@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using NdiForAndroid.Features.DiagOverlay.Services;
 using Xunit;
 
@@ -123,5 +124,64 @@ public class DiagnosticOverlayServiceTests
         var sut = new DiagnosticOverlayService { IsDeveloperMode = true };
 
         sut.UpdateDiscoveryDiagnostics("Success", 1);
+    }
+
+    [Fact]
+    public void Trace_WhenDeveloperModeOff_WritesNothingToTheSink()
+    {
+        var sink = new RecordingSink();
+        var sut = new DiagnosticOverlayService(sink) { IsDeveloperMode = false };
+
+        sut.Trace(DiagnosticOverlayService.NavigationLogTag, "shell.navigating.begin", "nav=1");
+
+        Assert.Empty(sink.Lines);
+    }
+
+    [Fact]
+    public void Trace_WhenDeveloperModeOn_WritesOneLinePrefixedWithATick()
+    {
+        var sink = new RecordingSink();
+        var sut = new DiagnosticOverlayService(sink) { IsDeveloperMode = true };
+
+        sut.Trace(DiagnosticOverlayService.NavigationLogTag, "shell.navigating.begin", "nav=1");
+
+        var line = Assert.Single(sink.Lines);
+        Assert.Equal(DiagnosticOverlayService.NavigationLogTag, line.Tag);
+        Assert.Matches(new Regex(@"^t=\d+ shell\.navigating\.begin nav=1$"), line.Message);
+    }
+
+    [Fact]
+    public void Trace_WhenDeveloperModeOn_AndNoDetail_OmitsTheTrailingSpace()
+    {
+        var sink = new RecordingSink();
+        var sut = new DiagnosticOverlayService(sink) { IsDeveloperMode = true };
+
+        sut.Trace(DiagnosticOverlayService.NavigationLogTag, "settings.monitor.start");
+
+        var line = Assert.Single(sink.Lines);
+        Assert.Matches(new Regex(@"^t=\d+ settings\.monitor\.start$"), line.Message);
+    }
+
+    [Fact]
+    public void Trace_WhenTheSinkThrows_DoesNotThrow()
+    {
+        var sink = new RecordingSink { Throw = true };
+        var sut = new DiagnosticOverlayService(sink) { IsDeveloperMode = true };
+
+        sut.Trace(DiagnosticOverlayService.NavigationLogTag, "shell.navigating.begin", "nav=1");
+    }
+
+    [Fact]
+    public void Trace_NeverWritesToTheLogBuffer()
+    {
+        var sink = new RecordingSink();
+        var sut = new DiagnosticOverlayService(sink) { IsDeveloperMode = true };
+        var countBeforeTrace = sut.LogBuffer.GetEntries().Count;
+
+        sut.Trace(DiagnosticOverlayService.NavigationLogTag, "shell.navigating.begin", "nav=1");
+        sut.Trace(DiagnosticOverlayService.NavigationLogTag, "shell.navigating.skip", "nav=1 reason=modal");
+        sut.Trace(DiagnosticOverlayService.NavigationLogTag, "shell.deferral.taken", "nav=1");
+
+        Assert.Equal(countBeforeTrace, sut.LogBuffer.GetEntries().Count);
     }
 }

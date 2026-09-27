@@ -16,19 +16,21 @@ namespace NdiForAndroid.Features.Viewer.Views;
 /// </summary>
 public partial class ViewerView : ContentView
 {
-    // Rendering plumbing only (allowed in code-behind): a pull loop that invalidates the
-    // canvas as soon as the bridge has produced a newer frame, and a paint handler that
-    // draws the bridge's ARGB int[] in place (pinned, no intermediate bitmap copy).
-    //
-    // The poll runs at ~120 Hz rather than the source frame rate: the old 33 ms tick could
-    // leave a fresh frame waiting up to 33 ms before it was even invalidated and showed at
-    // most every other frame of a 60 fps source. A tick with no new frame is a single
-    // reference compare, so polling faster costs next to nothing.
-    private const int RenderPollIntervalMs = 8;
+    // Rendering plumbing only (allowed in code-behind): frames are presented on arrival — the
+    // ViewModel raises FrameReady on the UI thread, already coalesced — with a ~30 fps timer kept
+    // as a fallback so a hole in the event wiring degrades to the old behaviour rather than to a
+    // blank canvas (#416). The paint handler draws the bridge's ARGB int[] in place (pinned, no
+    // intermediate bitmap copy).
+    private const int FallbackPollIntervalMs = 33;
 
     private IDispatcherTimer? _renderTimer;
     private NdiVideoFrame? _pendingFrame;
     private long _lastRenderedTimestamp = -1;
+    private bool _isRenderingActive;
+
+    // True when the next paint is one a newly arrived frame caused; only such a paint is measured
+    // (OnPaintSurface also runs for relayout/rotation/theme repaints of a stale frame).
+    private bool _frameAwaitingReport;
 
     private ViewerViewModel? _boundViewModel;
 
@@ -40,22 +42,31 @@ public partial class ViewerView : ContentView
         SizeChanged += (_, _) => UpdateLayoutVisibility();
     }
 
-    /// <summary>Starts (or resumes) the frame pull loop. Idempotent.</summary>
+    /// <summary>Enables presentation: draw-on-arrival plus the ~30 fps fallback pull. Idempotent.
+    /// Also opens the ViewModel's pump-side gate, so the pump stops posting to a View that is not
+    /// rendering.</summary>
     public void StartRendering()
     {
+        _isRenderingActive = true;
+        _boundViewModel?.SetRenderingActive(true);
+
         if (_renderTimer is null)
         {
             _renderTimer = Dispatcher.CreateTimer();
-            _renderTimer.Interval = TimeSpan.FromMilliseconds(RenderPollIntervalMs);
+            _renderTimer.Interval = TimeSpan.FromMilliseconds(FallbackPollIntervalMs);
             _renderTimer.Tick += OnRenderTick;
         }
 
         _renderTimer.Start();
     }
 
-    /// <summary>Stops the frame pull loop. Safe to call when not rendering.</summary>
+    /// <summary>Disables presentation. Safe to call when not rendering. Closes both gates: the
+    /// ViewModel stops posting per-frame invalidates and the two local triggers stop presenting.</summary>
     public void StopRendering()
     {
+        _isRenderingActive = false;
+        _frameAwaitingReport = false;
+        _boundViewModel?.SetRenderingActive(false);
         _renderTimer?.Stop();
     }
 
@@ -72,9 +83,14 @@ public partial class ViewerView : ContentView
             _renderTimer = null;
         }
 
+        _isRenderingActive = false;
+        _frameAwaitingReport = false;
+
         if (_boundViewModel is not null)
         {
+            _boundViewModel.SetRenderingActive(false);
             _boundViewModel.PropertyChanged -= OnViewModelPropertyChanged;
+            _boundViewModel.FrameReady -= OnFrameReady;
             _boundViewModel = null;
         }
 
@@ -87,12 +103,24 @@ public partial class ViewerView : ContentView
         base.OnBindingContextChanged();
 
         if (_boundViewModel is not null)
+        {
+            // A ViewModel this View no longer presents must not be left with its gate open — the
+            // Expanded pane's PaneViewer is a never-disposed singleton and would keep posting.
+            _boundViewModel.SetRenderingActive(false);
             _boundViewModel.PropertyChanged -= OnViewModelPropertyChanged;
+            _boundViewModel.FrameReady -= OnFrameReady;
+        }
 
         _boundViewModel = BindingContext as ViewerViewModel;
 
         if (_boundViewModel is not null)
+        {
             _boundViewModel.PropertyChanged += OnViewModelPropertyChanged;
+            _boundViewModel.FrameReady += OnFrameReady;
+            // Re-assert the host's current state: {Binding PaneViewer} resolves only on the first
+            // Expanded "Watch" tap, long after StartRendering() ran.
+            _boundViewModel.SetRenderingActive(_isRenderingActive);
+        }
 
         UpdateLayoutVisibility();
     }
@@ -126,21 +154,40 @@ public partial class ViewerView : ContentView
         {
             _pendingFrame = null;
             _lastRenderedTimestamp = -1;
+            _frameAwaitingReport = false;
             VideoCanvas.InvalidateSurface();
         }
     }
 
-    private void OnRenderTick(object? sender, EventArgs e)
+    /// <summary>Draw-on-arrival (#416). Already on the UI thread and already coalesced by the
+    /// ViewModel, so this is a single presentation attempt — never a loop and never a dispatch.</summary>
+    private void OnFrameReady(object? sender, EventArgs e) => PresentLatestFrame();
+
+    /// <summary>Fallback pull. Once the event path is current this costs one property read and one
+    /// long comparison per tick, because the timestamp dedupe below short-circuits it.</summary>
+    private void OnRenderTick(object? sender, EventArgs e) => PresentLatestFrame();
+
+    private void PresentLatestFrame()
     {
-        if (BindingContext is not ViewerViewModel viewModel)
+        if (!_isRenderingActive || _boundViewModel is null)
             return;
 
-        var frame = viewModel.CurrentFrame;
+        // Second layer over the bridge's prologue blank: Stop / CancelRetry / FailReconnect all
+        // mean "do not paint", and this also covers the one case the bridge cannot — a pane
+        // retired by ReleaseIfDisowned, where no stop happened at all because the frames now
+        // belong to another ViewerViewModel and must keep flowing for it. Without this, that
+        // pane blanks for a single frame on IsStopped and then repaints the new owner's live
+        // video under its own "Stopped" badge.
+        if (_boundViewModel.IsStopped)
+            return;
+
+        var frame = _boundViewModel.CurrentFrame;
         if (frame is null || frame.CapturedAtEpochMillis == _lastRenderedTimestamp)
             return;
 
         _lastRenderedTimestamp = frame.CapturedAtEpochMillis;
         _pendingFrame = frame;
+        _frameAwaitingReport = true;
         VideoCanvas.InvalidateSurface();
     }
 
@@ -148,6 +195,11 @@ public partial class ViewerView : ContentView
     {
         var canvas = e.Surface.Canvas;
         canvas.Clear(SKColors.Black);
+
+        // Captured and cleared before the early return below, so a paint that draws nothing does
+        // not leave the flag armed for a later, frame-less repaint.
+        var isNewFrame = _frameAwaitingReport;
+        _frameAwaitingReport = false;
 
         var frame = _pendingFrame;
         if (frame is null || frame.Width <= 0 || frame.Height <= 0)
@@ -183,6 +235,14 @@ public partial class ViewerView : ContentView
         finally
         {
             handle.Free();
+        }
+
+        // Only the first paint of a new frame is measured — a relayout/rotation repaint of a stale
+        // frame would otherwise report an inflated latency.
+        if (isNewFrame)
+        {
+            _boundViewModel?.ReportFrameDrawn(
+                frame.ReceivedAtTickMillis, frame.CapturedAtEpochMillis, frame.TimestampIsSynthesized);
         }
     }
 }

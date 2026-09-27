@@ -44,6 +44,9 @@ public class ViewerViewModelTests
         _ptzControllerFactoryMock
             .Setup(f => f.Create(It.IsAny<PtzEndpoint?>()))
             .Returns(_ptzControllerMock.Object);
+        _bridgeMock
+            .Setup(b => b.StopReceiverAsync())
+            .Returns(Task.CompletedTask);
     }
 
     private ViewerViewModel CreateSut() => new(
@@ -118,7 +121,7 @@ public class ViewerViewModelTests
 
         sut.StopCommand.Execute(null);
 
-        _bridgeMock.Verify(b => b.StopReceiver(), Times.Once);
+        _bridgeMock.Verify(b => b.StopReceiverAsync(), Times.Once);
         Assert.False(sut.IsPlaying);
         Assert.Equal("Stopped.", sut.StatusMessage);
     }
@@ -142,9 +145,9 @@ public class ViewerViewModelTests
     public void CheckForUnexpectedDrop_WhenDisconnectedAndNotUserStop_BeginsReconnectWindow()
     {
         _bridgeMock.Setup(b => b.GetConnectionState()).Returns(ConnectionState.Disconnected);
+        _bridgeMock.Setup(b => b.GetLastStopReason()).Returns(ReceiverStopReason.ConnectionLost);
 
-        var sut = CreateSut();
-        sut.IsPlaying = true;
+        var sut = CreatePlayingSut();
 
         sut.CheckForUnexpectedDrop();
 
@@ -155,14 +158,73 @@ public class ViewerViewModelTests
     public void CheckForUnexpectedDrop_WhenUserStop_DoesNotBeginReconnectWindow()
     {
         _bridgeMock.Setup(b => b.GetConnectionState()).Returns(ConnectionState.Disconnected);
+        _bridgeMock.Setup(b => b.GetLastStopReason()).Returns(ReceiverStopReason.ConnectionLost);
 
-        var sut = CreateSut();
-        sut.IsPlaying = true;
+        var sut = CreatePlayingSut();
         sut.StopCommand.Execute(null);
+        sut.IsPlaying = true; // re-arm every other term, so _userInitiatedStop is the only one that can reject
 
         sut.CheckForUnexpectedDrop();
 
         Assert.False(sut.IsReconnecting);
+    }
+
+    [Fact]
+    public void OnBridgeConnectionStateChanged_Disconnected_TriggersCheckForUnexpectedDrop()
+    {
+        _bridgeMock.Setup(b => b.GetConnectionState()).Returns(ConnectionState.Disconnected);
+        _bridgeMock.Setup(b => b.GetLastStopReason()).Returns(ReceiverStopReason.ConnectionLost);
+        var sut = CreatePlayingSut();
+
+        _bridgeMock.Raise(b => b.ConnectionStateChanged += null, _bridgeMock.Object, ConnectionState.Disconnected);
+
+        Assert.True(sut.IsReconnecting);
+    }
+
+    [Fact]
+    public void OnBridgeConnectionStateChanged_DisconnectedWithIntentionalReason_DoesNotBeginReconnectWindow()
+    {
+        _bridgeMock.Setup(b => b.GetConnectionState()).Returns(ConnectionState.Disconnected);
+        _bridgeMock.Setup(b => b.GetLastStopReason()).Returns(ReceiverStopReason.Intentional);
+        var sut = CreatePlayingSut();
+
+        _bridgeMock.Raise(b => b.ConnectionStateChanged += null, _bridgeMock.Object, ConnectionState.Disconnected);
+
+        Assert.False(sut.IsReconnecting);
+    }
+
+    [Fact]
+    public void CheckForUnexpectedDrop_WhenLastStopReasonIsIntentional_DoesNotBeginReconnectWindow()
+    {
+        _bridgeMock.Setup(b => b.GetConnectionState()).Returns(ConnectionState.Disconnected);
+        _bridgeMock.Setup(b => b.GetLastStopReason()).Returns(ReceiverStopReason.Intentional);
+        var sut = CreatePlayingSut();
+
+        sut.CheckForUnexpectedDrop();
+
+        Assert.False(sut.IsReconnecting);
+    }
+
+    [Fact]
+    public void OnBridgeConnectionStateChanged_ConnectedDuringReconnectWindow_CompletesTheWindow()
+    {
+        var sut = CreatePlayingSut(); // GetConnectionState left un-setup -> the attempt loop can never self-complete
+        sut.BeginReconnectWindow();
+        Assert.True(sut.IsReconnecting);
+
+        // The receiver really has connected by the time the event is delivered; CompleteReconnect
+        // re-reads the bridge and refuses to declare success against a Connecting one.
+        _bridgeMock.Setup(b => b.GetConnectionState()).Returns(ConnectionState.Connected);
+
+        _bridgeMock.Raise(b => b.ConnectionStateChanged += null, _bridgeMock.Object, ConnectionState.Connected);
+
+        Assert.False(sut.IsReconnecting);
+        Assert.True(sut.IsPlaying);
+        Assert.Equal("Connected.", sut.StatusMessage);
+        Assert.Null(sut.RetryStatusMessage);
+
+        _timeProvider.Advance(TimeSpan.FromSeconds(30));
+        _bridgeMock.Verify(b => b.StartReceiver(It.IsAny<string>(), It.IsAny<QualityProfile>()), Times.Never);
     }
 
     [Fact]
@@ -188,7 +250,9 @@ public class ViewerViewModelTests
         sut.CancelRetryCommand.Execute(null);
 
         Assert.False(sut.IsReconnecting);
-        Assert.Equal("Reconnection cancelled.", sut.RetryStatusMessage);
+        Assert.Equal("Reconnection cancelled.", sut.StatusMessage);
+        Assert.Null(sut.RetryStatusMessage);
+        Assert.True(sut.CanReconnect);
     }
 
     [Fact]
@@ -692,7 +756,7 @@ public class ViewerViewModelTests
         sut.BeginReconnectWindow();
         _timeProvider.Advance(TimeSpan.FromSeconds(2));
 
-        _bridgeMock.Verify(b => b.StopReceiver(), Times.Once);
+        _bridgeMock.Verify(b => b.StopReceiverAsync(), Times.Once);
         _bridgeMock.Verify(b => b.StartReceiver("src-1", QualityProfile.High), Times.Once);
         _bridgeMock.Verify(b => b.StartReceiver("src-1", QualityProfile.Balanced), Times.Never);
     }
@@ -732,7 +796,10 @@ public class ViewerViewModelTests
 
         _timeProvider.Advance(TimeSpan.FromSeconds(30));
 
-        _bridgeMock.Verify(b => b.StartReceiver("src-1", QualityProfile.Balanced), Times.Once);
+        // The bridge was already Connected when the tick fired, so the attempt completes the window
+        // instead of destroying a healthy receiver.
+        _bridgeMock.Verify(b => b.StartReceiver(It.IsAny<string>(), It.IsAny<QualityProfile>()), Times.Never);
+        _bridgeMock.Verify(b => b.StopReceiverAsync(), Times.Never);
         Assert.Equal(0, sut.RetryRemainingSeconds);
     }
 
@@ -750,11 +817,150 @@ public class ViewerViewModelTests
         Assert.Equal(0, sut.RetryRemainingSeconds);
         Assert.Null(sut.RetryStatusMessage);
         Assert.Equal("Connection lost. Reconnection failed.", sut.StatusMessage);
+        Assert.True(sut.IsStopped);
         _bridgeMock.Verify(b => b.StartReceiver("src-1", QualityProfile.Balanced), Times.Exactly(7));
-        _bridgeMock.Verify(b => b.StopReceiver(), Times.Exactly(7));
+        _bridgeMock.Verify(b => b.StopReceiverAsync(), Times.Exactly(8)); // 7 attempts + the terminal stop
 
         _timeProvider.Advance(TimeSpan.FromSeconds(30));
         _bridgeMock.Verify(b => b.StartReceiver("src-1", QualityProfile.Balanced), Times.Exactly(7));
+    }
+
+    [Fact]
+    public void RunAttempt_DoesNotPollConnectionStateAfterStartingTheReceiver()
+    {
+        var sut = CreatePlayingSut();
+        sut.BeginReconnectWindow();
+        _bridgeMock.Invocations.Clear();
+
+        _timeProvider.Advance(TimeSpan.FromSeconds(2));
+
+        _bridgeMock.Verify(b => b.StopReceiverAsync(), Times.Once);
+        _bridgeMock.Verify(b => b.StartReceiver("src-1", QualityProfile.Balanced), Times.Once);
+
+        // The post-start poll was deleted: StartReceiver's next invocation on the mock must be the
+        // ReceiverGeneration read RunAttempt does immediately after it, never GetConnectionState —
+        // nothing can interleave between two adjacent statements of the same synchronous method.
+        // (The connection-hint stats watchdog also polls GetConnectionState once a second, so a
+        // raw call count over this 2s window is not a useful assertion on its own.)
+        var invocations = _bridgeMock.Invocations.ToList();
+        var startIndex = invocations.FindIndex(i => i.Method.Name == nameof(INdiViewerBridge.StartReceiver));
+        Assert.True(startIndex >= 0, "StartReceiver was not invoked.");
+        Assert.True(startIndex + 1 < invocations.Count, "No invocation followed StartReceiver.");
+        Assert.Equal("get_ReceiverGeneration", invocations[startIndex + 1].Method.Name);
+    }
+
+    [Fact]
+    public void RunAttempt_RequestsTheStopBeforeTheStart()
+    {
+        var sut = CreatePlayingSut();
+        var order = new List<string>();
+        _bridgeMock.Setup(b => b.StopReceiverAsync()).Callback(() => order.Add("StopReceiverAsync")).Returns(Task.CompletedTask);
+        _bridgeMock.Setup(b => b.StartReceiver(It.IsAny<string>(), It.IsAny<QualityProfile>())).Callback(() => order.Add("StartReceiver"));
+
+        sut.BeginReconnectWindow();
+        _timeProvider.Advance(TimeSpan.FromSeconds(2));
+
+        Assert.Equal(new[] { "StopReceiverAsync", "StartReceiver" }, order);
+    }
+
+    [Fact]
+    public void Stop_RequestsTheBridgeStopBeforeAnnouncingIsStopped()
+    {
+        var sut = CreatePlayingSut();
+        var order = new List<string>();
+        _bridgeMock.Setup(b => b.StopReceiverAsync())
+            .Callback(() => order.Add("StopReceiverAsync"))
+            .Returns(Task.CompletedTask);
+        sut.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(ViewerViewModel.IsStopped) && sut.IsStopped)
+                order.Add("IsStopped");
+        };
+
+        sut.StopCommand.Execute(null);
+
+        // The bridge blanks its front frame buffer in StopReceiverAsync's synchronous prologue and
+        // the View blanks its canvas on IsStopped; inverting these would leave a window in which
+        // GetLatestFrame() still hands out the last live frame after the canvas was cleared (#348).
+        Assert.Equal(new[] { "StopReceiverAsync", "IsStopped" }, order);
+    }
+
+    [Fact]
+    public void StopCommand_DoesNotWaitForTheBridgeTeardown()
+    {
+        // A teardown that never finishes: if any call site awaits it, this test hangs or the
+        // assertions below fail.
+        var neverCompletes = new TaskCompletionSource().Task;
+        _bridgeMock.Setup(b => b.StopReceiverAsync()).Returns(neverCompletes);
+        var sut = CreatePlayingSut();
+
+        // Bounded on purpose: run the act on a pool thread and wait here. If a call site ever
+        // awaits the teardown, this fails as a red test instead of hanging the test process — and a
+        // hung CI job produces no usable output (#408).
+        var act = Task.Run(() => sut.StopCommand.Execute(null));
+        Assert.True(act.Wait(TimeSpan.FromSeconds(2)), "Stop() blocked on the bridge teardown.");
+        act.GetAwaiter().GetResult(); // surface a genuine exception as itself, not as a timeout
+
+        Assert.False(sut.IsPlaying);
+        Assert.True(sut.IsStopped);
+        Assert.Equal("Stopped.", sut.StatusMessage);
+    }
+
+    [Fact]
+    public void CancelRetryCommand_DoesNotWaitForTheBridgeTeardown()
+    {
+        var neverCompletes = new TaskCompletionSource().Task;
+        _bridgeMock.Setup(b => b.StopReceiverAsync()).Returns(neverCompletes);
+        var sut = CreatePlayingSut();
+        sut.BeginReconnectWindow();
+
+        // Bounded on purpose: run the act on a pool thread and wait here. If a call site ever
+        // awaits the teardown, this fails as a red test instead of hanging the test process — and a
+        // hung CI job produces no usable output (#408).
+        var act = Task.Run(() => sut.CancelRetryCommand.Execute(null));
+        Assert.True(act.Wait(TimeSpan.FromSeconds(2)), "CancelRetry blocked on the bridge teardown.");
+        act.GetAwaiter().GetResult(); // surface a genuine exception as itself, not as a timeout
+
+        Assert.Equal("Reconnection cancelled.", sut.StatusMessage);
+        Assert.True(sut.IsStopped);
+    }
+
+    [Fact]
+    public void FailReconnect_DoesNotWaitForTheBridgeTeardown()
+    {
+        var neverCompletes = new TaskCompletionSource().Task;
+        _bridgeMock.Setup(b => b.StopReceiverAsync()).Returns(neverCompletes);
+        var sut = CreatePlayingSut();
+
+        // Bounded on purpose: run the act on a pool thread and wait here. If a call site ever
+        // awaits the teardown, this fails as a red test instead of hanging the test process — and a
+        // hung CI job produces no usable output (#408). MsFakeTimeProvider.Advance invokes the timer
+        // callback on the advancing thread, so both statements run inside the same Task.Run.
+        var act = Task.Run(() =>
+        {
+            sut.BeginReconnectWindow();
+            _timeProvider.Advance(TimeSpan.FromSeconds(15));
+        });
+        Assert.True(act.Wait(TimeSpan.FromSeconds(2)), "FailReconnect blocked on the bridge teardown.");
+        act.GetAwaiter().GetResult(); // surface a genuine exception as itself, not as a timeout
+
+        Assert.Equal("Connection lost. Reconnection failed.", sut.StatusMessage);
+        Assert.True(sut.CanReconnect);
+    }
+
+    [Fact]
+    public void Dispose_DoesNotWaitForTheBridgeTeardown()
+    {
+        var neverCompletes = new TaskCompletionSource().Task;
+        _bridgeMock.Setup(b => b.StopReceiverAsync()).Returns(neverCompletes);
+        var sut = CreatePlayingSut();
+
+        // Bounded on purpose: run the act on a pool thread and wait here. If a call site ever
+        // awaits the teardown, this fails as a red test instead of hanging the test process — and a
+        // hung CI job produces no usable output (#408).
+        var act = Task.Run(() => sut.Dispose());
+        Assert.True(act.Wait(TimeSpan.FromSeconds(2)), "Dispose blocked on the bridge teardown.");
+        act.GetAwaiter().GetResult(); // surface a genuine exception as itself, not as a timeout
     }
 
     [Fact]
@@ -768,7 +974,7 @@ public class ViewerViewModelTests
         _timeProvider.Advance(TimeSpan.FromSeconds(30));
 
         Assert.Equal(15, sut.RetryRemainingSeconds);
-        Assert.Equal("Reconnection cancelled.", sut.RetryStatusMessage);
+        Assert.Equal("Reconnection cancelled.", sut.StatusMessage);
         Assert.False(sut.IsReconnecting);
         _bridgeMock.Verify(b => b.StartReceiver(It.IsAny<string>(), It.IsAny<QualityProfile>()), Times.Never);
     }
@@ -831,6 +1037,7 @@ public class ViewerViewModelTests
         Assert.False(sut.IsReconnecting);
 
         _bridgeMock.Setup(b => b.GetConnectionState()).Returns(ConnectionState.Disconnected);
+        _bridgeMock.Setup(b => b.GetLastStopReason()).Returns(ReceiverStopReason.ConnectionLost);
         sut.CheckForUnexpectedDrop();
 
         Assert.True(sut.IsReconnecting);
@@ -849,8 +1056,239 @@ public class ViewerViewModelTests
         sut.SourceId = "src-1"; // re-runs Start
 
         _bridgeMock.Setup(b => b.GetConnectionState()).Returns(ConnectionState.Disconnected);
+        _bridgeMock.Setup(b => b.GetLastStopReason()).Returns(ReceiverStopReason.ConnectionLost);
         sut.CheckForUnexpectedDrop();
 
+        Assert.True(sut.IsReconnecting);
+    }
+
+    [Fact]
+    public void CheckForUnexpectedDrop_WhenAnotherViewerHasTakenOverTheBridge_DoesNotBeginReconnectWindow()
+    {
+        // Models the real bridge: every StartReceiver bumps the ownership token.
+        var generation = 0L;
+        _bridgeMock.Setup(b => b.ReceiverGeneration).Returns(() => generation);
+        _bridgeMock.Setup(b => b.StartReceiver(It.IsAny<string>(), It.IsAny<QualityProfile>()))
+                   .Callback(() => generation++);
+        _bridgeMock.Setup(b => b.GetConnectionState()).Returns(ConnectionState.Disconnected);
+        _bridgeMock.Setup(b => b.GetLastStopReason()).Returns(ReceiverStopReason.ConnectionLost);
+
+        var stale = CreatePlayingSut();   // the Expanded PaneViewer: still subscribed, still IsPlaying
+        var current = CreatePlayingSut(); // a pushed ViewerPage takes the bridge over
+
+        _bridgeMock.Raise(b => b.ConnectionStateChanged += null, _bridgeMock.Object, ConnectionState.Disconnected);
+
+        Assert.False(stale.IsReconnecting);
+        Assert.True(current.IsReconnecting);
+    }
+
+    [Fact]
+    public void CancelRetry_StopsTheReceiverAndIsNotUndoneByTheNextDrop()
+    {
+        _bridgeMock.Setup(b => b.GetConnectionState()).Returns(ConnectionState.Disconnected);
+        _bridgeMock.Setup(b => b.GetLastStopReason()).Returns(ReceiverStopReason.ConnectionLost);
+        var sut = CreatePlayingSut();
+        sut.BeginReconnectWindow();
+
+        sut.CancelRetryCommand.Execute(null);
+
+        Assert.False(sut.IsReconnecting);
+        Assert.True(sut.IsStopped);
+        Assert.True(sut.CanReconnect);
+        _bridgeMock.Verify(b => b.StopReceiverAsync(), Times.AtLeastOnce);
+
+        sut.IsPlaying = true; // the only guard term the sticky user-stop flag has to beat
+        _bridgeMock.Raise(b => b.ConnectionStateChanged += null, _bridgeMock.Object, ConnectionState.Disconnected);
+
+        Assert.False(sut.IsReconnecting);
+    }
+
+    [Fact]
+    public void OnBridgeConnectionStateChanged_StaleConnectedAgainstAConnectingBridge_DoesNotCompleteTheWindow()
+    {
+        var sut = CreatePlayingSut(); // GetConnectionState left un-setup -> Moq default Connecting
+        sut.BeginReconnectWindow();
+
+        _bridgeMock.Raise(b => b.ConnectionStateChanged += null, _bridgeMock.Object, ConnectionState.Connected);
+
+        Assert.True(sut.IsReconnecting);
+    }
+
+    [Fact]
+    public void ReconnectCommand_AfterAStop_ClearsTheStoppedSurface()
+    {
+        var sut = CreatePlayingSut();
+        sut.StopCommand.Execute(null);
+        Assert.True(sut.IsStopped);
+
+        sut.ReconnectCommand.Execute(null);
+
+        Assert.False(sut.IsStopped);
+        Assert.True(sut.IsReconnecting);
+    }
+
+    [Fact]
+    public void SustainedConnecting_AfterHavingBeenConnected_OpensAReconnectWindow()
+    {
+        var sut = CreatePlayingSut();
+        _bridgeMock.Raise(b => b.ConnectionStateChanged += null, _bridgeMock.Object, ConnectionState.Connected);
+        // A restart superseded the drop: the bridge is stuck in Connecting and will never report it again.
+        _bridgeMock.Setup(b => b.GetConnectionState()).Returns(ConnectionState.Connecting);
+
+        _timeProvider.Advance(TimeSpan.FromSeconds(4));
+        Assert.False(sut.IsReconnecting);
+
+        _timeProvider.Advance(TimeSpan.FromSeconds(1));
+        Assert.True(sut.IsReconnecting);
+    }
+
+    [Fact]
+    public void SustainedConnecting_OnAnInitialConnectThatNeverSucceeded_DoesNotOpenAReconnectWindow()
+    {
+        var sut = CreatePlayingSut();
+        _bridgeMock.Setup(b => b.GetConnectionState()).Returns(ConnectionState.Connecting);
+
+        _timeProvider.Advance(TimeSpan.FromSeconds(30));
+
+        Assert.False(sut.IsReconnecting);
+        Assert.Equal("Connecting...", sut.StatusMessage);
+    }
+
+    [Fact]
+    public void SustainedDisconnected_AfterAnIntentionalStop_DoesNotOpenAReconnectWindow()
+    {
+        var sut = CreatePlayingSut();
+        _bridgeMock.Raise(b => b.ConnectionStateChanged += null, _bridgeMock.Object, ConnectionState.Connected);
+        // The navigation handoff stopped the bridge behind this ViewModel's back (D6).
+        _bridgeMock.Setup(b => b.GetConnectionState()).Returns(ConnectionState.Disconnected);
+        _bridgeMock.Setup(b => b.GetLastStopReason()).Returns(ReceiverStopReason.Intentional);
+
+        _timeProvider.Advance(TimeSpan.FromSeconds(30));
+
+        Assert.False(sut.IsReconnecting);
+    }
+
+    [Fact]
+    public void StatsSample_OnAViewModelTheBridgeWasTakenFrom_StopsClaimingToPlayWithoutTouchingTheReceiver()
+    {
+        var generation = 0L;
+        _bridgeMock.Setup(b => b.ReceiverGeneration).Returns(() => generation);
+        _bridgeMock.Setup(b => b.StartReceiver(It.IsAny<string>(), It.IsAny<QualityProfile>()))
+                   .Callback(() => generation++);
+
+        var pane = CreatePlayingSut();   // the Expanded PaneViewer: owns generation 1
+        var pushed = CreatePlayingSut(); // a pushed ViewerPage takes the bridge: generation 2
+        _bridgeMock.Invocations.Clear();
+
+        pane.ApplyConnectionSample(connected: true, fps: 30f, dropPercent: 0f);
+
+        Assert.False(pane.IsPlaying);
+        Assert.True(pane.IsStopped);
+        Assert.True(pane.CanReconnect);
+        Assert.Equal("Stopped.", pane.StatusMessage);
+        // The receiver belongs to the other ViewModel now — demoting must never stop it.
+        _bridgeMock.Verify(b => b.StopReceiverAsync(), Times.Never);
+        Assert.True(pushed.IsPlaying);
+    }
+
+    [Fact]
+    public void Dispose_WhenThisViewModelOwnsTheReceiver_HandsItBack()
+    {
+        var sut = CreatePlayingSut();
+
+        sut.Dispose();
+
+        _bridgeMock.Verify(b => b.StopReceiverAsync(), Times.Once);
+    }
+
+    [Fact]
+    public void Dispose_WhenAnotherViewerOwnsTheReceiver_LeavesItRunning()
+    {
+        var generation = 0L;
+        _bridgeMock.Setup(b => b.ReceiverGeneration).Returns(() => generation);
+        _bridgeMock.Setup(b => b.StartReceiver(It.IsAny<string>(), It.IsAny<QualityProfile>()))
+                   .Callback(() => generation++);
+        var stale = CreatePlayingSut();
+        var current = CreatePlayingSut();
+        _bridgeMock.Invocations.Clear();
+
+        stale.Dispose();
+
+        _bridgeMock.Verify(b => b.StopReceiverAsync(), Times.Never);
+        Assert.True(current.IsPlaying);
+    }
+
+    [Fact]
+    public async Task ChangeQualityProfile_OnAViewModelThatDoesNotOwnTheReceiver_DoesNotClaimOwnership()
+    {
+        var generation = 0L;
+        _bridgeMock.Setup(b => b.ReceiverGeneration).Returns(() => generation);
+        _bridgeMock.Setup(b => b.StartReceiver(It.IsAny<string>(), It.IsAny<QualityProfile>()))
+                   .Callback(() => generation++);
+        _bridgeMock.Setup(b => b.GetConnectionState()).Returns(ConnectionState.Disconnected);
+        _bridgeMock.Setup(b => b.GetLastStopReason()).Returns(ReceiverStopReason.ConnectionLost);
+        var stale = CreatePlayingSut();
+        var current = CreatePlayingSut();
+
+        // Balanced -> High maps to the same bandwidth tier, so the bridge neither restarts nor bumps
+        // the token: an unconditional re-record would hand ownership back to the wrong ViewModel.
+        await stale.ChangeQualityProfileCommand.ExecuteAsync(QualityProfile.High);
+        stale.CheckForUnexpectedDrop();
+
+        Assert.False(stale.IsReconnecting);
+    }
+
+    [Fact]
+    public void OnBridgeConnectionStateChanged_ConnectedOnAViewModelTheBridgeWasTakenFrom_DoesNotOverwriteItsStatus()
+    {
+        var generation = 0L;
+        _bridgeMock.Setup(b => b.ReceiverGeneration).Returns(() => generation);
+        _bridgeMock.Setup(b => b.StartReceiver(It.IsAny<string>(), It.IsAny<QualityProfile>()))
+                   .Callback(() => generation++);
+        var stale = CreatePlayingSut();
+        var current = CreatePlayingSut();
+        Assert.Equal("Connecting...", stale.StatusMessage);
+
+        _bridgeMock.Raise(b => b.ConnectionStateChanged += null, _bridgeMock.Object, ConnectionState.Connected);
+
+        Assert.Equal("Connecting...", stale.StatusMessage); // the other ViewModel's connection
+        Assert.Equal("Connected.", current.StatusMessage);
+    }
+
+    [Fact]
+    public void SustainedStalled_OnAConnectedSourceThatStoppedSendingVideo_DoesNotOpenAReconnectWindow()
+    {
+        var sut = CreatePlayingSut();
+        _bridgeMock.Raise(b => b.ConnectionStateChanged += null, _bridgeMock.Object, ConnectionState.Connected);
+        // The sender is still connected but has sent no video for >3 s, so the bridge demotes to
+        // Stalled, not Connecting. Recreating the receiver cannot make a sender send video.
+        _bridgeMock.Setup(b => b.GetConnectionState()).Returns(ConnectionState.Stalled);
+
+        _timeProvider.Advance(TimeSpan.FromSeconds(30));
+
+        Assert.False(sut.IsReconnecting);
+        Assert.True(sut.IsPlaying);
+        _bridgeMock.Verify(b => b.StopReceiverAsync(), Times.Never);
+    }
+
+    [Fact]
+    public void SustainedConnecting_CounterDoesNotSurviveAStop()
+    {
+        var sut = CreatePlayingSut();
+        _bridgeMock.Raise(b => b.ConnectionStateChanged += null, _bridgeMock.Object, ConnectionState.Connected);
+        _bridgeMock.Setup(b => b.GetConnectionState()).Returns(ConnectionState.Connecting);
+        _timeProvider.Advance(TimeSpan.FromSeconds(4)); // counter reaches 4, one short of the threshold
+        Assert.False(sut.IsReconnecting);
+
+        sut.StopCommand.Execute(null);
+        sut.SourceId = null;
+        sut.SourceId = "src-1"; // re-runs Start, re-arming the watchdog
+        _bridgeMock.Raise(b => b.ConnectionStateChanged += null, _bridgeMock.Object, ConnectionState.Connected);
+
+        _timeProvider.Advance(TimeSpan.FromSeconds(4)); // four *fresh* samples must not be enough
+        Assert.False(sut.IsReconnecting);
+
+        _timeProvider.Advance(TimeSpan.FromSeconds(1));
         Assert.True(sut.IsReconnecting);
     }
 }

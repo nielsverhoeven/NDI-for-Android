@@ -102,6 +102,7 @@ public static class TestIds
     public const string ViewerVideoBorder     = "viewer.videoBorder";
     public const string ViewerTallyProgramBadge = "viewer.tallyProgramBadge";
     public const string ViewerStoppedBadge    = "viewer.stoppedBadge";
+    public const string ViewerReconnectBadge  = "viewer.reconnectBadge";
     public const string ViewerStatus          = "viewer.status";
     public const string ViewerQualitySmooth   = "viewer.quality.smooth";
     public const string ViewerQualityBalanced = "viewer.quality.balanced";

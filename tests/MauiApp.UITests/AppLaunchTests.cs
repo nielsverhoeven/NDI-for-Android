@@ -5,6 +5,7 @@ using NdiForAndroid.Testing;
 using NdiForAndroid.UITests.Infrastructure;
 using NdiForAndroid.UITests.Pages;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace NdiForAndroid.UITests;
 
@@ -20,7 +21,9 @@ namespace NdiForAndroid.UITests;
 [Collection("AppiumSession")]
 public sealed class AppLaunchTests : UiTestBase
 {
-    public AppLaunchTests(AppiumDriverFixture fixture) : base(fixture) { }
+    private readonly ITestOutputHelper _output;
+
+    public AppLaunchTests(AppiumDriverFixture fixture, ITestOutputHelper output) : base(fixture) => _output = output;
 
     [RetryableSkippableFact]
     public void AppLaunches_ShowsHomePageContent() => Run(app =>
@@ -189,6 +192,104 @@ public sealed class AppLaunchTests : UiTestBase
                 $"Home is at y={home.Location.Y}");
         }
     });
+
+    [RetryableSkippableFact]
+    public void AdaptiveNavigation_RailPlacement_NeverShowsBottomNavigationBar_OnLaunchAndRotation() => Run(app =>
+    {
+        try
+        {
+            app.Rotate(ScreenOrientation.Landscape);
+            Skip.IfNot(app.TryRestart(), "App lifecycle commands are unavailable in this environment.");
+            app.Home.WaitUntilVisible(Timeouts.AppStart);
+            AssertNoBottomNavigationBarForRailPlacement(app, "immediately after a cold launch in landscape");
+
+            app.ResetToHome();
+            app.Rotate(ScreenOrientation.Landscape);
+            AssertNoBottomNavigationBarForRailPlacement(app, "after rotating from portrait into landscape");
+        }
+        finally
+        {
+            try { app.Rotate(ScreenOrientation.Portrait); } catch { }
+        }
+    });
+
+    [RetryableSkippableFact]
+    public void AdaptiveNavigation_RailPlacement_NeverShowsBottomNavigationBar_AfterTwoPaneFullScreen() => Run(app =>
+    {
+        try
+        {
+            app.ResetToHome();
+            app.Rotate(ScreenOrientation.Landscape);
+
+            var widthDp = app.WindowSize.Width / app.Metrics.Density;
+            var sizeClass = WindowSizeClassService.Classify(widthDp);
+            Skip.If(sizeClass != WindowSizeClass.Expanded,
+                $"The two-pane pane only renders on an Expanded window (>840dp); this device measures {sizeClass} ({widthDp:0}dp) in landscape.");
+
+            app.Navigation.GoTo(NavDestination.View);
+            app.Sources.WaitUntilVisible();
+
+            Skip.If(app.Sources.SourceCount == 0,
+                "No NDI sources discovered on this network; the two-pane full-screen invariant needs a playing source.");
+
+            app.Sources.WatchSource();
+            Assert.True(app.Sources.IsViewerPaneVisible, "The two-pane viewer pane did not appear on an Expanded window");
+
+            app.Viewer.WaitUntilPlaying();
+            app.Viewer.ToggleFullScreen();
+            app.Viewer.WaitUntilFullScreen();
+            AssertNoBottomNavigationBarForRailPlacement(app, "while the two-pane pane is full screen", railIsVisible: false);
+
+            app.Viewer.ExitFullScreen();
+            app.Viewer.WaitUntilPlaying();
+
+            // Shell recomputes tab-bar visibility a beat after the chrome restore; sampling the
+            // tree before that would let the defect through unnoticed.
+            Thread.Sleep(Timeouts.OrientationSettle);
+            AssertNoBottomNavigationBarForRailPlacement(app, "after exiting full screen on the two-pane pane");
+        }
+        finally
+        {
+            try { if (app.Viewer.IsFullScreen) app.Viewer.ExitFullScreen(); } catch { }
+            try { app.Rotate(ScreenOrientation.Portrait); } catch { }
+        }
+    });
+
+    /// <summary>Asserts the bottom navigation bar is absent when the current device configuration
+    /// resolves to the left-rail placement; otherwise logs that the invariant was not exercised.</summary>
+    private void AssertNoBottomNavigationBarForRailPlacement(NdiApp app, string checkpoint, bool railIsVisible = true)
+    {
+        var widthDp = app.WindowSize.Width / app.Metrics.Density;
+        var sizeClass = WindowSizeClassService.Classify(widthDp);
+        var orientation = app.Orientation == ScreenOrientation.Landscape
+            ? DeviceOrientation.Landscape
+            : DeviceOrientation.Portrait;
+
+        var policy = new NavigationPolicyService(new WindowSizeClassService());
+        var expected = policy.ResolvePlacement(orientation, sizeClass);
+
+        if (expected != NavigationPlacementMode.LeftRail)
+        {
+            var message = $"Rail placement is not reachable on this device ({sizeClass}/{orientation}); " +
+                $"the no-bottom-bar invariant was not exercised {checkpoint}.";
+            _output.WriteLine(message);
+            Console.WriteLine(message);
+            return;
+        }
+
+        var passingMessage =
+            $"Rail placement expected ({sizeClass}/{orientation}, {widthDp:0}dp); asserting no bottom bar {checkpoint}.";
+        _output.WriteLine(passingMessage);
+        Console.WriteLine(passingMessage);
+
+        if (railIsVisible)
+            Assert.True(app.Navigation.IsPresent(NavDestination.Home),
+                $"The left rail is not on screen {checkpoint}, so the no-bottom-bar assertion would " +
+                "be vacuous — the tree was unreadable or the app was not in front.");
+
+        Assert.False(app.Navigation.HasBottomNavigationBar(),
+            $"Shell's bottom navigation bar is present {checkpoint}, while the left rail is the expected placement ({sizeClass}/{orientation}).");
+    }
 
     [RetryableSkippableFact]
     public void AdaptiveNavigation_AllFourDestinations_ShowTheirOwnPage() => Run(app =>

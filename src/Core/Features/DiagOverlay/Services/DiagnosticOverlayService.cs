@@ -10,6 +10,15 @@ public sealed class DiagnosticOverlayService : IDiagnosticOverlayService
     /// <summary>logcat tag of the per-poll discovery line (<c>adb logcat -s NDI-Discovery</c>).</summary>
     public const string DiscoveryLogTag = "NDI-Discovery";
 
+    /// <summary>logcat tag of the navigation timing probes (<c>adb logcat -s NDI-Nav</c>).</summary>
+    public const string NavigationLogTag = "NDI-Nav";
+
+    /// <summary>logcat tag of the per-sample Wi-Fi link line (<c>adb logcat -s NDI-Link</c>).</summary>
+    public const string LinkLogTag = "NDI-Link";
+
+    /// <summary>logcat tag of the viewer's 1 Hz latency line (<c>adb logcat -s NDI-Lat</c>, #416).</summary>
+    public const string LatencyLogTag = "NDI-Lat";
+
     private readonly IDiagnosticLogSink? _logSink;
     private ViewerDiagnosticSnapshot _viewerDiagnostics = new(0f, 0f, 0, 0, string.Empty);
     private DiscoveryDiagnosticSnapshot _discoveryDiagnostics = new("No discovery run yet", 0, null);
@@ -61,6 +70,23 @@ public sealed class DiagnosticOverlayService : IDiagnosticOverlayService
         catch
         {
             // Logging is best-effort and runs on the poll thread - never fault the caller.
+        }
+    }
+
+    public void Trace(string tag, string phase, string? detail = null)
+    {
+        if (!_isDeveloperMode || _logSink is null)
+            return;
+
+        try
+        {
+            _logSink.Debug(tag, detail is null
+                ? $"t={Environment.TickCount64} {phase}"
+                : $"t={Environment.TickCount64} {phase} {detail}");
+        }
+        catch
+        {
+            // Best-effort and runs on the caller's thread - never fault the caller.
         }
     }
 }

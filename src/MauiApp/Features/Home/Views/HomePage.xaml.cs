@@ -1,3 +1,4 @@
+using NdiForAndroid.Features.DiagOverlay.Services;
 using NdiForAndroid.Features.Home.ViewModels;
 
 namespace NdiForAndroid.Features.Home.Views;
@@ -10,15 +11,21 @@ namespace NdiForAndroid.Features.Home.Views;
 /// </remarks>
 public partial class HomePage : ContentPage
 {
-    public HomePage(HomeViewModel viewModel)
+    private readonly IDiagnosticOverlayService? _diagnostics;
+
+    public HomePage(HomeViewModel viewModel, IDiagnosticOverlayService? diagnostics = null)
     {
         InitializeComponent();
         BindingContext = viewModel;
+        _diagnostics = diagnostics;
     }
 
     protected override void OnAppearing()
     {
         base.OnAppearing();
+        var t0 = Environment.TickCount64;
+        _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "page.appearing.begin", "name=Home");
         (BindingContext as HomeViewModel)?.RefreshCommand.Execute(null);
+        _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "page.appearing.end", $"name=Home ms={Environment.TickCount64 - t0}");
     }
 }

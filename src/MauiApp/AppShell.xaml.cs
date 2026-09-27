@@ -1,3 +1,4 @@
+using NdiForAndroid.Features.DiagOverlay.Services;
 using NdiForAndroid.Features.Navigation.Models;
 using NdiForAndroid.Features.Navigation.Services;
 using NdiForAndroid.Features.Navigation.ViewModels;
@@ -22,9 +23,14 @@ public partial class AppShell : Shell
     private readonly IWindowInsetsService _windowInsetsService;
     private readonly IAppearanceService _appearanceService;
     private readonly ShellNavigationService _navigationService;
+    private readonly IDiagnosticOverlayService? _diagnostics;
 
     private PrimaryNavDestination _currentPrimaryDestination = PrimaryNavDestination.Home;
     private bool _handoffInProgress;
+
+    /// <summary>Navigation sequence number and start tick, for the NDI-Nav trace.</summary>
+    private long _navSeq;
+    private long _navStartedAtTicks;
 
     /// <summary>
     /// Set when <see cref="ApplyPlacement"/> was asked to hide <c>PrimaryTabBar</c> while a page was
@@ -62,7 +68,8 @@ public partial class AppShell : Shell
         IWindowSizeClassService windowSizeClassService,
         IWindowInsetsService windowInsetsService,
         IAppearanceService appearanceService,
-        ShellNavigationService navigationService)
+        ShellNavigationService navigationService,
+        IDiagnosticOverlayService? diagnostics = null)
     {
         _stateViewModel   = stateViewModel;
         _orientationBridge = orientationBridge;
@@ -71,6 +78,7 @@ public partial class AppShell : Shell
         _windowInsetsService = windowInsetsService;
         _appearanceService = appearanceService;
         _navigationService = navigationService;
+        _diagnostics = diagnostics;
 
         // Shell raises Navigating synchronously while this sets the initial CurrentItem, so every
         // field OnNavigating/OnShellNavigated can read must already be assigned above this call.
@@ -101,6 +109,8 @@ public partial class AppShell : Shell
     protected override void OnSizeAllocated(double width, double height)
     {
         base.OnSizeAllocated(width, height);
+
+        _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "shell.sizeallocated", $"w={width} h={height}");
 
         if (width > 0)
             _windowSizeClassService.UpdateFromWidth(width);
@@ -247,6 +257,10 @@ public partial class AppShell : Shell
 
     private void ApplyPlacement(bool ensureDestination = true)
     {
+        var placementStartedAt = Environment.TickCount64;
+        _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "placement.begin",
+            $"rail={_stateViewModel.IsLeftRailNavigationVisible} suppressed={_stateViewModel.IsChromeSuppressed}");
+
         // Cleared before the flip below, never after: hiding PrimaryTabBar can drive Shell's
         // fallback navigation to completion synchronously, re-entering OnShellNavigated before
         // this method returns.
@@ -266,6 +280,8 @@ public partial class AppShell : Shell
                 && (Navigation?.NavigationStack?.Count > 1 || Navigation?.ModalStack?.Count > 0))
             {
                 _placementSwapDeferred = true;
+                _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "placement.end",
+                    $"deferred={_placementSwapDeferred} ms={Environment.TickCount64 - placementStartedAt}");
                 return;
             }
 
@@ -284,6 +300,9 @@ public partial class AppShell : Shell
         // SourceListPage.ApplySizeClass's _isPaneFullScreen early return.
         if (ensureDestination && !_stateViewModel.IsChromeSuppressed)
             Dispatcher.Dispatch(async () => await EnsurePrimaryDestinationVisibleAsync());
+
+        _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "placement.end",
+            $"deferred={_placementSwapDeferred} ms={Environment.TickCount64 - placementStartedAt}");
     }
 
     // ── Navigation ───────────────────────────────────────────────────────────
@@ -294,64 +313,143 @@ public partial class AppShell : Shell
             return;
 
         _navigationService.BeginExplicitNavigation();
+        var railGotoStartedAt = Environment.TickCount64;
+        _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "nav.goto.begin", $"route={route}");
         try { await GoToAsync(route); }
         catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"Rail navigation failed: {ex}"); }
-        finally { _navigationService.EndExplicitNavigation(); }
+        finally
+        {
+            _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "nav.goto.end",
+                $"ms={Environment.TickCount64 - railGotoStartedAt}");
+            _navigationService.EndExplicitNavigation();
+        }
     }
 
     protected override void OnNavigating(ShellNavigatingEventArgs args)
     {
         base.OnNavigating(args);
 
+        _navSeq++;
+        _navStartedAtTicks = Environment.TickCount64;
+        _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "shell.navigating.begin",
+            $"nav={_navSeq} src={args.Source} cancel={args.CanCancel} target={args.Target?.Location?.OriginalString}");
+
         // A modal push/pop (e.g. the full-screen viewer) does not change Shell.CurrentState and
         // must never be misclassified as a primary-destination change by ParseDestination below.
         if (Navigation?.ModalStack?.Count > 0)
+        {
+            _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "shell.navigating.skip", $"nav={_navSeq} reason=modal");
             return;
+        }
 
         if (args.Cancelled)
+        {
+            _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "shell.navigating.skip", $"nav={_navSeq} reason=cancelled");
             return;
+        }
 
         // Shell's own unsolicited item fallback (#393) — chrome plumbing, not a destination change:
         // no handoff. See ShellNavigationService.IsExplicitNavigationInProgress.
         if (args.Source == ShellNavigationSource.ShellItemChanged
             && !(_navigationService?.IsExplicitNavigationInProgress ?? false))
+        {
+            _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "shell.navigating.skip", $"nav={_navSeq} reason=itemfallback");
             return;
+        }
 
         var to = ParseDestination(args.Target?.Location?.OriginalString);
         if (to is null || to == _currentPrimaryDestination)
+        {
+            _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "shell.navigating.skip", $"nav={_navSeq} reason=noop");
             return;
+        }
 
         if (!args.CanCancel)
+        {
+            _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "shell.navigating.skip", $"nav={_navSeq} reason=noncancelable");
             return;
+        }
 
         var deferral = args.GetDeferral();
+        _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "shell.deferral.taken", $"nav={_navSeq}");
         _handoffInProgress = true;
 
-        _ = RunNavigatingHandoffAsync(to.Value, deferral);
+        RunNavigatingHandoff(to.Value, deferral);
     }
 
-    private async Task RunNavigatingHandoffAsync(PrimaryNavDestination to, ShellNavigatingDeferral deferral)
+    /// <summary>Diagnostic cap only: the deferral no longer waits on the handoff, so this bound
+    /// does not gate anything the user sees — it turns a wedged teardown into a log line instead
+    /// of a silent leak.</summary>
+    private static readonly TimeSpan HandoffDiagnosticTimeout = TimeSpan.FromSeconds(3);
+
+    private void RunNavigatingHandoff(PrimaryNavDestination to, ShellNavigatingDeferral deferral)
     {
+        var navSeq = _navSeq;
+        var from = _currentPrimaryDestination;
+
+        // The deferral exists to order the destination bookkeeping ahead of Shell's page swap, not
+        // to hold the swap open while the NDI receiver tears down. Both fields are written here,
+        // synchronously, so OnShellNavigated's fallback branch stays dead on this path exactly as
+        // it is today.
+        _currentPrimaryDestination = to;
+        _handoffInProgress = false;
+        // Traced BEFORE Complete(), not after: MAUI can resume the navigation inline from inside
+        // deferral.Complete(), so OnShellNavigated may run re-entrantly and emit shell.navigated
+        // first — which the #417 parser would read as a nested navigation. Functionally safe either
+        // way (_currentPrimaryDestination is already `to`, so the fallback branch stays dead), but
+        // the log has to stay parseable. ms= therefore measures navigating.begin -> deferral
+        // released, which is the interval that matters.
+        _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "shell.deferral.complete",
+            $"nav={navSeq} ms={Environment.TickCount64 - _navStartedAtTicks}");
+        deferral.Complete();
+
+        RunHandoffDetached(navSeq, from, to);
+    }
+
+    /// <summary>
+    /// Fires the handoff without gating anything on it. Deliberately no <c>Task.Run</c>: the
+    /// handoff's synchronous part is now only the stop *request*, which must run in this UI-thread
+    /// turn so it is ordered against whatever the incoming page does; the native teardown already
+    /// runs on the bridge's own lifecycle worker.
+    /// </summary>
+    private void RunHandoffDetached(long navSeq, PrimaryNavDestination from, PrimaryNavDestination to)
+    {
+        _ = AwaitHandoffForDiagnosticsAsync(navSeq, from, to);
+    }
+
+    private async Task AwaitHandoffForDiagnosticsAsync(long navSeq, PrimaryNavDestination from, PrimaryNavDestination to)
+    {
+        var handoffStartedAt = Environment.TickCount64;
+        _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "handoff.begin",
+            $"nav={navSeq} from={from} to={to}");
+
         try
         {
-            var from = _currentPrimaryDestination;
-            await Task.Run(() => _handoffService.HandlePrimaryDestinationChangeAsync(from, to))
-                .WaitAsync(TimeSpan.FromSeconds(3));
+            await _handoffService.HandlePrimaryDestinationChangeAsync(from, to)
+                .WaitAsync(HandoffDiagnosticTimeout);
+            _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "handoff.end",
+                $"nav={navSeq} ms={Environment.TickCount64 - handoffStartedAt}");
+        }
+        catch (TimeoutException)
+        {
+            _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "handoff.timeout",
+                $"nav={navSeq} ms={Environment.TickCount64 - handoffStartedAt}");
+            System.Diagnostics.Debug.WriteLine(
+                $"Navigation handoff still running after {HandoffDiagnosticTimeout.TotalSeconds}s: {from} -> {to}");
         }
         catch (Exception ex)
         {
+            _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "handoff.end",
+                $"nav={navSeq} ms={Environment.TickCount64 - handoffStartedAt}");
             System.Diagnostics.Debug.WriteLine($"Navigation handoff failed: {ex}");
-        }
-        finally
-        {
-            _currentPrimaryDestination = to;
-            _handoffInProgress = false;
-            deferral.Complete();
         }
     }
 
-    private async void OnShellNavigated(object? sender, ShellNavigatedEventArgs e)
+    private void OnShellNavigated(object? sender, ShellNavigatedEventArgs e)
     {
+        _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "shell.navigated",
+            $"src={e.Source} loc={e.Current.Location.OriginalString}");
+
         // Shell's own unsolicited item fallback (#393): reconcile back to the destination that was
         // actually selected instead of adopting wherever Shell fell back to, and never run the
         // handoff or overwrite SelectedDestination for it. The rail keeps highlighting the real
@@ -360,6 +458,7 @@ public partial class AppShell : Shell
         if (e.Source == ShellNavigationSource.ShellItemChanged
             && !(_navigationService?.IsExplicitNavigationInProgress ?? false))
         {
+            _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "shell.navigated.fallbackreconcile");
             UpdateRailHighlight(_stateViewModel.SelectedDestination);
             _appearanceService.ReapplyChrome();
             Dispatcher.Dispatch(async () => await EnsurePrimaryDestinationVisibleAsync());
@@ -370,15 +469,14 @@ public partial class AppShell : Shell
 
         if (to != _currentPrimaryDestination)
         {
-            try
-            {
-                await _handoffService.HandlePrimaryDestinationChangeAsync(_currentPrimaryDestination, to);
-                _currentPrimaryDestination = to;
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"Navigation handoff failed: {ex}");
-            }
+            var from = _currentPrimaryDestination;
+
+            // Record the change before the teardown is even requested — this handler runs on the
+            // UI thread, and the old await-with-no-cap here ran the pump joins in this turn on
+            // every navigation that bailed out of OnNavigating (modal open, cancelled,
+            // non-cancelable).
+            _currentPrimaryDestination = to;
+            RunHandoffDetached(_navSeq, from, to);
         }
 
         _stateViewModel.SelectedDestination = to;
@@ -398,6 +496,20 @@ public partial class AppShell : Shell
                 ApplyPlacement();
             else
                 Dispatcher.Dispatch(async () => await EnsurePrimaryDestinationVisibleAsync());
+        }
+
+        // Posted rather than run inline: it must observe the next UI-thread turn, i.e. after
+        // Shell's page swap and the layout pass it queues, so it under-reports by up to one frame
+        // rather than marking a swap that has not actually happened yet.
+        var diagnostics = _diagnostics;
+        if (diagnostics?.IsDeveloperMode == true)
+        {
+            var navSeq = _navSeq;
+            var navStartedAt = _navStartedAtTicks;
+            Dispatcher.Dispatch(() => diagnostics.Trace(
+                DiagnosticOverlayService.NavigationLogTag,
+                "nav.firstframe",
+                $"nav={navSeq} ms={Environment.TickCount64 - navStartedAt}"));
         }
     }
 
@@ -426,17 +538,46 @@ public partial class AppShell : Shell
 
     private async Task EnsurePrimaryDestinationVisibleAsync()
     {
-        if (_handoffInProgress) return;
-        if (Navigation?.NavigationStack?.Count > 1) return;
-        if (Navigation?.ModalStack?.Count > 0) return;
-        if (!TryGetRouteForCurrentPlacement(_stateViewModel.SelectedDestination, out var route)) return;
+        _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "reconcile.begin");
+
+        if (_handoffInProgress)
+        {
+            _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "reconcile.skip", "reason=handoff");
+            return;
+        }
+        if (Navigation?.NavigationStack?.Count > 1)
+        {
+            _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "reconcile.skip", "reason=pushed");
+            return;
+        }
+        if (Navigation?.ModalStack?.Count > 0)
+        {
+            _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "reconcile.skip", "reason=modal");
+            return;
+        }
+        if (!TryGetRouteForCurrentPlacement(_stateViewModel.SelectedDestination, out var route))
+        {
+            _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "reconcile.skip", "reason=noroute");
+            return;
+        }
 
         var currentSegment = LastSegment(CurrentState?.Location?.OriginalString);
-        if (string.Equals(currentSegment, route.Trim('/'), StringComparison.OrdinalIgnoreCase)) return;
+        if (string.Equals(currentSegment, route.Trim('/'), StringComparison.OrdinalIgnoreCase))
+        {
+            _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "reconcile.skip", "reason=sameroute");
+            return;
+        }
 
         _navigationService.BeginExplicitNavigation();
+        var reconcileGotoStartedAt = Environment.TickCount64;
+        _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "reconcile.goto.begin", $"route={route}");
         try { await GoToAsync(route); }
         catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"Placement reconciliation failed: {ex}"); }
-        finally { _navigationService.EndExplicitNavigation(); }
+        finally
+        {
+            _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "reconcile.goto.end",
+                $"ms={Environment.TickCount64 - reconcileGotoStartedAt}");
+            _navigationService.EndExplicitNavigation();
+        }
     }
 }

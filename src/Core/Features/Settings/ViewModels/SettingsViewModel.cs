@@ -1,5 +1,6 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using NdiForAndroid.Features.DiagOverlay.Services;
 using NdiForAndroid.Features.Settings.Models;
 using NdiForAndroid.Features.Settings.Repositories;
 using NdiForAndroid.Features.Settings.Services;
@@ -39,6 +40,7 @@ public partial class SettingsViewModel : ObservableObject
     private readonly IMainThreadDispatcher _dispatcher;
     private readonly IUserPromptService _userPromptService;
     private readonly TimeProvider _timeProvider;
+    private readonly IDiagnosticOverlayService? _diagnostics;
 
     private DiscoveryServerItem? _editingDiscoveryServer;
     private bool _suppressAutoSave;
@@ -151,7 +153,8 @@ public partial class SettingsViewModel : ObservableObject
         INdiDiscoveryBridge discoveryBridge,
         IMainThreadDispatcher dispatcher,
         IUserPromptService userPromptService,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        IDiagnosticOverlayService? diagnostics = null)
     {
         _repository = repository;
         _validationService = validationService;
@@ -161,6 +164,7 @@ public partial class SettingsViewModel : ObservableObject
         _dispatcher = dispatcher;
         _userPromptService = userPromptService;
         _timeProvider = timeProvider ?? TimeProvider.System;
+        _diagnostics = diagnostics;
 
         var info = _platformService.GetAppInfo();
         AppName = info.AppName;
@@ -178,6 +182,9 @@ public partial class SettingsViewModel : ObservableObject
     [RelayCommand]
     private async Task LoadAsync()
     {
+        var t0 = Environment.TickCount64;
+        _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "settings.vm.load.begin");
+
         var settings = await _repository.GetSettingsAsync();
         var cachedSources = await SafeGetCachedSourcesAsync();
 
@@ -212,6 +219,9 @@ public partial class SettingsViewModel : ObservableObject
         _suppressAutoSave = false;
 
         TriggerStatusCheck();
+
+        _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "settings.vm.load.end",
+            $"servers={DiscoveryServers.Count} ms={Environment.TickCount64 - t0}");
     }
 
     [RelayCommand]

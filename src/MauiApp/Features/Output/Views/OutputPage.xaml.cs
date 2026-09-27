@@ -1,4 +1,5 @@
 using Microsoft.Maui.Controls;
+using NdiForAndroid.Features.DiagOverlay.Services;
 using NdiForAndroid.Features.Output.ViewModels;
 
 namespace NdiForAndroid.Features.Output.Views;
@@ -17,6 +18,7 @@ namespace NdiForAndroid.Features.Output.Views;
 public partial class OutputPage : ContentPage
 {
     private readonly OutputViewModel _viewModel;
+    private readonly IDiagnosticOverlayService? _diagnostics;
 
     public string? ReStreamSourceId { get; set; }
 
@@ -24,24 +26,31 @@ public partial class OutputPage : ContentPage
 
     public string? ResumeRequested { get; set; }
 
-    public OutputPage(OutputViewModel viewModel)
+    public OutputPage(OutputViewModel viewModel, IDiagnosticOverlayService? diagnostics = null)
     {
         InitializeComponent();
         _viewModel = viewModel;
         BindingContext = viewModel;
+        _diagnostics = diagnostics;
     }
 
     protected override void OnAppearing()
     {
         base.OnAppearing();
+        var t0 = Environment.TickCount64;
+        _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "page.appearing.begin", "name=Output");
         _ = ApplyEntryStateAsync();
+        _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "page.appearing.end", $"name=Output ms={Environment.TickCount64 - t0}");
     }
 
     private async Task ApplyEntryStateAsync()
     {
         try
         {
+            var loadStartedAt = Environment.TickCount64;
+            _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "output.load.begin");
             await _viewModel.LoadCommand.ExecuteAsync(null);
+            _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "output.load.end", $"ms={Environment.TickCount64 - loadStartedAt}");
 
             if (!string.IsNullOrEmpty(ReStreamSourceId))
                 _viewModel.ApplyReStreamRequest(ReStreamSourceId, bool.TryParse(IsReStreamMode, out var b) && b);

@@ -31,6 +31,546 @@ unconditionally. Rule 5's intent is to keep Android APIs out of **Core** and out
 
 ## Verdicts log
 
+### 2026-09-13 (round 2) — PR #425 `bugfix/408-async-receiver-lifecycle` (#417B / #408 / #420) re-gate
+
+**APPROVE-WITH-CHANGES.** Verdict file: `verdict-408-round2.md` (15 rulings, `requiredChanges`
+RC15–RC29, 10 accepted residuals, 1 deferred issue, 2 new product questions, merge order for
+#425/#424/#426). Re-gate of head `4cee287` after an adversarial review found 1 P1, 2 P2 and 11 P3
+and recommended do-not-merge. Outcome: 13 fix-now, 1 defer, 1 partial reject. The queue mechanism
+itself is accepted as implemented — chain atomicity, fault isolation, off-thread execution,
+`_stopDepth` bracketing, the ownership token, the handle/refcount discipline and the per-frame free
+discipline all hold.
+
+**The one architectural rule this round establishes, and the reason all three P1/P2 findings exist:**
+
+> Splitting a lifecycle operation into a synchronous prologue and a queued native core is correct.
+> Moving the operation's **observable postconditions** into the core is not. Anything a caller
+> orders other work against belongs in the prologue, in the caller's turn.
+
+For `NdiViewerBridge` those postconditions are now, explicitly, four: the ownership token
+(`_receiverGeneration`), the intentional-stop tag (`_stopDepth`), a **blank front frame buffer**,
+and a **`Disconnected` connection state**. The implementation had the first two in the prologue and
+the last two on the worker; each omission re-broke a shipped fix.
+
+1. **P1 — the frame buffers.** `StopReceiverAsync`'s prologue did not blank them, so `Stop` /
+   `CancelRetry` / `FailReconnect` set `IsStopped` while `GetLatestFrame()` still handed out the last
+   live frame — the render loop repainted it 3–12 times and then left it frozen under the "Stopped"
+   badge. A deterministic regression of #348 (Nielsen #1). Ruled: fix in the **bridge** (blank the
+   front buffer in the prologue under `_frameLock`), not only in the View — a View-side
+   `if (IsStopped) return` cannot cover a *second* `ViewerViewModel` whose own `IsStopped` is false
+   (the Expanded pane, the navigation handoff, #410) and does not make the bridge's own documented
+   postcondition true. Ship **both**: the View guard additionally closes the pre-existing
+   `ReleaseIfDisowned` case, where no stop happens at all.
+2. **The prologue blank alone is insufficient.** `VideoPumpLoop` re-reads `_running` only at the top
+   of the loop, so a pump already inside `NDIlib_recv_capture_v3` republishes one frame *after* the
+   blank — and one frame is the whole defect. `CopyVideoFrame`'s swap is therefore gated on
+   `_running` **read inside `_frameLock`**, against a write that happens **before** the prologue
+   takes that lock: the only two orders are publish-then-blank (blank wins) and blank-then-skip. No
+   new generation flag — `_running` already is the stopping flag. `_backPixels` must **not** be
+   blanked in the prologue (the pump copies into it through the field with no lock held; nulling it
+   faults a pump mid-copy).
+3. **P2-1 — the connection state.** Ruled **both** halves, not the reviewer's one: transition to
+   `Disconnected` synchronously in the prologue (tagged `Intentional`, `_stopDepth` incremented
+   first) **and** suppress non-`Disconnected` transitions while `_stopDepth > 0`. Suppression alone
+   closes the interleaving found and leaves the *class* open, because three shipped consumers were
+   written against the postcondition and not against that interleaving: `CompleteReconnect`'s "the
+   bridge agrees right now" guard, `RunAttempt`'s pre-check, and
+   `CheckForSustainedConnecting`'s correctness argument. Applying `CompleteReconnect`'s own rule —
+   *remove the interleaving class instead of guarding one instance of it.*
+4. **`ConnectionStateChanged` is now a three-thread event**: pump thread, lifecycle worker, and the
+   caller's own turn. The third is a *restoration* (the pre-#408 synchronous stop raised it on the
+   UI thread), and inline re-entry was checked on all seven call paths — each is rejected by an
+   existing guard (`Intentional` tag, `_reconnectState`, `IsPlaying`, `_userInitiatedStop`,
+   unsubscribed, or the not-yet-re-claimed ownership token). The enabling constraint: **no lock may
+   be held when a prologue calls `TransitionState`**, so each prologue statement is its own closed
+   lock block. The raise is now also try-wrapped — a subscriber's exception on the worker would
+   otherwise cancel the create queued behind a teardown in the same item and leave the viewer at
+   "Connecting…" forever.
+5. **P2-2 — the requested quality profile.** `SetQualityProfile` gates its restart on `_recv`, which
+   is zero for the entire queue window (and for the whole initial connect), so a profile picked then
+   was silently dropped. Ruled the minimal fix: publish the requested profile in `StartReceiver`'s
+   prologue and have `StartReceiverCore` **read the field instead of its captured argument**.
+   Rejected the "publish a requested source id and enqueue unconditionally" alternative — that is a
+   parallel second store of a fact `_activeSourceId` already holds (same ruling as round-1 ruling 15,
+   RC8, and 2026-09-12 #384 slice-3 item 8).
+6. **`_stateLock` must not appear in the stop prologue.** `StartReceiverCore` holds `_stateLock`
+   across `NDIlib_recv_create_v3` + `recv_connect`, so the shipped
+   `lock (_stateLock) _running = false;` put a native-duration block on the UI thread inside the one
+   method whose purpose is to remove them. `_running` is `volatile` and every lock-free interleaving
+   is safe, because the queued stop is ordered behind the executing start and is the authority that
+   joins and destroys. The start prologue keeps one `_stateLock` acquisition (the profile publish) as
+   an accepted residual.
+7. **`Dispose` + `_disposed`.** A `_disposed` guard on the public entry points is right, but
+   `Dispose()` calls `StopReceiverAsync()` *after* setting the flag — a naive guard turns `Dispose`
+   into a no-op and leaks every pump thread. Split out a private `RequestStop()` that both use. A
+   `_disposed` early-out in `StartReceiverCore` also collapses `Dispose`'s wait from "the whole
+   backlog" (a dozen items × two 250 ms joins during a reconnect loop) to "the item in flight".
+8. **Deferred, not rejected:** extracting the chain into a Core `SerialWorkQueue` for three
+   deterministic tests (FIFO, fault isolation, off-thread). It is behaviour-neutral but re-authors
+   the exact 15 lines this round's review proved correct *for the right reason*, in a window where
+   two other PRs are about to rebase onto the same file. Do it once #424/#426 land and
+   `NdiViewerBridge.cs` is quiet. Note for the next reader:
+   `TaskContinuationOptions.RunContinuationsAsynchronously` is **not** what keeps the work off the
+   caller's thread — the absence of `ExecuteSynchronously` plus `TaskScheduler.Default` is.
+9. **Rejected (partially):** the review's claim that all five new "does not wait" tests hang instead
+   of failing. Four do and are bounded with `Task.Run(...).Wait(2s)` (`[Fact(Timeout)]` is not a
+   substitute — xUnit cannot interrupt a synchronous test); the fifth never awaits the
+   never-completing task and cannot hang. It has a different defect (CS1998).
+10. **Merge order: #425 → #424 → #426.** #425 merges first and rebases for nothing: it is the
+    correctness fix and the largest restructure, and #426's draw-on-arrival path depends on #425's
+    publish gate for its own correctness. #424 and #426 rebase onto it; binding rebase instructions
+    (keep the publish gate first inside `_frameLock`, make `CopyVideoFrame` return `bool` and gate
+    `VideoFrameReady` on it, move the `IsStopped` guard into `PresentLatestFrame`) are in the verdict
+    file's §9.
+11. **Scope unchanged:** #410 stays open and is not helped by any of this — the handoff still stops
+    the receiver without bumping the ownership token. Two new product questions: the audio tail is
+    now audible on its own (video blanks instantly, audio ~400 ms later) and a disowned pane now
+    stays black instead of repainting the new owner's video.
+
+### 2026-09-13 — #417 navigation slowness / #408 UI-thread `StopReceiver()` / #420 concurrent stop (gate)
+
+**APPROVE-WITH-CHANGES.** Two PRs, ordered. Verdict file: `verdict-417.md` (19 rulings, Part A plan,
+14 `requiredChanges`, 7 new tests, 10 accepted residuals, 3 open product questions). Part A line
+numbers are against this checkout (`ac19e011`); **Part B's are against PR #407's branch
+(`rc392`, `86d8866`)**, because five of the six `StopReceiver()` call sites only exist there.
+No shell was available this session, so the four issue bodies could not be read — scope is taken
+from the briefing, the three investigation reports and the 2026-09-13 device timing log. Re-gate
+any ruling an issue body contradicts.
+
+**1. The ordering guarantee, split in three — this is the ruling the whole design turns on.**
+"The outgoing receiver is stopped before the next *navigation* proceeds" is **not** load-bearing:
+both render loops are stopped by the outgoing page itself (`ViewerPage.xaml.cs:44`,
+`SourceListPage.xaml.cs:52`) and nothing on any incoming page reads the receiver. "A stop completes
+before the next *`StartReceiver`*" **is** load-bearing, for three native reasons that had not been
+written down anywhere: `_recv` is a single field, so a late destroy kills the *new* receiver;
+`NdiRuntime._activeHandles` (`NdiRuntime.cs:24,94,104-111`) is a process-wide refcount shared with
+the discovery and output bridges, so a late `ReleaseHandle()` can call `NDIlib_destroy()` under a
+live receiver whenever a discovery-server change is pending; and the audio sink is a singleton, so a
+late `_audioSink.Stop()` silences a receiver that has already restarted. The send session is *not*
+coupled — `StartReStreamFromSourceAsync` owns its own receiver (`INdiBridges.cs:129-134`) — except
+through that refcount. **Consequence: the invariant belongs inside the bridge, not in any caller.**
+
+**2. Shape: rejected `Task.Run` per call site; adopted one serialized lifecycle chain.** Wrapping
+six call sites does not fix #420 — it *creates* it (six concurrent stoppers where the UI thread
+today serialises five), and it breaks the ordering the `_receiverGeneration` token and the
+`_stopDepth` intent tag depend on. Adopted instead: `Task StopReceiverAsync()` whose **synchronous
+prologue** (signal the pumps, bump `_stopDepth`) runs in the caller's turn and whose native half
+(joins, `recv_destroy`, `ReleaseHandle`) is appended to a single chain; `StartReceiver` appends
+`StopReceiverCore(); StartReceiverCore(...)` as one item. **The chain is an explicit
+`_lifecycleTail.ContinueWith`, not a `SemaphoreSlim`** — SemaphoreSlim does not *document* FIFO
+release for async waiters, and ordering is the entire invariant. Same rule as RC19: a correctness
+argument that turns on undocumented runtime behaviour is not an argument.
+
+**3. Rename what changed contract; leave what did not.** `StopReceiver()` → `StopReceiverAsync()`
+on `INdiViewerBridge`: its contract genuinely changes from "the receiver is gone when I return" to
+"the stop is requested and ordered", and RC22's rule says the model must say so. `StartReceiver`
+keeps its `void` signature: it has **never** completed synchronously in any observable sense (#392
+RC3 — "only the bridge can observe a real (re)connection"), and the one thing callers read
+synchronously, `ReceiverGeneration`, stays synchronous because the bump moves into the prologue.
+This halves the Moq churn and leaves all 18 `StartReceiver` assertions untouched.
+
+**4. The joins stay unbounded; the *capture timeouts* shrink instead.** A `Join(timeout)` followed
+by `NDIlib_recv_destroy` while a pump sits inside `NDIlib_recv_capture_v3` is a native
+use-after-free — strictly worse than the freeze. `VideoCaptureTimeoutMs` 1000 → 250 and
+`AudioCaptureTimeoutMs` 500 → 250 bound the join *in practice*. CPU cost on a 60 fps source:
+**zero** — `recv_capture_v3` returns the instant a frame is queued, so the loop already runs at
+16.7 ms and never reaches the timeout. The delta exists only on a silent receiver (video 1→4
+wake-ups/s, audio 2→4), each wake costing a `switch`, one `recv_get_no_connections` and a queue
+trim. This is load-bearing now, not polish: with a queue, the teardown floor is what bounds how long
+a start waits behind a stop.
+
+**5. `RunAttempt` stays synchronous and on the UI thread.** Only the bridge calls move off it — no
+`async void`, no awaits inside the reconnect state machine, so RC19's "dispatch at the thread
+boundary, never between two private UI-thread methods" survives verbatim and #407's synchronous
+`CompleteReconnect`/`FailReconnect` need no change. Its post-start `GetConnectionState()` poll is
+deleted (RC3 proved it can never read `Connected`).
+
+**6. The deferral (#417 cause 1) and the `OnShellNavigated` fallback, fixed by one mechanism.**
+`RunNavigatingHandoffAsync` becomes synchronous: it writes `_currentPrimaryDestination` and
+`_handoffInProgress` **before** `deferral.Complete()` (so the fallback branch stays dead on that
+path), then fires the handoff detached. The 3 s `WaitAsync` survives as a **diagnostic only**. The
+un-wrapped `await` at `AppShell.xaml.cs:375` gets the same treatment — and deliberately **no
+`Task.Run`**: the handoff's synchronous part is now only the stop *request*, which must run in the
+UI-thread turn so it is ordered against the incoming page. Recorded behaviour change:
+`_handoffInProgress` is now set and cleared in one turn, so
+`EnsurePrimaryDestinationVisibleAsync` is no longer suppressed during a handoff — the #393 rotation
+scenarios are on the device checklist because of it.
+
+**7. Part A's seam: extend `IDiagnosticOverlayService`, do not add `INavigationTrace`.** The
+existing service already owns the developer-mode gate (`DiagnosticOverlayService.cs:19,29-38`) and
+already delegates the platform write to a Core interface with an Android logcat implementation and a
+Noop elsewhere (`IDiagnosticLogSink`, registered `MauiProgram.cs:113-114,129,142`). A second trace
+service would duplicate the gate, the sink and the DI wiring — the same "no parallel second store"
+ruling this log has made four times. One method added: `Trace(string tag, string phase, string?
+detail = null)`, tag `NDI-Nav`, payload `t=<Environment.TickCount64> <phase> k=v…`, sink-only
+(**never** `DiagnosticLogBuffer` — 200-entry ring with per-entry regex redaction, and a tab switch
+emits ~25 lines). Cost when developer mode is off: one volatile bool read; detail strings are built
+only inside `if (IsDeveloperMode)`. 35 probe sites specified with file:line, all Core constructor
+additions optional-with-default so **no existing unit test's construction changes**. Part A
+deliberately does **not** touch `NdiViewerBridge` — the one file PR #407 also edits.
+
+**8. Sequencing: Part A first and independent; Part B strictly after PR #407 merges.** Part A is
+additive, behaviour-neutral, has zero file overlap with #407, and is the only way to name the two
+unexplained landscape blocks — which on the Release build are the *larger* share of the measured
+time (landscape Stream→Settings 1448 ms with **no receiver at all**, vs. viewer→Home 723 ms with
+one). Part B cannot be authored against `integration`: `FailReconnect`'s terminal stop,
+`CancelRetry`'s stop and `Dispose`'s ownership-gated stop are #407's RC11/RC12/RC20 and exist
+nowhere else, so a Part-B patch written here would silently leave three of the six #408 sites
+un-fixed and then collide with #407 on four files and eight of its tests.
+
+**Closes: #417 cause 1, #408, #420. Explicitly does not close #410** (the handoff still stops the
+receiver without bumping the ownership token, so a pane still owns a receiver that no longer
+exists — round 3's note holds), nor the unexplained landscape blocks, which are Part A's job.
+**Recorded as untested on purpose:** the lifecycle chain has no unit coverage — `tests/MauiApp.Tests`
+references only `src/Core` and there is no seam — so it is covered by the device checklist and the
+e2e gate rather than by a test that pretends, same as RC19/RC22's bridge half.
+
+**Moq trap the developer must be told about:** `Task`-returning mock members return **`null`**, not
+`Task.CompletedTask`; without `_bridgeMock.Setup(b => b.StopReceiverAsync()).Returns(Task.CompletedTask)`
+in four fixture constructors, `.FireAndForget()` throws and ~20 existing tests fail with an
+unrelated-looking `NullReferenceException`.
+
+### 2026-09-13 — #392 wire `CheckForUnexpectedDrop()` to a production caller (deep review)
+
+**APPROVE-WITH-CHANGES (8).** Option A is the right shape: the detection primitive already exists on
+the pump thread and the only missing pieces are intent-filtering and UI composition. Every evidence
+claim in the plan was re-derived from the live files and holds, with two exceptions noted below. The
+seam is approved as a **pull-style `GetLastStopReason()`**, not event args. What the plan gets wrong
+is (1) the enum's zero value, (2) a residual stop/drop race the pull seam leaves open, (3) a
+functional gap that makes the wired-up feature *always* end in "Reconnection failed." on a real
+device, and (4) the full-screen product choice.
+
+**Confirmed against the code.**
+
+- The pump does detect a genuine drop and raises `Disconnected`: `NdiViewerBridge.cs:417-427`
+  (`connectionLost = hasEverConnected && NDIlib_recv_get_no_connections(recv) == 0`), plus the
+  pump-loop `catch` at `:445-450`. `StalledAfterMs = 3000` (`:21`), `VideoCaptureTimeoutMs = 1000`
+  (`:19`).
+- `ViewerViewModel.OnBridgeConnectionStateChanged` (`ViewerViewModel.cs:187-198`) has no
+  `Disconnected` branch; `CheckForUnexpectedDrop()` (`:410-417`) has no production caller. Confirms
+  the 2026-09-12 #316 finding (this file, "New issue owed").
+- D6 is real and is the handoff: `NdiNavigationHandoffService.cs:20-21` calls a bare
+  `StopReceiver()`, never touches `_userInitiatedStop`/`IsPlaying`, and the resulting
+  `Connected → Disconnected` transition *does* raise the event (`TransitionState` raises on change,
+  `:623-649`). Wiring the raw event without an intent filter would open a retry window on every tab
+  switch away from View.
+- `FullScreenControlsOverlay.xaml` carries no `StatusMessage`/`RetryStatusMessage`/`CanReconnect`/
+  `IsReconnecting` binding (whole file checked) — the plan's evidence item 6 is correct. Its root
+  `Grid` is `IsVisible="{Binding AreControlsVisible}"` (`:8`), i.e. **everything in that file is
+  subject to the 2.5 s auto-hide**; a countdown placed there would vanish mid-window. The
+  always-visible precedent is the Stopped badge inside the video `Grid` (`ViewerView.xaml:83-97`),
+  which is not gated on `AreControlsVisible`.
+- `ReconnectConstants.DropDetectionGraceSeconds` (`ViewerViewModel.cs:23`) has exactly one hit
+  repo-wide — its own declaration. **Deletion confirmed.**
+- Rules 1-6 hold: `ReceiverStopReason` is a plain Core enum (rule 2, same precedent as
+  `ConnectionState`), the event still marshals through `IMainThreadDispatcher` (rule 4), no frame
+  path or `recv_free_*` call is touched (rule 6), Core stays MAUI-free, timing stays on
+  `TimeProvider`.
+
+**(a) Seam — pull, not event args. Approved as planned.** `docs/architecture.md:264` and the #233 D1
+decision (`docs/features/automatic-viewer-reconnection-retry/architecture.md:12-15`) put this
+contract on method-style `Get*()` getters with a change event alongside; `GetLastStopReason()` is
+that idiom. It is also the *safer* of the two under marshalling: `CheckForUnexpectedDrop()` already
+re-reads `GetConnectionState()` live at decision time, so a reason carried in the event args would
+mix one stale input with one live input in the same guard. With both read live, the interesting
+interleavings resolve correctly — a source that comes back on its own leaves the bridge `Connected`
+and the queued callback simply finds the guard false; an intentional restart leaves it `Connecting`,
+same outcome.
+**One hole remains, and it is the D6 case itself:** `StopReceiver()` sets `_running = false` and then
+**joins the pump threads outside the lock** (`NdiViewerBridge.cs:193-207`). A pump blocked in
+`recv_capture` can still raise `Disconnected(ConnectionLost)` inside that join window, after which
+`StopReceiver`'s own final `TransitionState(Disconnected)` (`:235`) no longer raises (state
+unchanged) but does overwrite the reason. Order the other way and the ViewModel reads
+`Disconnected + ConnectionLost` for a stop the navigation handoff requested — a reconnect window
+opens on a ViewModel whose page is gone and, if it succeeds, resurrects the receiver the handoff
+existed to release (#327's background-streaming contract). Required: coerce the reason to
+`Intentional` for the whole duration of a caller-requested stop (RC2).
+
+**(b) The pump keeps running after it reports the drop — and the attempt loop can never succeed.**
+`_running` stays true, so the receiver keeps capturing and NDI's own reconnect can restore the
+stream by itself. Meanwhile `RunAttempt` (`ViewerViewModel.cs:430-461`) does
+`StopReceiver()` → `StartReceiver()` → `GetConnectionState()`, and `StartReceiver` sets
+`Connecting` synchronously before it returns (`NdiViewerBridge.cs:165`). The state is therefore
+`Connecting` at the moment `RunAttempt` reads it, every time — the only way it could read
+`Connected` is if a video frame arrived in the microseconds between the two calls. **On a real
+device the 15 s window always expires in "Connection lost. Reconnection failed.", even when the
+source is back**, and each 2 s tick destroys a receiver that may have been mid-handshake. The unit
+tests do not catch this because `Mock<INdiViewerBridge>.GetConnectionState()` is stubbed to return
+`Connected` immediately (`ViewerViewModelTests.cs:723`, `:828`) — a state the real bridge cannot
+produce there. Fix: complete the window from the bridge's `Connected` event (RC3). The same edit
+un-sticks `OnAppResumed`'s restore path (`ViewerViewModel.cs:229-236`), which polls
+`GetConnectionState()` the same way and otherwise leaves "Restoring viewer..." on screen forever.
+
+**(c) Full screen: stay while retrying, exit on terminal failure. The plan's unconditional
+auto-exit is rejected.** `BeginExitFullScreen()` is not a neutral "leave full screen" on the device
+class that matters most: on a compact device in landscape it calls
+`_orientationLock.RequestPortrait()` (`ViewerViewModel.FullScreen.cs:210-213`), i.e. the app
+force-rotates the user's phone because a packet stopped arriving. `IsPlaying` stays true for the
+whole window (only `FailReconnect` clears it, `ViewerViewModel.cs:513`), so the moment the lock is
+released the compact invariant "IsFullScreen ⟺ landscape while playing" (#383/#384 decision (b),
+coded at `FullScreen.cs:60-77` and `:299-304`) pulls the device straight back into landscape and
+re-enters full screen — an oscillation, not a clean exit. On a tablet the exit is clean but
+permanent: nothing re-enters full screen on success, so a 2 s blip silently demotes the user out of
+the layout this repo deliberately modelled on YouTube (2026-09-06 #384/#383 consult, above).
+The split below keeps both properties: no forced rotation while the outcome is still unknown, and a
+single justified rotation once playback has definitively ended (`IsPlaying == false`, so no
+re-entry) — which is exactly what `Stop()` already does (`ViewerViewModel.cs:341`).
+The retry text cannot go in `FullScreenControlsOverlay.xaml` (auto-hide, above); it goes in the
+video `Grid` next to the Stopped badge, gated so it never double-renders with
+`PlaybackControlsView.xaml:72-79`. See RC4-RC6.
+
+**(d) Threading/rules.** No new lock ordering: `GetLastStopReason()` takes `_connectionLock` only,
+the stop-depth counter is set/cleared in two short `_connectionLock` acquisitions that never span
+the thread joins, and `TransitionState` still raises the event outside the lock. `StopReceiver`'s
+existing re-entrancy note ("an event handler running on a pump thread calls StopReceiver") is why
+RC2 uses a depth counter rather than a bool.
+
+**(e) Enum order — `Intentional` must be 0, and three existing tests get one setup line each.**
+Ordering a public Core enum so that Moq's default happens to mean "a drop was detected" is a
+test-framework detail leaking into a production contract, and it makes the *unsafe* answer the
+default: any future mock, fake or partially-initialised field that has not been told anything can
+open a 15 s retry loop that repeatedly calls `StartReceiver`. `ConnectionState` next to it is
+ordered semantically, not by test convenience. The cost is three one-line `Setup` additions
+(`ViewerViewModelTests.cs:142`, `:825`, `:840`), and they are an improvement: those tests then state
+the precondition they depend on instead of inheriting it invisibly.
+
+**(f) `DropDetectionGraceSeconds` deletion — confirmed** (no reader anywhere; no slot in this design
+once the bridge's own reason tagging is the trigger).
+
+**(g) Documentation — `.claude/knowledge/decision-log.md` is refused for the fourth time.** Same
+ruling as the 2026-09-12 #384 slice-3 gate (item 8 in that entry): `.claude/knowledge/` is
+agent-owned, a developer-written third decision store drifts. The "why" lives in the PR/issue and in
+this verdicts log; the durable factual line goes in `.github/KNOWLEDGE-BASE.md`'s
+**Automatic Viewer Reconnection** section (`:262-316`), which today documents the state machine but
+not its trigger.
+
+**Required changes (8), verbatim, in the scratchpad verdict file** —
+`verdict-392-401.md`: RC1 enum order + 3 test setups; RC2 stop-depth coercion in `NdiViewerBridge`;
+RC3 complete the window on `Connected`; RC4 drop `BeginExitFullScreen()` from
+`BeginReconnectWindow()`; RC5 add it to `FailReconnect()`; RC6 `IsFullScreenRetryVisible` +
+`TestIds.ViewerReconnectBadge` + the badge in `ViewerView.xaml`; RC7 the test set that follows from
+RC3-RC6; RC8 documentation redirect.
+
+### 2026-09-13 — #392 round 2: adversarial review of the implemented PR #407 (`cc3e1a4`)
+
+**APPROVE-WITH-CHANGES (10 more, RC9-RC18).** RC1-RC8 are present and literally implemented; every
+defect below is a **gap the round-1 verdict did not cover**, not a deviation from it. Rulings:
+10 fix-now, 2 defer, 1 reject. Verdict file: `verdict-392-round2.md`.
+
+The shape of my own miss: RC3 wired a *single-shot, globally-scoped* bridge signal into a state
+machine that (a) more than one live ViewModel subscribes to, (b) has no level-triggered backstop, and
+(c) leaves the receiver running in its terminal state. I gated the *signal* and the *UI composition*
+and did not gate the *subscriber set* or the *terminal lifecycle*.
+
+**1. Ownership is now an architectural invariant, and it needed a bridge-side identity (RC9/RC10).**
+`INdiViewerBridge` is a singleton (`MauiProgram.cs:63`) running one receiver, but several
+`ViewerViewModel` instances are alive and subscribed at once: the Expanded two-pane `PaneViewer` is a
+transient VM owned by the *singleton* `SourceListViewModel` (`SourceListViewModel.cs:45-46`, `:124-126`),
+never disposed, permanently subscribed — and `HomeViewModel.StartViewingLastSourceAsync`
+(`HomeViewModel.cs:169-177`) pushes a `ViewerPage` (a second transient VM) unconditionally, Expanded
+included. Before this PR `CheckForUnexpectedDrop()` had no production caller, so a background VM was a
+passive observer; RC3 turned it into an active bridge driver. Two reconnect loops then thrash one
+receiver every 2 s and the user can end up watching source A's video under source B's "Connected."
+The team already knew half of this — `SourceListViewModel.cs:71-78` guards exactly one route (the
+size-class change).
+**Invariant, now recorded: at most one ViewerViewModel may drive the shared bridge, and the bridge
+decides which.** The seam is `INdiViewerBridge.ReceiverGeneration`, a monotonic token bumped by every
+`StartReceiver` call; each ViewModel records it immediately after its own start and compares before
+acting. `ActiveSourceId` was considered and **rejected**: `Start()` persists `SourceId` as
+`LastViewerSourceId` (`ViewerViewModel.cs:319`) and "Resume watching" replays exactly that id, so the
+two competing ViewModels usually hold the *same* source id — the discriminator has to be call
+identity, not source identity. A VM-only `_ownsReceiver` flag was rejected for the reason the reviewer
+gave: both VMs "own" after the switch. Note the token must also be re-claimed after
+`SetQualityProfile`, because a bandwidth change recreates the receiver inside the bridge
+(`NdiViewerBridge.cs:255-272`).
+
+**2. A terminal state must release the receiver (RC11/RC12).** `FailReconnect()` disposed the timers
+and wrote the terminal message but never called `StopReceiver()`, so the pump — which deliberately
+survives a `ConnectionLost` so NDI can recover on its own — kept running forever. `ViewerView.OnRenderTick`
+(`ViewerView.xaml.cs:130-142`) polls `CurrentFrame` **ungated by `IsPlaying`**, so a source that came
+back at t+25 s repainted live moving video underneath "Connection lost. Reconnection failed." That is
+the exact Nielsen-#1 failure the #348 Stopped badge exists to prevent, and RC3 made it reachable on
+every unrecovered drop. `CancelRetry()` had the identical hole plus two of its own: it was not sticky
+(the next `ConnectionLost` re-opened the window the user had just dismissed) and it left
+`CanReconnect == false` with `IsPlaying == false`, i.e. **no control on screen at all**
+(`PlaybackControlsView.xaml:86-87` hides the Stop row). Rule for this ViewModel from now on: *every
+path that ends playback stops the receiver, raises the video-surface badge and leaves exactly one
+affordance* — `Stop()` was the only one that already did.
+
+**3. Edge-triggered + globally-scoped needs a level backstop (RC15).** `_lastStopReason` is a single
+global flag written on **every** transition (`NdiViewerBridge.cs:645-653`) and read on a *later* UI
+thread turn than the event that set it. Any restart in between (quality-profile bandwidth change,
+source switch, resume restore) re-stamps the bridge to `Connecting`/`Intentional`, and the fresh
+receiver's `hasEverConnected` gate (`:439`) means it can never report the loss again — the drop is lost
+permanently and the viewer sits on a frozen frame claiming to be connected. The reviewer's one-line
+backstop cannot fire for that case (the guard's first two terms fail), and a bridge-side
+"`Connecting` → `Disconnected` after N s" was **rejected**: it edits the pump/lifecycle code and
+changes initial-connect behaviour for every user. Accepted instead: the ViewModel treats **sustained
+`Connecting`** (5 × the existing 1 s stats sample, comfortably past the bridge's own 3 s stall
+demotion) as a drop, gated on `_hasConnectedSinceStart` (so the initial connect is untouched) and on
+`OwnsActiveReceiver` (without which the backstop would re-open the P1-1 hole through the back door).
+`Disconnected` never trips it, so D6 stays closed. General principle for this repo: *a one-shot signal
+carried across a thread hop needs a level-triggered re-check on the same seam* — the 1 s stats
+watchdog was already there and cost nothing.
+
+**4. The completer had no guard at all (RC14).** `CompleteReconnect()` checked neither
+`_reconnectState` nor `GetConnectionState()`, so an attempt tick landing one queue slot ahead of a
+pump-raised `Connected` destroyed a healthy receiver and the stale event then declared success against
+a `Connecting` bridge, disposing the timers — "Connected." on a dead stream with no retry UI. The
+`_reconnectState == Failed` half of the guard is untestable today (below) and ships as a documented
+defensive guard.
+
+**5. Test-infrastructure limit, recorded.** `FakeMainThreadDispatcher`
+(`src/Core/Services/IMainThreadDispatcher.cs:13-16`) invokes inline; Android's
+`MainThread.BeginInvokeOnMainThread` always posts a later turn. Every nested dispatch in the viewer
+(`OnBridgeConnectionStateChanged → CompleteReconnect → its callback`, `TickCountdown → FailReconnect`)
+collapses to one turn, so **ordering defects are structurally invisible to the unit suite**. I refused
+to accept a test that pretends to cover one. Follow-up F2 (queued fake with `Drain()`).
+
+**Deferred, with follow-ups filed:** the UI-thread `Thread.Join` per automatic attempt (F1 — the fix
+is a threading-model change to the state machine; pre-existing; each block stays under the ANR
+threshold once the double loop is closed); the queued dispatcher fake (F2); the handoff leaving
+`IsPlaying == true` on a VM whose bridge was stopped behind its back (F3 — round 1's `optional 4`,
+now harmless thanks to the ownership token but still a modelling defect); the dead
+`_wasPlayingBeforeResume` resume-restore branch (F4 — `_wasPlayingBeforeResume` is assigned only
+`value` in `OnIsPlayingChanged`, so `_wasPlayingBeforeResume && !IsPlaying` is identically false and
+`ViewerViewModel.cs:219-246` is unreachable; my RC3 comment claimed that branch and is corrected by
+RC16); the badge wording on a non-user terminal state (F5); initial connect to an unreachable source
+showing "Connecting…" forever (F6).
+
+**Process note (RC8 check).** `.claude/knowledge/architecture.md` appearing on the implementation
+branch is **legitimate**: it is this architect-owned file carrying my own round-1 verdict entry,
+transported by the teamlead — not the developer-written `decision-log.md` that RC8 refused for the
+fourth time. The distinction that matters is authorship, not location: agents write their own
+knowledge files, implementers write none.
+
+### 2026-09-13 — #392 round 3 (final): second adversarial review of PR #407 (`86d8866`)
+
+**APPROVE-WITH-CHANGES (10 more, RC19-RC28).** RC9-RC18 are present and literally implemented;
+every round-1 and round-2 finding is closed. Rulings: 8 fix-now, 1 defer, 0 reject. Verdict file:
+`verdict-392-round3.md`. This round is meant to be the last, so where round 2 added point guards
+this round removes the conditions that made them necessary.
+
+The shape of my round-2 miss, in one line each: I guarded an ordering instead of removing it; I
+introduced an ownership rule without its dual; and I built an exact-sounding guard on an enum member
+that means two different things.
+
+**1. A state machine must not depend on dispatcher semantics (RC19).** `CompleteReconnect()` and
+`FailReconnect()` both wrapped their bodies in `IMainThreadDispatcher` although **every** caller is
+already on the UI thread (`OnBridgeConnectionStateChanged`'s body, `RunAttempt` and `TickCountdown`
+are all posted). The extra hop bought nothing and cost the ordering guarantee: a countdown expiry
+queued behind the bridge's `Connected` event could run in front of it, so the window completed and
+RC11's new terminal stop then killed the healthy, just-reconnected receiver under "Connection lost.
+Reconnection failed." Whether that is reachable depends on whether MAUI's
+`MainThread.BeginInvokeOnMainThread` short-circuits when already on the main thread — and **a
+correctness argument that turns on an undocumented platform optimisation is not an argument.** Both
+methods now run in their caller's turn; the symmetric `FailReconnect` guard and RC14b's
+`CompleteReconnect` guards stay, explicitly labelled defensive. **Rule for this repo: dispatch at the
+thread boundary (a public entry point called from a pump/timer callback), never between two private
+UI-thread methods.** The two real boundaries — `BeginReconnectWindow()` and the bridge event handler —
+keep their hop.
+
+**2. Ownership needed its dual: release on dispose, self-demote when disowned (RC20/RC21).** Round 2
+recorded "at most one ViewerViewModel may drive the shared bridge, and the bridge decides which", but
+said nothing about what happens when the owner *goes away* or *loses*. Both gaps are reachable in
+four ordinary taps (Expanded: Watch in pane -> Home -> Resume watching -> Back): `ViewerPage`
+disposes its ViewModel without stopping the bridge (`ViewerPage.xaml.cs:52-57`), so the receiver kept
+pumping with nobody driving it, while the never-disposed `PaneViewer` was left on screen painting
+frames it did not own, saying "Connected.", and permanently unable to auto-reconnect — the exact
+#348 / Nielsen-#1 dead end #392 exists to remove, created by #392's own guard. Continuity on Back was
+checked and judged an **accident**, not a feature: `Dispose()` already models "this viewer is
+finished", no hand-off protocol exists anywhere, and on a phone the same path leaves an invisible
+receiver playing **audio**. Fixed as the invariant's dual — `Dispose()` stops the receiver *it owns*,
+and a still-playing ViewModel that has lost the token demotes itself to the Stopped state on the
+existing 1 s stats watchdog (`ReleaseIfDisowned`), never touching a bridge it no longer owns.
+**Adoption was rejected**: inheriting another ViewModel's receiver needs a source-identity
+precondition the bridge does not expose plus re-derivation of four flags the adopting VM never
+observed. **General principle, same as RC15's:** an ownership token needs a level-triggered
+reconciliation, because there is no single edge to hook (pop, deep link, another VM's quality
+restart). Note this does **not** close #410 — the navigation handoff stops the receiver without
+bumping the token, so the pane still *owns* a receiver that no longer exists.
+
+**3. A guard is only as exact as the signal it reads (RC22).** RC15 keyed the level backstop on
+sustained `ConnectionState.Connecting` and I asserted twice, in shipped source comments, that this is
+the superseded-drop state "and nothing else". It is not: the bridge also demotes a **still-connected**
+receiver to `Connecting` after 3 s without video (`NdiViewerBridge.cs:458-462`), so a >=5 s video
+stall opened a window, rebuilt the receiver seven times on the UI thread and could end on a false
+terminal failure — for a source that never disconnected. Rebuilding a receiver cannot make a sender
+send video, so escalating a stall is strictly harmful. Fixed by making the bridge say what it means:
+**`ConnectionState.Stalled`**, appended last (so `Connecting` keeps enum value 0 and Moq's default is
+unchanged), raised in place of `Connecting` by the stall demotion. `ConnectionState` has no `switch`
+anywhere and only three consumers, so the blast radius is one pump line plus doc updates.
+`Connecting` now means exactly "a receiver was created and has not delivered a frame yet", which is
+what makes RC15's guard provably exact instead of approximately true. A `HasConnections`/
+`GetConnectionStats()` query was **rejected**: it needs a cached pump field with its own reset
+discipline and leaves the enum still lying, so the guard would read "Connecting AND not really
+connecting". **Rule: when a guard needs a distinction, add the distinction to the model — do not
+approximate it with a second field.** The accepted cost is a product residual (a connected-but-silent
+source shows a frozen picture under "Connected."), recorded in `openForUser` and filed as F7.
+
+**Smaller invariant repairs.** The ownership token was re-recorded unconditionally after
+`SetQualityProfile`, but Balanced and High map to the same bandwidth tier, so that call restarts
+nothing and bumps nothing — a non-owner could claim ownership by tapping a quality button (RC23). The
+sustained-`Connecting` counter survived a stop, so a window could open on the first sample after a
+restart (RC24). `CompleteReconnect` and the `"Connected."` status branch had no ownership term, so a
+disowned ViewModel could declare success and narrate another ViewModel's connection under its own
+`SourceId` (RC25).
+
+**Test-infrastructure note.** RC19-RC25 cost **one** existing-test edit (a rename), because
+`ReleaseIfDisowned` carries a `HasEverClaimedReceiver` (`_receiverGeneration >= 0`) term: a ViewModel
+that never asked the bridge for a receiver was never an owner and so cannot be disowned. That is the
+honest semantics *and* it leaves every `CreateSut() + IsPlaying = true` test — which is most of the
+full-screen suite — untouched. Seven new tests; RC19's guards and RC22's bridge half stay explicitly
+untested (private methods / no unit tests in `src/MauiApp`) rather than covered by a test that
+pretends.
+
+### 2026-09-13 — #401 e2e assertion: no bottom navigation bar in the rail placement (fit-check)
+
+**APPROVE-WITH-CHANGES (4).** Test-project-only, no production file touched, correct class
+(`AppLaunchTests`), correct attribute, and the self-gating on `NavigationPolicyService` is the right
+call — it is the same computation the sibling test already performs (`AppLaunchTests.cs:160-191`),
+so the new test cannot fail on a device where rail placement is not reachable. Three defects in the
+assertion itself, one documentation redirect.
+
+- **The selector's class-name branch can never match.** `BottomNavigationView` extends
+  `FrameLayout`, which overrides `getAccessibilityClassName()` — UiAutomator therefore reports the
+  node as `android.widget.FrameLayout`, never
+  `com.google.android.material.bottomnavigation.BottomNavigationView`. The live #384 dump recorded
+  in this file agrees: the orphan bar is described as a **`FrameLayout` `[108,1093][1920,1200]`**
+  whose subtree carries `navigation_bar_item_*` ids (this file, 2026-09-13 #384 entry, item 2). So
+  the whole assertion currently rests on the resource-id branch alone. RC1 replaces the dead branch
+  with MAUI's own `bottomtab*` layout id.
+- **"Exists anywhere" is the wrong predicate, and the repo's own page objects say so.** The healthy
+  rail state is not "no bottom bar in the view tree" — item 2 of the #384 entry establishes that the
+  bar is `ShellItemRenderer`'s bottom view *flipping from `Gone` to `Visible`*, i.e. it exists and is
+  `GONE` when healthy. `PageObject.FindAll` is documented as returning elements "displayed or not"
+  (`PageObject.cs:257`), which is precisely why every other presence check in this suite filters —
+  `IsPresent` is `FindAll(id).Any(IsDisplayed)` (`:255`), `NavigationBar.Resolve` is
+  `FindElements(...).FirstOrDefault(Displayed)` (`NavigationBar.cs:164-173`), and the existing
+  full-screen chrome assertion uses that same `IsPresent`
+  (`AppLaunchTests.cs:98-99`). My own earlier wording "no `navigation_bar_item_*` node exists
+  anywhere" was about the *page source*, not the view hierarchy; an unfiltered
+  `FindElements().Count > 0` risks a permanent false positive. RC1 makes it "no **displayed**
+  node".
+- **A negative assertion needs a liveness partner or it passes vacuously.** `HasBottomNavigationBar`
+  returns `false` on any exception, and an unreadable/empty tree is indistinguishable from a healthy
+  one. RC2 adds the positive counterpart (the rail *is* on screen) at the three checkpoints where
+  the rail is expected to be visible — the same anti-vacuous-gate principle the #317 work applied to
+  the workflow.
+- **One settle before the post-exit assertion.** The #384 defect appears when Shell recomputes tab
+  visibility after `RestoreChrome()`; `WaitUntilPlaying()` returns on the Deck/Sheet re-render, which
+  can precede that recompute. Sampling too early produces a *false negative* — the regression test
+  silently stops catching the regression. RC3 adds the settle (`NavigationBar.GoTo`'s own
+  `Thread.Sleep(750)` exists for the same reason, `NavigationBar.cs:83`).
+- Checkpoint 3's double gate (rail placement **and** `WindowSizeClass.Expanded`) is correct:
+  `SourceListPage.xaml.cs:97-121` and `SourceListViewModel.cs:120-127` make the pane Expanded-only,
+  so on the Nexus 6 PR gate (Medium in landscape) it must log rather than fail.
+  `[RetryableSkippableFact]` is correct per the 2026-09-12 #317 amendment (rotation + `TryRestart()`,
+  not `am kill`/`pm revoke`).
+- **Step 5 (`decision-log.md`) is refused** — same ruling as #392 above. The implementer writes
+  nothing under `.claude/knowledge/`; rationale goes in the PR description, and the durable
+  test-suite context belongs to the `tester` agent's own `.claude/knowledge/testing.md`.
+
 ### 2026-09-13 — #384 orphaned View chip after pane full screen (fit-check)
 
 **APPROVE-WITH-CHANGES.** The suspected mechanism is confirmed — and the UI dump disproves the
@@ -4429,3 +4969,292 @@ demonstrated and a scoped decision is recorded here.
   real behaviour. If parity is wanted, the seam is the ViewModel/AppState layer (a user-requested vs.
   autonomous stop distinction on `OutputStatusChanged`) — **not** `IAppStateRepository` writes from the
   Android foreground service. Owner decision needed; follow-up issue if yes.
+
+### 2026-09-13 — #415 viewer frame drops / #416 glass-to-glass latency (gate)
+
+**APPROVE-WITH-CHANGES.** Two PRs, strictly ordered, both authored **on top of PR #407** and both
+requiring **#417 Part A** (the `Trace` seam) to have merged. Verdict file: `verdict-415-416.md`
+(24 rulings, 12 + 10 `requiredChanges` verbatim, 22 + 8 tests, 2 deferred ticket texts, 12 accepted
+residuals, 7 open product questions, a device measurement procedure). Line numbers for the five
+files #407 owns are against `rc392`; everything else against this checkout. **No shell and no web
+access this session** — the issue bodies could not be read and the NDI latency figures could not be
+sourced from docs.ndi.video, so both are marked as estimates to confirm. Re-gate anything an issue
+body contradicts.
+
+**1. The drop-percentage defect, and where its state lives.** `UpdateStats`
+(`rc392/NdiViewerBridge.cs:552-555`) divides the *raw cumulative* counters
+`NDIlib_recv_get_performance` returns — a lifetime average, not a rate, exactly what the binding's
+own comment warns against (`NdiNativeStructs.cs:146`). Fixed by diffing per interval. **The previous
+snapshot is two `long` locals in `VideoPumpLoop` passed by `ref`, deliberately NOT a pump-thread
+field like `_maxFrameGapMs`:** the counters are per-*receiver* state and a receiver has exactly one
+video pump, so a new receiver starts from zero **with no reset anywhere** — which is what gives this
+change **zero line overlap with #417 Part B**, the one change that replaces `StopReceiver`
+wholesale. `_maxFrameGapMs` is a field only because the *stats tick* owns its lifetime; that
+argument does not transfer. A zero-frame interval reports 0 %, not the previous value — the fps arm
+already names that case.
+
+**2. `UpdateStats` is not made mockable; the arithmetic moves to Core instead.** New
+`src/Core/Features/Viewer/ReceiverStatsMath.DropPercent(totalDelta, droppedDelta)` — same shape and
+folder as `ConnectionHintPolicy`. Wrapping a static `[DllImport]` in an interface to test two
+subtractions would put a seam through the one layer this repo forbids seams in. The wiring stays
+untested (RC19/RC22 precedent) and is covered by a device cross-check that also settles an open
+question: whether the SDK's `dropped` counter is a **subset** of `total` (then `dropped/total` is
+right) or **disjoint** (then the denominator is `total + dropped`). The shipped formula is preserved
+and clamped 0-100 so no reading can be nonsensical either way.
+
+**3. Wi-Fi link telemetry: new Core `INetworkLinkService` + Android + Noop, read ONLY from the 1 Hz
+stats watchdog.** Never the UI thread (binder round-trip), never a pump thread (rule 6);
+`SampleConnectionStats` already runs on a thread pool at exactly 1 Hz and already marshals through
+`IMainThreadDispatcher`. **No new permission and no location permission, ever:** `ACCESS_WIFI_STATE`
++ `ACCESS_NETWORK_STATE` are already declared (`AndroidManifest.xml:7-8`), and on API 26+ **RSSI,
+PHY link speed and channel frequency (hence band) are not location-gated — only SSID/BSSID are**
+(redacted from API 29 without `ACCESS_FINE_LOCATION`). The record therefore carries no SSID at all:
+asking for a location permission to print a network name in a diagnostic line is a permission
+escalation for a cosmetic gain. Deprecation is handled by *branching*, not suppressing —
+`ConnectivityManager.GetNetworkCapabilities(...).TransportInfo` on API 31+, `WifiManager.
+ConnectionInfo` below, split on `OperatingSystem.IsAndroidVersionAtLeast(31)` with `#pragma warning
+disable CA1422` on the legacy branch only (`AndroidVideoCaptureSource.cs:425-427` precedent).
+
+**4. #330/#331 are untouched: the link changes the hint's *wording* and nothing else.** "Connection
+weak — try Smooth" becomes "2.4 GHz / weak signal — switch to Smooth" when the radio is a plausible
+cause, composed from the *actual* band so it can never claim a band the device is not on, and with
+the suggestion dropped on Smooth. No automatic profile change anywhere; a dedicated test asserts
+`SetQualityProfile` is never called.
+
+**5. `Stalled` must count as "the receiver is up" for the hint — changed now, not deferred.** After
+#407 a starved link lives in `Stalled` (3 s with no video demotes `Connected → Stalled`), and
+`ApplyConnectionSample`'s `!connected` branch both **wiped an active hint** and **reset the
+five-sample run** on every demotion — so the hint could never appear on the one link it exists for.
+Two lines, in a file both PRs already touch. Accepted cost: an idle sender on a good link now hints
+after 5 s; the wording for that case is a product question, not a reason to leave the detector
+broken.
+
+**6. The 33 ms render decimation is IN (#416); the BGRA colour format and per-frame managed copy are
+OUT (own ticket, text written).** The colour-format work changes the receive contract (`Fastest`
+returns UYVY) and the render surface (`SKCanvasView` is a CPU raster that only understands
+`Bgra8888`) *simultaneously*, and the only evidence it binds is one 3440x1440@60 run — **no 1080p60
+number exists in either direction**. The measurement procedure produces exactly that number and
+decides whether the ticket is filed at all.
+
+**7. Draw-on-arrival, with the coalescing in Core and the 33 ms timer KEPT as a fallback.** New
+`INdiViewerBridge.VideoFrameReady`, raised on the pump thread **after** the native frame is freed
+(the metadata path's existing ordering rule, `rc392:438-441`) and after the Connected transition.
+The handler does one `Interlocked.Exchange` and at most one `BeginInvokeOnMainThread` — newest-frame-
+wins, so a busy UI thread drops intermediate frames instead of queueing 60 invalidates a second.
+**The coalescing lives in `ViewerViewModel`, not in `ViewerView`:** a XAML-instantiated `ContentView`
+has no DI constructor, so giving it the bridge or the overlay service would mean a service locator,
+which `CLAUDE.md` forbids. The timer stays at 33 ms in this PR so a hole in the new wiring degrades
+to today's latency rather than to a blank canvas — both `ViewerView` hosts (`ViewerPage` and the
+Expanded pane) and the #384 full-screen path ride on it. Expected gain: 0-50 ms → 0-17 ms.
+
+**8. The latency readout reuses #417 Part A's `Trace` seam — fifth refusal of a parallel store.**
+Two new tag constants on `DiagnosticOverlayService` next to `DiscoveryLogTag`/`NavigationLogTag`:
+`LatencyLogTag = "NDI-Lat"` (1 Hz, `recvToDrawMs` / `senderToDrawMs`) and `LinkLogTag = "NDI-Link"`.
+Separate tags, one seam. Sink only — **never** `DiagnosticLogBuffer`, with one approved exception:
+an **edge-triggered** link entry on a band or weak/not-weak change, which is the only way to read
+the radio at a venue with no PC. `NdiVideoFrame` gains `ReceivedAtTickMillis` (monotonic, single
+clock) and `TimestampIsSynthesized`, **defaulting to `true`** so the unsafe answer is never the
+default (#392 RC1's rule); a sender→draw figure from a synthesized timestamp measures nothing and
+would read as a suspiciously *good* number, so it is reported as `-1`.
+
+**9. Audio output (`AudioTrack` low-latency mode, buffer sizing, backlog drain) is OUT.** The
+symptom is picture vs. the room's PA and the tablet's speaker is not in that loop;
+`PerformanceModeLowLatency` is a request that, with the existing `minBytes * 2` buffer and blocking
+writes, can trade a visible symptom for an audible one. Ticket text written, blocked on one product
+answer: does anyone listen on the tablet at all?
+
+**10. Sequencing.** #407 → (#417 Part A, parallel) → **PR-A `bugfix/415-drop-rate-and-link`** →
+**PR-B `bugfix/416-latency-draw-on-arrival`, cut from PR-A's branch** (both edit `VideoPumpLoop`).
+PR-A and **#417 Part B may be authored in parallel** — proven zero line overlap, see ruling 1. If
+Part A stalls, PR-A still ships minus the `NDI-Link` logcat line; PR-B cannot, because the readout
+*is* its deliverable. Neither PR closes #410, #408, #420 or #417's landscape blocks.
+
+**Expectation set for Niels, to be confirmed (no web access this session):** ~80-150 ms
+glass-to-glass on a good 5 GHz link at 1080p60 with full NDI; NDI|HX adds ~100-300 ms at the
+*sender*; Smooth's win is that it **fits** a bad link, not that it is inherently faster (the repo's
+own "lower latency" claim at `rc392:709-714` is an assertion this gate did not verify). Sub-50 ms is
+not reachable on a tablet over Wi-Fi with a CPU decode and a compositing display stack — the app-side
+share is the ~17 ms PR-B removes, and the 2.4 GHz / −78 dBm / 6 Mbit/s church link was two orders of
+magnitude short of what the default profile asked for. No code change fixes that.
+
+### 2026-09-13 — #415 round 2 (PR #424, head `3dc1688`) — post-implementation re-gate
+
+**APPROVE-WITH-CHANGES, round 2.** RC-A1…RC-A12 are implemented; an adversarial review found 0 P1,
+3 P2, 12 P3. Ruled: **9 fix-now, 4 defer, 2 reject**, with 10 new required changes RC-A13…RC-A22 in
+`verdict-415-round2.md`. Two of the three P2s are **my** errors from the first gate, recorded here so
+the same reasoning is not repeated:
+
+**1. Hysteresis must be reasoned about in BOTH directions when a value becomes a rate.** Ruling 5
+("a single-second blip can only reset a run — it can never flip the hint") is true for the *show*
+direction and exactly inverted for the *clear* direction: `ConnectionHintPolicy.Next` cleared an
+active hint only on 5 consecutive `IsGood` samples and **zeroed the good run on any dead-band
+(10–30 %) sample**. Under the old lifetime average that band was almost never visited; a per-second
+rate lands in it constantly, so an active hint could never clear on a link averaging ~7 % loss. Fix:
+make the dead band's *effect* asymmetric — a dead-band sample **resets the weak run** (so the show
+direction is unchanged and a blip still cannot flip the hint) and **leaves the good run untouched**
+(it contradicts weakness; it does not demonstrate health). Also `IsGood`'s fps term becomes `>=` so
+the two arms partition the fps axis — `fps < 15` weak / `fps > 15` good left exactly 15.0 fps
+permanently neutral, which under the new rule means an active hint could never clear at all.
+
+**2. Smoothing is policy, not telemetry.** Rejected an EMA / rolling mean inside `UpdateStats`: the
+`NdiStats` line's `drop=` must keep equalling `dDropped/dTotal` or the one device check that decides
+whether every drop figure in the app is inflated becomes unreadable, and bridge-side smoothing is
+untestable (no seam through the P/Invoke layer). Hysteresis belongs in the pure Core policy.
+
+**3. A diagnostic may state facts; it may not assert a cause it cannot support.** `IsWeakLink`
+classified **any** 2.4 GHz association as weak at any RSSI and any PHY rate, and `HintText` never
+checked *which* arm of `IsWeak` fired — so a receiver that was up while the sender sent nothing
+(weak by the fps arm, 0 % drops) told an operator on a healthy 2.4 GHz AP "2.4 GHz / weak signal —
+switch to Smooth", i.e. a false cause plus a suggestion that costs a visible reconnect and cannot
+help. Fix, three parts: (a) the band leaves `IsWeakLink`, which now means "the radio *measures* weak"
+(RSSI ≤ −70 or PHY ≤ 50 Mbit/s, with the two sentinel guards); (b) the band survives as a
+**qualifier** — "Connection weak on 2.4 GHz" — because 2.4 GHz's real failure mode is airtime
+congestion, which is invisible in both RSSI and PHY rate, so dropping the band entirely would lose
+real signal; (c) radio attribution requires **drop evidence**, latched in a new
+`ConnectionHintPolicy.State.SawDropEvidence` so a spiky rate cannot make the copy flicker. Result is
+three tiers ordered by claim strength: measured-weak radio + drops → band + signal; drops on a
+2.4 GHz radio that measures fine → band as a fact; anything else → the generic copy. **`Stalled`
+needs no special case:** ruling 10 stands (the detector must still fire, because a dead link and an
+idle sender are indistinguishable at the ViewModel), but with no drop evidence it can never be
+attributed to the Wi-Fi. That is the safe default for the unanswered product question; the distinct
+"Source is sending no video" copy stays with the #412 wording work.
+
+**4. A network *diagnostic* samples the association, not the default route.** The API 31+ branch read
+`ConnectivityManager.ActiveNetwork`, which answers "where do my packets go" — the wrong question, and
+wrong exactly when the feature matters: with a VPN up the active network is the tunnel, and at a
+closed venue AP (the #415 case) Wi-Fi has no internet so mobile data carries the default route. Both
+yielded `NetworkLinkSnapshot.Unknown` with no indication the feature had gone inert, and the two API
+branches disagreed about the same radio. Fix: keep the capability read as the preferred
+(non-deprecated) probe, and fall back to `WifiManager.ConnectionInfo` on **all** API levels behind one
+documented CA1422 suppression — the association read is deprecated but not removed, and is the only
+synchronous API that answers "what radio am I on" when Wi-Fi is not the default route. Rejected:
+`cm.GetAllNetworks()` enumeration (itself deprecated at 31, and redundant given the fallback) and
+`RegisterNetworkCallback` (the right long-term answer, but it turns a stateless service into a
+lifecycle-owning singleton with a thread-safety surface, for a diagnostic line). The two Java peers
+per second (`ActiveNetwork`, `GetNetworkCapabilities`) plus the `WifiInfo` are now `using`-scoped.
+
+**5. Deferred, not absorbed.** Two follow-up issues with text written: tracing the link while
+*connecting* and after a failed connect (today `TraceLink` sits behind the `!connected` guard, so the
+radio cannot explain why you never connected — the feature's stated purpose), and a repo-wide
+`.gitattributes` (`* text=auto`) for the pre-existing CRLF-in-index noise, which must be its own
+renormalise-only commit and never ride inside a feature diff. Deferred without an issue:
+`WeakRssiDbm = −70` (re-tune on device evidence only; now guarded by the drop-evidence rule) and the
+drop-counter subset-vs-disjoint question, which is **promoted to a hard gate before anything
+containing this change is promoted to `main`** — `WeakDropPercentThreshold = 30` sits directly on top
+of it. Rejected: the 0 % reading for a totally starved interval (deliberate; residual 2's wording was
+too strong and is amended — a reading can *understate*, it can never be out of range) and `Trace` on
+the UI thread at 1 Hz in developer mode (identical to #422's navigation probes, gated twice,
+exception-swallowing).
+
+**6. Scope discipline for the concurrent sibling.** Round 2 touches only
+`ConnectionHintPolicy.cs`, `ViewerViewModel.ConnectionHint.cs`,
+`Platforms/Android/Services/AndroidNetworkLinkService.cs` and three test files. **RC-A21 forbids
+touching `NdiViewerBridge.cs`, `ReceiverStatsMath.cs`, `ViewerViewModel.cs`,
+`DiagnosticOverlayService.cs` and `MauiProgram.cs` in this round**, because
+`bugfix/416-latency-draw-on-arrival` is cut from this PR's head and owns regions in exactly those
+files. Merge order is unchanged: **#424 first, then #416's branch rebased onto the merged result.**
+
+### 2026-09-13 — #416 round 2: adversarial review of PR #426 (`79666dd`, base `3dc1688`)
+
+**APPROVE-WITH-CHANGES.** Verdict file: `verdict-416-round2.md` — 8 required changes
+(**RC-B11..RC-B18**), 11 fix-now rulings, 3 deferred/rejected, 8 accepted residuals, 1 new product
+question. RC-B1..RC-B9 were implemented as specified; the raise point and the coalescing (the two
+hard parts) are correct and no paint-after-stop, lost last frame, leaked subscription, deadlock or
+leaked native frame could be constructed. Read-only gate; line numbers against the `lat416`
+worktree.
+
+**1. The real defect is a *missing* gate, not a wrong one: per-frame posts were gated on `IsPlaying`,
+not on "a View is rendering".** `StopRendering()` only flipped the **View's** `_isRenderingActive`
+(`ViewerView.xaml.cs:56-60`), so a backgrounded app or a hidden Expanded pane kept the whole chain
+pump → `Interlocked` → `BeginInvokeOnMainThread` → `FrameReady` → `PresentLatestFrame` running at up
+to 60 Hz and returned at the *last* statement. Nothing stops the receiver on pause by design
+(`ViewerViewModel.OnAppPaused` only calls `ForceExitFullScreen`), so this is steady state, not a
+transient. Before draw-on-arrival, `StopRendering()` stopped the only frame-driven UI work there
+was.
+
+**2. The gate is ViewModel-owned state written by the View (`SetRenderingActive`), NOT a bridge
+subscription moved into `StartRendering`/`StopRendering`.** Three reasons, in order of weight:
+(a) **failure mode** — a host that forgets to open the flag degrades to the 33 ms fallback pull,
+which is exactly what ruling 13 kept the timer for, whereas a forgotten `+=` silently deletes
+draw-on-arrival with no symptom; (b) subscription symmetry across four `StartRendering` and three
+`StopRendering` call sites needs its own "already subscribed" state, at which point it *is* the flag
+plus a subscription, and it would contradict RC-B6's provably symmetric ctor/`Dispose` pair;
+(c) the View already owns this fact — the defect is only that the gate sat one layer *below* the
+dispatch it must suppress. **Single writer, and it is the View:** verified that all five paths which
+hide a `ViewerView` already call `StopRendering` (`ViewerPage.xaml.cs:57`, `SourceListPage.xaml.cs:73`,
+`:140`, `:147`, plus `Teardown` at `:69`), including mere backgrounding. A second writer in
+`OnAppPaused` was **rejected** — two owners for one flag is the #384 chrome-suppression bug class,
+and resume is already safe because `StartRendering` restarts the timer, which paints within 33 ms.
+
+**3. The per-frame raise is wrapped; the diagnostic is one-shot per pump run.** `VideoPumpLoop`'s
+`try` wraps the whole `while (_running)` loop and reports **any** escaping exception as
+`ConnectionLost` → a spurious 15 s reconnect window on a link that never dropped. The file already
+states this rule for its own stats logcat line. `ConnectionStateChanged`/`TallyEchoChanged` stay
+unwrapped: identical hazard, three orders of magnitude less exposure (a state change vs. 60/s), and
+filing a ticket would invite a sweeping "wrap every raise" change to a file three PRs are queued on
+— **accepted residual, no ticket.** The fault log line is carried in a `VideoPumpLoop` **local**
+(`frameReadyFaultLogged`), the third application of "per-receiver, pump-thread-only state is a local,
+not a field".
+
+**4. A latency may only be measured on a paint a new frame caused.** `OnPaintSurface` is an Android
+`onDraw`: it also runs for a `HeightRequest` change, a size-class/full-screen relayout, a rotation, a
+surface re-create on resume and a theme switch, each re-blitting the **stale** `_pendingFrame`. With
+the 1 Hz throttle publishing whichever paint is first past the window, one rotation was enough to put
+an arbitrarily large `recvToDrawMs` into `NDI-Lat` — and RC-B10's own acceptance rule is
+"`recvToDrawMs` > 40 ms ⇒ investigate before merging", so the number this PR exists to produce could
+silently fail its own gate. Fix: a `_frameAwaitingReport` flag set by `PresentLatestFrame` and
+**captured-and-cleared at the top of `OnPaintSurface`, before the early return** — a paint that draws
+nothing must not leave the flag armed for the next repaint. "Pass `isNewFrame` from
+`PresentLatestFrame`" is not implementable: the invalidate returns and `onDraw` happens later.
+
+**5. The paint rate is deliberately NOT capped.** `SKCanvasView.InvalidateSurface()` maps to Android
+`View.invalidate()`, whose traversal is scheduled on the next vsync — repeated invalidates inside one
+vsync interval collapse into a single `onDraw`. So paints/s = `min(source fps, display refresh)`,
+never one per invalidate, and the PR cannot produce an unbounded raster rate. A minimum inter-paint
+interval would re-introduce the deterministic 0-N ms wait that #416 exists to remove. The doubled
+per-second raster cost (8.3 MB copy + scaled CPU raster per paint) is the intended trade; it is
+**conditionally accepted on device evidence** (before/after app CPU share, `gfxinfo` janky share,
+`Choreographer: Skipped`, plus a backgrounded-while-playing leg that proves the P1 fix). If the
+numbers do not hold, the follow-up is the §T1 pooled-buffer/`SKGLView` work — which removes the
+*copy* — not a paint cap, and the choice is Niels's, not a developer's.
+
+**6. The 1 Hz throttle moves to the injected `TimeProvider`; the measurement stays on
+`Environment.TickCount64`.** Two clocks in one method, with the reason written into the code: the
+throttle is a **cadence** and must be test-controllable (the old version needed 100 iterations to
+finish inside a real second and made "traces again after a second" untestable — this repo already
+paid for wall-clock-dependent tests in #380); `recvToDrawMs` is a **duration** and must share the
+clock the pump stamped the frame with.
+
+**7. Doc drift was worse than reported: eight replacements, not five.** Beyond `docs/architecture.md`
+`:172`/`:277`, `.github/KNOWLEDGE-BASE.md` `:37`/`:84` and `CLAUDE.md:95`, the "~30 fps" model also
+lives in the **canonical render-model sentence** at `docs/architecture.md:159` and in
+`docs/ndi-sdk-coverage.md:22`, plus two in-code comments (`ViewerViewModel.CurrentFrame`'s doc,
+`ViewerView.xaml`'s Stopped-overlay comment). `VideoFrameReady` is now the **fourth** pump-thread
+event and the only per-frame one; its handler contract (one coalesced post, no lock, no blocking
+call, never a call back into the bridge) and the wrapped raise are now stated in all three
+rule-bearing documents, not only in the interface XML doc. The `StopReceiver()` drift in
+`ViewerViewModel.ConnectionHint.cs` is **PR #425's** to fix — not duplicated here.
+
+**8. Test gaps that let a wrong implementation pass: five new assertions plus two gate tests.** Tests
+5-8 would pass against a `ReportFrameDrawn` that ignores `receivedAtTickMillis` entirely; the
+`ReceivedAtTickMillis == 0` branch (the `NdiVideoFrame` default) was untested; there was no
+"no post after `Stop()`" test and no test pinning the **clear-before-raise** ordering that makes the
+coalescing correct (reversing those two statements kept the suite green). Added, plus the P1
+regression test in its own right: **a stopped View costs zero dispatches for 60 consecutive pump
+frames.**
+
+**9. Composition with the two concurrent branches.** #424's round-2 head (`6387018`) overlaps only
+`DiagnosticOverlayService`'s tag block, where all four tags coexist. #425's stop prologue (blank the
+front buffer under `_frameLock`, hold `Disconnected` while a stop is pending, gate the pump's
+publish) and this PR's gates are **independent AND-terms on different chains** — #425 guarantees
+`GetLatestFrame()` is `null` after a stop prologue so nothing paints; RC-B11 guarantees no post is
+queued when no View renders. Neither subsumes the other and **neither may be dropped in the rebase**:
+`OnBridgeVideoFrameReady`'s gate is the *union* of every term present on both branches.
+
+**10. Merge order: #424 → #425 → #426, and #426 rebases twice.** #425 goes second because its
+invariant is the correctness-bearing one and must not be rebased *over* by a latency PR, and because
+the second rebase is cheaper for #426 (one raise site plus RC-B2's two reset lines, which follow
+#425's `_frameLock` block into `StopReceiverCore`; its `INdiBridges.cs` hunk is a different region).
+#426 rebases onto `6387018` now so CI runs on a current base, retargets to `integration` once #424
+merges, and rebases again after #425. Nothing here goes into `main`; whichever PR carries the chain
+there owes a green, linked, non-pending `emulator-tests.yml` run (#299).

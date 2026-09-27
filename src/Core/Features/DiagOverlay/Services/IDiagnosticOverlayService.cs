@@ -36,6 +36,12 @@ public interface IDiagnosticOverlayService
         TimeSpan? duration = null);
 
     /// <summary>
+    /// Emits one developer-mode trace line under <paramref name="tag"/> (logcat on Android,
+    /// no-op elsewhere). No-op when developer mode is off. Never writes to <see cref="LogBuffer"/>.
+    /// </summary>
+    void Trace(string tag, string phase, string? detail = null);
+
+    /// <summary>
     /// Retrieves the current viewer diagnostics snapshot.
     /// </summary>
     ViewerDiagnosticSnapshot GetCurrentViewerDiagnostics();
