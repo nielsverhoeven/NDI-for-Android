@@ -14,8 +14,9 @@ namespace NdiForAndroid.Features.Home.ViewModels;
 /// <summary>Home dashboard: discovery / viewer / output status summary and the quick actions.</summary>
 /// <remarks>
 /// Registered as a DI <b>Singleton</b> together with <c>HomePage</c> (#352/#359): it subscribes here to
-/// singleton events, while MAUI's Android Shell re-resolves the tab-root page on every tab entry and on
-/// every -tab/-rail placement change. A Transient lifetime would leak one subscribed instance per visit.
+/// singleton events, while MAUI's Android Shell re-resolves the tab-root page on every tab entry (a
+/// placement change no longer does, #395 — there is one route family). A Transient lifetime would leak
+/// one subscribed instance per visit.
 /// Per-visit work belongs in <see cref="RefreshCommand"/> (run by <c>HomePage.OnAppearing</c>), never in
 /// the constructor. <see cref="Dispose"/> is container-owned (app teardown) — pages must not call it.
 /// </remarks>

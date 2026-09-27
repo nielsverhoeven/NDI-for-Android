@@ -17,7 +17,14 @@
        Shell.TabBarUnselectedColor="{DynamicResource ShellTabUnselected}"
        Title="NDI for Android">
 
-    <!-- Custom left navigation rail. FlyoutHeaderTemplate intentionally omitted:
+    <!-- Shell.FlyoutBehavior="Disabled" above is load-bearing and must stay explicitly SET on the
+         Shell (#395). The only ShellItem is a TabBar, and Shell's default effective flyout behavior
+         for a TabBar is Disabled. Shell.GetEffectiveFlyoutBehavior checks whether the property is
+         set on the Shell itself BEFORE applying that TabBar default, so the explicit Shell-level
+         value is what lets AppShell.ApplyPlacement turn the rail on with FlyoutBehavior.Locked.
+         Remove the attribute and the rail can never appear.
+
+         Custom left navigation rail. FlyoutHeaderTemplate intentionally omitted:
          setting it alongside FlyoutContent triggers a MAUI compat renderer NRE.
          RailItems.Padding is set in code-behind from the real status-bar inset (#296) —
          the window is drawn edge-to-edge, so a literal top padding would sit under the clock. -->
@@ -29,67 +36,37 @@
         </Grid>
     </Shell.FlyoutContent>
 
-    <FlyoutItem x:Name="HomeRailItem"
-                Route="home-rail-item"
-                Shell.FlyoutItemIsVisible="False">
-        <ShellContent Title="Home"
-                      ContentTemplate="{DataTemplate home:HomePage}"
-                      Route="home-rail"
-                      Icon="nav_home.svg" />
-    </FlyoutItem>
-
-    <FlyoutItem x:Name="StreamRailItem"
-                Route="stream-rail-item"
-                Shell.FlyoutItemIsVisible="False">
-        <ShellContent Title="Stream"
-                      ContentTemplate="{DataTemplate output:OutputPage}"
-                      Route="stream-rail"
-                      Icon="nav_stream.svg" />
-    </FlyoutItem>
-
-    <FlyoutItem x:Name="ViewRailItem"
-                Route="view-rail-item"
-                Shell.FlyoutItemIsVisible="False">
-        <ShellContent Title="View"
-                      ContentTemplate="{DataTemplate sources:SourceListPage}"
-                      Route="view-rail"
-                      Icon="nav_view.svg" />
-    </FlyoutItem>
-
-    <FlyoutItem x:Name="SettingsRailItem"
-                Route="settings-rail-item"
-                Shell.FlyoutItemIsVisible="False">
-        <ShellContent Title="Settings"
-                      ContentTemplate="{DataTemplate settings:SettingsPage}"
-                      Route="settings-rail"
-                      Icon="nav_settings.svg" />
-    </FlyoutItem>
-
     <!-- AutomationId on ShellContent is best-effort: Shell renders the bottom bar with a native
          BottomNavigationView, which does not reliably carry the id through to the tab's
          resource-id. The rail sets the same id on its own Border, where it does stick. Tests
          locate navigation by id and fall back to the accessibility label for exactly this
-         reason — see NavigationBar in the page objects. -->
+         reason — see NavigationBar in the page objects.
+
+         The one route family (#395): these four routes are the same whichever chrome is showing.
+         The left rail is not a second set of ShellItems — it is the locked flyout above. On rail
+         placement AppShell.ApplyPlacement hides this bar at ShellItem scope
+         (Shell.SetTabBarIsVisible(PrimaryTabBar, false)); never write PrimaryTabBar.IsVisible, which
+         would make Shell re-point CurrentItem and destroy the navigation stack. -->
     <TabBar x:Name="PrimaryTabBar">
         <ShellContent Title="Home"
                       AutomationId="{x:Static t:TestIds.NavHome}"
                       ContentTemplate="{DataTemplate home:HomePage}"
-                      Route="home-tab"
+                      Route="home"
                       Icon="nav_home.svg" />
         <ShellContent Title="Stream"
                       AutomationId="{x:Static t:TestIds.NavStream}"
                       ContentTemplate="{DataTemplate output:OutputPage}"
-                      Route="stream-tab"
+                      Route="stream"
                       Icon="nav_stream.svg" />
         <ShellContent Title="View"
                       AutomationId="{x:Static t:TestIds.NavView}"
                       ContentTemplate="{DataTemplate sources:SourceListPage}"
-                      Route="view-tab"
+                      Route="view"
                       Icon="nav_view.svg" />
         <ShellContent Title="Settings"
                       AutomationId="{x:Static t:TestIds.NavSettings}"
                       ContentTemplate="{DataTemplate settings:SettingsPage}"
-                      Route="settings-tab"
+                      Route="settings"
                       Icon="nav_settings.svg" />
     </TabBar>
 

@@ -4,10 +4,11 @@ using NdiForAndroid.Features.Navigation.Services;
 using NdiForAndroid.Features.Sources.ViewModels;
 using NdiForAndroid.Features.Viewer.Services;
 using NdiForAndroid.Features.Viewer.ViewModels;
+using NdiForAndroid.Services;
 
 namespace NdiForAndroid.Features.Sources.Views;
 
-public partial class SourceListPage : ContentPage
+public partial class SourceListPage : ContentPage, IShellChromeHost
 {
     private readonly IWindowSizeClassService _windowSizeClassService;
     private readonly ViewerFullScreenChromeController _fullScreenChromeController;
@@ -171,4 +172,7 @@ public partial class SourceListPage : ContentPage
             ApplySizeClass(_windowSizeClassService.Current);
         }
     }
+
+    /// <inheritdoc cref="IShellChromeHost.RefreshShellChrome"/>
+    public void RefreshShellChrome() => OnPropertyChanged(Shell.TabBarIsVisibleProperty.PropertyName);
 }

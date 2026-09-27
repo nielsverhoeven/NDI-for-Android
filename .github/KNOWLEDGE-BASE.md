@@ -1,5 +1,5 @@
 # NDI-for-Android — Agent Knowledge Base
-<!-- Last updated: 2026-09-07 | Read this INSTEAD of re-reading constitution.md + architecture.md for implementation tasks -->
+<!-- Last updated: 2026-09-27 | Read this INSTEAD of re-reading constitution.md + architecture.md for implementation tasks -->
 
 ## Tech Stack (authoritative)
 - **Platform**: .NET MAUI `net10.0-android` | **Language**: C# 12, nullable enabled
@@ -20,7 +20,7 @@ dotnet test tests/MauiApp.Tests             # Non-NDI unit tests — must pass b
 | Purpose | Path |
 |---------|------|
 | DI root | `src/MauiApp/MauiProgram.cs` |
-| Shell routing | `src/MauiApp/AppShell.xaml.cs` |
+| Shell routing | `src/MauiApp/AppShell.xaml.cs` (chrome: `ApplyPlacement`); routes in `src/Core/Features/Navigation/Models/PrimaryNavigationMetadata.cs` |
 | Settings ViewModel | `src/Core/Features/Settings/ViewModels/SettingsViewModel.cs` |
 | Settings Models | `src/Core/Features/Settings/Models/SettingsModels.cs` |
 | Settings Repository interface | `src/Core/Features/Settings/Repositories/ISettingsRepository.cs` |
@@ -37,7 +37,7 @@ dotnet test tests/MauiApp.Tests             # Non-NDI unit tests — must pass b
 | Reusable NDI render surface | `src/MauiApp/Features/Viewer/Views/ViewerView.xaml(.cs)` (SkiaSharp; draw-on-arrival via `ViewerViewModel.FrameReady`, with a 33 ms fallback pull — #416; zero-copy pinned draw) |
 | Viewer control deck / sheet / overlay (#342) | `src/MauiApp/Features/Viewer/Views/PlaybackControlsView.xaml(.cs)`, `CameraControlsView.xaml(.cs)`, `ViewerControlDeck.xaml(.cs)`, `ViewerControlSheet.xaml(.cs)`, `FullScreenControlsOverlay.xaml(.cs)` — `PtzPanelView` removed, superseded by `CameraControlsView` |
 | Viewer control layout policy (Core, unit-tested) | `src/Core/Features/Viewer/ViewerControlLayout.cs` (`Choose(widthDp, heightDp)` → Deck when width ≥ 640dp and height ≥ 470dp, else Sheet; `ShouldStackCameraPresets`, `ChooseSheetExpandedHeightDp`/`ChooseSheetPeekHeightDp`, `ChooseVideoHeightDp` added for #370 — video height and the sheet's expanded/peek heights are derived from the same Core policy; 240dp video / 440dp expanded / 320dp peek remain the values for a portrait phone and for the deck) |
-| Window size class + nav policy | `src/Core/Features/Navigation/Services/` (`WindowSizeClassService`, `NavigationPolicyService`) |
+| Window size class + nav policy | `src/Core/Features/Navigation/Services/` (`WindowSizeClassService`, `NavigationPolicyService`, `NavigationChromePolicy` #395) |
 | Developer-mode diagnostics state (Core, unit-tested, #333) | `src/Core/Features/DiagOverlay/Services/` (`IDiagnosticOverlayService`, `DiagnosticOverlayService`, `DiagnosticLogBuffer`, `IDiagnosticLogSink`); logcat mirror = `src/MauiApp/Platforms/Android/Services/AndroidLogcatDiagnosticSink.cs` (Noop twin in `src/MauiApp/Services/`) |
 | SQLite/Data layer | `src/MauiApp/Data/` |
 | Android platform services | `src/MauiApp/Platforms/Android/` |
@@ -84,24 +84,41 @@ tests/
 4. **NDI threading**: bridge events (`ConnectionStateChanged`, `TallyEchoChanged`, `OutputStatusChanged`, `VideoFrameReady`) are raised on pump/background threads — subscribers marshal to the UI thread (`IMainThreadDispatcher` in Core, `MainThread.BeginInvokeOnMainThread` in MauiApp). `VideoFrameReady` is the only per-frame event (up to 60/s, #416): its handler does nothing but post one coalesced invalidate, and the pump wraps the raise so a subscriber fault is never reported as a lost stream.
 5. **Android APIs** isolated in `Platforms/Android/` behind interfaces
 6. **No root `IsVisible` binding on a reusable `ContentView`** — a `View.SetValue` from host code-behind clears an active one-way binding on that same property, so a `ContentView` reused across multiple hosts (e.g. `CameraControlsView` inside both `ViewerControlDeck` and `ViewerControlSheet`) must bind visibility on an *inner* element and leave its own root free for the host to toggle imperatively (`.IsVisible = ...`) without side effects. See #342 (`ViewerControlDeck`/`ViewerControlSheet`/`FullScreenControlsOverlay`).
-7. **Tab-root lifetime rule (#352/#359)** — ShellContent-hosted pages are re-resolved from DI on every tab entry/placement change and never dispose their ViewModel; a ViewModel subscribing to a singleton event is registered **Singleton together with its page** (`SourceListViewModel`/`SourceListPage`, `HomeViewModel`/`HomePage`, `OutputViewModel`/`OutputPage`). Guarded by `tests/MauiApp.Tests/Composition/TabRootLifetimeRegistrationTests.cs`. Only push-navigated pages (`ViewerPage`) dispose a Transient ViewModel, and only after leaving the nav stack.
+7. **Tab-root lifetime rule (#352/#359)** — ShellContent-hosted pages are re-resolved from DI on every tab entry (not on a placement change any more, #395) and never dispose their ViewModel; a ViewModel subscribing to a singleton event is registered **Singleton together with its page** (`SourceListViewModel`/`SourceListPage`, `HomeViewModel`/`HomePage`, `OutputViewModel`/`OutputPage`). Guarded by `tests/MauiApp.Tests/Composition/TabRootLifetimeRegistrationTests.cs`. Only push-navigated pages (`ViewerPage`) dispose a Transient ViewModel, and only after leaving the nav stack.
 
 ## Shell Routes
 
-Bottom TabBar placement:
+**One route family (#395, constitution §2.4 v2.0).** The same routes serve both navigation
+placements; the placement only swaps the chrome.
 
 | Route | Page | Purpose |
 |---|---|---|
-| `//home-tab` | `HomePage` | Home dashboard — discovery/viewer/output status |
-| `//stream-tab` | `OutputPage` | Stream tab — outgoing NDI output only; no `sourceId` param |
-| `//view-tab` | `SourceListPage` | View tab — discovery + tap-to-view; two-pane (embedded `ViewerView`) on Expanded windows |
-| `//settings-tab` | `SettingsPage` | Settings |
-| `viewer?sourceId={id}` | `ViewerPage` | Pushed relative to current tab; registered via `Routing.RegisterRoute("viewer", typeof(ViewerPage))` in `AppShell.xaml.cs` |
+| `//home` | `HomePage` | Home dashboard — discovery/viewer/output status |
+| `//stream` | `OutputPage` | Stream — outgoing NDI output only; no `sourceId` param |
+| `//view` | `SourceListPage` | View — discovery + tap-to-view; two-pane (embedded `ViewerView`) on Expanded windows |
+| `//settings` | `SettingsPage` | Settings |
+| `viewer?sourceId={id}` | `ViewerPage` | Pushed relative to the current destination; registered via `Routing.RegisterRoute("viewer", typeof(ViewerPage))` in `AppShell.xaml.cs` |
 | `diagnostic-log` | `DiagnosticLogPage` | Pushed; registered in `AppShell.xaml.cs` via `DiagnosticLogViewModel.Route`; opened from Settings → Developer tools → "Open diagnostic log" (`SettingsViewModel.OpenDiagnosticLogCommand`, #437). The 2 s list refresh runs only while the page is on screen (`Activate`/`Deactivate` from OnAppearing/OnDisappearing). |
 
-Left navigation rail placement: same pages on `//home-rail`, `//stream-rail`, `//view-rail`, `//settings-rail`.
+Routes are declared on the four `ShellContent`s of the one `TabBar` (`PrimaryTabBar`, `AppShell.xaml`)
+and in Core as `PrimaryNavigationMetadata.Items[..].Route`. `ShellNavigationService.TryGetPrimaryRoute`
+reads them; the service has no placement state. `PrimaryNavigationMetadata.TryResolveDestination(location)`
+(Core, unit-tested) maps a Shell location to its destination by last path segment.
 
-**Placement policy (#279)**: `WindowSizeClass` = Compact (<600dp) / Medium (600–840dp) / Expanded (>840dp), fed from `AppShell.OnSizeAllocated`. `NavigationPolicyService`: **rail when landscape OR Expanded, bottom tabs otherwise**. `AppShell` selects `-rail` vs `-tab` routes from `AdaptiveShellStateViewModel.IsLeftRailNavigationVisible`.
+**Placement policy (#279)**: `WindowSizeClass` = Compact (<600dp) / Medium (600–840dp) / Expanded (>840dp), fed from `AppShell.OnSizeAllocated`. `NavigationPolicyService`: **rail when landscape OR Expanded, bottom tabs otherwise**.
+
+**Chrome (#395)** — `AppShell.ApplyPlacement` via `NavigationChromePolicy.Resolve(placement, isChromeSuppressed)` (Core, pure):
+- Rail = `FlyoutBehavior.Locked` + the custom `Shell.FlyoutContent`; `Disabled` on bottom placement or while full screen suppresses chrome.
+- Bottom bar = `Shell.SetTabBarIsVisible(PrimaryTabBar, !rail)` — **item scope**, **mirrored** onto every section, content and page under it (MAUI copies the value down once at creation and `ShowTabs` reads the page first, so an item-only write does not reach existing pages — #395 Nexus 6 finding); the section hosting an active full screen is skipped (page scope belongs to the full-screen controller). Then `IShellChromeHost.RefreshShellChrome()` on `CurrentPage` (Android re-evaluates the bar only on a displayed-page change or that page's `PropertyChanged("TabBarIsVisible")`); a miss is traced `chrome.refresh.miss`.
+- `ViewerFullScreenChromeController` owns **page scope** (`false` on enter, `ClearValue` on exit → falls back to the placement value). Page scope wins.
+- A placement change never navigates, never changes `CurrentItem`/`CurrentPage`, never resets a stack, never runs the handoff, and raises no Disappearing/Appearing. Rotating on a pushed page keeps it (e2e `AppLaunchTests.Rotating_OnAPushedPage_KeepsThePageAndSwapsChrome`).
+
+**Standing rules (#395):**
+- `Shell.FlyoutBehavior` must stay **explicitly set** on the Shell (`AppShell.xaml`). `Shell.GetEffectiveFlyoutBehavior` checks `IsSet` on the Shell before the `TabBar` → `Disabled` default; that is the only reason the rail can appear.
+- **Never write `PrimaryTabBar.IsVisible`** (replaces the #393 "true→false only at root" rule). Hiding the current ShellItem makes Shell re-point `CurrentItem`.
+- **No page may declare `Shell.TabBarIsVisible` in XAML.**
+- **Every Shell-hosted page implements `IShellChromeHost`** (`src/MauiApp/Services/IShellChromeHost.cs`): `HomePage`, `OutputPage`, `SourceListPage`, `SettingsPage`, `ViewerPage`, `DiagnosticLogPage` — code-behind only, `OnPropertyChanged(Shell.TabBarIsVisibleProperty.PropertyName)`.
+- **Retired:** the #393 rule "every `GoToAsync` must be bracketed" (`ShellNavigationService.Begin/EndExplicitNavigation`, `IsExplicitNavigationInProgress` are deleted — Shell no longer navigates on its own).
 
 ## Output Session State + Home Quick Actions (#326 / #334 / #328 — branches feature/326-output-session-state, feature/328-home-quick-actions)
 - `INdiOutputBridge.IsActive` (lock-free `Volatile.Read` of the sender handle or the re-stream flag) is the only truth for "output is running"; the persisted `IsOutputActive` flag is a hint that must be corroborated. `OutputStatusChanged` is raised on every start/stop transition.

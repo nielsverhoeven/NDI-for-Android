@@ -81,8 +81,8 @@ public sealed class NdiApp
         Thread.Sleep(Timeouts.OrientationSettle);
 
         // A configuration change is one of the few things that can take the whole process down —
-        // it tears down and rebuilds the Shell, and this app swaps its entire navigation
-        // implementation at that point (bottom tab bar to left rail). If that kills the app, the
+        // it re-lays out the whole window, and this app swaps its navigation chrome at that point
+        // (bottom tab bar to left rail, #395). If that kills the app, the
         // next call reports "page did not become visible" against a device showing the launcher,
         // which points investigation at the page rather than at the rotation that caused it.
         // The tree can be momentarily unreadable or id-less right after the settle pause: a rotation

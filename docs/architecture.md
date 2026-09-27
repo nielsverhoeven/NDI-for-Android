@@ -1,4 +1,4 @@
-<!-- Last updated: 2026-09-07 -->
+<!-- Last updated: 2026-09-27 -->
 
 # Architecture
 
@@ -43,7 +43,7 @@ This guide defines the active MAUI architecture baseline for NDI-for-Android and
    `Nv12FrameRotator` (#284, `src/Core/Services/`) are likewise pure — the Camera2-specific
    `SessionConfiguration` plumbing that calls them stays in
    `Platforms/Android/Services/AndroidVideoCaptureSource.cs`.
-9. **Tab-root lifetime rule (#352/#359).** A page hosted by a `ShellContent` `ContentTemplate` (the Home/Stream/View/Settings roots in both `-tab` and `-rail` placements) is re-resolved from DI on every tab entry and on every placement change — MAUI's Android Shell recycles the non-current section — and never disposes its ViewModel from page lifecycle. A ViewModel that subscribes to a singleton event (`IDiscoveryRefreshService.SnapshotReady`, `INdiOutputBridge.OutputStatusChanged`, `IAppLifecycleService.AppResumed`, `IWindowSizeClassService.Changed`) is therefore registered **Singleton together with its page**: `SourceListViewModel`/`SourceListPage`, `HomeViewModel`/`HomePage`, `OutputViewModel`/`OutputPage`. Their `Dispose()` is container-owned. A tab-root ViewModel with no singleton subscriptions may stay Transient (`SettingsViewModel`, which starts/stops its own monitoring from `OnAppearing`/`OnDisappearing`). Only push-navigated pages (`ViewerPage`) dispose a Transient ViewModel from page lifecycle, and only once the page has left the navigation stack.
+9. **Tab-root lifetime rule (#352/#359).** A page hosted by a `ShellContent` `ContentTemplate` (the Home/Stream/View/Settings roots of the one `PrimaryTabBar`, #395) is re-resolved from DI on every tab entry — MAUI's Android Shell recycles the non-current section — and never disposes its ViewModel from page lifecycle. A placement change (rotation, size class) no longer re-resolves anything or raises Disappearing/Appearing: it swaps chrome only (see Navigation). A ViewModel that subscribes to a singleton event (`IDiscoveryRefreshService.SnapshotReady`, `INdiOutputBridge.OutputStatusChanged`, `IAppLifecycleService.AppResumed`, `IWindowSizeClassService.Changed`) is therefore registered **Singleton together with its page**: `SourceListViewModel`/`SourceListPage`, `HomeViewModel`/`HomePage`, `OutputViewModel`/`OutputPage`. Their `Dispose()` is container-owned. A tab-root ViewModel with no singleton subscriptions may stay Transient (`SettingsViewModel`, which starts/stops its own monitoring from `OnAppearing`/`OnDisappearing`). Only push-navigated pages (`ViewerPage`) dispose a Transient ViewModel from page lifecycle, and only once the page has left the navigation stack.
 
 ## Architecture Diagram
 
@@ -105,41 +105,73 @@ graph TB
 
 ## Navigation
 
-Shell URI contracts — bottom TabBar placement:
+Shell URI contracts — one route family (#395). The same four routes serve both navigation
+placements; the placement only changes the chrome around them.
 
 | Route | Page | Notes |
 |---|---|---|
-| `//home-tab` | `HomePage` | Home tab — dashboard with discovery/viewer/output status |
-| `//stream-tab` | `OutputPage` | Stream tab — outgoing NDI output origination only; no `sourceId` parameter |
-| `//view-tab` | `SourceListPage` | View tab — discovery + tap-to-view; two-pane with embedded viewer on Expanded windows |
-| `//settings-tab` | `SettingsPage` | Settings tab |
-| `viewer?sourceId={id}` | `ViewerPage` | Pushed relative to the current tab; registered via `Routing.RegisterRoute("viewer", typeof(ViewerPage))` in `AppShell.xaml.cs` |
+| `//home` | `HomePage` | Home — dashboard with discovery/viewer/output status |
+| `//stream` | `OutputPage` | Stream — outgoing NDI output origination only; no `sourceId` parameter |
+| `//view` | `SourceListPage` | View — discovery + tap-to-view; two-pane with embedded viewer on Expanded windows |
+| `//settings` | `SettingsPage` | Settings |
+| `viewer?sourceId={id}` | `ViewerPage` | Pushed relative to the current destination; registered via `Routing.RegisterRoute("viewer", typeof(ViewerPage))` in `AppShell.xaml.cs` |
 | `diagnostic-log` | `DiagnosticLogPage` | Pushed; registered in `AppShell.xaml.cs` |
 
-Shell URI contracts — left navigation rail placement:
+The four absolute routes are declared once, on the `ShellContent`s of the one `TabBar`
+(`PrimaryTabBar` in `AppShell.xaml`), and once in Core, as `PrimaryNavigationMetadata.Items[..].Route`
+(unit-tested to be exactly `//home|//stream|//view|//settings`). There are no `FlyoutItem`s and no
+`-tab`/`-rail` routes.
 
-| Route | Page |
-|---|---|
-| `//home-rail` | `HomePage` |
-| `//stream-rail` | `OutputPage` |
-| `//view-rail` | `SourceListPage` |
-| `//settings-rail` | `SettingsPage` |
+**Chrome, not routes.** The bottom tab bar and the left rail are two kinds of chrome over the same
+`TabBar`:
+
+- **Left rail** = `Shell.FlyoutBehavior.Locked` + the custom `Shell.FlyoutContent` built in
+  `AppShell.xaml.cs`. `AppShell.xaml` keeps `Shell.FlyoutBehavior="Disabled"` **explicitly set on the
+  Shell**: the effective flyout behavior for a `TabBar` defaults to `Disabled`, and
+  `Shell.GetEffectiveFlyoutBehavior` only lets a Shell-level value override that default when the
+  property is *set* on the Shell. Without the attribute the rail can never appear.
+- **Bottom bar** is hidden at **ShellItem scope** — `Shell.SetTabBarIsVisible(PrimaryTabBar, !rail)` — and the same value is mirrored onto every section, content and page under it (`MirrorTabBarVisibilityToDescendants`), skipping the section that hosts an active full screen. MAUI copies `TabBarIsVisible` down the Shell tree as a local value once, when an element is created (`BaseShellItem.Propagate` only writes a child that has no value yet), and `ShellItem.ShowTabs` reads the page/content before the item — so an item-only write is invisible to pages that already exist (measured on the Nexus 6 CI AVD, #395).
+  Android's `ShellItemRenderer` re-evaluates bar visibility only when the displayed page changes or
+  raises `PropertyChanged("TabBarIsVisible")`, so `AppShell.ApplyPlacement` then calls
+  `IShellChromeHost.RefreshShellChrome()` on `Shell.CurrentPage`. A page that does not implement it
+  is traced as `chrome.refresh.miss`.
+- `NavigationChromePolicy.Resolve(NavigationPlacementMode, isChromeSuppressed)`
+  (`src/Core/Features/Navigation/Services/`, pure, unit-tested) decides both values:
+  `RailVisible = LeftRail && !suppressed`, `BottomBarVisibleAtItemScope = Bottom`.
+
+A placement change therefore never changes `Shell.CurrentItem` or `CurrentPage`, never resets a
+navigation stack, never raises Disappearing/Appearing on a tab root and never runs the navigation
+handoff. Rotating on a pushed page (`ViewerPage`, `DiagnosticLogPage`) keeps the page and swaps the
+chrome straight away.
 
 Rules:
 
 1. Register non-tab pushed routes in `AppShell.xaml.cs` using `Routing.RegisterRoute`.
 2. ViewModels initiate navigation through the injected `INavigationService` abstraction.
 3. Route parameters are validated before bridge session creation.
-4. `OutputPage` is a top-level tab and does not accept or require a `sourceId` query parameter, but
+4. `OutputPage` is a top-level destination and does not accept or require a `sourceId` query parameter, but
    does accept the re-stream query parameters `reStreamSourceId` and `isReStreamMode`, and the
    `resume` query parameter (bound via `[QueryProperty]` on `OutputPage`). `reStreamSourceId` now
    resolves to a Picker selection in `OutputViewModel.AvailableReStreamSources` (#343 OUT-08) — or,
    with an empty registry, pre-fills the manual-entry Entry instead — rather than a raw free-text id.
-   `OutputPage`/`OutputViewModel` (like `HomePage`/`HomeViewModel`) are DI singletons (Dependency Rule 8), so their observable state persists across tab visits and rotation. On every appearance `OutputPage` awaits `OutputViewModel.LoadCommand`, which corroborates observable state against `INdiOutputBridge` before applying any one-shot query-parameter intent, and then nulls the three `[QueryProperty]` fields so an intent is consumed exactly once and never re-applied on a later plain tab entry. Primary destinations
+   `OutputPage`/`OutputViewModel` (like `HomePage`/`HomeViewModel`) are DI singletons (Dependency Rule 9), so their observable state persists across tab visits and rotation. On every appearance (a tab entry — a rotation is not one) `OutputPage` awaits `OutputViewModel.LoadCommand`, which corroborates observable state against `INdiOutputBridge` before applying any one-shot query-parameter intent, and then nulls the three `[QueryProperty]` fields so an intent is consumed exactly once and never re-applied on a later plain tab entry. Primary destinations
    (Home/Stream/View/Settings) must be navigated through
    `INavigationService.NavigateToPrimaryAsync(PrimaryNavDestination, string? queryString)` —
-   placement-aware — never a hard-coded `//x-tab`/`//x-rail` route string.
-5. Placement-adaptive routing is handled by `ShellNavigationService` reading `AdaptiveShellStateViewModel.IsLeftRailNavigationVisible`; rail placement uses `//xxx-rail` routes, bottom-tab placement uses `//xxx-tab` routes.
+   never a hard-coded route string. `ShellNavigationService.TryGetPrimaryRoute` reads the route from
+   `PrimaryNavigationMetadata`; the service has no placement state.
+5. **One route family.** Never add a second set of `ShellItem`s for a placement, and never write
+   `PrimaryTabBar.IsVisible`: hiding the current `ShellItem` makes Shell re-point `CurrentItem` on
+   its own, which destroyed pushed pages on rotation (#393). The bar is hidden only through
+   `Shell.TabBarIsVisible` — item scope by `AppShell`, page scope by
+   `ViewerFullScreenChromeController` — and **no page may declare `Shell.TabBarIsVisible` in XAML**
+   (a page-scoped value outranks the placement value for good). **Every page Shell displays
+   implements `IShellChromeHost`** (`src/MauiApp/Services/IShellChromeHost.cs`): today `HomePage`,
+   `OutputPage`, `SourceListPage`, `SettingsPage`, `ViewerPage`, `DiagnosticLogPage`. A new page
+   registered with `Routing.RegisterRoute` or hosted by a `ShellContent` must implement it too.
+6. The current primary destination is resolved from a Shell location by
+   `PrimaryNavigationMetadata.TryResolveDestination(location)` (Core, unit-tested): last path segment
+   only, so `//view/viewer?sourceId=x` is View and `//settings/diagnostic-log` resolves to nothing
+   (the destination is unchanged).
 
 ### Deep links (#335)
 
@@ -157,7 +189,7 @@ platform-facing side effects stay in MauiApp.
 - `INavigationPolicyService` / `NavigationPolicyService` combines size class and device orientation: **left rail when landscape OR Expanded; bottom tabs otherwise.** Compact/Medium portrait phones keep tabs; 10" tablets get the rail in both orientations.
 - **Two-pane View tab**: `SourceListPage` (`src/MauiApp/Features/Sources/Views/SourceListPage.xaml.cs`) subscribes to size-class changes and switches to a 2*/3* two-column layout with an embedded `ViewerView` pane on Expanded, collapsing back to a single column otherwise. The pane's render loop is started/stopped with page visibility and size-class transitions — which also opens/closes the pane ViewModel's per-frame post gate, so the never-disposed `PaneViewer` singleton does no frame-driven work while the pane is hidden.
 - `ViewerView` (`src/MauiApp/Features/Viewer/Views/ViewerView.xaml`) is the reusable SkiaSharp render surface shared by two hosts — `ViewerPage` and the embedded two-pane `SourceListPage` pane. Full screen is an in-place state of the same instance, not a second host: `IsFullScreen` expands the video to fill the Grid and shows `FullScreenControlsOverlay` in place of `Deck`/`Sheet`; `ViewerFullScreenChromeController` (`src/MauiApp/Features/Viewer/Services/`), attached from each host page's `OnAppearing` and detached on `OnDisappearing`, owns immersive mode, that page's own `Shell.SetNavBarIsVisible`/`Shell.SetTabBarIsVisible`, and the shared `AdaptiveShellStateViewModel.IsChromeSuppressed` flag that masks the left rail. There is no modal push and no second render surface: frames are presented **on arrival** — the ViewModel raises `FrameReady` on the UI thread, already coalesced to at most one queued post — with a 33 ms dispatcher-timer pull kept as a fallback, so a hole in the event wiring degrades to the previous ~30 fps behaviour rather than to a blank canvas. Both triggers funnel into one presenter that invalidates the canvas only when the bridge has produced a newer frame (dedupe on `CapturedAtEpochMillis`), blitting the ARGB `int[]` into a reused `SKBitmap`, and both keep running across a full-screen transition. `StartRendering`/`StopRendering` gate *both* paths and are also what open and close the ViewModel's pump-side post gate (`SetRenderingActive`), so a hidden pane or a backgrounded app costs zero per-frame main-thread wakeups.
-- **Chrome suppression rule (#384)**: `AdaptiveShellStateViewModel.IsChromeSuppressed` is set by `ViewerFullScreenChromeController` while a host page is showing full screen, and is consumed in exactly one place — `AppShell.ApplyPlacement`'s rail branch, where it downgrades `FlyoutBehavior` from `Locked` to `Disabled` to hide the left rail. It must **never** be folded into `IsBottomNavigationVisible`/`IsLeftRailNavigationVisible`: those are pure `PlacementMode` queries because `ShellNavigationService` selects the `-rail` vs `-tab` route table from `IsLeftRailNavigationVisible` (rule 5 above), and a suppressed rail must not change the route family — doing so makes `EnsurePrimaryDestinationVisibleAsync` issue an absolute `GoToAsync` that swaps the ShellContent family and force-exits full screen on the two-pane path. `PrimaryTabBar.IsVisible` likewise keeps following `PlacementMode` only; the bottom tab bar is hidden page-scoped with `Shell.SetTabBarIsVisible(page, false)`, which is also the only mechanism that cannot re-point `Shell.CurrentItem` and destroy a pushed page. A suppression change calls `ApplyPlacement(ensureDestination: false)` so it can never trigger route reconciliation.
+- **Chrome suppression rule (#384, restated for #395)**: `AdaptiveShellStateViewModel.IsChromeSuppressed` is set by `ViewerFullScreenChromeController` while a host page is showing full screen, and is consumed in exactly one place — `AppShell.ApplyPlacement`, through `NavigationChromePolicy.Resolve` — where it only ever downgrades the rail's `FlyoutBehavior` from `Locked` to `Disabled`. It must **never** change the item-scope bar value, and must never be folded into `IsBottomNavigationVisible`/`IsLeftRailNavigationVisible` (pure `PlacementMode` queries). The bottom bar has exactly two writers with disjoint scopes and fixed precedence: `AppShell` owns **item scope** (`Shell.SetTabBarIsVisible(PrimaryTabBar, …)`, from the placement), and `ViewerFullScreenChromeController` owns **page scope** (`Shell.SetTabBarIsVisible(page, false)` on enter, `ClearValue` on exit). Page scope wins while full screen is on; on exit `ClearValue` falls back to the item-scope placement value, so exiting full screen on a rail device can never bring the bottom bar back (the #401 class of chip) and a rotation made while full screen is already reflected in it. Both paths raise the displayed page's `PropertyChanged("TabBarIsVisible")`, which is what makes Android re-evaluate the bar. A suppression change never navigates — nothing in placement handling navigates any more.
 - **Viewer control deck / sheet / full-screen overlay (#342)**: below the video surface, `ViewerView` switches between three `ContentView`s — `ViewerControlDeck` (fixed-height two-column deck: `PlaybackControlsView` + `CameraControlsView`), `ViewerControlSheet` (hand-built draggable bottom sheet, no `CommunityToolkit.Maui` dependency, tabbed Playback/PTZ), and `FullScreenControlsOverlay` (wireframe-A overlay reusing the #338 auto-hide `AreControlsVisible` state) — all under `src/MauiApp/Features/Viewer/Views/`. The deck-vs-sheet choice is a pure Core policy, `ViewerControlLayout.Choose(widthDp, heightDp)` (`src/Core/Features/Viewer/ViewerControlLayout.cs`, unit-tested): Deck only when the host's own measured width ≥ 640dp **and** height ≥ 470dp, else Sheet. The same class carries the sibling layout policies added for phone validation (#370) — `ShouldStackCameraPresets` (wraps the PTZ presets to a second row below 440dp of camera-controls width), `ChooseSheetExpandedHeightDp`/`ChooseSheetPeekHeightDp` (sheet expanded/peek heights from the padded host height), and `ChooseVideoHeightDp` (video surface height for Deck/Sheet/full-screen) — all pure and unit-tested. The rule: all viewer layout numbers live in `src/Core/Features/Viewer/ViewerControlLayout.cs` and are unit-tested; views only wire `SizeChanged`. `ViewerView.xaml.cs` computes the deck/sheet choice from its own `SizeChanged` (no `IWindowSizeClassService` subscription — that would leak on the transient `ViewerPage` host) and sets `.IsVisible` directly on the three named hosts (no `BindableProperty` + `{x:Reference Root}` — a reusable `ContentView` must never bind its own root `IsVisible`, since an external host later assigning `.IsVisible` on that same instance — e.g. `ViewerControlSheet`'s tab switch — would silently clear the binding; visibility gating for reused content lives on an *inner* element instead). `PtzPanelView` is retired, superseded by `CameraControlsView`.
 - **Orientation-driven full screen (#383/#384 slice 3)**: on a compact/phone-class device (`ViewerControlLayout.IsCompactDevice(smallestWidthDp)`, Android's `Configuration.SmallestScreenWidthDp < 600`, orientation-invariant), full screen and landscape are kept equivalent while playing: rotating to landscape auto-enters full screen, rotating back to portrait auto-exits it, and the full-screen toggle button requests the matching rotation via `IOrientationLockService` (`src/Core/Services/IOrientationLockService.cs`; the Android impl sets `Activity.RequestedOrientation`, released back to `Unspecified` — never `FullSensor` — held for as long as full screen is on and released the moment it ends, or by the 3s `TimeProvider`-driven fallback) rather than flipping `IsFullScreen` itself; a tablet-class device (`!IsCompactDevice`) never requests a rotation and the button flips `IsFullScreen` directly. This state machine lives entirely in `ViewerViewModel.FullScreen.cs`; `ViewerFullScreenChromeController.Detach()` and `ViewerViewModel.Dispose()`/its `IAppLifecycleService.AppPaused` handler all force full screen off and release any lock unconditionally, so the device is never left pinned to an orientation. Full screen also carries an optional camera (PTZ) controls layer, off by default (`IsPtzLayerVisible`, `TogglePtzLayerCommand`, camera button `TestIds.ViewerFullScreenCamera`) — `FullScreenControlsOverlay`'s preset grid, d-pad and zoom controls are gated on `IsFullScreenPtzVisible => IsPtzControlActive && IsPtzLayerVisible`, and opening the layer extends the overlay auto-hide from 2.5s to 5s. The overlay's root element carries the stable `TestIds.ViewerFullScreenOverlay` id, independent of the 2.5s/5s auto-hide (unlike `ViewerQualityCycle`) — the e2e page object's `IsFullScreen` reads this id directly, because `viewer.stop`/`viewer.audioToggle`/`viewer.ptz.*` are now also present on the overlay's own controls (mutually exclusive with the Deck/Sheet's, same accepted duplicate-id pattern as `TestIds.SourcesViewerPane`).
 

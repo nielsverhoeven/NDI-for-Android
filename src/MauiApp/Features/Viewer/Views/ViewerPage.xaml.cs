@@ -1,6 +1,7 @@
 using NdiForAndroid.Features.DiagOverlay.Services;
 using NdiForAndroid.Features.Viewer.Services;
 using NdiForAndroid.Features.Viewer.ViewModels;
+using NdiForAndroid.Services;
 
 namespace NdiForAndroid.Features.Viewer.Views;
 
@@ -11,7 +12,7 @@ namespace NdiForAndroid.Features.Viewer.Views;
 /// attaches/detaches full-screen chrome ownership via <see cref="ViewerFullScreenChromeController"/>.
 /// </summary>
 [QueryProperty(nameof(SourceId), "sourceId")]
-public partial class ViewerPage : ContentPage
+public partial class ViewerPage : ContentPage, IShellChromeHost
 {
     private readonly ViewerViewModel _viewModel;
     private readonly ViewerFullScreenChromeController _fullScreenChromeController;
@@ -80,4 +81,7 @@ public partial class ViewerPage : ContentPage
 
     protected override bool OnBackButtonPressed()
         => _fullScreenChromeController.HandleBackButton() || base.OnBackButtonPressed();
+
+    /// <inheritdoc cref="IShellChromeHost.RefreshShellChrome"/>
+    public void RefreshShellChrome() => OnPropertyChanged(Shell.TabBarIsVisibleProperty.PropertyName);
 }

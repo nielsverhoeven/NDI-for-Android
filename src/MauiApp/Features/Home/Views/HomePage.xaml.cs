@@ -1,15 +1,16 @@
 using NdiForAndroid.Features.DiagOverlay.Services;
 using NdiForAndroid.Features.Home.ViewModels;
+using NdiForAndroid.Services;
 
 namespace NdiForAndroid.Features.Home.Views;
 
 /// <summary>Home tab root. Singleton (matches <see cref="HomeViewModel"/>, #352/#359).</summary>
 /// <remarks>
-/// Hosted by two <c>ShellContent</c>s (<c>home-tab</c> and <c>home-rail</c>); Shell re-parents this single
-/// instance between them. Never dispose the ViewModel from page lifecycle — per-visit work is
-/// <see cref="OnAppearing"/> re-running <c>RefreshCommand</c>.
+/// Hosted by the one <c>home</c> <c>ShellContent</c> (#395); a placement change (rotation, size class) only
+/// swaps the chrome around it, so it raises no Disappearing/Appearing. Never dispose the ViewModel from
+/// page lifecycle — per-visit work is <see cref="OnAppearing"/> re-running <c>RefreshCommand</c>.
 /// </remarks>
-public partial class HomePage : ContentPage
+public partial class HomePage : ContentPage, IShellChromeHost
 {
     private readonly IDiagnosticOverlayService? _diagnostics;
 
@@ -28,4 +29,7 @@ public partial class HomePage : ContentPage
         (BindingContext as HomeViewModel)?.RefreshCommand.Execute(null);
         _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "page.appearing.end", $"name=Home ms={Environment.TickCount64 - t0}");
     }
+
+    /// <inheritdoc cref="IShellChromeHost.RefreshShellChrome"/>
+    public void RefreshShellChrome() => OnPropertyChanged(Shell.TabBarIsVisibleProperty.PropertyName);
 }

@@ -271,7 +271,8 @@ public partial class ViewerViewModel
 
     /// <summary>Wired to <see cref="IAppLifecycleService.OrientationChanged"/> in the constructor.
     /// Marshals to the UI thread — safe now that slice 1 removed the ordering dependency on
-    /// <c>EnsurePrimaryDestinationVisibleAsync</c>.</summary>
+    /// <c>AppShell</c>'s placement reconciliation (itself deleted in #395: a rotation no longer
+    /// navigates at all).</summary>
     private void OnOrientationChanged(bool isLandscape) =>
         _dispatcher.BeginInvokeOnMainThread(() => HandleOrientationChanged(isLandscape));
 

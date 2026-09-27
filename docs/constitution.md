@@ -1,5 +1,5 @@
 # Project Constitution
-<!-- Version: 1.1 — 2026-07-07 (amendment: NDI integration decision recorded as P/Invoke implemented, SDK 6.3.1; §2.4 navigation routes aligned with the shipped Shell routes) -->
+<!-- Version: 2.0 — 2026-09-27 (amendment, #395: §2.4 redefines the route contract — one TabBar route family; the two placement variants are chrome, not routes. Previous: 1.1 — 2026-07-07, NDI integration decision recorded as P/Invoke implemented, SDK 6.3.1; §2.4 navigation routes aligned with the shipped Shell routes) -->
 <!-- Owned by: architect + orchestrator -->
 
 This document is the authoritative source for technology choices, architecture principles, and development agreements. Every agent must read this file before starting any feature work. Amendments require `architect` review and a version increment.
@@ -99,17 +99,27 @@ NDI native binaries (`.so` files) must be included in the Android project as `An
 
 ### 2.4 Navigation
 
-Use MAUI Shell with URI routing. Top-level destinations exist in two placement variants
-(bottom tabs `//xxx-tab`, left rail `//xxx-rail`) selected by the adaptive navigation policy:
+*Amended in v2.0 (#395): the two-variant route contract (`//xxx-tab` / `//xxx-rail`) is replaced by
+one route family.*
 
-- `//home-tab` / `//home-rail` — Home dashboard
-- `//stream-tab` / `//stream-rail` — NDI output (no `sourceId` parameter — output originates on this device)
-- `//view-tab` / `//view-rail` — Source list, tap-to-view
-- `//settings-tab` / `//settings-rail` — Settings
-- `viewer?sourceId={id}` — NDI viewer, pushed relative to the current tab
+Use MAUI Shell with URI routing. Every top-level destination has exactly **one** absolute route,
+whichever navigation placement the adaptive policy selects:
+
+- `//home` — Home dashboard
+- `//stream` — NDI output (no `sourceId` parameter — output originates on this device)
+- `//view` — Source list, tap-to-view
+- `//settings` — Settings
+- `viewer?sourceId={id}` — NDI viewer, pushed relative to the current destination
+
+The bottom tab bar and the left rail are **chrome over the same `TabBar`, not route variants**: the
+rail is the locked Shell flyout, and the bottom bar is hidden at ShellItem scope with
+`Shell.TabBarIsVisible`. A placement change (rotation, window size class) must never navigate,
+change `Shell.CurrentItem`, or reset a navigation stack. `PrimaryTabBar.IsVisible` must never be
+written, and no second set of `ShellItem`s may be added for a placement.
 
 Register pushed (non-tab) routes in `AppShell.xaml.cs` using `Routing.RegisterRoute`.
-Full route tables and the size-class/orientation placement policy: `docs/architecture.md`.
+Full route table, the chrome rules and the size-class/orientation placement policy:
+`docs/architecture.md` (Navigation).
 
 ---
 

@@ -161,10 +161,11 @@ public sealed class NavigationBar
     /// <remarks>
     /// <para>
     /// Presence in the tree is deliberately not the predicate. Shell keeps its
-    /// <c>BottomNavigationView</c> in the hierarchy and flips it to <c>GONE</c> under the rail's
-    /// single-section <c>FlyoutItem</c>s, so an "exists anywhere" check could report a bar that is
-    /// correctly hidden. Every other lookup in this suite filters the same way
-    /// (<see cref="Resolve"/>, <c>PageObject.IsPresent</c>).
+    /// <c>BottomNavigationView</c> in the hierarchy and flips it to <c>GONE</c> on rail placement,
+    /// where <c>AppShell.ApplyPlacement</c> sets <c>Shell.TabBarIsVisible=false</c> on the one
+    /// <c>TabBar</c> (#395), so an "exists anywhere" check could report a bar that is correctly
+    /// hidden. Every other lookup in this suite filters the same way (<see cref="Resolve"/>,
+    /// <c>PageObject.IsPresent</c>).
     /// </para>
     /// <para>
     /// Matched by resource-id, not by class name: <c>BottomNavigationView</c> extends
@@ -186,6 +187,30 @@ public sealed class NavigationBar
         catch (Exception)
         {
             return false;
+        }
+    }
+
+    /// <summary>
+    /// Polls <see cref="HasBottomNavigationBar"/> until it reports <paramref name="shown"/> or
+    /// <paramref name="timeout"/> runs out. Returns whether it got there.
+    /// </summary>
+    /// <remarks>
+    /// A placement change swaps the chrome asynchronously after the rotation settles; sampling once
+    /// could catch the bar mid-transition. The defects this guards against (#393/#395) leave the
+    /// wrong bar state in place indefinitely, so waiting does not hide them.
+    /// </remarks>
+    public bool WaitForBottomNavigationBar(bool shown, TimeSpan timeout)
+    {
+        var deadline = DateTime.UtcNow + timeout;
+        while (true)
+        {
+            if (HasBottomNavigationBar() == shown)
+                return true;
+
+            if (DateTime.UtcNow >= deadline)
+                return false;
+
+            Thread.Sleep(250);
         }
     }
 

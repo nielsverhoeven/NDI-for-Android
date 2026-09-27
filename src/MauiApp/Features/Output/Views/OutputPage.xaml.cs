@@ -1,13 +1,16 @@
 using Microsoft.Maui.Controls;
 using NdiForAndroid.Features.DiagOverlay.Services;
 using NdiForAndroid.Features.Output.ViewModels;
+using NdiForAndroid.Services;
 
 namespace NdiForAndroid.Features.Output.Views;
 
 /// <summary>Stream tab root. Singleton (matches <see cref="OutputViewModel"/>, #352/#359).</summary>
 /// <remarks>
-/// Hosted by two <c>ShellContent</c>s (<c>stream-tab</c> and <c>stream-rail</c>); Shell re-parents this
-/// single instance between them. Because the instance lives for the app lifetime, the three query
+/// Hosted by the one <c>stream</c> <c>ShellContent</c> (#395); a placement change (rotation, size class)
+/// only swaps the chrome around it, so it raises no Disappearing/Appearing and does not re-run
+/// <c>LoadCommand</c> — the ViewModel's own <c>OutputStatusChanged</c> subscription keeps the status
+/// live in between. Because the instance lives for the app lifetime, the three query
 /// properties are one-shot: <see cref="ApplyEntryStateAsync"/> nulls them in <c>finally</c> so an old
 /// <c>resume=true</c> / re-stream intent is never re-applied on a later plain tab entry. Never dispose the
 /// ViewModel from page lifecycle.
@@ -15,7 +18,7 @@ namespace NdiForAndroid.Features.Output.Views;
 [QueryProperty(nameof(ReStreamSourceId), "reStreamSourceId")]
 [QueryProperty(nameof(IsReStreamMode), "isReStreamMode")]
 [QueryProperty(nameof(ResumeRequested), "resume")]
-public partial class OutputPage : ContentPage
+public partial class OutputPage : ContentPage, IShellChromeHost
 {
     private readonly OutputViewModel _viewModel;
     private readonly IDiagnosticOverlayService? _diagnostics;
@@ -68,4 +71,7 @@ public partial class OutputPage : ContentPage
             ResumeRequested = null;
         }
     }
+
+    /// <inheritdoc cref="IShellChromeHost.RefreshShellChrome"/>
+    public void RefreshShellChrome() => OnPropertyChanged(Shell.TabBarIsVisibleProperty.PropertyName);
 }
