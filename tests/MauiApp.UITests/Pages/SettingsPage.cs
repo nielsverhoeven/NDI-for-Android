@@ -387,6 +387,9 @@ public sealed class SettingsPage : PageObject
     /// <summary>Taps the caption, not the switch — the label toggles the same setting (#343 SET-8).</summary>
     public void ToggleDeveloperModeViaLabel() => Tap(TestIds.SettingsDeveloperModeLabel);
 
+    /// <summary>Developer tools → "Open diagnostic log" (#437). Open the DeveloperTools section first.</summary>
+    public void OpenDiagnosticLog() => Tap(TestIds.SettingsOpenDiagnosticLog, Timeouts.Navigation);
+
     // ── Section-agnostic save-failure banner (#355 item 4) ────────────────────
 
     public bool IsSaveErrorShown => IsPresent(TestIds.SettingsSaveError);

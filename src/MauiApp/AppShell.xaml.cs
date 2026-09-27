@@ -85,7 +85,7 @@ public partial class AppShell : Shell
         InitializeComponent();
 
         Routing.RegisterRoute("viewer", typeof(ViewerPage));
-        Routing.RegisterRoute("diagnostic-log", typeof(Features.DiagOverlay.Views.DiagnosticLogPage));
+        Routing.RegisterRoute(Features.DiagOverlay.ViewModels.DiagnosticLogViewModel.Route, typeof(Features.DiagOverlay.Views.DiagnosticLogPage));
         // OutputPage is a top-level tab — no route registration needed for push navigation.
 
         BuildRailItems();

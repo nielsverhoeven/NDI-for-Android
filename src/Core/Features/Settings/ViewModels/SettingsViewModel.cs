@@ -1,6 +1,7 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using NdiForAndroid.Features.DiagOverlay.Services;
+using NdiForAndroid.Features.DiagOverlay.ViewModels;
 using NdiForAndroid.Features.Settings.Models;
 using NdiForAndroid.Features.Settings.Repositories;
 using NdiForAndroid.Features.Settings.Services;
@@ -41,6 +42,7 @@ public partial class SettingsViewModel : ObservableObject
     private readonly IUserPromptService _userPromptService;
     private readonly TimeProvider _timeProvider;
     private readonly IDiagnosticOverlayService? _diagnostics;
+    private readonly INavigationService? _navigation;
 
     private DiscoveryServerItem? _editingDiscoveryServer;
     private bool _suppressAutoSave;
@@ -154,7 +156,8 @@ public partial class SettingsViewModel : ObservableObject
         IMainThreadDispatcher dispatcher,
         IUserPromptService userPromptService,
         TimeProvider? timeProvider = null,
-        IDiagnosticOverlayService? diagnostics = null)
+        IDiagnosticOverlayService? diagnostics = null,
+        INavigationService? navigation = null)
     {
         _repository = repository;
         _validationService = validationService;
@@ -165,6 +168,7 @@ public partial class SettingsViewModel : ObservableObject
         _userPromptService = userPromptService;
         _timeProvider = timeProvider ?? TimeProvider.System;
         _diagnostics = diagnostics;
+        _navigation = navigation;
 
         var info = _platformService.GetAppInfo();
         AppName = info.AppName;
@@ -234,6 +238,17 @@ public partial class SettingsViewModel : ObservableObject
     /// setting (#343 SET-8). Persistence rides on OnDeveloperModeEnabledChanged.</summary>
     [RelayCommand]
     private void ToggleDeveloperMode() => DeveloperModeEnabled = !DeveloperModeEnabled;
+
+    /// <summary>Developer tools → the in-memory Diagnostic Log (#437): connection and Wi-Fi link
+    /// entries an operator can read on the device without adb.</summary>
+    [RelayCommand]
+    private async Task OpenDiagnosticLogAsync()
+    {
+        if (_navigation is null)
+            return;
+
+        try { await _navigation.NavigateToAsync(DiagnosticLogViewModel.Route); } catch { /* Navigation failures are handled by Shell */ }
+    }
 
     // ── Discovery server commands ───────────────────────────────────────────
 

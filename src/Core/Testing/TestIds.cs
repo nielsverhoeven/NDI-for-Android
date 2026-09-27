@@ -219,6 +219,9 @@ public static class TestIds
     /// <summary>Tap target for the whole Developer Mode row's caption (#343 SET-8).</summary>
     public const string SettingsDeveloperModeLabel = "settings.developerModeLabel";
 
+    /// <summary>Developer tools button that opens the Diagnostic Log page (#437).</summary>
+    public const string SettingsOpenDiagnosticLog = "settings.openDiagnosticLog";
+
     /// <summary>Section-agnostic save-failure banner — visible regardless of which section is open (#355).</summary>
     public const string SettingsSaveError = "settings.saveError";
 

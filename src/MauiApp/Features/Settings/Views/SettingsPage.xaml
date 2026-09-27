@@ -388,6 +388,18 @@
                                           </Label>
                                    </HorizontalStackLayout>
 
+                                   <!-- #437: the only in-app way to the Diagnostic Log (connection and Wi-Fi
+                                        link entries). Not gated on Developer Mode: the Link entries are
+                                        written in every mode, and this panel is already the developer area. -->
+                                   <Label Text="Recent connection and Wi-Fi link events (last 200), readable without a PC."
+                                          TextColor="{DynamicResource TextSecondary}" />
+                                   <Button Text="Open diagnostic log"
+                                           AutomationId="{x:Static t:TestIds.SettingsOpenDiagnosticLog}"
+                                           SemanticProperties.Description="Open diagnostic log"
+                                           Command="{Binding OpenDiagnosticLogCommand}"
+                                           MinimumHeightRequest="48"
+                                           HorizontalOptions="Start" />
+
                                    <Label Text="Cached Source Registry" FontAttributes="Bold" />
                                    <!-- BindableLayout, not CollectionView, for the same reason as the discovery-server
                                         list above: nested inside the page's outer ScrollView, a CollectionView never
