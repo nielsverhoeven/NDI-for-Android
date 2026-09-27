@@ -266,6 +266,13 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
             if (IsPlaying && !IsReconnecting && OwnsActiveReceiver && state == ConnectionState.Connected)
                 StatusMessage = "Connected.";
 
+            // A connected source that has sent no video for 3 s (#414): the bridge demotes
+            // Connected → Stalled and promotes back on the next frame, which the branch above turns
+            // into "Connected." again. Same gate as that branch. Status text only — no restart and
+            // no reconnect window, because recreating a receiver cannot make a sender send video.
+            if (IsPlaying && !IsReconnecting && OwnsActiveReceiver && state == ConnectionState.Stalled)
+                StatusMessage = "No video from source — still connected.";
+
             // Only the bridge can observe a real (re)connection: StartReceiver returns while the
             // receiver is still Connecting, so the attempt loop's own poll right after it never
             // sees Connected.
