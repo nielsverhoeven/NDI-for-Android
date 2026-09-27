@@ -43,6 +43,9 @@ public class ViewerViewModelFullScreenTests
         _ptzControllerFactoryMock
             .Setup(f => f.Create(It.IsAny<PtzEndpoint?>()))
             .Returns(_ptzControllerMock.Object);
+        _bridgeMock
+            .Setup(b => b.StopReceiverAsync())
+            .Returns(Task.CompletedTask);
     }
 
     private ViewerViewModel CreateSut() => new(
@@ -281,7 +284,7 @@ public class ViewerViewModelFullScreenTests
     }
 
     [Fact]
-    public void ToggleFullScreen_OnAndOff_NeverCallsStopReceiver()
+    public void ToggleFullScreen_OnAndOff_NeverCallsStopReceiverAsync()
     {
         var sut = CreateSut();
         sut.IsPlaying = true;
@@ -289,7 +292,7 @@ public class ViewerViewModelFullScreenTests
         sut.ToggleFullScreenCommand.Execute(null);
         sut.ToggleFullScreenCommand.Execute(null);
 
-        _bridgeMock.Verify(b => b.StopReceiver(), Times.Never);
+        _bridgeMock.Verify(b => b.StopReceiverAsync(), Times.Never);
     }
 
     // ----- Orientation-driven full screen (#383/#384 slice 3) --------------
@@ -492,12 +495,12 @@ public class ViewerViewModelFullScreenTests
         sut.ToggleFullScreenCommand.Execute(null);
 
         var callOrder = new List<string>();
-        _bridgeMock.Setup(b => b.StopReceiver()).Callback(() => callOrder.Add("StopReceiver"));
+        _bridgeMock.Setup(b => b.StopReceiverAsync()).Callback(() => callOrder.Add("StopReceiverAsync")).Returns(Task.CompletedTask);
         _orientationLockMock.Setup(o => o.RequestPortrait()).Callback(() => callOrder.Add("RequestPortrait"));
 
         sut.StopCommand.Execute(null);
 
-        Assert.Equal(new[] { "StopReceiver", "RequestPortrait" }, callOrder);
+        Assert.Equal(new[] { "StopReceiverAsync", "RequestPortrait" }, callOrder);
         Assert.True(sut.IsFullScreen, "Still full screen — waiting for the portrait rotation");
     }
 
@@ -599,7 +602,7 @@ public class ViewerViewModelFullScreenTests
     }
 
     [Fact]
-    public void OrientationDrivenFullScreenTransitions_NeverCallStopReceiver()
+    public void OrientationDrivenFullScreenTransitions_NeverCallStopReceiverAsync()
     {
         var sut = CreateSut();
         SetCompactDevice(isLandscape: false);
@@ -612,7 +615,7 @@ public class ViewerViewModelFullScreenTests
         _lifecycleMock.Setup(l => l.IsLandscape).Returns(false);
         _lifecycleMock.Raise(l => l.OrientationChanged += null, false); // exits
 
-        _bridgeMock.Verify(b => b.StopReceiver(), Times.Never);
+        _bridgeMock.Verify(b => b.StopReceiverAsync(), Times.Never);
     }
 
     [Fact]
@@ -640,7 +643,7 @@ public class ViewerViewModelFullScreenTests
     }
 
     [Fact]
-    public void EveryFullScreenExitPath_NeverCallsStopReceiver()
+    public void EveryFullScreenExitPath_NeverCallsStopReceiverAsync()
     {
         var sut = CreateSut();
         SetCompactDevice(isLandscape: true);
@@ -658,7 +661,7 @@ public class ViewerViewModelFullScreenTests
         _lifecycleMock.Raise(l => l.AppPaused += null);         // force-exit path
         sut.ForceExitFullScreen();                              // Detach()'s path
 
-        _bridgeMock.Verify(b => b.StopReceiver(), Times.Never);
+        _bridgeMock.Verify(b => b.StopReceiverAsync(), Times.Never);
     }
 
     [Fact]

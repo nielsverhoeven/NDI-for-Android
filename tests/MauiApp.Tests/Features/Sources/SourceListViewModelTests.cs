@@ -49,6 +49,9 @@ public class SourceListViewModelTests
         _ptzControllerFactoryMock
             .Setup(f => f.Create(It.IsAny<NdiForAndroid.Features.Ptz.Models.PtzEndpoint?>()))
             .Returns(_ptzControllerMock.Object);
+        _viewerBridgeMock
+            .Setup(b => b.StopReceiverAsync())
+            .Returns(Task.CompletedTask);
     }
 
     private ViewerViewModel CreateViewerViewModel()
@@ -389,7 +392,7 @@ public class SourceListViewModelTests
         _windowSizeClassMock.Raise(s => s.Changed += null, this, WindowSizeClass.Compact);
 
         Assert.False(sut.PaneViewer.IsPlaying);
-        _viewerBridgeMock.Verify(b => b.StopReceiver(), Times.AtLeastOnce);
+        _viewerBridgeMock.Verify(b => b.StopReceiverAsync(), Times.AtLeastOnce);
     }
 
     [Fact]
@@ -400,7 +403,7 @@ public class SourceListViewModelTests
         _windowSizeClassMock.Raise(s => s.Changed += null, this, WindowSizeClass.Compact);
 
         Assert.Null(sut.PaneViewer);
-        _viewerBridgeMock.Verify(b => b.StopReceiver(), Times.Never);
+        _viewerBridgeMock.Verify(b => b.StopReceiverAsync(), Times.Never);
     }
 
     [Fact]
