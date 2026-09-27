@@ -108,6 +108,12 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
     private ITimer? _attemptTimer;
     private volatile bool _userInitiatedStop;
 
+    /// <summary>Incremented (Interlocked) wherever playback is ended with _userInitiatedStop set —
+    /// Stop, CancelRetry, ReleaseIfDisowned and Dispose. <see cref="BeginReconnectWindow"/> reads it
+    /// when a window is requested and drops the window if it has moved by the time the posted body
+    /// runs, so a window queued behind one of those ends can never reopen after it (#409).</summary>
+    private int _stopEpoch;
+
     /// <summary>True once the bridge has reported Connected at least once since this ViewModel last
     /// called Start(). Arms the level-triggered drop backstop: a receiver that has never connected
     /// is an initial-connect attempt, not a drop, and must keep today's behaviour.</summary>
@@ -352,6 +358,7 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
     private void Stop()
     {
         _userInitiatedStop = true;
+        Interlocked.Increment(ref _stopEpoch); // cancels a window already posted (#409)
         DisposeTimers();
         _reconnectState = ReconnectState.Idle;
         _bridge.SetTally(onProgram: false, onPreview: false);
@@ -383,6 +390,7 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
         _overlayAutoHideTimer?.Dispose();
         _immersiveMode.KeepScreenOn(false);
         _userInitiatedStop = true;
+        Interlocked.Increment(ref _stopEpoch); // no window posted before this may open (#409)
         _lifecycle.AppPaused -= OnAppPaused;
         _lifecycle.OrientationChanged -= OnOrientationChanged;
         _bridge.ConnectionStateChanged -= OnBridgeConnectionStateChanged;
@@ -429,10 +437,18 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
     /// </summary>
     public void BeginReconnectWindow()
     {
+        // This is a thread boundary, so the body below can run a later UI-thread turn — behind a
+        // Stop the user had already queued (#409). Re-reading _userInitiatedStop there cannot tell
+        // that Stop apart from the one Reconnect() legitimately opens a window after, so compare the
+        // stop epoch instead: only an end of playback *between* this request and its body cancels it.
+        var stopEpochAtRequest = Volatile.Read(ref _stopEpoch);
         _dispatcher.BeginInvokeOnMainThread(() =>
         {
             if (_reconnectState != ReconnectState.Idle || IsReconnecting)
                 return; // Already in a reconnect window.
+
+            if (Volatile.Read(ref _stopEpoch) != stopEpochAtRequest)
+                return; // Stopped, cancelled, disowned or disposed since the window was requested.
 
             _reconnectState = ReconnectState.InWindow;
             _userInitiatedStop = false;
@@ -552,6 +568,8 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
     /// *in front* of it: the window completed, then FailReconnect stopped the healthy,
     /// just-reconnected receiver and wrote "Connection lost. Reconnection failed." over it. Running
     /// in the caller's turn removes that interleaving class instead of guarding one instance of it.
+    /// The opposite order — the expiry posted *ahead* of the event — is a genuine race between the
+    /// timer and pump threads and is resolved in <see cref="FailReconnect"/> (#409).
     /// </summary>
     private void CompleteReconnect()
     {
@@ -607,7 +625,8 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
     // --- FR5: Expiry / fail ---
 
     /// <summary>
-    /// Ends the current reconnect window as a failure. Main-thread only and, like
+    /// Ends the current reconnect window as a failure — or as a success, if the bridge already
+    /// reports this ViewModel's receiver Connected (#409). Main-thread only and, like
     /// <see cref="CompleteReconnect"/>, deliberately not dispatcher-wrapped: its only caller
     /// (<see cref="TickCountdown"/>) already runs on the main thread.
     /// </summary>
@@ -618,6 +637,18 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
         // what matters: only an open window may be failed, never an Idle or already-completed one.
         if (_reconnectState != ReconnectState.InWindow && _reconnectState != ReconnectState.Attempting)
             return;
+
+        // Load-bearing, unlike the guard above (#409): the window's last tick (posted by the timer)
+        // and the bridge's Connected event (posted by the pump) come from two threads and can reach
+        // the UI thread in either order. When the tick wins, the source is already back — the bridge
+        // reports Connected for this ViewModel's own receiver, and only the event saying so is still
+        // queued. That is a reconnect, not a failure: failing here stopped the receiver that had just
+        // connected and wrote the terminal message over it. CompleteReconnect re-checks both terms.
+        if (OwnsActiveReceiver && _bridge.GetConnectionState() == ConnectionState.Connected)
+        {
+            CompleteReconnect();
+            return;
+        }
 
         DisposeTimers();
         _reconnectState = ReconnectState.Failed;
@@ -664,6 +695,7 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
         // The user has opted out of *this* drop. Without this the bridge's next ConnectionLost
         // re-opens, a second later, the window the user just dismissed.
         _userInitiatedStop = true;
+        Interlocked.Increment(ref _stopEpoch); // ...and neither may one already posted (#409)
         IsReconnecting = false;
         IsPlaying = false;
         // Same terminal contract as FailReconnect: no receiver left pumping behind a cancelled

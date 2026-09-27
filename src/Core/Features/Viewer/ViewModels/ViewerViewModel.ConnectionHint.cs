@@ -176,6 +176,7 @@ public partial class ViewerViewModel
         // Sticky, exactly as CancelRetry: a Disconnected raised by the new owner must not open a
         // window here. Start() and BeginReconnectWindow() clear it when the user comes back.
         _userInitiatedStop = true;
+        Interlocked.Increment(ref _stopEpoch); // nor may a window posted before this (#409)
         IsReconnecting = false;
         IsPlaying = false; // before BeginExitFullScreen — RC5's compact auto-re-enter gate
         IsStopped = true;
