@@ -289,6 +289,7 @@ The 15-second automatic reconnection state machine lives entirely in `ViewerView
 graph TB
     EVT["INdiViewerBridge.ConnectionStateChanged(Disconnected, ConnectionLost)"] --> DROP["CheckForUnexpectedDrop(): owns the receiver, playing, no user Stop, no open window"]
     STATS["1s stats watchdog (TimeProvider)"] -->|"level backstop: 5 samples stuck in Connecting after a Connected"| WINDOW
+    STATS -->|"initial connect: 15 samples in Connecting, never Connected since Start"| NOCONNECT["FailInitialConnect(): Could not connect + Reconnect command, no window (#413)"]
     DROP --> WINDOW["BeginReconnectWindow(): 15s retry window, posted to the UI thread and dropped if Stop, Cancel, disownment or Dispose ran first"]
     WINDOW --> ATTEMPT["Every 2s: StopReceiverAsync then StartReceiver(SourceId) — both requests, ordered by the bridge's lifecycle queue — and re-claim ReceiverGeneration"]
     WINDOW --> TICK["Every 1s: countdown"]

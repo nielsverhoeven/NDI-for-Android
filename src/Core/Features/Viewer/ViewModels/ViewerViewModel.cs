@@ -30,6 +30,15 @@ internal static class ReconnectConstants
     /// five samples are roughly twenty capture cycles. A source that is connected but silent reports
     /// <see cref="ConnectionState.Stalled"/> and never reaches this counter.</summary>
     public const int SustainedConnectingSamples = 5;
+
+    /// <summary>How many consecutive 1 s stats samples an initial connect may spend with the bridge
+    /// in <see cref="ConnectionState.Connecting"/> — a receiver exists and has not delivered a frame —
+    /// before it ends in the "Could not connect to the source." failure state (#413). Fifteen, so an
+    /// initial connect gets the same budget as a reconnect window. A bridge that reports
+    /// <see cref="ConnectionState.Disconnected"/> instead has no receiver trying at all (no NDI runtime,
+    /// as on the x86 CI emulator, or a receiver stopped behind the ViewModel's back) and never
+    /// counts.</summary>
+    public const int InitialConnectTimeoutSamples = 15;
 }
 
 public partial class ViewerViewModel : ObservableObject, IDisposable
@@ -77,8 +86,8 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
     /// playback names itself instead of every one of them reading "Stopped". A user Stop and a
     /// viewer another ViewModel took the bridge from say "Stopped" (their status line says
     /// "Stopped."), an expired retry window says "Connection lost", a cancelled one "Reconnect
-    /// cancelled". Only rendered while IsStopped, so it is set just before IsStopped goes true and
-    /// never needs resetting.
+    /// cancelled", an initial connect that never succeeded "Could not connect" (#413). Only rendered
+    /// while IsStopped, so it is set just before IsStopped goes true and never needs resetting.
     /// </summary>
     [ObservableProperty]
     private string _videoSurfaceBadgeText = "Stopped";
@@ -342,6 +351,7 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
 
         _userInitiatedStop = false;
         _hasConnectedSinceStart = false; // a new receiver has not connected yet (see CheckForSustainedConnecting)
+        _initialConnectSamples = 0; // and gets a full initial-connect budget, even mid-connect (#413)
         _lastSourceId = SourceId;
         CanReconnect = false; // clears the "watch again" affordance left over from a previous Stop (#348)
 

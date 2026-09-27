@@ -14,6 +14,7 @@ public partial class ViewerViewModel
     private ITimer? _statsTimer;
     private ConnectionHintPolicy.State _hintState = ConnectionHintPolicy.State.Idle;
     private int _sustainedConnectingSamples;
+    private int _initialConnectSamples;
 
     /// <summary>
     /// "Connection weak — try Smooth" while the bridge reports sustained low fps / high drops;
@@ -39,6 +40,7 @@ public partial class ViewerViewModel
         // when playback resumes, and the first sample after the next StartReceiver — Connecting is
         // the normal state for about a second after every start — would open a spurious window.
         _sustainedConnectingSamples = 0;
+        _initialConnectSamples = 0; // same reason: a new attempt gets a fresh budget (#413)
         // Forget the last traced link as well, so a stop/start on the same band and classification
         // writes a fresh "Link" entry for the new attempt instead of nothing at all. An operator who
         // restarts playback to reproduce a problem must see the radio line for *that* attempt.
@@ -91,6 +93,7 @@ public partial class ViewerViewModel
     {
         ReleaseIfDisowned();
         CheckForSustainedConnecting();
+        CheckForInitialConnectTimeout();
 
         // Not a judgement about the link while (re)connecting or when the receiver is down (also
         // keeps the hint off the x86 emulator, where the bridge never reports Connected).
@@ -144,6 +147,65 @@ public partial class ViewerViewModel
         }
 
         _sustainedConnectingSamples = 0;
+    }
+
+    /// <summary>
+    /// The initial-connect counterpart of <see cref="CheckForSustainedConnecting"/> (#413): its
+    /// complement on <c>_hasConnectedSinceStart</c>, so the two never count the same sample. A
+    /// receiver that has sat in <see cref="ConnectionState.Connecting"/> for
+    /// <see cref="ReconnectConstants.InitialConnectTimeoutSamples"/> consecutive samples since this
+    /// ViewModel's Start — a source that has gone away, a stale discovery entry, the wrong subnet —
+    /// ends in a failure state with the Reconnect affordance instead of "Connecting..." forever.
+    /// Only <see cref="ConnectionState.Connecting"/> counts, by design: a bridge that reports
+    /// Disconnected during an initial connect has no receiver trying (the NDI runtime is
+    /// unavailable, as on the x86 CI emulator, whose e2e suite anchors on this "Connecting..."
+    /// state, or a stop happened behind this ViewModel's back), which is not a connect that is
+    /// failing. Owner-only, like every other decision that stops the receiver.
+    /// </summary>
+    private void CheckForInitialConnectTimeout()
+    {
+        if (IsPlaying
+            && !IsReconnecting
+            && !_hasConnectedSinceStart
+            && _reconnectState == ReconnectState.Idle
+            && OwnsActiveReceiver
+            && _bridge.GetConnectionState() == ConnectionState.Connecting)
+        {
+            if (++_initialConnectSamples >= ReconnectConstants.InitialConnectTimeoutSamples)
+            {
+                _initialConnectSamples = 0;
+                FailInitialConnect();
+            }
+
+            return;
+        }
+
+        _initialConnectSamples = 0;
+    }
+
+    /// <summary>
+    /// Ends an initial connect that never succeeded (#413), with the same terminal contract as
+    /// FailReconnect: the receiver is stopped (owner only) so nothing is left pumping behind the
+    /// message, the session row Start() opened is closed, the video surface says so, full screen is
+    /// exited and Reconnect is the one control left. Reconnect then opens the usual retry window.
+    /// </summary>
+    private void FailInitialConnect()
+    {
+        if (OwnsActiveReceiver)
+        {
+            _bridge.StopReceiverAsync().FireAndForget();
+
+            // Start() recorded the connect before asking the bridge for a receiver; close that row.
+            _connectionHistory.RecordDisconnectedAsync().FireAndForget();
+        }
+
+        IsPlaying = false; // before BeginExitFullScreen — RC5's compact auto-re-enter gate
+        VideoSurfaceBadgeText = "Could not connect";
+        IsStopped = true;
+        BeginExitFullScreen();
+        RetryStatusMessage = null;
+        CanReconnect = true;
+        StatusMessage = "Could not connect to the source.";
     }
 
     /// <summary>
