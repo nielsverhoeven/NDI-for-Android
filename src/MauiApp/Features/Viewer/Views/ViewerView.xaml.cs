@@ -16,13 +16,19 @@ namespace NdiForAndroid.Features.Viewer.Views;
 /// </summary>
 public partial class ViewerView : ContentView
 {
-    // Rendering plumbing only (allowed in code-behind): a ~30 fps pull loop that
-    // invalidates the canvas when the bridge has produced a newer frame, and a
-    // paint handler that blits the ARGB int[] into a reusable SKBitmap.
+    // Rendering plumbing only (allowed in code-behind): a pull loop that invalidates the
+    // canvas as soon as the bridge has produced a newer frame, and a paint handler that
+    // draws the bridge's ARGB int[] in place (pinned, no intermediate bitmap copy).
+    //
+    // The poll runs at ~120 Hz rather than the source frame rate: the old 33 ms tick could
+    // leave a fresh frame waiting up to 33 ms before it was even invalidated and showed at
+    // most every other frame of a 60 fps source. A tick with no new frame is a single
+    // reference compare, so polling faster costs next to nothing.
+    private const int RenderPollIntervalMs = 8;
+
     private IDispatcherTimer? _renderTimer;
     private NdiVideoFrame? _pendingFrame;
     private long _lastRenderedTimestamp = -1;
-    private SKBitmap? _frameBitmap;
 
     private ViewerViewModel? _boundViewModel;
 
@@ -34,13 +40,13 @@ public partial class ViewerView : ContentView
         SizeChanged += (_, _) => UpdateLayoutVisibility();
     }
 
-    /// <summary>Starts (or resumes) the ~30 fps frame pull loop. Idempotent.</summary>
+    /// <summary>Starts (or resumes) the frame pull loop. Idempotent.</summary>
     public void StartRendering()
     {
         if (_renderTimer is null)
         {
             _renderTimer = Dispatcher.CreateTimer();
-            _renderTimer.Interval = TimeSpan.FromMilliseconds(33);
+            _renderTimer.Interval = TimeSpan.FromMilliseconds(RenderPollIntervalMs);
             _renderTimer.Tick += OnRenderTick;
         }
 
@@ -55,8 +61,7 @@ public partial class ViewerView : ContentView
 
     /// <summary>
     /// Full teardown once the host page showing this instance has actually left the nav stack:
-    /// releases the render timer, detaches from the bound ViewModel, clears BindingContext, and
-    /// releases the frame bitmap.
+    /// releases the render timer, detaches from the bound ViewModel and clears BindingContext.
     /// </summary>
     public void Teardown()
     {
@@ -74,9 +79,7 @@ public partial class ViewerView : ContentView
         }
 
         BindingContext = null;
-
-        _frameBitmap?.Dispose();
-        _frameBitmap = null;
+        _pendingFrame = null;
     }
 
     protected override void OnBindingContextChanged()
@@ -150,17 +153,8 @@ public partial class ViewerView : ContentView
         if (frame is null || frame.Width <= 0 || frame.Height <= 0)
             return;
 
-        // Reuse the bitmap across frames; reallocate only on size change.
-        if (_frameBitmap is null || _frameBitmap.Width != frame.Width || _frameBitmap.Height != frame.Height)
-        {
-            _frameBitmap?.Dispose();
-            _frameBitmap = new SKBitmap(
-                new SKImageInfo(frame.Width, frame.Height, SKColorType.Bgra8888, SKAlphaType.Opaque));
-        }
-
-        // On little-endian ARM, an ARGB int equals BGRA bytes in memory, which is
-        // exactly SKColorType.Bgra8888 — a straight memcpy, no per-pixel conversion.
-        Marshal.Copy(frame.ArgbPixels, 0, _frameBitmap.GetPixels(), frame.ArgbPixels.Length);
+        if (frame.ArgbPixels.Length < frame.Width * frame.Height)
+            return;
 
         // Letterbox: aspect-fit the frame into the canvas.
         var info = e.Info;
@@ -169,8 +163,26 @@ public partial class ViewerView : ContentView
         float h = frame.Height * scale;
         var dest = SKRect.Create((info.Width - w) / 2f, (info.Height - h) / 2f, w, h);
 
-        // SkiaSharp 4 retires the paint-only DrawBitmap overload; Default sampling (nearest
-        // neighbour, no mipmaps) is what that overload used, so the output is unchanged.
-        canvas.DrawBitmap(_frameBitmap, dest, SKSamplingOptions.Default);
+        // On little-endian ARM, an ARGB int equals BGRA bytes in memory, which is exactly
+        // SKColorType.Bgra8888 — so Skia can read the bridge's array directly. Pin it for the
+        // duration of the draw and wrap it as a zero-copy image instead of first memcpy-ing
+        // ~8 MB (1080p) into an intermediate bitmap on the UI thread every frame. The bridge's
+        // triple buffer guarantees this array is not rewritten while the draw is in progress.
+        var handle = GCHandle.Alloc(frame.ArgbPixels, GCHandleType.Pinned);
+        try
+        {
+            var imageInfo = new SKImageInfo(frame.Width, frame.Height, SKColorType.Bgra8888, SKAlphaType.Opaque);
+            using var pixmap = new SKPixmap(imageInfo, handle.AddrOfPinnedObject(), imageInfo.RowBytes);
+            using var image = SKImage.FromPixels(pixmap);
+            if (image is null)
+                return;
+
+            // Default sampling (nearest neighbour, no mipmaps) — the cheapest scaler, as before.
+            canvas.DrawImage(image, dest, SKSamplingOptions.Default);
+        }
+        finally
+        {
+            handle.Free();
+        }
     }
 }

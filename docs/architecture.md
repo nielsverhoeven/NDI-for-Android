@@ -180,7 +180,7 @@ Standard bridge pattern:
 | `Interop/NdiNativeMethods.cs` | The complete `[DllImport("ndi")]` surface (all symbols verified in the bundled binary) |
 | `Interop/NdiNativeStructs.cs` | Native struct/enum marshaling definitions |
 | `NdiDiscoveryBridge.cs` | Dual-mode source discovery (mDNS / discovery server) with a long-lived finder |
-| `NdiViewerBridge.cs` | Receiver: video/audio pump threads, latest-frame double buffer, tally, PTZ, stats |
+| `NdiViewerBridge.cs` | Receiver: video/audio pump threads, latest-frame triple buffer, latency caps (`ReceiveLatencyPolicy`), tally, PTZ, stats |
 | `NdiOutputBridge.cs` | Sender: capture output (screen/camera + mic) and zero-copy re-stream sessions |
 | `NetworkReachability.cs` | TCP reachability probe (2 s timeout) for discovery-server health checks |
 
@@ -201,7 +201,8 @@ The output bridge consumes platform capture through Core interfaces (`src/Core/S
 |---|---|---|
 | `IVideoCaptureSource` | `AndroidVideoCaptureSource` | Screen via MediaProjection (RGBA_8888 ImageReader) or front/rear camera via Camera2 (YUV_420_888 → NV12). Frames raised on a capture thread; the producer owns and reuses the buffer, so the bridge sends synchronously before the handler returns. |
 | `IAudioCaptureSource` | `AndroidMicrophoneCaptureSource` | AudioRecord float PCM, interleaved chunks |
-| `IAudioPlaybackSink` | `AndroidAudioPlaybackSink` | AudioTrack float PCM output for received NDI audio |
+| `IAudioPlaybackSink` | `AndroidAudioPlaybackSink` | AudioTrack float PCM output for received NDI audio (low-latency performance mode, ~20 ms buffer) |
+| `ILowLatencyNetworkLock` | `AndroidLowLatencyNetworkLock` | `WifiLock` in `WIFI_MODE_FULL_LOW_LATENCY` (API 29+, `FULL_HIGH_PERF` below) held while a viewer receiver lives — disables Wi-Fi power save. Needs `WAKE_LOCK`. |
 | `INdiPlatformBootstrap` | `AndroidNsdBootstrap` | Holds `NsdManager` for the SDK's mDNS machinery |
 
 Non-Android targets register `Noop*` implementations (`src/MauiApp/Services/`). Sending runs under `ScreenShareForegroundService` (`foregroundServiceType="mediaProjection|camera|microphone"`, granted types only on API 34+); its persistent notification carries a Stop action that resolves `INdiOutputBridge` from the MAUI service provider and calls `StopOutputAsync()`, and a null `Intent` (Android's sticky-restart redelivery after process death) stops the service immediately instead of starting foreground with no live capture session.
@@ -271,7 +272,7 @@ event EventHandler<ConnectionState>? ConnectionStateChanged; // raised on the pu
 - `ConnectionState { Connecting, Connected, Disconnected }` is a **plain C# enum** defined in `src/Core/NdiBridge/NdiBridgeModels.cs`, alongside `DiscoveryMode`. No NDI SDK type crosses the bridge boundary (Dependency Rule 5).
 - Drop detection is an **internal bridge concern** (originally anticipated in #233, delivered with the real bridge in #277): the video pump in `src/MauiApp/NdiBridge/NdiViewerBridge.cs` demotes `Connected → Connecting` when no video frame has arrived for 3 s, and to `Disconnected` when `NDIlib_recv_get_no_connections` reports 0 after a connection previously existed.
 - `ConnectionStateChanged` and `TallyEchoChanged` are raised on the pump thread; the `ViewerViewModel` marshals resulting observable mutations through `IMainThreadDispatcher` and still calls `GetConnectionState()` from its `TimeProvider`-driven state machine, so the ViewModel remains fully testable against `Mock<INdiViewerBridge>` with no native library.
-- The viewer bridge runs **two dedicated pump threads** per receiver (video+metadata, audio) with an atomic running flag; thread joins are never performed while holding the state lock, and the latest decoded frame is exposed through a copy-free front/back double buffer.
+- The viewer bridge runs **two dedicated pump threads** per receiver (video+metadata, audio) with an atomic running flag; thread joins are never performed while holding the state lock, and the latest decoded frame is exposed through a copy-free triple buffer (the array handed to the renderer is rewritten two frames later, never mid-paint). Latency is bounded per `ReceiveLatencyPolicy` (Core): a video frame with a newer one already queued (`recv_get_queue`) is freed uncopied, and queued audio above 50 ms is dropped — playback is paced by the audio device, so a backlog would otherwise never drain.
 
 ### Viewer reconnection component (Issue #233)
 
