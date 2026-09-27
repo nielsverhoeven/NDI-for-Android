@@ -97,7 +97,7 @@ Bottom TabBar placement:
 | `//view-tab` | `SourceListPage` | View tab — discovery + tap-to-view; two-pane (embedded `ViewerView`) on Expanded windows |
 | `//settings-tab` | `SettingsPage` | Settings |
 | `viewer?sourceId={id}` | `ViewerPage` | Pushed relative to current tab; registered via `Routing.RegisterRoute("viewer", typeof(ViewerPage))` in `AppShell.xaml.cs` |
-| `diagnostic-log` | `DiagnosticLogPage` | Pushed; registered in `AppShell.xaml.cs` |
+| `diagnostic-log` | `DiagnosticLogPage` | Pushed; registered in `AppShell.xaml.cs` via `DiagnosticLogViewModel.Route`; opened from Settings → Developer tools → "Open diagnostic log" (`SettingsViewModel.OpenDiagnosticLogCommand`, #437). The 2 s list refresh runs only while the page is on screen (`Activate`/`Deactivate` from OnAppearing/OnDisappearing). |
 
 Left navigation rail placement: same pages on `//home-rail`, `//stream-rail`, `//view-rail`, `//settings-rail`.
 

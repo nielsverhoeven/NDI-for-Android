@@ -8,6 +8,10 @@ namespace NdiForAndroid.Features.DiagOverlay.ViewModels;
 public record LogEntryViewModel(
     long TimestampEpochMillis, string Category, string Message, DiagnosticLogBuffer.LogLevel Level)
 {
+    /// <summary>"[Warning]" etc. Formatted here rather than with a XAML StringFormat, whose
+    /// brace escaping inside a markup extension is easy to get wrong.</summary>
+    public string LevelLabel => $"[{Level}]";
+
     public string TimestampRelative
     {
         get

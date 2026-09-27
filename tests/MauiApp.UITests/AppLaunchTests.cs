@@ -534,6 +534,23 @@ public sealed class AppLaunchTests : UiTestBase
     });
 
     [RetryableSkippableFact]
+    public void Settings_DeveloperTools_OpenDiagnosticLog_ShowsTheLogPage() => Run(app =>
+    {
+        // #437: the Diagnostic Log page was registered as a route but nothing navigated to it.
+        app.ResetToHome();
+        app.Navigation.GoTo(NavDestination.Settings);
+        app.Settings.WaitUntilVisible();
+        app.Settings.OpenSection(SettingsSection.DeveloperTools);
+
+        app.Settings.OpenDiagnosticLog();
+        app.DiagnosticLog.WaitUntilVisible();
+
+        // Back returns to Settings rather than leaving the app.
+        app.PressBackButton();
+        app.Settings.WaitUntilVisible();
+    });
+
+    [RetryableSkippableFact]
     public void Settings_DiscoveryServerRow_RendersEveryControl() => Run(app =>
     {
         // Regression guard for a row template overflowing its container: on a narrow detail panel
