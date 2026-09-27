@@ -130,10 +130,11 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
 
     /// <summary>Whether the open reconnect window has held the receiver: this ViewModel owned it
     /// when the window opened, or one of the window's own attempts re-claimed it. Set when a window
-    /// opens and after each attempt; read only by <see cref="RunAttempt"/>, which never runs outside
-    /// a window, so it needs no reset. Losing ownership after the window has held the receiver means
-    /// another ViewModel took the bridge mid-countdown — the user started a stream elsewhere — so
-    /// the window retires rather than steal it back. A window that opened without the receiver
+    /// opens and after each attempt; read only by <see cref="RunAttempt"/> and
+    /// <see cref="FailReconnect"/>, which never act outside a window, so it needs no reset. Losing
+    /// ownership after the window has held the receiver means another ViewModel took the bridge
+    /// mid-countdown — the user started a stream elsewhere — so the window retires rather than steal
+    /// it back or report a failed reconnect. A window that opened without the receiver
     /// (Reconnect on a pane that had already lost it, #423) has not held it yet, so its first
     /// attempt makes a real claim.</summary>
     private bool _windowHasHeldReceiver;
@@ -653,7 +654,8 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
 
     /// <summary>
     /// Ends the current reconnect window as a failure — or as a success, if the bridge already
-    /// reports this ViewModel's receiver Connected (#409). Main-thread only and, like
+    /// reports this ViewModel's receiver Connected (#409), or retires it, if another ViewModel has
+    /// taken a receiver the window held (#423). Main-thread only and, like
     /// <see cref="CompleteReconnect"/>, deliberately not dispatcher-wrapped: its only caller
     /// (<see cref="TickCountdown"/>) already runs on the main thread.
     /// </summary>
@@ -664,6 +666,16 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
         // what matters: only an open window may be failed, never an Idle or already-completed one.
         if (_reconnectState != ReconnectState.InWindow && _reconnectState != ReconnectState.Attempting)
             return;
+
+        // Overtaken, and the expiry noticed first (#423): the same rule as RunAttempt's retire. The
+        // window held the receiver and another ViewModel has taken it since — the connection was not
+        // lost, another viewer is playing — so "Connection lost. Reconnection failed." would be
+        // untrue. Leave the surface ReleaseIfDisowned and the mid-window retire leave instead.
+        if (_windowHasHeldReceiver && !OwnsActiveReceiver)
+        {
+            RetireDisowned();
+            return;
+        }
 
         // Load-bearing, unlike the guard above (#409): the window's last tick (posted by the timer)
         // and the bridge's Connected event (posted by the pump) come from two threads and can reach

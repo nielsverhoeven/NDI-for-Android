@@ -176,10 +176,11 @@ public partial class ViewerViewModel
 
     /// <summary>
     /// The surface a ViewModel the bridge was taken from is left with. Shared by
-    /// <see cref="ReleaseIfDisowned"/> (a playing ViewModel, on the 1 s stats sample) and
-    /// <see cref="RunAttempt"/> (a reconnect window overtaken mid-countdown: its attempt tick can
-    /// beat that sample, and a window <see cref="Reconnect"/> opened after a Stop runs with
-    /// IsPlaying false, where ReleaseIfDisowned never fires). Ends any open window, never stops the
+    /// <see cref="ReleaseIfDisowned"/> (a playing ViewModel, on the 1 s stats sample) and by
+    /// <see cref="RunAttempt"/> and <see cref="FailReconnect"/> (a reconnect window overtaken
+    /// mid-countdown: its attempt tick or its expiry can beat that sample, and a window
+    /// <see cref="Reconnect"/> opened after a Stop runs with IsPlaying false, where
+    /// ReleaseIfDisowned never fires). Ends any open window, never stops the
     /// receiver and records no connection-history event: the stream changed hands, it did not end.
     /// </summary>
     private void RetireDisowned()
