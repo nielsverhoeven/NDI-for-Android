@@ -297,6 +297,7 @@ graph TB
     TICK -->|"window elapsed, this ViewModel's receiver Connected"| DONE
     TICK -->|"window elapsed"| FAILED["FailReconnect(): Stopped + Reconnect command, receiver stopped only by its owner"]
     WINDOW -->|"user Cancel"| CANCELLED["CancelRetry(): Stopped + Reconnect command, receiver stopped only by its owner"]
+    ATTEMPT -->|"a receiver this window held was taken by another ViewModel"| RETIRED["Retired as ReleaseIfDisowned does: Stopped + Reconnect command, receiver and history untouched"]
     DISP["IMainThreadDispatcher: bridge events and timer ticks are posted to the UI thread"] -.-> WINDOW
 ```
 

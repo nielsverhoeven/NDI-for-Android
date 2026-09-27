@@ -109,7 +109,7 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
     private volatile bool _userInitiatedStop;
 
     /// <summary>Incremented (Interlocked) wherever playback is ended with _userInitiatedStop set —
-    /// Stop, CancelRetry, ReleaseIfDisowned and Dispose. <see cref="BeginReconnectWindow"/> reads it
+    /// Stop, CancelRetry, RetireDisowned and Dispose. <see cref="BeginReconnectWindow"/> reads it
     /// when a window is requested and drops the window if it has moved by the time the posted body
     /// runs, so a window queued behind one of those ends can never reopen after it (#409).</summary>
     private int _stopEpoch;
@@ -127,6 +127,16 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
     /// disposed and a pushed ViewerPage gets its own transient instance — so "the bridge reported a
     /// drop" is not on its own a statement about *this* ViewModel's stream. -1 = never started one.</summary>
     private long _receiverGeneration = -1;
+
+    /// <summary>Whether the open reconnect window has held the receiver: this ViewModel owned it
+    /// when the window opened, or one of the window's own attempts re-claimed it. Set when a window
+    /// opens and after each attempt; read only by <see cref="RunAttempt"/>, which never runs outside
+    /// a window, so it needs no reset. Losing ownership after the window has held the receiver means
+    /// another ViewModel took the bridge mid-countdown — the user started a stream elsewhere — so
+    /// the window retires rather than steal it back. A window that opened without the receiver
+    /// (Reconnect on a pane that had already lost it, #423) has not held it yet, so its first
+    /// attempt makes a real claim.</summary>
+    private bool _windowHasHeldReceiver;
 
     // Quality profile selection — manual only (#330/#331: no automatic degradation; the
     // stats watchdog in ViewerViewModel.ConnectionHint.cs only feeds ConnectionHint).
@@ -451,6 +461,7 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
                 return; // Stopped, cancelled, disowned or disposed since the window was requested.
 
             _reconnectState = ReconnectState.InWindow;
+            _windowHasHeldReceiver = OwnsActiveReceiver; // see RunAttempt
             _userInitiatedStop = false;
             IsReconnecting = true;
             IsStopped = false; // a retry is not a stopped stream: never show "Stopped" and a countdown together
@@ -468,10 +479,11 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
     /// already-Connected shortcut and the "Connected." status are gated on this), nor stop a receiver
     /// that is no longer its own (Dispose, FailReconnect and CancelRetry are gated too), or two
     /// reconnect loops fight over one receiver and the user sees one source's video labelled with
-    /// another source's status. User-initiated Stop and the attempts of an already-open window are
-    /// deliberately not gated: they act on this ViewModel's own session — an attempt re-claims the
-    /// bridge — and ReleaseIfDisowned retires a disowned, still-playing ViewModel within one stats
-    /// sample.</summary>
+    /// another source's status. User-initiated Stop is deliberately not gated, and neither is an
+    /// attempt by a window that has not held the receiver yet: both act on this ViewModel's own
+    /// session, and such an attempt claims the bridge. Once a window has held the receiver, losing
+    /// it retires the window instead of attempting (RunAttempt), and ReleaseIfDisowned retires a
+    /// disowned, still-playing ViewModel within one stats sample.</summary>
     private bool OwnsActiveReceiver => _bridge.ReceiverGeneration == _receiverGeneration;
 
     /// <summary>True once this ViewModel has asked the bridge for a receiver at least once. A
@@ -512,13 +524,25 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
         if (_reconnectState != ReconnectState.InWindow && _reconnectState != ReconnectState.Attempting)
             return;
 
+        // Overtaken mid-window (#423): this window held the receiver and another ViewModel has
+        // taken the bridge since — the user started a stream elsewhere. An attempt would steal it
+        // back and demote that ViewModel instead, so retire exactly as ReleaseIfDisowned would.
+        // This tick can beat ReleaseIfDisowned's next stats sample, and that sample never comes for
+        // a window Reconnect() opened while not playing. One flag is enough to tell this from the
+        // #423 Reconnect-on-a-demoted-pane case below: see _windowHasHeldReceiver.
+        if (_windowHasHeldReceiver && !OwnsActiveReceiver)
+        {
+            RetireDisowned();
+            return;
+        }
+
         // The receiver can recover on its own between ticks: the pump keeps running through a
         // ConnectionLost, so a frame may have arrived and moved the bridge to Connected. Tearing it
         // down here would destroy a healthy connection and hand the window a Connecting bridge.
         // Only for a receiver this ViewModel owns (#423): a bridge that is Connected for another
         // ViewModel's receiver is not this window's success — CompleteReconnect refuses a non-owner,
         // so taking this shortcut every tick let the window expire without a single attempt. A
-        // ViewModel that lost the bridge makes a real attempt instead, which re-claims it.
+        // window that has not held the receiver yet makes a real attempt instead, which claims it.
         if (OwnsActiveReceiver && _bridge.GetConnectionState() == ConnectionState.Connected)
         {
             CompleteReconnect();
@@ -553,7 +577,10 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
         // generation then would claim another ViewModel's receiver.
         var generationAfterAttempt = _bridge.ReceiverGeneration;
         if (generationAfterAttempt != generationBeforeAttempt)
+        {
             _receiverGeneration = generationAfterAttempt;
+            _windowHasHeldReceiver = true; // from here on, losing it means being overtaken
+        }
 
         if (_reconnectState == ReconnectState.Attempting)
             _reconnectState = ReconnectState.InWindow;
