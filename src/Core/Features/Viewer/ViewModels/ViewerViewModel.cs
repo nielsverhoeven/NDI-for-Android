@@ -64,7 +64,8 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
 
     /// <summary>
     /// True after the user taps Stop, until playback starts again (#348). Drives the View's
-    /// "Stopped" treatment of the video surface — the render loop keeps polling
+    /// "Stopped" treatment of the video surface — the presenter only repaints on a new frame
+    /// timestamp (draw-on-arrival plus the 33 ms fallback pull) while reading
     /// <see cref="CurrentFrame"/>, so without this the last frame stays painted forever with
     /// nothing on screen to say playback ended.
     /// </summary>
@@ -82,8 +83,10 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
     private bool _isAudioEnabled;
 
     /// <summary>
-    /// Latest decoded frame from the bridge; polled by the View's render loop
-    /// (~30 fps). No change notification — the frame's timestamp is the dedupe key.
+    /// Latest decoded frame from the bridge. Read by the View's presenter on every frame-arrival
+    /// (<see cref="FrameReady"/>) and on every 33 ms fallback tick — pushed *and* polled since #416.
+    /// No change notification: the frame's timestamp is the dedupe key, and a per-frame
+    /// PropertyChanged would defeat the coalescing.
     /// </summary>
     public NdiVideoFrame? CurrentFrame => _bridge.GetLatestFrame();
 
@@ -200,6 +203,7 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
         _lifecycle.OrientationChanged += OnOrientationChanged;
         _bridge.ConnectionStateChanged += OnBridgeConnectionStateChanged;
         _bridge.TallyEchoChanged += OnBridgeTallyEchoChanged;
+        _bridge.VideoFrameReady += OnBridgeVideoFrameReady;
         PtzEndpointForm.EndpointSaved += OnPtzEndpointSaved;
     }
 
@@ -418,6 +422,7 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
         _lifecycle.OrientationChanged -= OnOrientationChanged;
         _bridge.ConnectionStateChanged -= OnBridgeConnectionStateChanged;
         _bridge.TallyEchoChanged -= OnBridgeTallyEchoChanged;
+        _bridge.VideoFrameReady -= OnBridgeVideoFrameReady;
 
         // The ownership token's dual: at most one ViewModel may drive the shared bridge, so the one
         // that owns the receiver must hand it back when it goes away. ViewerPage disposes this

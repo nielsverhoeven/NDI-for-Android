@@ -67,11 +67,25 @@ public record NdiSourceEntry(
     DiscoveryMode DiscoveryMode = DiscoveryMode.Mdns);
 
 /// <summary>A single decoded video frame from an NDI receiver.</summary>
+/// <param name="CapturedAtEpochMillis">The sender's timestamp (NDI 100 ns units ÷ 10 000) when the
+/// sender supplied one; otherwise the receiver's own wall clock at copy time — see
+/// <paramref name="TimestampIsSynthesized"/>. Also the render loop's dedupe key.</param>
+/// <param name="ReceivedAtTickMillis">Monotonic device time (<see cref="Environment.TickCount64"/>)
+/// at the moment the pump finished copying this frame. Single-clock, so draw time minus this is a
+/// latency the app can state with no assumption about the sender's clock (#416). 0 means "not
+/// stamped" — only possible for a frame constructed outside the bridge.</param>
+/// <param name="TimestampIsSynthesized">True when the sender supplied no timestamp and
+/// <paramref name="CapturedAtEpochMillis"/> is therefore the receiver's own clock. A sender→draw
+/// figure computed from a synthesized timestamp measures nothing and would read as a suspiciously
+/// *good* number, so it must be reported as unavailable. Defaults to true: the unsafe answer is
+/// never the default (same rule as ReceiverStopReason.Intentional = 0).</param>
 public record NdiVideoFrame(
     int Width,
     int Height,
     int[] ArgbPixels,
-    long CapturedAtEpochMillis);
+    long CapturedAtEpochMillis,
+    long ReceivedAtTickMillis = 0,
+    bool TimestampIsSynthesized = true);
 
 /// <summary>Result of a discovery server reachability check.</summary>
 public record NdiDiscoveryCheckResult(

@@ -93,8 +93,11 @@ Features currently in the app: **Home**, **Sources** (View tab — discovery + t
    All `[DllImport("ndi")]` lives in `src/MauiApp/NdiBridge/Interop/`.
 3. **No business logic in Views** — Views are XAML + bindings; keep code-behind minimal.
 4. **NDI threading**: bridge events (`ConnectionStateChanged`, `TallyEchoChanged`,
-   `OutputStatusChanged`) are raised on pump/background threads. Subscribers marshal to the UI
-   thread via `IMainThreadDispatcher` (Core) / `MainThread.BeginInvokeOnMainThread` (MauiApp).
+   `OutputStatusChanged`, `VideoFrameReady`) are raised on pump/background threads. Subscribers
+   marshal to the UI thread via `IMainThreadDispatcher` (Core) / `MainThread.BeginInvokeOnMainThread`
+   (MauiApp). `VideoFrameReady` is per-frame (up to 60/s, #416): its handler may do nothing but post
+   one coalesced invalidate — never a lock, a blocking call, or a call back into the bridge — and the
+   pump wraps the raise so a subscriber fault is not reported as a lost stream.
    ViewModels stay in Core (MAUI-free) and unit-testable — timing uses injected `TimeProvider`.
 5. **Android APIs** are isolated in `Platforms/Android/` behind Core interfaces; non-Android
    targets get `Noop*` implementations so the Core builds/tests without a device.
