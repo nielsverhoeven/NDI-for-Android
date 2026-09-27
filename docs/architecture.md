@@ -287,14 +287,19 @@ The 15-second automatic reconnection state machine lives entirely in `ViewerView
 
 ```mermaid
 graph TB
-    POLL["ViewerViewModel TimeProvider poll"] --> GCS["INdiViewerBridge.GetConnectionState()"]
-    GCS -->|Connected| PLAY["IsPlaying playback"]
-    GCS -->|Disconnected while playing and not user Stop| WINDOW["15s retry window"]
-    WINDOW --> ATTEMPT["Every 2s: StopReceiverAsync then StartReceiver(SourceId) — both requests, ordered by the bridge's lifecycle queue"]
-    ATTEMPT -->|first Connected| PLAY
-    ATTEMPT -->|window elapsed| FAILED["Stopped/error state + Reconnect command"]
-    WINDOW --> DISP["IMainThreadDispatcher marshals observable mutations"]
-    DISP --> WINDOW
+    EVT["INdiViewerBridge.ConnectionStateChanged(Disconnected, ConnectionLost)"] --> DROP["CheckForUnexpectedDrop(): owns the receiver, playing, no user Stop, no open window"]
+    STATS["1s stats watchdog (TimeProvider)"] -->|"level backstop: 5 samples stuck in Connecting after a Connected"| WINDOW
+    DROP --> WINDOW["BeginReconnectWindow(): 15s retry window, posted to the UI thread and dropped if Stop, Cancel, disownment or Dispose ran first"]
+    WINDOW --> ATTEMPT["Every 2s: StopReceiverAsync then StartReceiver(SourceId) — both requests, ordered by the bridge's lifecycle queue — and re-claim ReceiverGeneration"]
+    WINDOW --> TICK["Every 1s: countdown"]
+    CONN["INdiViewerBridge.ConnectionStateChanged(Connected)"] --> DONE
+    ATTEMPT -->|"bridge already Connected for this ViewModel's receiver"| DONE["CompleteReconnect(): owner and bridge Connected, back to IsPlaying"]
+    TICK -->|"window elapsed, this ViewModel's receiver Connected"| DONE
+    TICK -->|"window elapsed"| FAILED["FailReconnect(): Stopped + Reconnect command, receiver stopped only by its owner"]
+    WINDOW -->|"user Cancel"| CANCELLED["CancelRetry(): Stopped + Reconnect command, receiver stopped only by its owner"]
+    ATTEMPT -->|"a receiver this window held was taken by another ViewModel"| RETIRED["Retired as ReleaseIfDisowned does: Stopped + Reconnect command, receiver and history untouched"]
+    TICK -->|"window elapsed, a receiver this window held taken by another ViewModel"| RETIRED
+    DISP["IMainThreadDispatcher: bridge events and timer ticks are posted to the UI thread"] -.-> WINDOW
 ```
 
 ### DiscoverySettingsOrchestrator

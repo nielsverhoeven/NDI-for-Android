@@ -171,11 +171,26 @@ public partial class ViewerViewModel
         if (!IsPlaying || !HasEverClaimedReceiver || OwnsActiveReceiver)
             return;
 
+        RetireDisowned();
+    }
+
+    /// <summary>
+    /// The surface a ViewModel the bridge was taken from is left with. Shared by
+    /// <see cref="ReleaseIfDisowned"/> (a playing ViewModel, on the 1 s stats sample) and by
+    /// <see cref="RunAttempt"/> and <see cref="FailReconnect"/> (a reconnect window overtaken
+    /// mid-countdown: its attempt tick or its expiry can beat that sample, and a window
+    /// <see cref="Reconnect"/> opened after a Stop runs with IsPlaying false, where
+    /// ReleaseIfDisowned never fires). Ends any open window, never stops the
+    /// receiver and records no connection-history event: the stream changed hands, it did not end.
+    /// </summary>
+    private void RetireDisowned()
+    {
         DisposeTimers();
         _reconnectState = ReconnectState.Idle;
         // Sticky, exactly as CancelRetry: a Disconnected raised by the new owner must not open a
         // window here. Start() and BeginReconnectWindow() clear it when the user comes back.
         _userInitiatedStop = true;
+        Interlocked.Increment(ref _stopEpoch); // nor may a window posted before this (#409)
         IsReconnecting = false;
         IsPlaying = false; // before BeginExitFullScreen — RC5's compact auto-re-enter gate
         IsStopped = true;

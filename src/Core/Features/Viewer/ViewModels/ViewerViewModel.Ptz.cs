@@ -152,7 +152,7 @@ public partial class ViewerViewModel
     private void OpenPtzEndpointForm() =>
         PtzEndpointForm.Open(_activeSource?.PtzOverrideHost, _activeSource?.PtzOverridePort);
 
-    // async void is intentional: event handler, same pattern as OnAppResumed elsewhere in this file.
+    // async void is intentional: event handler; its await is guarded.
     private async void OnPtzEndpointSaved(object? sender, PtzEndpoint? endpoint)
     {
         try

@@ -266,15 +266,15 @@ Release notes: `docs/features/automatic-viewer-reconnection-retry/release-notes.
 
 Auto-reconnect for up to **15s** when an active NDI connection drops unexpectedly. User-initiated `Stop` never auto-retries; explicit `Reconnect` restarts with the last `SourceId`. All timing is `TimeProvider`-driven and all observable mutations marshal to the UI thread — the ViewModel stays in Core (MAUI-free) and unit-testable.
 
-The trigger is `INdiViewerBridge.ConnectionStateChanged(Disconnected)` with `GetLastStopReason() == ReceiverStopReason.ConnectionLost`, forwarded by `ViewerViewModel.OnBridgeConnectionStateChanged` into `CheckForUnexpectedDrop()`; every explicit `StopReceiverAsync()` (user Stop, internal restart, quality-profile bandwidth change, navigation handoff) reports `Intentional` — from the instant the call returns, not from when the native teardown finishes — and can never open a window. The window is completed by whichever sees the connection first — the bridge's `Connected` event or the attempt loop's own pre-restart poll. Both funnel through the same guarded `CompleteReconnect()`, which re-reads the bridge and refuses to declare success against a receiver that is not `Connected`, or on behalf of a ViewModel that no longer owns it. Full screen is **kept** while retrying — the countdown shows in the in-video `viewer.reconnectBadge` — and is exited when the window ends, whether it expires or the user cancels it — never while the countdown is running.
+The trigger is `INdiViewerBridge.ConnectionStateChanged(Disconnected)` with `GetLastStopReason() == ReceiverStopReason.ConnectionLost`, forwarded by `ViewerViewModel.OnBridgeConnectionStateChanged` into `CheckForUnexpectedDrop()`; every explicit `StopReceiverAsync()` (user Stop, internal restart, quality-profile bandwidth change, navigation handoff) reports `Intentional` — from the instant the call returns, not from when the native teardown finishes — and can never open a window. The window is completed by whichever sees the connection first — the bridge's `Connected` event, the attempt loop's own pre-restart poll, or the window's final countdown tick (the tick and the event are posted from two different threads and can reach the UI thread in either order, so an expiry that finds this ViewModel's receiver already `Connected` completes instead of failing — #409). All three funnel through the same guarded `CompleteReconnect()`, which re-reads the bridge and refuses to declare success against a receiver that is not `Connected`, or on behalf of a ViewModel that no longer owns it. A window is requested across a thread boundary (`BeginReconnectWindow()` posts), so it is dropped if a Stop, Cancel, disownment or `Dispose` ran between the request and its UI-thread turn (a stop epoch, #409); `Reconnect` still opens one after a Stop. Full screen is **kept** while retrying — the countdown shows in the in-video `viewer.reconnectBadge` — and is exited when the window ends, whether it expires or the user cancels it — never while the countdown is running.
 
-A ViewModel only acts on a drop while it still **owns** the receiver (`INdiViewerBridge.ReceiverGeneration`, bumped by every `StartReceiver`): the bridge is a singleton and the Expanded two-pane `PaneViewer` stays alive and subscribed behind a pushed `ViewerPage`, so without the token two ViewModels would run two reconnect loops against one receiver. Alongside the edge trigger there is a level backstop: five consecutive 1 s stats samples with the bridge stuck in `Connecting` — which, because the bridge reports a live-but-silent source as `Stalled`, means only "a receiver was created and never delivered a frame" — and only after it has been `Connected` once, also open a window. That is how a drop superseded by a restart is recovered. A stalled source never opens one: recreating a receiver cannot make a sender send video. Both terminal exits — the window expiring and the user cancelling — call `StopReceiverAsync()` and set `IsStopped`, so no orphan receiver is ever left pumping behind a terminal message. The token's dual is enforced too: a ViewModel that is disposed hands its receiver back (`ViewerViewModel.Dispose`), and a ViewModel still playing when it loses the token puts itself in the Stopped state on the next 1 s sample (`ReleaseIfDisowned`) rather than painting and narrating a stream it no longer owns.
+A ViewModel only acts on a drop while it still **owns** the receiver (`INdiViewerBridge.ReceiverGeneration`, bumped by every `StartReceiver`): the bridge is a singleton and the Expanded two-pane `PaneViewer` stays alive and subscribed behind a pushed `ViewerPage`, so without the token two ViewModels would run two reconnect loops against one receiver. Alongside the edge trigger there is a level backstop: five consecutive 1 s stats samples with the bridge stuck in `Connecting` — which, because the bridge reports a live-but-silent source as `Stalled`, means only "a receiver was created and never delivered a frame" — and only after it has been `Connected` once, also open a window. That is how a drop superseded by a restart is recovered. A stalled source never opens one: recreating a receiver cannot make a sender send video. Both terminal exits — the window expiring and the user cancelling — set `IsStopped` and, while the ViewModel still owns the receiver, call `StopReceiverAsync()`, so no orphan receiver is ever left pumping behind a terminal message; a ViewModel that has lost the bridge ends only its own window and never stops another ViewModel's stream (#423). The token's dual is enforced too: a ViewModel that is disposed hands its receiver back (`ViewerViewModel.Dispose`), and a ViewModel still playing when it loses the token puts itself in the Stopped state on the next 1 s sample (`ReleaseIfDisowned`) rather than painting and narrating a stream it no longer owns. A window opened on a ViewModel that has already lost the bridge (Reconnect on a demoted pane) does not wait on another ViewModel's `Connected`: the attempt loop's already-`Connected` shortcut is owner-only, so its first attempt re-claims the bridge (#423), and `RunAttempt` re-reads the token even when `StartReceiver` throws after bumping it (#419). A window that has *held* the receiver — owned it when it opened, or re-claimed it through one of its own attempts — and then loses it to another ViewModel mid-countdown never steals it back and never reports a failed reconnect: its next attempt tick — or its expiry, if that comes first — retires it with exactly the surface `ReleaseIfDisowned` leaves (`RetireDisowned`: Stopped + Reconnect, no receiver stop, no history record), because either tick can beat the next stats sample and a window `Reconnect` opened while not playing gets no stats sample at all. Stop, the window expiring, Cancel and `Dispose` each close the session's connection-history row (`IConnectionHistoryService.RecordDisconnectedAsync`); the last three only while the ViewModel owns the receiver, because the service is a singleton holding one active row (#418). `ReleaseIfDisowned` records nothing: that stream changed hands rather than ended.
 
 ### Bridge contract
 | Member | Path | Notes |
 |--------|------|-------|
 | `ConnectionState { Connecting, Connected, Disconnected, Stalled }` | `src/Core/NdiBridge/NdiBridgeModels.cs` | Plain C# enum — no NDI SDK types cross the bridge. `Connecting` means "receiver created, no frame yet"; `Stalled` means "transport up, no video for >3 s". `Stalled` is declared last so `Connecting` keeps value 0 |
-| `ConnectionState GetConnectionState()` | `src/Core/NdiBridge/INdiBridges.cs` (`INdiViewerBridge`) | Polled by the VM state machine to detect drops |
+| `ConnectionState GetConnectionState()` | `src/Core/NdiBridge/INdiBridges.cs` (`INdiViewerBridge`) | Read live by the VM, never cached: by `CheckForUnexpectedDrop()` after a `ConnectionStateChanged`, by the completion guards, and by the 1 s stats watchdog's sustained-`Connecting` backstop. Drops are detected from the event, not by polling |
 | `ReceiverStopReason { Intentional, ConnectionLost }` | `src/Core/NdiBridge/NdiBridgeModels.cs` | Why the last `Disconnected` transition happened; `Intentional` is the default (value 0) |
 | `ReceiverStopReason GetLastStopReason()` | `src/Core/NdiBridge/INdiBridges.cs` (`INdiViewerBridge`) | Lets the VM tell a genuine drop from any deliberate `StopReceiverAsync()` call |
 | `long ReceiverGeneration { get; }` | `src/Core/NdiBridge/INdiBridges.cs` (`INdiViewerBridge`) | Ownership token: bumped by every `StartReceiver`; lets a ViewModel tell whether the receiver it started is still the one the shared bridge runs |
@@ -316,34 +316,43 @@ that is enforced by documentation, not by code.
 ### `IMainThreadDispatcher` abstraction (NEW)
 | Item | Path | Notes |
 |------|------|-------|
-| Core interface | `src/Core/Services/IMainThreadDispatcher.cs` | `void Invoke(Action)` + `Task InvokeAsync(Func<Task>)` |
-| MAUI impl | `src/MauiApp/Services/MauiMainThreadDispatcher.cs` | Wraps `MainThread.BeginInvokeOnMainThread` / `InvokeOnMainThreadAsync` |
-| Why | — | Core cannot reference MAUI, so timer/poll callbacks dispatch via this seam; unit tests use a synchronous inline fake |
+| Core interface | `src/Core/Services/IMainThreadDispatcher.cs` | One member: `void BeginInvokeOnMainThread(Action)` |
+| Android impl | `src/MauiApp/Platforms/Android/Services/AndroidMainThreadDispatcher.cs` | Wraps MAUI's `MainThread.BeginInvokeOnMainThread`. MAUI's implementation runs the action in place when already on the main thread and posts it otherwise — an implementation detail, not a documented contract, so no correctness argument may rest on it (#392 RC19) |
+| Non-Android impl | `src/MauiApp/Services/DefaultMainThreadDispatcher.cs` | Runs the action inline |
+| Test fakes | `src/Core/Services/IMainThreadDispatcher.cs` | `FakeMainThreadDispatcher` runs every post inline (most fixtures). `QueuedMainThreadDispatcher` (#409) queues posts made off the UI thread until `Drain()` and runs a post made from inside a drained action in place — use it when a test depends on the order in which timer ticks and bridge events reach the UI thread (`ViewerViewModelReconnectOrderingTests`) |
+| Why | — | Core cannot reference MAUI, so bridge-event and timer callbacks dispatch via this seam |
 
 ### DI registrations added in `MauiProgram.cs`
 ```csharp
-// Reconnection infrastructure: system clock + UI-thread dispatcher abstraction.
-builder.Services.AddSingleton(TimeProvider.System);
-builder.Services.AddSingleton<IMainThreadDispatcher, MauiMainThreadDispatcher>();
+// Reconnection infrastructure: UI-thread dispatcher abstraction + system clock.
+builder.Services.AddSingleton<IMainThreadDispatcher>(sp =>
+#if ANDROID
+    (IMainThreadDispatcher)new AndroidMainThreadDispatcher()
+#else
+    (IMainThreadDispatcher)new DefaultMainThreadDispatcher()
+#endif
+);
+builder.Services.AddSingleton<TimeProvider>(TimeProvider.System);
 ```
 
 ### `ViewerViewModel` (`src/Core/Features/Viewer/ViewModels/ViewerViewModel.cs`)
-State machine: `Idle → Connecting → Connected → Dropped → Retrying(countdown) → {Reconnected | Failed}`.
+State machine (private `ReconnectState { Idle, InWindow, Attempting, Failed }`): `Idle → InWindow` when a window opens; each attempt tick runs `InWindow → Attempting → InWindow`; the window returns to `Idle` on success (`CompleteReconnect`), Cancel, Stop or disownment, and ends in `Failed` when it expires (a window overtaken by another ViewModel retires to `Idle` instead); `Reconnect` moves `Failed → Idle` and opens a new window.
 - Ctor injects `INdiViewerBridge`, `TimeProvider`, `IMainThreadDispatcher`.
-- Timers (all `TimeProvider.CreateTimer`): monitor poll (1s) detects drops; attempt loop (2s) does a full `StopReceiverAsync→StartReceiver` request pair, stops on first `Connected`; countdown (1s) drives remaining-seconds text.
-- Window: 15s total; terminal failure after expiry.
+- Drop detection is event-driven — `ConnectionStateChanged(Disconnected)` → `CheckForUnexpectedDrop()` — with the 1 s stats watchdog (`ViewerViewModel.ConnectionHint.cs`) as the level backstop (sustained `Connecting`) and the ownership reconciliation (`ReleaseIfDisowned`).
+- Timers (all `TimeProvider.CreateTimer`, each posting its UI work through `IMainThreadDispatcher`): stats watchdog (1s, while playing); attempt loop (2s) does a full `StopReceiverAsync→StartReceiver` request pair, or completes the window instead when the bridge is already `Connected` for this ViewModel's receiver, or retires it when another ViewModel has taken a receiver the window held; countdown (1s) drives remaining-seconds text.
+- Window: 15s total; terminal failure after expiry — unless the bridge already reports this ViewModel's receiver `Connected` when the last tick runs, which completes the window instead (#409), or another ViewModel has taken a receiver the window held, which retires it as Stopped (#423).
 
 | Member | Type | Purpose |
 |--------|------|---------|
-| `IsReconnecting` | `[ObservableProperty] bool` | Drives retry label + Cancel button visibility |
-| `RetryStatusMessage` | `[ObservableProperty] string?` | `"Reconnecting... {n}s remaining"` |
-| `CanReconnect` | `[ObservableProperty] bool` | Drives Reconnect button (`NotifyCanExecuteChangedFor`) |
+| `IsReconnecting` | `[ObservableProperty] bool` | Shows the retry row (activity indicator, `RetryStatusMessage`, Cancel); in full screen, the in-video badge via `IsFullScreenRetryVisible` |
+| `RetryStatusMessage` | `[ObservableProperty] string?` | `"Reconnecting... {n}s remaining"`; `"Attempting reconnect..."` during an attempt |
+| `CanReconnect` | `[ObservableProperty] bool` | Shows the Reconnect button (plain `IsVisible` binding); set after Stop, a failed or cancelled window, or a disowned demotion |
 | `CancelRetryCommand` | `[RelayCommand]` | Aborts the window immediately → stopped (FR6) |
-| `ReconnectCommand` | `[RelayCommand(CanExecute = CanReconnect)]` | Restarts with last `SourceId` from error state (FR7) |
+| `ReconnectCommand` | `[RelayCommand]` | Opens a new window on `SourceId` (or the last one) from the stopped/failed state (FR7); no `CanExecute` — the button is hidden instead |
 
-Terminal message constant: `"Connection lost. Reconnection failed."` Drop while playing → `"Connection lost. Reconnecting..."`.
+Status line (`StatusMessage`): `"Connection lost. Reconnection failed."` when the window expires (also declared as the `TerminalMessage` constant), `"Reconnection cancelled."` on Cancel, `"Stopped."` on Stop or disownment (including a window overtaken by another ViewModel, whether its attempt tick or its expiry notices first), `"Attempting reconnect..."` when Reconnect is tapped, `"Connected."` on success. A drop itself does not change the status line; the countdown shows in `RetryStatusMessage`.
 
-UI: `src/MauiApp/Features/Viewer/Views/ViewerPage.xaml` — retry-status label, Cancel button (visible while `IsReconnecting`), Reconnect button (visible while `CanReconnect`).
+UI: `src/MauiApp/Features/Viewer/Views/PlaybackControlsView.xaml` — the retry row (visible while `IsReconnecting`) and the Reconnect button (`viewer.reconnect`, visible while `CanReconnect`); in full screen the countdown is the in-video `viewer.reconnectBadge` in `ViewerView.xaml` (`IsFullScreenRetryVisible`).
 
 See `docs/architecture.md` for the canonical module/threading diagram (already updated by architect — do not duplicate here).
 
