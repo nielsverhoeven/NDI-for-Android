@@ -401,7 +401,14 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
         // this dying ViewModel does not re-enter its own handler, while every other subscriber
         // still sees the (Intentional) Disconnected.
         if (OwnsActiveReceiver)
+        {
             _bridge.StopReceiverAsync().FireAndForget();
+
+            // The session ends here, so close its connection-history row as Stop() does (#418).
+            // Inside the ownership gate: the history service is a singleton with one active row,
+            // and a ViewModel the bridge was taken from would close the owner's.
+            _connectionHistory.RecordDisconnectedAsync().FireAndForget();
+        }
 
         ForceExitFullScreen();
         DisposePtz();
@@ -625,7 +632,13 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
         // Ownership-gated (#423): a ViewModel the bridge has been taken from ends its own window,
         // but the receiver now running is another ViewModel's stream and is not its to stop.
         if (OwnsActiveReceiver)
+        {
             _bridge.StopReceiverAsync().FireAndForget();
+
+            // Record disconnection for history tracking, as Stop() does (#418) — owner only, for
+            // the same reason as Dispose: the history service's single active row is the owner's.
+            _connectionHistory.RecordDisconnectedAsync().FireAndForget();
+        }
         // Before BeginExitFullScreen: on a compact device the exit only *requests* portrait, so
         // IsFullScreen stays true for up to 3s — the in-video Stopped badge is the only thing on
         // screen during that window.
@@ -657,7 +670,12 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
         // message, and the video surface says so instead of holding a frozen frame. Ownership-gated
         // like FailReconnect (#423): never stop a receiver another ViewModel is playing.
         if (OwnsActiveReceiver)
+        {
             _bridge.StopReceiverAsync().FireAndForget();
+
+            // Record disconnection for history tracking, as Stop() does (#418) — owner only.
+            _connectionHistory.RecordDisconnectedAsync().FireAndForget();
+        }
         IsStopped = true;
         BeginExitFullScreen();
         // Cancel must not be a dead end: the Reconnect button is the only control still on screen

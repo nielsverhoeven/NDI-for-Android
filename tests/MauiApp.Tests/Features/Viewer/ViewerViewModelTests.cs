@@ -1423,6 +1423,83 @@ public class ViewerViewModelTests
         Assert.True(pushed.IsPlaying);
     }
 
+    // --- #418: every path that ends the owner's session closes its connection-history row ---
+
+    [Fact]
+    public void Dispose_WhenThisViewModelOwnsTheReceiver_RecordsTheEndOfTheSession()
+    {
+        var sut = CreatePlayingSut();
+
+        sut.Dispose();
+
+        _connectionHistoryMock.Verify(h => h.RecordDisconnectedAsync(), Times.Once);
+    }
+
+    [Fact]
+    public void FailReconnect_RecordsTheEndOfTheSession()
+    {
+        var sut = CreatePlayingSut();
+        sut.BeginReconnectWindow();
+
+        _timeProvider.Advance(TimeSpan.FromSeconds(15));
+
+        Assert.Equal("Connection lost. Reconnection failed.", sut.StatusMessage);
+        _connectionHistoryMock.Verify(h => h.RecordDisconnectedAsync(), Times.Once);
+    }
+
+    [Fact]
+    public void CancelRetry_RecordsTheEndOfTheSession()
+    {
+        var sut = CreatePlayingSut();
+        sut.BeginReconnectWindow();
+
+        sut.CancelRetryCommand.Execute(null);
+
+        _connectionHistoryMock.Verify(h => h.RecordDisconnectedAsync(), Times.Once);
+    }
+
+    [Theory]
+    [InlineData(nameof(ViewerViewModel.Dispose))]
+    [InlineData("FailReconnect")]
+    [InlineData("CancelRetry")]
+    public void SessionEnd_OnAViewModelThatNoLongerOwnsTheReceiver_RecordsNoConnectionHistory(string path)
+    {
+        // The history service is a singleton with a single active row, and that row is the owner's:
+        // a ViewModel the bridge was taken from must never close it.
+        var generation = 0L;
+        _bridgeMock.Setup(b => b.ReceiverGeneration).Returns(() => generation);
+        _bridgeMock.Setup(b => b.StartReceiver(It.IsAny<string>(), It.IsAny<QualityProfile>()))
+                   .Callback(() => generation++);
+        var pane = CreatePlayingSut();
+        switch (path)
+        {
+            case nameof(ViewerViewModel.Dispose):
+                CreatePlayingSut(); // a pushed viewer takes the bridge
+                _connectionHistoryMock.Invocations.Clear();
+                pane.Dispose();
+                break;
+            case "FailReconnect": // same set-up as the #423 FailReconnect test above
+                pane.StopCommand.Execute(null);
+                pane.ReconnectCommand.Execute(null);
+                _timeProvider.Advance(TimeSpan.FromSeconds(14));
+                CreatePlayingSut(); // another viewer takes the bridge in the window's last second
+                _connectionHistoryMock.Invocations.Clear();
+                _timeProvider.Advance(TimeSpan.FromSeconds(1));
+                Assert.Equal("Connection lost. Reconnection failed.", pane.StatusMessage);
+                break;
+            case "CancelRetry":
+                CreatePlayingSut(); // a pushed viewer takes the bridge
+                pane.ApplyConnectionSample(connected: true, fps: 30f, dropPercent: 0f);
+                pane.ReconnectCommand.Execute(null);
+                _connectionHistoryMock.Invocations.Clear();
+                pane.CancelRetryCommand.Execute(null);
+                Assert.Equal("Reconnection cancelled.", pane.StatusMessage);
+                break;
+        }
+
+        _connectionHistoryMock.Verify(h => h.RecordDisconnectedAsync(), Times.Never);
+    }
+
     // --- #411: returning to the foreground never restarts or re-narrates the viewer ---
 
     [Fact]
