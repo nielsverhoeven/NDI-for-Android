@@ -206,6 +206,12 @@ public sealed class AppLaunchTests : UiTestBase
             app.ResetToHome();
             app.Rotate(ScreenOrientation.Landscape);
             AssertNoBottomNavigationBarForRailPlacement(app, "after rotating from portrait into landscape");
+
+            // #395: the bar is hidden at ShellItem scope, so it has to come back on its own when the
+            // placement returns to bottom — nothing navigates to bring it back any more.
+            app.Rotate(ScreenOrientation.Portrait);
+            app.Home.WaitUntilVisible();
+            AssertBottomNavigationBarForBottomPlacement(app, "after rotating from landscape back to portrait");
         }
         finally
         {
@@ -255,9 +261,11 @@ public sealed class AppLaunchTests : UiTestBase
         }
     });
 
-    /// <summary>Asserts the bottom navigation bar is absent when the current device configuration
-    /// resolves to the left-rail placement; otherwise logs that the invariant was not exercised.</summary>
-    private void AssertNoBottomNavigationBarForRailPlacement(NdiApp app, string checkpoint, bool railIsVisible = true)
+    /// <summary>The placement the app's own policy resolves for the device's current
+    /// configuration — the reference every chrome assertion is made against, so a test only asserts
+    /// what is valid for the size class it is running on (Compact phone vs Expanded tablet).</summary>
+    private static (NavigationPlacementMode Placement, WindowSizeClass SizeClass, DeviceOrientation Orientation, double WidthDp)
+        ResolveExpectedPlacement(NdiApp app)
     {
         var widthDp = app.WindowSize.Width / app.Metrics.Density;
         var sizeClass = WindowSizeClassService.Classify(widthDp);
@@ -266,7 +274,70 @@ public sealed class AppLaunchTests : UiTestBase
             : DeviceOrientation.Portrait;
 
         var policy = new NavigationPolicyService(new WindowSizeClassService());
-        var expected = policy.ResolvePlacement(orientation, sizeClass);
+        return (policy.ResolvePlacement(orientation, sizeClass), sizeClass, orientation, widthDp);
+    }
+
+    /// <summary>Asserts the bottom navigation bar is on screen when the current device configuration
+    /// resolves to the bottom placement; otherwise logs that the invariant was not exercised.</summary>
+    private void AssertBottomNavigationBarForBottomPlacement(NdiApp app, string checkpoint)
+    {
+        var (expected, sizeClass, orientation, widthDp) = ResolveExpectedPlacement(app);
+
+        if (expected != NavigationPlacementMode.Bottom)
+        {
+            var message = $"Bottom placement is not reachable on this device ({sizeClass}/{orientation}); " +
+                $"the bottom-bar-is-back invariant was not exercised {checkpoint}.";
+            _output.WriteLine(message);
+            Console.WriteLine(message);
+            return;
+        }
+
+        var passingMessage =
+            $"Bottom placement expected ({sizeClass}/{orientation}, {widthDp:0}dp); asserting the bottom bar {checkpoint}.";
+        _output.WriteLine(passingMessage);
+        Console.WriteLine(passingMessage);
+
+        Assert.True(app.Navigation.WaitForBottomNavigationBar(shown: true, Timeouts.Element),
+            $"Shell's bottom navigation bar is not on screen {checkpoint}, while the bottom bar is the " +
+            $"expected placement ({sizeClass}/{orientation}).");
+    }
+
+    /// <summary>
+    /// Asserts the navigation chrome is the one the current configuration calls for, and that it
+    /// still marks <paramref name="selected"/>: on rail placement the rail is present, announces
+    /// <paramref name="selected"/> as selected and the bottom bar is gone; on bottom placement the
+    /// bottom bar is on screen. (Only the rail announces a selection — see
+    /// <see cref="NavigationBar.AnnouncesSelected"/> — so there is no selection check for the bar.)
+    /// </summary>
+    private void AssertChromeMatchesPlacement(NdiApp app, NavDestination selected, string checkpoint)
+    {
+        var (expected, sizeClass, orientation, widthDp) = ResolveExpectedPlacement(app);
+        var context = $"({sizeClass}/{orientation}, {widthDp:0}dp)";
+        _output.WriteLine($"Expecting {expected} chrome {context} {checkpoint}.");
+
+        if (expected == NavigationPlacementMode.LeftRail)
+        {
+            Assert.True(app.Navigation.IsPresent(selected),
+                $"The left rail is not on screen {checkpoint}, while it is the expected placement {context}.");
+            Assert.True(app.Navigation.AnnouncesSelected(selected),
+                $"The left rail does not announce {selected} as selected {checkpoint} {context}.");
+            Assert.True(app.Navigation.WaitForBottomNavigationBar(shown: false, Timeouts.Element),
+                $"Shell's bottom navigation bar is still on screen {checkpoint}, while the left rail is " +
+                $"the expected placement {context}.");
+        }
+        else
+        {
+            Assert.True(app.Navigation.WaitForBottomNavigationBar(shown: true, Timeouts.Element),
+                $"Shell's bottom navigation bar is not on screen {checkpoint}, while the bottom bar is " +
+                $"the expected placement {context}.");
+        }
+    }
+
+    /// <summary>Asserts the bottom navigation bar is absent when the current device configuration
+    /// resolves to the left-rail placement; otherwise logs that the invariant was not exercised.</summary>
+    private void AssertNoBottomNavigationBarForRailPlacement(NdiApp app, string checkpoint, bool railIsVisible = true)
+    {
+        var (expected, sizeClass, orientation, widthDp) = ResolveExpectedPlacement(app);
 
         if (expected != NavigationPlacementMode.LeftRail)
         {
@@ -334,6 +405,53 @@ public sealed class AppLaunchTests : UiTestBase
         app.Output.WaitUntilVisible();
         Assert.True(app.Output.IsVisible,
             "Rotating back to portrait must keep Stream selected (#393).");
+    });
+
+    /// <summary>
+    /// #395: a rotation on a pushed page keeps the page and swaps the chrome straight away. Before
+    /// #395 the rail was a second family of ShellItems, a pushed page had no equivalent there, and
+    /// #393 therefore deferred the chrome swap until the page was popped — so a phone rotated to
+    /// landscape on the diagnostic log kept the bottom bar and showed no rail.
+    /// </summary>
+    /// <remarks>
+    /// Every chrome assertion is made against the placement the app's own policy resolves for this
+    /// device (<see cref="AssertChromeMatchesPlacement"/>). On a Compact phone (the Nexus 6 CI AVD)
+    /// portrait is the bottom bar and landscape the rail, so both halves swap; on an Expanded tablet
+    /// (pixel_c) the rail is live in both orientations, and the test proves the page and the rail
+    /// both survive the rotation.
+    /// </remarks>
+    [RetryableSkippableFact]
+    public void Rotating_OnAPushedPage_KeepsThePageAndSwapsChrome() => Run(app =>
+    {
+        app.ResetToHome();
+
+        try
+        {
+            app.Navigation.GoTo(NavDestination.Settings);
+            app.Settings.WaitUntilVisible();
+            app.Settings.OpenSection(SettingsSection.DeveloperTools);
+            app.Settings.OpenDiagnosticLog();
+            app.DiagnosticLog.WaitUntilVisible();
+
+            app.Rotate(ScreenOrientation.Landscape);
+            Assert.True(app.DiagnosticLog.IsVisible,
+                "Rotating to landscape on the pushed diagnostic log must keep that page on screen (#395).");
+            AssertChromeMatchesPlacement(app, NavDestination.Settings,
+                "after rotating to landscape on the pushed diagnostic log");
+
+            app.Rotate(ScreenOrientation.Portrait);
+            Assert.True(app.DiagnosticLog.IsVisible,
+                "Rotating back to portrait on the pushed diagnostic log must keep that page on screen (#395).");
+            AssertChromeMatchesPlacement(app, NavDestination.Settings,
+                "after rotating back to portrait on the pushed diagnostic log");
+        }
+        finally
+        {
+            // The pushed page stays on the Settings stack across tab switches, so pop it here or a
+            // later test that opens Settings lands on the log instead.
+            try { app.Rotate(ScreenOrientation.Portrait); } catch { }
+            try { if (app.DiagnosticLog.IsVisible) app.PressBackButton(); } catch { }
+        }
     });
 
     [RetryableSkippableFact]

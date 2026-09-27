@@ -153,10 +153,10 @@ public static class MauiProgram
         // Tab-root ViewModels (#352/#359): Singleton, like SourceListViewModel above. They subscribe
         // in their constructors to singleton events (SnapshotReady / OutputStatusChanged / AppResumed)
         // and MAUI's Android Shell re-resolves the ShellContent page — and with it the ViewModel — on
-        // every tab entry and on every -tab/-rail placement change, so a Transient here leaks one
-        // subscribed instance per visit. Their Dispose() is container-owned (app teardown), never
-        // page-owned; every appearance re-corroborates state instead (HomePage.OnAppearing -> Refresh,
-        // OutputPage.OnAppearing -> LoadCommand).
+        // every tab entry, so a Transient here leaks one subscribed instance per visit. (A placement
+        // change no longer re-resolves anything: one TabBar route family, #395.) Their Dispose() is
+        // container-owned (app teardown), never page-owned; every appearance re-corroborates state
+        // instead (HomePage.OnAppearing -> Refresh, OutputPage.OnAppearing -> LoadCommand).
         builder.Services.AddSingleton<HomeViewModel>();
         builder.Services.AddTransient<ViewerViewModel>();
         // Factory seam for the Singleton SourceListViewModel to lazily resolve a Transient

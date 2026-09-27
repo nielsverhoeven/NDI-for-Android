@@ -52,6 +52,59 @@ public sealed class PrimaryNavigationMetadataTests
     }
 
     /// <summary>
+    /// #395: one route family. These are the routes <c>AppShell.xaml</c>'s <c>PrimaryTabBar</c>
+    /// declares (as <c>home</c>, <c>stream</c>, …) and <c>ShellNavigationService</c> navigates to,
+    /// whichever chrome — bottom bar or rail — is showing. A <c>-tab</c>/<c>-rail</c> suffix
+    /// coming back would mean a second family of ShellItems, which is what let a rotation re-point
+    /// <c>Shell.CurrentItem</c> and destroy a pushed page (#393).
+    /// </summary>
+    [Fact]
+    public void Items_Routes_AreExactlyTheOneRouteFamily()
+    {
+        Assert.Equal(
+            new[] { "//home", "//stream", "//view", "//settings" },
+            PrimaryNavigationMetadata.Items.Select(i => i.Route).ToArray());
+
+        Assert.Equal(
+            PrimaryNavigationMetadata.Items.Count,
+            PrimaryNavigationMetadata.Items.Select(i => i.Route).Distinct(StringComparer.OrdinalIgnoreCase).Count());
+    }
+
+    [Theory]
+    [InlineData("//home", PrimaryNavDestination.Home)]
+    [InlineData("//stream", PrimaryNavDestination.Stream)]
+    [InlineData("//view", PrimaryNavDestination.View)]
+    [InlineData("//settings", PrimaryNavDestination.Settings)]
+    [InlineData("//view/viewer?sourceId=x", PrimaryNavDestination.View)]
+    [InlineData("//stream?resume=true", PrimaryNavDestination.Stream)]
+    [InlineData("//stream?reStreamSourceId=HOST%20(view)&isReStreamMode=true", PrimaryNavDestination.Stream)]
+    [InlineData("//HOME", PrimaryNavDestination.Home)]
+    public void TryResolveDestination_ResolvesFromTheLastPathSegmentOnly(string location, PrimaryNavDestination expected)
+    {
+        Assert.Equal(expected, PrimaryNavigationMetadata.TryResolveDestination(location));
+    }
+
+    [Theory]
+    [InlineData("//settings/diagnostic-log")]
+    [InlineData("diagnostic-log")]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData("//")]
+    [InlineData("?sourceId=view")]
+    public void TryResolveDestination_ReturnsNull_WhenTheLastSegmentIsNotAPrimaryDestination(string? location)
+    {
+        Assert.Null(PrimaryNavigationMetadata.TryResolveDestination(location));
+    }
+
+    [Fact]
+    public void TryResolveDestination_ResolvesEveryDeclaredRoute_ToItsOwnDestination()
+    {
+        Assert.All(PrimaryNavigationMetadata.Items, item =>
+            Assert.Equal(item.Destination, PrimaryNavigationMetadata.TryResolveDestination(item.Route)));
+    }
+
+    /// <summary>
     /// The rail renders <see cref="PrimaryNavItem.IconGeometry"/> as a themeable vector (#294);
     /// a missing or malformed value would throw while the rail is being built.
     /// </summary>
@@ -231,11 +284,12 @@ public sealed class AdaptiveShellStateViewModelTests
         Assert.True(sut.IsLeftRailNavigationVisible);
     }
 
-    // Locks the #384 decision: IsBottomNavigationVisible/IsLeftRailNavigationVisible are pure
-    // PlacementMode queries. ShellNavigationService.TryGetRouteForCurrentPlacement selects the
-    // -rail vs -tab route table from IsLeftRailNavigationVisible, so folding IsChromeSuppressed
-    // into it would resolve the wrong route family while full screen is active. Do not "simplify"
-    // these assertions to expect suppression to force the visibility flags false.
+    // Locks the #384 decision, restated for #395: IsBottomNavigationVisible/IsLeftRailNavigationVisible
+    // are pure PlacementMode queries. AppShell.ApplyPlacement writes the item-scope
+    // Shell.TabBarIsVisible on PrimaryTabBar from them, and ViewerFullScreenChromeController's exit
+    // ClearValue falls back to that value — so folding IsChromeSuppressed in would leave the bar
+    // value stale after full screen. Suppression only hides the rail (NavigationChromePolicy). Do
+    // not "simplify" these assertions to expect suppression to force the visibility flags false.
     [Fact]
     public void IsChromeSuppressed_SetAndCleared_DoesNotAffectPlacementModeOrDerivedVisibility()
     {
@@ -301,6 +355,54 @@ public sealed class AdaptiveShellStateViewModelTests
         {
             CurrentPlacement = placement;
             PlacementChanged?.Invoke(this, placement);
+        }
+    }
+}
+
+/// <summary>#395: the chrome AppShell.ApplyPlacement applies for a placement.</summary>
+public sealed class NavigationChromePolicyTests
+{
+    [Theory]
+    [InlineData(NavigationPlacementMode.Bottom, false, false, true)]
+    [InlineData(NavigationPlacementMode.Bottom, true, false, true)]
+    [InlineData(NavigationPlacementMode.LeftRail, false, true, false)]
+    [InlineData(NavigationPlacementMode.LeftRail, true, false, false)]
+    public void Resolve_MapsPlacementAndSuppression_ToRailAndItemScopeBar(
+        NavigationPlacementMode placement,
+        bool isChromeSuppressed,
+        bool expectedRailVisible,
+        bool expectedBottomBarVisibleAtItemScope)
+    {
+        var (railVisible, bottomBarVisibleAtItemScope) = NavigationChromePolicy.Resolve(placement, isChromeSuppressed);
+
+        Assert.Equal(expectedRailVisible, railVisible);
+        Assert.Equal(expectedBottomBarVisibleAtItemScope, bottomBarVisibleAtItemScope);
+    }
+
+    /// <summary>
+    /// Suppression is page-scoped for the bar (ViewerFullScreenChromeController); the item-scope
+    /// value follows the placement only, so the controller's ClearValue on exit restores the right
+    /// bar. A suppression-dependent item-scope value would be a second writer of the bar.
+    /// </summary>
+    [Theory]
+    [InlineData(NavigationPlacementMode.Bottom)]
+    [InlineData(NavigationPlacementMode.LeftRail)]
+    public void Resolve_Suppression_NeverChangesTheItemScopeBarValue(NavigationPlacementMode placement)
+    {
+        Assert.Equal(
+            NavigationChromePolicy.Resolve(placement, isChromeSuppressed: false).BottomBarVisibleAtItemScope,
+            NavigationChromePolicy.Resolve(placement, isChromeSuppressed: true).BottomBarVisibleAtItemScope);
+    }
+
+    [Theory]
+    [InlineData(NavigationPlacementMode.Bottom)]
+    [InlineData(NavigationPlacementMode.LeftRail)]
+    public void Resolve_NeverShowsBothRailAndBottomBar(NavigationPlacementMode placement)
+    {
+        foreach (var suppressed in new[] { false, true })
+        {
+            var chrome = NavigationChromePolicy.Resolve(placement, suppressed);
+            Assert.False(chrome.RailVisible && chrome.BottomBarVisibleAtItemScope);
         }
     }
 }

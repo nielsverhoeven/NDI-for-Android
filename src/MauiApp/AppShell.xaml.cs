@@ -22,25 +22,14 @@ public partial class AppShell : Shell
     private readonly IWindowSizeClassService _windowSizeClassService;
     private readonly IWindowInsetsService _windowInsetsService;
     private readonly IAppearanceService _appearanceService;
-    private readonly ShellNavigationService _navigationService;
+    private readonly INavigationService _navigationService;
     private readonly IDiagnosticOverlayService? _diagnostics;
 
     private PrimaryNavDestination _currentPrimaryDestination = PrimaryNavDestination.Home;
-    private bool _handoffInProgress;
 
     /// <summary>Navigation sequence number and start tick, for the NDI-Nav trace.</summary>
     private long _navSeq;
     private long _navStartedAtTicks;
-
-    /// <summary>
-    /// Set when <see cref="ApplyPlacement"/> was asked to hide <c>PrimaryTabBar</c> while a page was
-    /// pushed or a modal was open and therefore skipped the chrome swap (#393). Hiding the current
-    /// <c>ShellItem</c> makes Shell re-point to the first visible one, and a pushed page has no
-    /// equivalent route under the rail's independent <c>ShellItem</c> family — so the eviction can
-    /// never be reconciled afterwards and the swap must be deferred, not undone. Re-applied from
-    /// <see cref="OnShellNavigated"/> once the section stack is back at its root.
-    /// </summary>
-    private bool _placementSwapDeferred;
 
     private readonly Dictionary<PrimaryNavDestination, (Border Container, Label Label, Path Icon)> _railButtons = [];
 
@@ -68,7 +57,7 @@ public partial class AppShell : Shell
         IWindowSizeClassService windowSizeClassService,
         IWindowInsetsService windowInsetsService,
         IAppearanceService appearanceService,
-        ShellNavigationService navigationService,
+        INavigationService navigationService,
         IDiagnosticOverlayService? diagnostics = null)
     {
         _stateViewModel   = stateViewModel;
@@ -195,8 +184,10 @@ public partial class AppShell : Shell
             // plain Border exposes no native "selected" state (#345 home-nav-06).
             SemanticProperties.SetDescription(container, RailDescription(item.Label, isSelected: false));
 
-            // Same destination, same id as the matching bottom tab — the two placements are
-            // never in the tree at once, so a test asking for the id gets whichever is live.
+            // Same destination, same id as the matching bottom tab. Both can be in the tree at once
+            // (#395: the hidden one is GONE, not removed), but only one is ever displayed, and the
+            // test locators only match displayed nodes — so a test asking for the id gets whichever
+            // is live.
             container.AutomationId = item.TestId;
 
             var destination = item.Destination;
@@ -250,78 +241,146 @@ public partial class AppShell : Shell
     private void OnStatePropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
         if (e.PropertyName is nameof(AdaptiveShellStateViewModel.PlacementMode))
+        {
             ApplyPlacement();
+
+            // Before #395 every placement change ended in a reconciling GoToAsync, and so in
+            // OnShellNavigated's ReapplyChrome (#296). Nothing navigates on a placement change any
+            // more; whether the flyout lock-mode flip disturbs the themed status-bar strip is not
+            // verified, so keep the re-tint (queued, idempotent). Skipped while full screen owns the
+            // window — the reconciliation never ran then either.
+            if (!_stateViewModel.IsChromeSuppressed)
+                _appearanceService.ReapplyChrome();
+        }
         else if (e.PropertyName is nameof(AdaptiveShellStateViewModel.IsChromeSuppressed))
-            ApplyPlacement(ensureDestination: false);
+        {
+            ApplyPlacement();
+        }
     }
 
-    private void ApplyPlacement(bool ensureDestination = true)
+    /// <summary>
+    /// Swaps the navigation chrome for the current placement — and only the chrome (#395).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// There is one <c>TabBar</c> route family. The rail is the locked flyout; the bottom bar is
+    /// hidden at <b>ShellItem scope</b> on <c>PrimaryTabBar</c>. Neither write changes
+    /// <c>Shell.CurrentItem</c>, the current page or any navigation stack, so a rotation on a pushed
+    /// page keeps the page and a rotation on a tab root raises no Disappearing/Appearing. There is
+    /// nothing to reconcile and nothing to defer.
+    /// </para>
+    /// <para>
+    /// <b>Never write <c>PrimaryTabBar.IsVisible</c>.</b> Hiding the current ShellItem makes Shell
+    /// re-point <c>CurrentItem</c> on its own, which is the #393 defect this design removes.
+    /// </para>
+    /// <para>
+    /// Two writers, disjoint scopes: this method owns item scope; <c>ViewerFullScreenChromeController</c>
+    /// owns page scope (<c>false</c> on enter, <c>ClearValue</c> on exit, which falls back to the value
+    /// written here). Page scope wins. <see cref="AdaptiveShellStateViewModel.IsChromeSuppressed"/>
+    /// only ever hides the rail (see <see cref="NavigationChromePolicy"/>).
+    /// </para>
+    /// </remarks>
+    private void ApplyPlacement()
     {
         var placementStartedAt = Environment.TickCount64;
+        var rail = _stateViewModel.IsLeftRailNavigationVisible;
+        var suppressed = _stateViewModel.IsChromeSuppressed;
         _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "placement.begin",
-            $"rail={_stateViewModel.IsLeftRailNavigationVisible} suppressed={_stateViewModel.IsChromeSuppressed}");
+            $"rail={rail} suppressed={suppressed}");
 
-        // Cleared before the flip below, never after: hiding PrimaryTabBar can drive Shell's
-        // fallback navigation to completion synchronously, re-entering OnShellNavigated before
-        // this method returns.
-        _placementSwapDeferred = false;
+        var chrome = NavigationChromePolicy.Resolve(_stateViewModel.PlacementMode, suppressed);
+        Shell.SetTabBarIsVisible(PrimaryTabBar, chrome.BottomBarVisibleAtItemScope);
+        MirrorTabBarVisibilityToDescendants(chrome.BottomBarVisibleAtItemScope, suppressed);
+        FlyoutBehavior = chrome.RailVisible ? FlyoutBehavior.Locked : FlyoutBehavior.Disabled;
 
-        if (_stateViewModel.IsLeftRailNavigationVisible)
-        {
-            // Hiding PrimaryTabBar while it is still Shell.CurrentItem makes Shell fall back to the
-            // first visible ShellItem (always HomeRailItem) — a navigation that cannot be stopped
-            // once IsVisible flips. A pushed page, or an open #338 modal, has no equivalent route
-            // under the rail's independent ShellItem family, so that eviction cannot be reconciled
-            // afterwards: defer the whole swap and let OnShellNavigated re-apply it once the page is
-            // popped. Only a true -> false transition can evict anything, so this is evaluated
-            // against the bar's current state, and the guard reads the *pre-swap* section — the one
-            // the pushed page actually lives in.
-            if (PrimaryTabBar.IsVisible
-                && (Navigation?.NavigationStack?.Count > 1 || Navigation?.ModalStack?.Count > 0))
-            {
-                _placementSwapDeferred = true;
-                _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "placement.end",
-                    $"deferred={_placementSwapDeferred} ms={Environment.TickCount64 - placementStartedAt}");
-                return;
-            }
-
-            FlyoutBehavior          = _stateViewModel.IsChromeSuppressed ? FlyoutBehavior.Disabled : FlyoutBehavior.Locked;
-            PrimaryTabBar.IsVisible = false;
-        }
-        else
-        {
-            FlyoutBehavior          = FlyoutBehavior.Disabled;
-            PrimaryTabBar.IsVisible = true;
-        }
-
-        // A full-screen viewer owns the whole window; a placement reconciliation must never
-        // navigate it away (the section-root/pane case — the pushed-page case is covered by the
-        // NavigationStack guard inside EnsurePrimaryDestinationVisibleAsync). Same intent as
-        // SourceListPage.ApplySizeClass's _isPaneFullScreen early return.
-        if (ensureDestination && !_stateViewModel.IsChromeSuppressed)
-            Dispatcher.Dispatch(async () => await EnsurePrimaryDestinationVisibleAsync());
+        // Android's ShellItemRenderer re-evaluates bar visibility only when the displayed page
+        // changes or raises PropertyChanged("TabBarIsVisible"). The mirror above raises it when the
+        // page's value actually changes; poke the displayed page anyway so a no-op write still
+        // re-evaluates. A page that does not implement IShellChromeHost
+        // keeps a stale bar until the next navigation — traced so the gap is visible in the log.
+        if (CurrentPage is IShellChromeHost host)
+            host.RefreshShellChrome();
+        else if (CurrentPage is not null)
+            _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "chrome.refresh.miss",
+                $"page={CurrentPage.GetType().Name}");
 
         _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "placement.end",
-            $"deferred={_placementSwapDeferred} ms={Environment.TickCount64 - placementStartedAt}");
+            $"ms={Environment.TickCount64 - placementStartedAt}");
+    }
+
+    /// <summary>
+    /// Writes the placement's bar value onto every section, content and page under
+    /// <c>PrimaryTabBar</c>, because the item-scope value alone does not reach them at runtime.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// MAUI copies <c>Shell.TabBarIsVisible</c> down the Shell tree as a <i>local</i> value
+    /// (<c>BaseShellItem.Propagate</c>: from a parent that has it set to a child that has not), and
+    /// never again once the child has one. Every section, content and page therefore holds the value
+    /// the item had when that element was created, and <c>ShellItem.ShowTabs</c> reads the page (or
+    /// the content) before the item. Measured on the Nexus 6 CI AVD (#395): after a runtime flip to
+    /// the rail the item read <c>false</c> while the displayed page still held the <c>true</c> it was
+    /// created with, so the bar stayed. The pixel_c leg passed only because the rail was the
+    /// placement before any page existed.
+    /// </para>
+    /// <para>
+    /// The section hosting an active full screen is skipped: its page is
+    /// <c>ViewerFullScreenChromeController</c>'s (page scope, <c>false</c> on enter), and a write on its
+    /// content would make Shell copy the value onto that page. When full screen ends,
+    /// <c>IsChromeSuppressed</c> flips and this runs again for every section, after the controller's
+    /// <c>ClearValue</c>.
+    /// </para>
+    /// </remarks>
+    private void MirrorTabBarVisibilityToDescendants(bool visible, bool suppressed)
+    {
+        var fullScreenSection = suppressed ? CurrentItem?.CurrentItem : null;
+
+        foreach (var section in PrimaryTabBar.Items)
+        {
+            if (ReferenceEquals(section, fullScreenSection))
+                continue;
+
+            Shell.SetTabBarIsVisible(section, visible);
+
+            foreach (var content in section.Items)
+            {
+                Shell.SetTabBarIsVisible(content, visible);
+                if (((IShellContentController)content).Page is { } root)
+                    Shell.SetTabBarIsVisible(root, visible);
+            }
+
+            // Pushed pages (the viewer, the diagnostic log). Index 0 of a Shell section stack is null.
+            foreach (var page in section.Navigation.NavigationStack)
+            {
+                if (page is not null)
+                    Shell.SetTabBarIsVisible(page, visible);
+            }
+        }
     }
 
     // ── Navigation ───────────────────────────────────────────────────────────
 
     private async void OnRailItemSelected(object? sender, PrimaryNavDestination destination)
     {
-        if (!TryGetRouteForCurrentPlacement(destination, out var route))
-            return;
-
-        _navigationService.BeginExplicitNavigation();
         var railGotoStartedAt = Environment.TickCount64;
-        _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "nav.goto.begin", $"route={route}");
-        try { await GoToAsync(route); }
+        _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "nav.goto.begin", $"dest={destination}");
+
+        // async void: an exception escaping here would kill the process, so nothing may.
+        try { await _navigationService.NavigateToPrimaryAsync(destination); }
         catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"Rail navigation failed: {ex}"); }
         finally
         {
             _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "nav.goto.end",
                 $"ms={Environment.TickCount64 - railGotoStartedAt}");
-            _navigationService.EndExplicitNavigation();
+        }
+
+        // SelectDestination wrote the tapped destination before raising this event. A navigation
+        // that failed or was cancelled never reaches OnShellNavigated, so put the selection back on
+        // the destination that is actually showing.
+        if (_stateViewModel.SelectedDestination != _currentPrimaryDestination)
+        {
+            _stateViewModel.SelectedDestination = _currentPrimaryDestination;
+            UpdateRailHighlight(_currentPrimaryDestination);
         }
     }
 
@@ -335,7 +394,7 @@ public partial class AppShell : Shell
             $"nav={_navSeq} src={args.Source} cancel={args.CanCancel} target={args.Target?.Location?.OriginalString}");
 
         // A modal push/pop (e.g. the full-screen viewer) does not change Shell.CurrentState and
-        // must never be misclassified as a primary-destination change by ParseDestination below.
+        // must never be misclassified as a primary-destination change by TryResolveDestination below.
         if (Navigation?.ModalStack?.Count > 0)
         {
             _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "shell.navigating.skip", $"nav={_navSeq} reason=modal");
@@ -348,16 +407,7 @@ public partial class AppShell : Shell
             return;
         }
 
-        // Shell's own unsolicited item fallback (#393) — chrome plumbing, not a destination change:
-        // no handoff. See ShellNavigationService.IsExplicitNavigationInProgress.
-        if (args.Source == ShellNavigationSource.ShellItemChanged
-            && !(_navigationService?.IsExplicitNavigationInProgress ?? false))
-        {
-            _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "shell.navigating.skip", $"nav={_navSeq} reason=itemfallback");
-            return;
-        }
-
-        var to = ParseDestination(args.Target?.Location?.OriginalString);
+        var to = PrimaryNavigationMetadata.TryResolveDestination(args.Target?.Location?.OriginalString);
         if (to is null || to == _currentPrimaryDestination)
         {
             _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "shell.navigating.skip", $"nav={_navSeq} reason=noop");
@@ -372,7 +422,6 @@ public partial class AppShell : Shell
 
         var deferral = args.GetDeferral();
         _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "shell.deferral.taken", $"nav={_navSeq}");
-        _handoffInProgress = true;
 
         RunNavigatingHandoff(to.Value, deferral);
     }
@@ -388,17 +437,16 @@ public partial class AppShell : Shell
         var from = _currentPrimaryDestination;
 
         // The deferral exists to order the destination bookkeeping ahead of Shell's page swap, not
-        // to hold the swap open while the NDI receiver tears down. Both fields are written here,
-        // synchronously, so OnShellNavigated's fallback branch stays dead on this path exactly as
-        // it is today.
+        // to hold the swap open while the NDI receiver tears down. The field is written here,
+        // synchronously, so OnShellNavigated sees no destination change and never runs the handoff
+        // a second time for this navigation.
         _currentPrimaryDestination = to;
-        _handoffInProgress = false;
         // Traced BEFORE Complete(), not after: MAUI can resume the navigation inline from inside
         // deferral.Complete(), so OnShellNavigated may run re-entrantly and emit shell.navigated
         // first — which the #417 parser would read as a nested navigation. Functionally safe either
-        // way (_currentPrimaryDestination is already `to`, so the fallback branch stays dead), but
-        // the log has to stay parseable. ms= therefore measures navigating.begin -> deferral
-        // released, which is the interval that matters.
+        // way (_currentPrimaryDestination is already `to`), but the log has to stay parseable. ms=
+        // therefore measures navigating.begin -> deferral released, which is the interval that
+        // matters.
         _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "shell.deferral.complete",
             $"nav={navSeq} ms={Environment.TickCount64 - _navStartedAtTicks}");
         deferral.Complete();
@@ -450,22 +498,7 @@ public partial class AppShell : Shell
         _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "shell.navigated",
             $"src={e.Source} loc={e.Current.Location.OriginalString}");
 
-        // Shell's own unsolicited item fallback (#393): reconcile back to the destination that was
-        // actually selected instead of adopting wherever Shell fell back to, and never run the
-        // handoff or overwrite SelectedDestination for it. The rail keeps highlighting the real
-        // selection, so the fallback is never visible as a selection change.
-        // See ShellNavigationService.IsExplicitNavigationInProgress.
-        if (e.Source == ShellNavigationSource.ShellItemChanged
-            && !(_navigationService?.IsExplicitNavigationInProgress ?? false))
-        {
-            _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "shell.navigated.fallbackreconcile");
-            UpdateRailHighlight(_stateViewModel.SelectedDestination);
-            _appearanceService.ReapplyChrome();
-            Dispatcher.Dispatch(async () => await EnsurePrimaryDestinationVisibleAsync());
-            return;
-        }
-
-        var to = ParseDestination(e.Current.Location.OriginalString) ?? _currentPrimaryDestination;
+        var to = PrimaryNavigationMetadata.TryResolveDestination(e.Current.Location.OriginalString) ?? _currentPrimaryDestination;
 
         if (to != _currentPrimaryDestination)
         {
@@ -486,18 +519,6 @@ public partial class AppShell : Shell
         // AppBarLayout background to template defaults — restore the themed chrome (#296).
         _appearanceService.ReapplyChrome();
 
-        if (Navigation?.NavigationStack?.Count <= 1)
-        {
-            // A rotation while a page was pushed (or a modal was open) deferred the chrome swap in
-            // ApplyPlacement (#393); the guard has just cleared, so apply the placement the device
-            // actually has now. ApplyPlacement dispatches the reconciliation itself, so this is an
-            // either/or — dispatching both would queue a redundant second pass.
-            if (_placementSwapDeferred && Navigation?.ModalStack?.Count is not > 0)
-                ApplyPlacement();
-            else
-                Dispatcher.Dispatch(async () => await EnsurePrimaryDestinationVisibleAsync());
-        }
-
         // Posted rather than run inline: it must observe the next UI-thread turn, i.e. after
         // Shell's page swap and the layout pass it queues, so it under-reports by up to one frame
         // rather than marking a swap that has not actually happened yet.
@@ -510,74 +531,6 @@ public partial class AppShell : Shell
                 DiagnosticOverlayService.NavigationLogTag,
                 "nav.firstframe",
                 $"nav={navSeq} ms={Environment.TickCount64 - navStartedAt}"));
-        }
-    }
-
-    private static string? LastSegment(string? location)
-    {
-        if (string.IsNullOrWhiteSpace(location)) return null;
-        return location.Split('?', 2)[0].Split('/', StringSplitOptions.RemoveEmptyEntries).LastOrDefault();
-    }
-
-    private static PrimaryNavDestination? ParseDestination(string? location)
-    {
-        // Match on the last path segment only — a query value, or an ancestor
-        // segment (e.g. "stream-tab" when "viewer" is pushed on top of it),
-        // must never influence which destination this resolves to.
-        var s = LastSegment(location)?.ToLowerInvariant();
-        if (string.IsNullOrEmpty(s)) return null;
-        if (s.Contains("home")     || s.Contains("sources")) return PrimaryNavDestination.Home;
-        if (s.Contains("stream")   || s.Contains("output"))  return PrimaryNavDestination.Stream;
-        if (s.Contains("view")     || s.Contains("viewer"))  return PrimaryNavDestination.View;
-        if (s.Contains("settings"))                          return PrimaryNavDestination.Settings;
-        return null;
-    }
-
-    private bool TryGetRouteForCurrentPlacement(PrimaryNavDestination destination, out string route) =>
-        _navigationService.TryGetRouteForCurrentPlacement(destination, out route);
-
-    private async Task EnsurePrimaryDestinationVisibleAsync()
-    {
-        _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "reconcile.begin");
-
-        if (_handoffInProgress)
-        {
-            _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "reconcile.skip", "reason=handoff");
-            return;
-        }
-        if (Navigation?.NavigationStack?.Count > 1)
-        {
-            _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "reconcile.skip", "reason=pushed");
-            return;
-        }
-        if (Navigation?.ModalStack?.Count > 0)
-        {
-            _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "reconcile.skip", "reason=modal");
-            return;
-        }
-        if (!TryGetRouteForCurrentPlacement(_stateViewModel.SelectedDestination, out var route))
-        {
-            _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "reconcile.skip", "reason=noroute");
-            return;
-        }
-
-        var currentSegment = LastSegment(CurrentState?.Location?.OriginalString);
-        if (string.Equals(currentSegment, route.Trim('/'), StringComparison.OrdinalIgnoreCase))
-        {
-            _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "reconcile.skip", "reason=sameroute");
-            return;
-        }
-
-        _navigationService.BeginExplicitNavigation();
-        var reconcileGotoStartedAt = Environment.TickCount64;
-        _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "reconcile.goto.begin", $"route={route}");
-        try { await GoToAsync(route); }
-        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"Placement reconciliation failed: {ex}"); }
-        finally
-        {
-            _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "reconcile.goto.end",
-                $"ms={Environment.TickCount64 - reconcileGotoStartedAt}");
-            _navigationService.EndExplicitNavigation();
         }
     }
 }

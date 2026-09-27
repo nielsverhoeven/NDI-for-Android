@@ -5272,3 +5272,51 @@ there owes a green, linked, non-pending `emulator-tests.yml` run (#299).
 **4. Rejected.** (b): every `StartReceiver` call site is on the UI thread; it samples before the attempt, fires 7× per window, and misses the profile restart inside the bridge. (c): at the time, the initial connect had no failure path (#413 has since added the 15 s timeout, which ends the watchdog run like any other terminal path).
 
 **5. Deferred.** User-initiated Reconnect windows and the resume restore (`IsReconnecting && !IsPlaying`) are untraced; covering them means keying the watchdog on `IsPlaying || IsReconnecting`. Accepted residual: the weak bit in the change key has no hysteresis. That is pre-existing while connected, and this change extends it to sessions stuck connecting.
+
+### 2026-09-27 — #395 single route family — architect gate
+
+**APPROVE WITH CHANGES.** Alternative C is feasible, but not as the issue words it. The bottom bar is hidden at **ShellItem scope** (on `PrimaryTabBar`), not page-scoped and not through a style. Placement flips must also poke the displayed page so Android re-evaluates.
+
+**Feasibility, verified against dotnet/maui `net10.0` source:**
+- `Shell.GetEffectiveFlyoutBehavior()` walks page → ShellContent → ShellSection → ShellItem. If none of them set the property, its default lambda checks `this.IsSet(FlyoutBehaviorProperty)` **before** `rootItem is TabBar → Disabled`. An explicit Shell-level `FlyoutBehavior` therefore beats the TabBar default. The docs line "The TabBar type disables the flyout" (docs-maui `fundamentals/shell/tabs.md`) describes only that default. `flyout.md` sanctions the override: "can be set on Shell … to override the default flyout behavior".
+- Android `ShellFlyoutRenderer` never looks at the item type. `Locked` gives `LockModeLockedOpen` and pads the content by `FlyoutWidth`, the same path as today's rail.
+- `ShellItem.ShowTabs` resolves `TabBarIsVisible` through `GetEffectiveValue`, starting at the displayed page. That walk stops **before** the Shell, so a Shell-level value is ignored, while a ShellItem-level value works. Page scope wins over item scope.
+- Android `ShellItemRenderer.UpdateTabBarVisibility` runs only in `OnDisplayedPageChanged` and on the displayed page's `PropertyChanged("TabBarIsVisible")`. A runtime write on `PrimaryTabBar` alone does not reach the live page, so it needs a poke.
+
+**Ownership, designed once.** There are two writers with disjoint scopes and fixed precedence:
+- `AppShell` owns item scope, `Shell.SetTabBarIsVisible(PrimaryTabBar, !rail)`.
+- `ViewerFullScreenChromeController` owns page scope, writing `false` and restoring with `ClearValue`. It is unchanged. `ClearValue` now falls through to the placement value, which closes the #401 chip class by construction.
+
+Rejected alternatives:
+- Page-scoped writes by `AppShell`: a second writer at the controller's scope, so the exit `ClearValue` would wipe the placement value.
+- Style setters: page scope again, and they cannot follow a runtime placement change.
+
+`IsChromeSuppressed` still drives only `FlyoutBehavior`. `PrimaryTabBar.IsVisible` must never be written again.
+
+**Poke.** A new MauiApp interface `IShellChromeHost { void RefreshShellChrome(); }` is implemented by all six Shell-hosted pages as `OnPropertyChanged(Shell.TabBarIsVisibleProperty.PropertyName)`. `ApplyPlacement` calls it on `CurrentPage`. A miss is traced as `chrome.refresh.miss`.
+
+**Deleted with this change:**
+- The four `FlyoutItem`s.
+- `-rail`/`-tab` route names. Routes become `home|stream|view|settings`, from `PrimaryNavigationMetadata.Route`, as one table.
+- `EnsurePrimaryDestinationVisibleAsync`, `_placementSwapDeferred`, `_handoffInProgress` and `ensureDestination`.
+- Both `ShellItemChanged` fallback branches.
+- `IsExplicitNavigationInProgress` and `Begin`/`EndExplicitNavigation`.
+- `ShellNavigationService`'s dependency on `AdaptiveShellStateViewModel`.
+
+**Standing rules changed:**
+- The 2026-09-12 rule "every `GoToAsync` must be bracketed" is **retired**.
+- The rule "`PrimaryTabBar.IsVisible` only true→false at root" is **replaced**: never write it.
+- New rule: `Shell.FlyoutBehavior` must stay explicitly set on the Shell. That is the fact the rail depends on.
+- New rule: no page may declare `Shell.TabBarIsVisible` in XAML.
+- `docs/constitution.md` §2.4 needs an amendment to **v2.0**, because the two-variant route contract is redefined. The architect makes it in the implementation PR, together with the rewrite of the Navigation section of `docs/architecture.md` and the Shell Routes section of `KNOWLEDGE-BASE.md`.
+
+**Accepted behaviour change:**
+- Rotating on a pushed page now swaps the chrome immediately, where #393 deferred it.
+- Tab roots no longer get a Disappearing/Appearing pair on rotation.
+- The tester must confirm on the device that nothing depended on the old rotation-driven `OnAppearing`: the `SourceListPage` pane render loop, `OutputPage.LoadCommand` and the chrome controller `Attach`.
+
+**Gate:**
+- Unit tests in Core: `PrimaryNavigationMetadata` route/resolve, and a `NavigationChromePolicy` theory.
+- The full UI suite on `Nexus 6` **and** `pixel_c` via `emulator-tests.yml`.
+- A new pushed-page rotation e2e, proven with `expect_failure` against the pre-change commit.
+- Re-run the #321 diagnostic and comment the result on the issue.

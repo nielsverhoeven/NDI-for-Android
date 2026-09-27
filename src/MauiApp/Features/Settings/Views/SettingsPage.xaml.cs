@@ -1,10 +1,11 @@
 using NdiForAndroid.Features.DiagOverlay.Services;
 using NdiForAndroid.Features.Navigation.Services;
 using NdiForAndroid.Features.Settings.ViewModels;
+using NdiForAndroid.Services;
 
 namespace NdiForAndroid.Features.Settings.Views;
 
-public partial class SettingsPage : ContentPage
+public partial class SettingsPage : ContentPage, IShellChromeHost
 {
     private readonly IDiagnosticOverlayService? _diagnostics;
 
@@ -82,4 +83,7 @@ public partial class SettingsPage : ContentPage
 
         _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "settings.sizeallocated.end", $"ms={Environment.TickCount64 - t0}");
     }
+
+    /// <inheritdoc cref="IShellChromeHost.RefreshShellChrome"/>
+    public void RefreshShellChrome() => OnPropertyChanged(Shell.TabBarIsVisibleProperty.PropertyName);
 }
