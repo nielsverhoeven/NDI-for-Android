@@ -15,6 +15,8 @@ public sealed class NdiNavigationHandoffService : INavigationHandoffService
         _diagnostics = diagnostics;
     }
 
+    public event EventHandler? ViewerReceiverStopped;
+
     public Task HandlePrimaryDestinationChangeAsync(
         PrimaryNavDestination from,
         PrimaryNavDestination to,
@@ -36,7 +38,33 @@ public sealed class NdiNavigationHandoffService : INavigationHandoffService
         var stopTask = _viewerBridge.StopReceiverAsync();
         _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "handoff.svc.stop.end", $"ms={Environment.TickCount64 - t0}");
 
+        // After the stop request, so the bridge is already Disconnected (Intentional) when the
+        // owning ViewModel reconciles its state (#410).
+        RaiseViewerReceiverStopped();
+
         _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "handoff.svc.end", $"ms={Environment.TickCount64 - t0}");
         return stopTask;
+    }
+
+    /// <summary>One subscriber at a time, each guarded: this runs inside a navigation, the stop has
+    /// already been requested, and one faulting ViewModel must neither fail the handoff nor keep
+    /// the others claiming to play a receiver that is gone.</summary>
+    private void RaiseViewerReceiverStopped()
+    {
+        if (ViewerReceiverStopped is not { } handlers)
+            return;
+
+        foreach (var handler in handlers.GetInvocationList().Cast<EventHandler>())
+        {
+            try
+            {
+                handler(this, EventArgs.Empty);
+            }
+            catch (Exception ex)
+            {
+                _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "handoff.svc.stopped.fault",
+                    $"type={ex.GetType().Name}");
+            }
+        }
     }
 }
