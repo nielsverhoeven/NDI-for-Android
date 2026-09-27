@@ -31,9 +31,14 @@ public enum DeviceOrientation
 /// this as a vector shape it can fill with the current theme color — the bundled SVGs carry a
 /// baked-in white fill and cannot be re-tinted at runtime (#294).
 /// </param>
+/// <param name="Route">
+/// The destination's one absolute Shell route (#395). The bottom tab bar and the left rail are two
+/// kinds of chrome over the same <c>TabBar</c>, so a placement change never changes the route.
+/// </param>
 /// <param name="TestId">
 /// Automation id shared by both placements of this destination — the bottom tab and the left
-/// rail item are one destination wearing two coats, and only one is in the view tree at a time.
+/// rail item are one destination wearing two coats. Both can be in the view tree at once (the
+/// hidden one is <c>GONE</c>), but only one is ever displayed.
 /// </param>
 public sealed record PrimaryNavItem(
     PrimaryNavDestination Destination,
@@ -71,4 +76,31 @@ public static class PrimaryNavigationMetadata
         new(PrimaryNavDestination.View, "View", "//view", "nav_view.svg", ViewGeometry, TestIds.NavView),
         new(PrimaryNavDestination.Settings, "Settings", "//settings", "nav_settings.svg", SettingsGeometry, TestIds.NavSettings),
     ];
+
+    /// <summary>
+    /// Resolves which primary destination a Shell location belongs to, or <c>null</c> when the
+    /// location's last segment is not a primary destination (e.g. a pushed <c>diagnostic-log</c>).
+    /// </summary>
+    /// <remarks>
+    /// Matches on the last path segment only, so a query value or an ancestor segment never
+    /// influences the result: <c>//view/viewer?sourceId=x</c> resolves through <c>viewer</c>, and
+    /// <c>//stream?resume=true</c> through <c>stream</c>. Moved verbatim from <c>AppShell</c> (#395) so
+    /// it is unit-testable; the substring matching is deliberately unchanged.
+    /// </remarks>
+    public static PrimaryNavDestination? TryResolveDestination(string? location)
+    {
+        var s = LastSegment(location)?.ToLowerInvariant();
+        if (string.IsNullOrEmpty(s)) return null;
+        if (s.Contains("home")     || s.Contains("sources")) return PrimaryNavDestination.Home;
+        if (s.Contains("stream")   || s.Contains("output"))  return PrimaryNavDestination.Stream;
+        if (s.Contains("view")     || s.Contains("viewer"))  return PrimaryNavDestination.View;
+        if (s.Contains("settings"))                          return PrimaryNavDestination.Settings;
+        return null;
+    }
+
+    private static string? LastSegment(string? location)
+    {
+        if (string.IsNullOrWhiteSpace(location)) return null;
+        return location.Split('?', 2)[0].Split('/', StringSplitOptions.RemoveEmptyEntries).LastOrDefault();
+    }
 }

@@ -1,8 +1,9 @@
 using NdiForAndroid.Features.DiagOverlay.ViewModels;
+using NdiForAndroid.Services;
 
 namespace NdiForAndroid.Features.DiagOverlay.Views;
 
-public partial class DiagnosticLogPage : ContentPage
+public partial class DiagnosticLogPage : ContentPage, IShellChromeHost
 {
     private readonly DiagnosticLogViewModel _viewModel;
 
@@ -25,4 +26,7 @@ public partial class DiagnosticLogPage : ContentPage
         _viewModel.Deactivate();
         base.OnDisappearing();
     }
+
+    /// <inheritdoc cref="IShellChromeHost.RefreshShellChrome"/>
+    public void RefreshShellChrome() => OnPropertyChanged(Shell.TabBarIsVisibleProperty.PropertyName);
 }

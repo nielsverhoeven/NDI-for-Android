@@ -122,8 +122,15 @@ public sealed class ViewerFullScreenChromeController
     }
 
     /// <summary>Hides the host page's own nav bar and tab bar, page-scoped. This is the one
-    /// mechanism that hides the bottom bar; the left rail is driven separately, through
-    /// <see cref="AdaptiveShellStateViewModel.IsChromeSuppressed"/>.</summary>
+    /// mechanism that hides the bottom bar for full screen; the left rail is driven separately,
+    /// through <see cref="AdaptiveShellStateViewModel.IsChromeSuppressed"/>.</summary>
+    /// <remarks>
+    /// Page scope is this controller's alone (#395). <c>AppShell.ApplyPlacement</c> writes the other
+    /// scope — <c>Shell.TabBarIsVisible</c> on the <c>PrimaryTabBar</c> ShellItem, from the placement —
+    /// and page scope wins over item scope, so the <c>false</c> written here hides the bar whatever
+    /// the placement says. Setting the value on the page also raises the page's own
+    /// <c>PropertyChanged</c>, which is what makes Android re-evaluate the bar.
+    /// </remarks>
     private void OverrideChrome()
     {
         if (_page is null)
@@ -137,9 +144,17 @@ public sealed class ViewerFullScreenChromeController
     /// <summary>
     /// Reverts to Shell's own per-page defaults by clearing the attached properties. Never writes
     /// <c>true</c>, and never touches a property this controller did not set — writing
-    /// <c>true</c> is not the inverse of writing <c>false</c>, since Shell falls back to a
-    /// per-family default only when neither value was ever explicitly set.
+    /// <c>true</c> is not the inverse of writing <c>false</c>: a page-scoped <c>true</c> would
+    /// outrank the placement value for good.
     /// </summary>
+    /// <remarks>
+    /// With the page value cleared, <c>Shell.TabBarIsVisible</c> resolves up the tree to the value
+    /// <c>AppShell.ApplyPlacement</c> keeps on <c>PrimaryTabBar</c> (#395): hidden under the rail,
+    /// shown on bottom placement. So exiting full screen on a rail device can never bring the bottom
+    /// bar back (the #401 class of chip), and a rotation made while full screen is already reflected
+    /// in the value this falls back to. <c>ClearValue</c> raises the page's <c>PropertyChanged</c>,
+    /// which makes Android re-evaluate the bar.
+    /// </remarks>
     private void RestoreChrome()
     {
         if (_page is not null && _chromeOverridden)
