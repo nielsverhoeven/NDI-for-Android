@@ -193,6 +193,7 @@ public partial class ViewerViewModel
         Interlocked.Increment(ref _stopEpoch); // nor may a window posted before this (#409)
         IsReconnecting = false;
         IsPlaying = false; // before BeginExitFullScreen — RC5's compact auto-re-enter gate
+        VideoSurfaceBadgeText = "Stopped"; // same word as the status line below (#412)
         IsStopped = true;
         IsTallyProgram = false;
         IsPtzSupported = false;

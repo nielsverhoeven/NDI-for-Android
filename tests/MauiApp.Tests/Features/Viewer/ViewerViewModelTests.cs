@@ -1547,6 +1547,7 @@ public class ViewerViewModelTests
 
         // Not "Connection lost. Reconnection failed.": nothing was lost, another viewer is playing.
         Assert.Equal("Stopped.", pane.StatusMessage);
+        Assert.Equal("Stopped", pane.VideoSurfaceBadgeText); // not the failed-reconnect badge (#412)
         Assert.False(pane.IsReconnecting);
         Assert.False(pane.IsPlaying);
         Assert.True(pane.IsStopped);
@@ -1556,6 +1557,186 @@ public class ViewerViewModelTests
         _bridgeMock.Verify(b => b.StartReceiver(It.IsAny<string>(), It.IsAny<QualityProfile>()), Times.Never);
         _connectionHistoryMock.Verify(h => h.RecordDisconnectedAsync(), Times.Never);
         Assert.True(pushed.IsPlaying);
+    }
+
+    // --- #412: the video-surface badge names the path that ended playback ---
+
+    [Fact]
+    public void VideoSurfaceBadge_AfterStop_SaysStopped()
+    {
+        var sut = CreatePlayingSut();
+        // Start from another path's wording, so this proves Stop sets its own.
+        sut.BeginReconnectWindow();
+        _timeProvider.Advance(TimeSpan.FromSeconds(15));
+        Assert.Equal("Connection lost", sut.VideoSurfaceBadgeText);
+        _bridgeMock.Setup(b => b.GetConnectionState()).Returns(ConnectionState.Connected);
+        sut.ReconnectCommand.Execute(null);
+        _timeProvider.Advance(TimeSpan.FromSeconds(2)); // the first attempt finds the source back
+        Assert.True(sut.IsPlaying);
+
+        sut.StopCommand.Execute(null);
+
+        Assert.True(sut.IsStopped);
+        Assert.Equal("Stopped", sut.VideoSurfaceBadgeText);
+    }
+
+    [Fact]
+    public void VideoSurfaceBadge_AfterAFailedReconnect_SaysConnectionLost()
+    {
+        var sut = CreatePlayingSut();
+        sut.BeginReconnectWindow();
+
+        _timeProvider.Advance(TimeSpan.FromSeconds(15));
+
+        Assert.True(sut.IsStopped);
+        Assert.Equal("Connection lost", sut.VideoSurfaceBadgeText);
+    }
+
+    [Fact]
+    public void VideoSurfaceBadge_AfterACancelledReconnect_SaysReconnectCancelled()
+    {
+        var sut = CreatePlayingSut();
+        sut.BeginReconnectWindow();
+
+        sut.CancelRetryCommand.Execute(null);
+
+        Assert.True(sut.IsStopped);
+        Assert.Equal("Reconnect cancelled", sut.VideoSurfaceBadgeText);
+    }
+
+    [Fact]
+    public void VideoSurfaceBadge_WhenAnotherViewerTakesTheBridge_SaysStopped()
+    {
+        var generation = 0L;
+        _bridgeMock.Setup(b => b.ReceiverGeneration).Returns(() => generation);
+        _bridgeMock.Setup(b => b.StartReceiver(It.IsAny<string>(), It.IsAny<QualityProfile>()))
+                   .Callback(() => generation++);
+        var pane = CreatePlayingSut();
+        // Start from another path's wording, so this proves the retire sets its own.
+        pane.BeginReconnectWindow();
+        pane.CancelRetryCommand.Execute(null);
+        Assert.Equal("Reconnect cancelled", pane.VideoSurfaceBadgeText);
+        _bridgeMock.Setup(b => b.GetConnectionState()).Returns(ConnectionState.Connected);
+        pane.ReconnectCommand.Execute(null);
+        _timeProvider.Advance(TimeSpan.FromSeconds(2)); // playing again
+        Assert.True(pane.IsPlaying);
+        CreatePlayingSut(); // a pushed viewer takes the bridge
+
+        pane.ApplyConnectionSample(connected: true, fps: 30f, dropPercent: 0f);
+
+        Assert.True(pane.IsStopped);
+        Assert.Equal("Stopped", pane.VideoSurfaceBadgeText); // matches its "Stopped." status line
+    }
+
+    [Fact]
+    public void VideoSurfaceBadge_NamesTheLatestTerminalPath()
+    {
+        var sut = CreatePlayingSut();
+        sut.BeginReconnectWindow();
+        _timeProvider.Advance(TimeSpan.FromSeconds(15));
+        Assert.Equal("Connection lost", sut.VideoSurfaceBadgeText);
+
+        sut.ReconnectCommand.Execute(null);
+        Assert.False(sut.IsStopped); // no badge while the new window counts down
+        sut.CancelRetryCommand.Execute(null);
+
+        Assert.True(sut.IsStopped);
+        Assert.Equal("Reconnect cancelled", sut.VideoSurfaceBadgeText);
+    }
+
+    // --- #414: a connected source that stops sending video says so, and recovers by itself ---
+
+    private const string StalledStatus = "No video from source — still connected.";
+
+    private void RaiseBridgeState(ConnectionState state)
+    {
+        _bridgeMock.Setup(b => b.GetConnectionState()).Returns(state);
+        _bridgeMock.Raise(b => b.ConnectionStateChanged += null, _bridgeMock.Object, state);
+    }
+
+    [Fact]
+    public void ConnectionStateChanged_Stalled_WhilePlaying_SaysNoVideoFromSource()
+    {
+        var sut = CreatePlayingSut();
+        RaiseBridgeState(ConnectionState.Connected);
+        Assert.Equal("Connected.", sut.StatusMessage);
+
+        RaiseBridgeState(ConnectionState.Stalled);
+
+        Assert.Equal(StalledStatus, sut.StatusMessage);
+        Assert.True(sut.IsPlaying);
+        Assert.False(sut.IsReconnecting);
+    }
+
+    [Fact]
+    public void ConnectionStateChanged_ConnectedAfterAStall_RestoresConnected()
+    {
+        var sut = CreatePlayingSut();
+        RaiseBridgeState(ConnectionState.Connected);
+        RaiseBridgeState(ConnectionState.Stalled);
+        Assert.Equal(StalledStatus, sut.StatusMessage);
+
+        RaiseBridgeState(ConnectionState.Connected); // the next video frame
+
+        Assert.Equal("Connected.", sut.StatusMessage);
+    }
+
+    [Fact]
+    public void ConnectionStateChanged_Stalled_OnAViewModelTheBridgeWasTakenFrom_LeavesItsStatus()
+    {
+        var generation = 0L;
+        _bridgeMock.Setup(b => b.ReceiverGeneration).Returns(() => generation);
+        _bridgeMock.Setup(b => b.StartReceiver(It.IsAny<string>(), It.IsAny<QualityProfile>()))
+                   .Callback(() => generation++);
+        var stale = CreatePlayingSut();
+        var current = CreatePlayingSut();
+        RaiseBridgeState(ConnectionState.Connected);
+
+        RaiseBridgeState(ConnectionState.Stalled);
+
+        Assert.Equal("Connecting...", stale.StatusMessage); // the other ViewModel's stream
+        Assert.Equal(StalledStatus, current.StatusMessage);
+    }
+
+    [Fact]
+    public void ConnectionStateChanged_Stalled_WhileReconnecting_LeavesTheStatusAlone()
+    {
+        var sut = CreatePlayingSut();
+        RaiseBridgeState(ConnectionState.Connected);
+        sut.BeginReconnectWindow();
+
+        RaiseBridgeState(ConnectionState.Stalled);
+
+        Assert.Equal("Connected.", sut.StatusMessage);
+        Assert.True(sut.IsReconnecting);
+    }
+
+    [Fact]
+    public void ConnectionStateChanged_Stalled_AfterStop_LeavesTheStoppedStatus()
+    {
+        var sut = CreatePlayingSut();
+        RaiseBridgeState(ConnectionState.Connected);
+        sut.StopCommand.Execute(null);
+
+        RaiseBridgeState(ConnectionState.Stalled);
+
+        Assert.Equal("Stopped.", sut.StatusMessage);
+    }
+
+    [Fact]
+    public void Stall_NeitherRestartsTheReceiverNorOpensAWindow()
+    {
+        var sut = CreatePlayingSut();
+        RaiseBridgeState(ConnectionState.Connected);
+        RaiseBridgeState(ConnectionState.Stalled);
+
+        _timeProvider.Advance(TimeSpan.FromSeconds(30));
+
+        Assert.Equal(StalledStatus, sut.StatusMessage);
+        Assert.True(sut.IsPlaying);
+        Assert.False(sut.IsReconnecting);
+        _bridgeMock.Verify(b => b.StopReceiverAsync(), Times.Never);
+        _bridgeMock.Verify(b => b.StartReceiver(It.IsAny<string>(), It.IsAny<QualityProfile>()), Times.Never);
     }
 
     // --- #418: every path that ends the owner's session closes its connection-history row ---

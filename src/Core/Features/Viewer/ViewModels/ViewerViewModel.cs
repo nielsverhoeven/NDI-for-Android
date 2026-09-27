@@ -72,6 +72,17 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private bool _isStopped;
 
+    /// <summary>
+    /// What the video-surface badge says while <see cref="IsStopped"/> (#412): each path that ends
+    /// playback names itself instead of every one of them reading "Stopped". A user Stop and a
+    /// viewer another ViewModel took the bridge from say "Stopped" (their status line says
+    /// "Stopped."), an expired retry window says "Connection lost", a cancelled one "Reconnect
+    /// cancelled". Only rendered while IsStopped, so it is set just before IsStopped goes true and
+    /// never needs resetting.
+    /// </summary>
+    [ObservableProperty]
+    private string _videoSurfaceBadgeText = "Stopped";
+
     // Tally / PTZ / audio state surfaced from the bridge
     [ObservableProperty]
     private bool _isTallyProgram;
@@ -255,6 +266,13 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
             if (IsPlaying && !IsReconnecting && OwnsActiveReceiver && state == ConnectionState.Connected)
                 StatusMessage = "Connected.";
 
+            // A connected source that has sent no video for 3 s (#414): the bridge demotes
+            // Connected → Stalled and promotes back on the next frame, which the branch above turns
+            // into "Connected." again. Same gate as that branch. Status text only — no restart and
+            // no reconnect window, because recreating a receiver cannot make a sender send video.
+            if (IsPlaying && !IsReconnecting && OwnsActiveReceiver && state == ConnectionState.Stalled)
+                StatusMessage = "No video from source — still connected.";
+
             // Only the bridge can observe a real (re)connection: StartReceiver returns while the
             // receiver is still Connecting, so the attempt loop's own poll right after it never
             // sees Connected.
@@ -386,6 +404,7 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
         CanReconnect = true;
         IsTallyProgram = false;
         IsPtzSupported = false;
+        VideoSurfaceBadgeText = "Stopped";
         IsStopped = true;
         StopPtz();
         RetryStatusMessage = null;
@@ -710,8 +729,9 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
             _connectionHistory.RecordDisconnectedAsync().FireAndForget();
         }
         // Before BeginExitFullScreen: on a compact device the exit only *requests* portrait, so
-        // IsFullScreen stays true for up to 3s — the in-video Stopped badge is the only thing on
-        // screen during that window.
+        // IsFullScreen stays true for up to 3s — the in-video badge is the only thing on screen
+        // during that window, which is why it names this outcome rather than saying "Stopped" (#412).
+        VideoSurfaceBadgeText = "Connection lost";
         IsStopped = true;
         // Playback has definitively ended, so leave full screen the way Stop() already does.
         // Idempotent; on a compact device in landscape this requests portrait and completes on
@@ -747,6 +767,7 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
             // Record disconnection for history tracking, as Stop() does (#418) — owner only.
             _connectionHistory.RecordDisconnectedAsync().FireAndForget();
         }
+        VideoSurfaceBadgeText = "Reconnect cancelled";
         IsStopped = true;
         BeginExitFullScreen();
         // Cancel must not be a dead end: the Reconnect button is the only control still on screen
