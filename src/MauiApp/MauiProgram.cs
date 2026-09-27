@@ -122,6 +122,7 @@ public static class MauiProgram
         builder.Services.AddSingleton<ISettingsPlatformService, AndroidSettingsPlatformService>();
         builder.Services.AddSingleton<INdiPlatformBootstrap, AndroidNsdBootstrap>();
         builder.Services.AddSingleton<IAudioPlaybackSink, AndroidAudioPlaybackSink>();
+        builder.Services.AddSingleton<ILowLatencyNetworkLock, AndroidLowLatencyNetworkLock>();
         builder.Services.AddSingleton<IVideoCaptureSource, AndroidVideoCaptureSource>();
         builder.Services.AddSingleton<IAudioCaptureSource, AndroidMicrophoneCaptureSource>();
         builder.Services.AddSingleton<IWindowInsetsService, AndroidWindowInsetsService>();
@@ -136,6 +137,7 @@ public static class MauiProgram
         builder.Services.AddSingleton<ISettingsPlatformService, DefaultSettingsPlatformService>();
         builder.Services.AddSingleton<INdiPlatformBootstrap, DefaultNdiPlatformBootstrap>();
         builder.Services.AddSingleton<IAudioPlaybackSink, NoopAudioPlaybackSink>();
+        builder.Services.AddSingleton<ILowLatencyNetworkLock, NoopLowLatencyNetworkLock>();
         builder.Services.AddSingleton<IVideoCaptureSource, NoopVideoCaptureSource>();
         builder.Services.AddSingleton<IAudioCaptureSource, NoopAudioCaptureSource>();
         builder.Services.AddSingleton<IWindowInsetsService, NoopWindowInsetsService>();
