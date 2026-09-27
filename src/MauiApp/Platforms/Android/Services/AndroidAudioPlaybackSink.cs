@@ -1,4 +1,5 @@
 using Android.Media;
+using NdiForAndroid.NdiBridge;
 using NdiForAndroid.Services;
 using Encoding = Android.Media.Encoding;
 
@@ -11,6 +12,10 @@ namespace NdiForAndroid.Platforms.Android.Services;
 /// capped at stereo. When the source has more than two channels the track is
 /// created as stereo and <see cref="Write"/> keeps the first two channels of
 /// every frame, dropping the rest (no downmix weighting).
+/// Latency: the track is created in <see cref="AudioTrackPerformanceMode.LowLatency"/> mode (the
+/// platform "fast" mixer path) with a small buffer (<see cref="ReceiveLatencyPolicy.AudioOutputBufferMs"/>).
+/// Network jitter is absorbed by the bounded NDI receiver queue instead, so the device buffer only
+/// has to cover scheduling jitter — a large buffer here is pure extra delay behind the picture.
 /// Thread-safety: per <see cref="IAudioPlaybackSink"/>, Start/Stop are serialized
 /// by the caller and Write only runs between them on a single thread.
 /// </summary>
@@ -35,10 +40,12 @@ public sealed class AndroidAudioPlaybackSink : IAudioPlaybackSink
 
         try
         {
-            // GetMinBufferSize returns BYTES (one float sample = 4 bytes); double it for headroom.
+            // GetMinBufferSize returns BYTES (one float sample = 4 bytes). The policy never goes
+            // below it, so the track stays glitch-free on devices with a large minimum.
             var minBytes = AudioTrack.GetMinBufferSize(sampleRate, channelMask, Encoding.PcmFloat);
             if (minBytes <= 0)
-                minBytes = sampleRate * trackChannels * sizeof(float) / 10; // ~100 ms fallback
+                minBytes = 0; // unknown (error code) — let the policy's target size decide
+            var bufferBytes = ReceiveLatencyPolicy.AudioOutputBufferBytes(sampleRate, trackChannels, minBytes);
 
             var attributesBuilder = new AudioAttributes.Builder();
             attributesBuilder.SetUsage(AudioUsageKind.Media);
@@ -57,8 +64,9 @@ public sealed class AndroidAudioPlaybackSink : IAudioPlaybackSink
             var trackBuilder = new AudioTrack.Builder();
             trackBuilder.SetAudioAttributes(attributes);
             trackBuilder.SetAudioFormat(format);
-            trackBuilder.SetBufferSizeInBytes(minBytes * 2);
+            trackBuilder.SetBufferSizeInBytes(bufferBytes);
             trackBuilder.SetTransferMode(AudioTrackMode.Stream);
+            trackBuilder.SetPerformanceMode(AudioTrackPerformanceMode.LowLatency); // API 26 = minSdk
 
             var track = trackBuilder.Build();
             track.Play();
