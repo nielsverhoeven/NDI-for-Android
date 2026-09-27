@@ -32,15 +32,24 @@ public class ViewerViewModelConnectionHintTests
     private readonly Mock<IScreenReaderAnnouncer> _announcerMock = new();
     private readonly Mock<IOrientationLockService> _orientationLockMock = new();
     private readonly Mock<INetworkLinkService> _networkLinkMock = new();
-    private readonly DiagnosticOverlayService _diagnostics = new();
+    private readonly Mock<IDiagnosticLogSink> _sinkMock = new();
+    private readonly DiagnosticOverlayService _diagnostics;
+
+    /// <summary>The link #415 was reported on: 2.4 GHz, -78 dBm, 6 Mbit/s — weak by both arms.</summary>
+    private static readonly NetworkLinkSnapshot WeakLink =
+        new(true, WifiBand.TwoPointFourGhz, -78, 6, WifiStandard.N);
 
     public ViewerViewModelConnectionHintTests()
     {
+        // Developer mode is off by default. A test that turns it on also gets a "DevOverlay" entry,
+        // which is why the assertions below filter the buffer on the "Link" category.
+        _diagnostics = new DiagnosticOverlayService(_sinkMock.Object);
         _appStateRepoMock.Setup(r => r.RestoreStateAsync()).ReturnsAsync(AppStateSnapshot.Empty);
         _appStateRepoMock.Setup(r => r.SaveAsync(It.IsAny<AppStateSnapshot>())).Returns(Task.CompletedTask);
         _sourceRepoMock.Setup(r => r.GetCachedSourcesAsync()).ReturnsAsync(new List<NdiSource>());
         _ptzControllerFactoryMock.Setup(f => f.Create(It.IsAny<PtzEndpoint?>())).Returns(_ptzControllerMock.Object);
         _bridgeMock.Setup(b => b.GetConnectionState()).Returns(ConnectionState.Connected);
+        _bridgeMock.Setup(b => b.StopReceiverAsync()).Returns(Task.CompletedTask);
     }
 
     private ViewerViewModel CreateSut() => new(
@@ -81,6 +90,27 @@ public class ViewerViewModelConnectionHintTests
         _bridgeMock.Setup(b => b.GetMeasuredFps()).Returns(fps);
         _bridgeMock.Setup(b => b.GetDroppedFramePercent()).Returns(dropPercent);
     }
+
+    /// <summary>What the bridge reports from now on, and the event it raises to say so.</summary>
+    private void RaiseBridgeState(ConnectionState state)
+    {
+        _bridgeMock.Setup(b => b.GetConnectionState()).Returns(state);
+        _bridgeMock.Raise(b => b.ConnectionStateChanged += null, _bridgeMock.Object, state);
+    }
+
+    /// <summary>The in-app Diagnostic Log's "Link" entries, oldest first.</summary>
+    private List<string> LinkEntries() => _diagnostics.LogBuffer.GetEntries()
+        .Where(e => e.Category == "Link")
+        .Select(e => e.Message)
+        .ToList();
+
+    /// <summary>The developer-mode logcat lines written under the NDI-Link tag, oldest first.</summary>
+    private List<string> LinkLines() => _sinkMock.Invocations
+        .Where(i => i.Method.Name == nameof(IDiagnosticLogSink.Debug)
+                    && Equals(i.Arguments[0], DiagnosticOverlayService.LinkLogTag))
+        .Select(i => i.Arguments[1])
+        .OfType<string>()
+        .ToList();
 
     [Fact]
     public void Watchdog_SamplesOncePerSecondWhilePlaying()
@@ -411,7 +441,7 @@ public class ViewerViewModelConnectionHintTests
         // No colon, and "2.4" is not four dot-separated groups: DiagnosticLogBuffer's IPv6 and IPv4
         // redaction patterns must leave this line intact. Asserting the count alone let a later edit
         // to FormatLink ship an entry the buffer mangles to [ipv6-redacted].
-        Assert.Equal("Wi-Fi 2.4 GHz, -78 dBm, 6 Mbit/s", entry.Message);
+        Assert.Equal("Wi-Fi 2.4 GHz, -78 dBm, 6 Mbit/s, connected", entry.Message);
     }
 
     [Fact]
@@ -430,5 +460,196 @@ public class ViewerViewModelConnectionHintTests
         // Same band and same classification — but a new attempt, so the operator who restarted
         // playback to reproduce a problem gets a radio line for that attempt.
         Assert.Equal(2, _diagnostics.LogBuffer.GetEntries().Count(e => e.Category == "Link"));
+    }
+
+    // ----- #427: the link is traced while an attempt this ViewModel owns is in progress -----
+
+    [Fact]
+    public void Link_WhileConnecting_WritesOneConnectingEntry_AndNoHint()
+    {
+        // A source that never connects is when the operator needs the radio line most, and the hint
+        // guard used to turn every one of those samples away before the link was traced.
+        _bridgeMock.Setup(b => b.GetConnectionState()).Returns(ConnectionState.Connecting);
+        SetStats(5f, 40f); // weak numbers: the hint must stay off anyway, it is connected-only
+        var sut = CreatePlayingSutWithLink(WeakLink);
+
+        _timeProvider.Advance(TimeSpan.FromSeconds(10)); // inside the 15 s initial-connect budget (#413)
+
+        Assert.True(sut.IsPlaying);
+        Assert.Equal(new[] { "Wi-Fi 2.4 GHz, -78 dBm, 6 Mbit/s, connecting" }, LinkEntries());
+        Assert.Null(sut.ConnectionHint);
+    }
+
+    [Fact]
+    public void Link_WhenConnectingBecomesConnected_WritesASecondEntry()
+    {
+        // The log carries no connection events, so without the connected bit in the change key a
+        // "connecting" entry would stand across the connect that followed it.
+        _bridgeMock.Setup(b => b.GetConnectionState()).Returns(ConnectionState.Connecting);
+        SetStats(30f, 0f);
+        CreatePlayingSutWithLink(WeakLink);
+        _timeProvider.Advance(TimeSpan.FromSeconds(2));
+
+        RaiseBridgeState(ConnectionState.Connected);
+        _timeProvider.Advance(TimeSpan.FromSeconds(2));
+
+        Assert.Equal(
+            new[] { "Wi-Fi 2.4 GHz, -78 dBm, 6 Mbit/s, connecting", "Wi-Fi 2.4 GHz, -78 dBm, 6 Mbit/s, connected" },
+            LinkEntries());
+    }
+
+    [Fact]
+    public void Link_InsideAReconnectWindow_TracesWhileDisconnected()
+    {
+        // Between attempts a window holds the bridge Disconnected. That is still an attempt this
+        // ViewModel owns, and a drop is exactly when the radio line matters.
+        SetStats(30f, 0f);
+        _diagnostics.IsDeveloperMode = true;
+        var sut = CreatePlayingSutWithLink(WeakLink);
+        RaiseBridgeState(ConnectionState.Connected);
+        _timeProvider.Advance(TimeSpan.FromSeconds(1));
+
+        _bridgeMock.Setup(b => b.GetLastStopReason()).Returns(ReceiverStopReason.ConnectionLost);
+        RaiseBridgeState(ConnectionState.Disconnected);
+        Assert.True(sut.IsReconnecting);
+        _timeProvider.Advance(TimeSpan.FromSeconds(1));
+
+        Assert.Equal(
+            new[] { "Wi-Fi 2.4 GHz, -78 dBm, 6 Mbit/s, connected", "Wi-Fi 2.4 GHz, -78 dBm, 6 Mbit/s, connecting" },
+            LinkEntries());
+        Assert.EndsWith("state=Disconnected", LinkLines().Last());
+    }
+
+    [Fact]
+    public void Link_AfterTheReconnectWindowFails_TracesNothingFurther()
+    {
+        SetStats(30f, 0f);
+        _diagnostics.IsDeveloperMode = true;
+        var sut = CreatePlayingSutWithLink(WeakLink);
+        RaiseBridgeState(ConnectionState.Connected);
+        _timeProvider.Advance(TimeSpan.FromSeconds(1));
+        _bridgeMock.Setup(b => b.GetLastStopReason()).Returns(ReceiverStopReason.ConnectionLost);
+        RaiseBridgeState(ConnectionState.Disconnected);
+        // Each attempt leaves a receiver that never connects, so the window sees Disconnected, then
+        // Connecting.
+        _bridgeMock.Setup(b => b.StartReceiver(It.IsAny<string>(), It.IsAny<QualityProfile>()))
+                   .Callback(() => _bridgeMock.Setup(b => b.GetConnectionState()).Returns(ConnectionState.Connecting));
+
+        _timeProvider.Advance(TimeSpan.FromSeconds(15)); // the window runs out: nothing ever reconnects
+
+        Assert.Equal("Connection lost. Reconnection failed.", sut.StatusMessage);
+        // The window itself was traced — that is the record of the failed attempt: one entry for the
+        // whole window, however the bridge churned between attempts.
+        Assert.Contains(LinkLines(), line => line.EndsWith("state=Disconnected"));
+        Assert.Contains(LinkLines(), line => line.EndsWith("state=Connecting"));
+        Assert.Equal(
+            new[] { "Wi-Fi 2.4 GHz, -78 dBm, 6 Mbit/s, connected", "Wi-Fi 2.4 GHz, -78 dBm, 6 Mbit/s, connecting" },
+            LinkEntries());
+        var entries = LinkEntries().Count;
+        var lines = LinkLines().Count;
+
+        _timeProvider.Advance(TimeSpan.FromSeconds(10));
+
+        Assert.Equal(entries, LinkEntries().Count);
+        Assert.Equal(lines, LinkLines().Count);
+    }
+
+    [Fact]
+    public void Link_WhileDisconnectedOutsideAReconnectWindow_TracesNothing()
+    {
+        // Disconnected with no window open is no attempt at all — a handoff stop, the x86
+        // soft-disable, a failed receiver create — and the latter two hold for as long as it plays.
+        _bridgeMock.Setup(b => b.GetConnectionState()).Returns(ConnectionState.Disconnected);
+        _bridgeMock.Setup(b => b.GetLastStopReason()).Returns(ReceiverStopReason.Intentional);
+        SetStats(0f, 0f);
+        _diagnostics.IsDeveloperMode = true;
+        var sut = CreatePlayingSutWithLink(WeakLink);
+
+        _timeProvider.Advance(TimeSpan.FromSeconds(10));
+
+        // The watchdog ran and read the link every second; it just had no attempt to trace.
+        Assert.True(sut.IsPlaying);
+        _networkLinkMock.Verify(s => s.GetSnapshot(), Times.Exactly(10));
+        Assert.Empty(LinkEntries());
+        Assert.Empty(LinkLines());
+    }
+
+    [Fact]
+    public void Link_OnAViewModelTheBridgeWasTakenFrom_TracesNothing()
+    {
+        var generation = 0L;
+        _bridgeMock.Setup(b => b.ReceiverGeneration).Returns(() => generation);
+        _bridgeMock.Setup(b => b.StartReceiver(It.IsAny<string>(), It.IsAny<QualityProfile>()))
+                   .Callback(() => generation++);
+        SetStats(30f, 0f);
+        _diagnostics.IsDeveloperMode = true;
+        var pane = CreatePlayingSutWithLink(WeakLink);   // the Expanded PaneViewer: owns generation 1
+        var pushed = CreatePlayingSutWithLink(WeakLink); // a pushed ViewerPage takes the bridge: generation 2
+
+        _timeProvider.Advance(TimeSpan.FromSeconds(3)); // both watchdogs sample
+
+        // One ViewModel traces, the owner; the pane retired on its first sample without a line.
+        Assert.False(pane.IsPlaying);
+        Assert.True(pushed.IsPlaying);
+        Assert.Single(LinkEntries());
+        Assert.Equal(3, LinkLines().Count);
+    }
+
+    [Fact]
+    public void Link_OnAViewModelThatNeverClaimedTheReceiver_TracesNothing()
+    {
+        // ReleaseIfDisowned only retires a ViewModel that once owned the receiver, so this is a
+        // non-owner it leaves playing. The trace checks ownership itself instead of relying on
+        // that retire having run first.
+        SetStats(30f, 0f);
+        _diagnostics.IsDeveloperMode = true;
+        var sut = CreateSutWithLink(WeakLink);
+        sut.IsPlaying = true; // no Start(): the bridge's receiver was never this ViewModel's
+
+        _timeProvider.Advance(TimeSpan.FromSeconds(5));
+
+        Assert.True(sut.IsPlaying);
+        Assert.Empty(LinkEntries());
+        Assert.Empty(LinkLines());
+    }
+
+    [Fact]
+    public void Link_AfterTheInitialConnectTimesOut_TracesNothingFurther()
+    {
+        _bridgeMock.Setup(b => b.GetConnectionState()).Returns(ConnectionState.Connecting);
+        SetStats(0f, 0f);
+        _diagnostics.IsDeveloperMode = true;
+        var sut = CreatePlayingSutWithLink(WeakLink);
+        _timeProvider.Advance(TimeSpan.FromSeconds(14));
+        Assert.NotEmpty(LinkLines()); // the attempt itself was traced
+        var entries = LinkEntries().Count;
+        var lines = LinkLines().Count;
+
+        // The 15th sample ends the connect (#413); it is not traced as part of the attempt it ended,
+        // and nothing is traced after it.
+        _timeProvider.Advance(TimeSpan.FromSeconds(11));
+
+        Assert.Equal("Could not connect to the source.", sut.StatusMessage);
+        Assert.Equal(entries, LinkEntries().Count);
+        Assert.Equal(lines, LinkLines().Count);
+    }
+
+    [Theory]
+    [InlineData(ConnectionState.Connecting)]
+    [InlineData(ConnectionState.Connected)]
+    [InlineData(ConnectionState.Stalled)]
+    public void Link_LogcatLine_EndsWithTheBridgeState(ConnectionState state)
+    {
+        _bridgeMock.Setup(b => b.GetConnectionState()).Returns(state);
+        SetStats(30f, 0f);
+        _diagnostics.IsDeveloperMode = true;
+        CreatePlayingSutWithLink(WeakLink);
+
+        _timeProvider.Advance(TimeSpan.FromSeconds(1));
+
+        // Appended last, so the prefix an operator already filters on is unchanged.
+        var line = Assert.Single(LinkLines());
+        Assert.EndsWith(
+            $"viewer.link band=TwoPointFourGhz rssi=-78 speedMbps=6 std=N weak=True state={state}", line);
     }
 }
