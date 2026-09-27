@@ -72,6 +72,17 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private bool _isStopped;
 
+    /// <summary>
+    /// What the video-surface badge says while <see cref="IsStopped"/> (#412): each path that ends
+    /// playback names itself instead of every one of them reading "Stopped". A user Stop and a
+    /// viewer another ViewModel took the bridge from say "Stopped" (their status line says
+    /// "Stopped."), an expired retry window says "Connection lost", a cancelled one "Reconnect
+    /// cancelled". Only rendered while IsStopped, so it is set just before IsStopped goes true and
+    /// never needs resetting.
+    /// </summary>
+    [ObservableProperty]
+    private string _videoSurfaceBadgeText = "Stopped";
+
     // Tally / PTZ / audio state surfaced from the bridge
     [ObservableProperty]
     private bool _isTallyProgram;
@@ -386,6 +397,7 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
         CanReconnect = true;
         IsTallyProgram = false;
         IsPtzSupported = false;
+        VideoSurfaceBadgeText = "Stopped";
         IsStopped = true;
         StopPtz();
         RetryStatusMessage = null;
@@ -710,8 +722,9 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
             _connectionHistory.RecordDisconnectedAsync().FireAndForget();
         }
         // Before BeginExitFullScreen: on a compact device the exit only *requests* portrait, so
-        // IsFullScreen stays true for up to 3s — the in-video Stopped badge is the only thing on
-        // screen during that window.
+        // IsFullScreen stays true for up to 3s — the in-video badge is the only thing on screen
+        // during that window, which is why it names this outcome rather than saying "Stopped" (#412).
+        VideoSurfaceBadgeText = "Connection lost";
         IsStopped = true;
         // Playback has definitively ended, so leave full screen the way Stop() already does.
         // Idempotent; on a compact device in landscape this requests portrait and completes on
@@ -747,6 +760,7 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
             // Record disconnection for history tracking, as Stop() does (#418) — owner only.
             _connectionHistory.RecordDisconnectedAsync().FireAndForget();
         }
+        VideoSurfaceBadgeText = "Reconnect cancelled";
         IsStopped = true;
         BeginExitFullScreen();
         // Cancel must not be a dead end: the Reconnect button is the only control still on screen
