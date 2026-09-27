@@ -87,17 +87,15 @@ internal static partial class NdiNativeMethods
         out NdiRecvPerformanceNative total,
         out NdiRecvPerformanceNative dropped);
 
-    /// <summary>Frames currently queued inside the receiver, per type (thread-safe snapshot).</summary>
+    /// <summary>
+    /// Frames currently queued inside the receiver, per type. Documented as callable "at any time";
+    /// the value is a snapshot that may be stale as soon as it returns.
+    /// </summary>
     [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
     public static extern void NDIlib_recv_get_queue(IntPtr instance, out NdiRecvQueueNative total);
 
     [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
     public static extern int NDIlib_recv_get_no_connections(IntPtr instance);
-
-    /// <summary>Sends a metadata frame upstream to the connected source (or to the receiver itself, e.g. ndi_hwaccel).</summary>
-    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
-    [return: MarshalAs(UnmanagedType.I1)]
-    public static extern bool NDIlib_recv_send_metadata(IntPtr instance, ref NdiMetadataFrameNative metadata);
 
     [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
     public static extern void NDIlib_recv_set_tally(IntPtr instance, ref NdiTallyNative tally);
