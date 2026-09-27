@@ -5258,3 +5258,17 @@ the second rebase is cheaper for #426 (one raise site plus RC-B2's two reset lin
 #426 rebases onto `6387018` now so CI runs on a current base, retargets to `integration` once #424
 merges, and rebases again after #425. Nothing here goes into `main`; whichever PR carries the chain
 there owes a green, linked, non-pending `emulator-tests.yml` run (#299).
+
+### 2026-09-27 — #427 trace the Wi-Fi link while connecting / after a failed connect (fit-check)
+
+**Option (a), amended; (b), (c) and "keep as is" rejected.** Read-only check. Amends the *trigger* of #415 gate ruling 8's single `DiagnosticLogBuffer` exception, not the exception itself. `Trace` still never writes to the buffer, and the viewer's `Link` entry remains its only writer besides the developer-mode toggle.
+
+**1. Gate = an attempt this ViewModel owns, not "anything while playing".** `TraceLink` moves above the hint guard, after `ReleaseIfDisowned()` and `CheckForSustainedConnecting()`. After its `_diagnostics`/`IsWifi` return it gates itself on `IsPlaying && OwnsActiveReceiver && (state != Disconnected || IsReconnecting)`. `Disconnected` outside a window is never an attempt: the #410 handoff, the x86 soft-disable (the bridge stays `Disconnected`, not `Connecting`), a failed `recv_create`, the `StartReceiver` prologue. The first two last indefinitely, which is the issue's own objection to a bare (a). Ownership is an explicit term, not inherited from `ReleaseIfDisowned`. At most one ViewModel (the owner) traces; a disowned one never does. The watchdog lifecycle is unchanged, so after Fail/Cancel/Stop nothing is traced; the failed window's in-window trace is the record.
+
+**2. The change key gains the connected bit, and the entry says which.** Key = (band, `IsWeakLink`, `Connected|Stalled`); text `Wi-Fi 2.4 GHz, -78 dBm, 6 Mbit/s, connecting|connected`. The buffer carries no connection events, so without the bit a "connecting" entry would stand across a successful connect. The raw `ConnectionState` is rejected as the key (in-window `Connecting`/`Disconnected` churn would write an entry per attempt). Bounded at ≤2 entries per connect, drop or profile restart, plus radio changes.
+
+**3. The `NDI-Link` line appends `state=<ConnectionState>` last.** Prefix unchanged. Cadence, developer-mode gating, the pool-thread-only link read, zero per-frame work, the hint guard and `ConnectionHintPolicy` are all unchanged.
+
+**4. Rejected.** (b): every `StartReceiver` call site is on the UI thread; it samples before the attempt, fires 7× per window, and misses the profile restart inside the bridge. (c): at the time, the initial connect had no failure path (#413 has since added the 15 s timeout, which ends the watchdog run like any other terminal path).
+
+**5. Deferred.** User-initiated Reconnect windows and the resume restore (`IsReconnecting && !IsPlaying`) are untraced; covering them means keying the watchdog on `IsPlaying || IsReconnecting`. Accepted residual: the weak bit in the change key has no hysteresis. That is pre-existing while connected, and this change extends it to sessions stuck connecting.
