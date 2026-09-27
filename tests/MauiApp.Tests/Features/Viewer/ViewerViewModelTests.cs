@@ -1346,6 +1346,83 @@ public class ViewerViewModelTests
         Assert.Equal("Connected.", pushed.StatusMessage);
     }
 
+    // --- #423: a ViewModel that lost the bridge neither waits on nor stops another's receiver ---
+
+    [Fact]
+    public void RunAttempt_OnAPaneThatLostTheBridge_MakesARealAttemptInsteadOfWaitingOnAnotherViewersConnection()
+    {
+        var generation = 0L;
+        _bridgeMock.Setup(b => b.ReceiverGeneration).Returns(() => generation);
+        _bridgeMock.Setup(b => b.StartReceiver(It.IsAny<string>(), It.IsAny<QualityProfile>()))
+                   .Callback(() => generation++);
+        var pane = CreatePlayingSut();   // the Expanded PaneViewer: generation 1
+        var pushed = CreatePlayingSut(); // a pushed ViewerPage takes the bridge: generation 2
+        _bridgeMock.Setup(b => b.GetConnectionState()).Returns(ConnectionState.Connected); // the pushed viewer's stream
+        pane.ApplyConnectionSample(connected: true, fps: 30f, dropPercent: 0f); // the pane demotes itself
+        _bridgeMock.Invocations.Clear();
+
+        pane.ReconnectCommand.Execute(null);
+        _timeProvider.Advance(TimeSpan.FromSeconds(2)); // the pane's first attempt
+
+        // The bridge is Connected, but for the pushed viewer's receiver: that is not this window's
+        // success, so the attempt must re-claim the bridge rather than wait for a CompleteReconnect
+        // that refuses a non-owner on every tick until the window expires.
+        _bridgeMock.Verify(b => b.StartReceiver("src-1", It.IsAny<QualityProfile>()), Times.Once);
+
+        _bridgeMock.Raise(b => b.ConnectionStateChanged += null, _bridgeMock.Object, ConnectionState.Connected);
+
+        Assert.False(pane.IsReconnecting);
+        Assert.True(pane.IsPlaying);
+        Assert.Equal("Connected.", pane.StatusMessage);
+    }
+
+    [Fact]
+    public void FailReconnect_OnAViewModelThatNoLongerOwnsTheReceiver_EndsItsWindowWithoutStoppingIt()
+    {
+        var generation = 0L;
+        _bridgeMock.Setup(b => b.ReceiverGeneration).Returns(() => generation);
+        _bridgeMock.Setup(b => b.StartReceiver(It.IsAny<string>(), It.IsAny<QualityProfile>()))
+                   .Callback(() => generation++);
+        var pane = CreatePlayingSut();
+        pane.StopCommand.Execute(null);
+        pane.ReconnectCommand.Execute(null); // a window while not playing: no stats sample demotes it
+        _timeProvider.Advance(TimeSpan.FromSeconds(14)); // every attempt re-claims; none connects
+        var pushed = CreatePlayingSut();     // another viewer takes the bridge in the last second
+        _bridgeMock.Invocations.Clear();
+
+        _timeProvider.Advance(TimeSpan.FromSeconds(1)); // the pane's window expires
+
+        Assert.False(pane.IsReconnecting);
+        Assert.True(pane.IsStopped);
+        Assert.True(pane.CanReconnect);
+        Assert.Equal("Connection lost. Reconnection failed.", pane.StatusMessage);
+        _bridgeMock.Verify(b => b.StopReceiverAsync(), Times.Never); // the pushed viewer's receiver
+        Assert.True(pushed.IsPlaying);
+    }
+
+    [Fact]
+    public void CancelRetry_OnAViewModelThatDoesNotOwnTheReceiver_EndsItsWindowWithoutStoppingIt()
+    {
+        var generation = 0L;
+        _bridgeMock.Setup(b => b.ReceiverGeneration).Returns(() => generation);
+        _bridgeMock.Setup(b => b.StartReceiver(It.IsAny<string>(), It.IsAny<QualityProfile>()))
+                   .Callback(() => generation++);
+        var pane = CreatePlayingSut();   // generation 1
+        var pushed = CreatePlayingSut(); // generation 2
+        pane.ApplyConnectionSample(connected: true, fps: 30f, dropPercent: 0f); // the pane demotes itself
+        pane.ReconnectCommand.Execute(null); // its first attempt — the re-claim — is 2 s away
+        _bridgeMock.Invocations.Clear();
+
+        pane.CancelRetryCommand.Execute(null);
+
+        Assert.False(pane.IsReconnecting);
+        Assert.True(pane.IsStopped);
+        Assert.True(pane.CanReconnect);
+        Assert.Equal("Reconnection cancelled.", pane.StatusMessage);
+        _bridgeMock.Verify(b => b.StopReceiverAsync(), Times.Never); // the pushed viewer's receiver
+        Assert.True(pushed.IsPlaying);
+    }
+
     // --- #411: returning to the foreground never restarts or re-narrates the viewer ---
 
     [Fact]
