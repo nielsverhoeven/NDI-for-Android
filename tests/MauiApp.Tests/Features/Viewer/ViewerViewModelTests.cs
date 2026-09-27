@@ -1291,4 +1291,45 @@ public class ViewerViewModelTests
         _timeProvider.Advance(TimeSpan.FromSeconds(1));
         Assert.True(sut.IsReconnecting);
     }
+
+    // --- #411: returning to the foreground never restarts or re-narrates the viewer ---
+
+    [Fact]
+    public void AppResumed_WhilePlaying_LeavesTheReceiverAndStateUntouched()
+    {
+        var sut = CreatePlayingSut();
+        _lifecycleMock.Raise(l => l.AppPaused += null);
+        _bridgeMock.Invocations.Clear();
+
+        _lifecycleMock.Raise(l => l.AppResumed += null);
+
+        _bridgeMock.Verify(b => b.StartReceiver(It.IsAny<string>(), It.IsAny<QualityProfile>()), Times.Never);
+        _bridgeMock.Verify(b => b.StopReceiverAsync(), Times.Never);
+        Assert.True(sut.IsPlaying);
+        Assert.False(sut.IsReconnecting);
+        Assert.Null(sut.RetryStatusMessage);
+        Assert.Equal("Connecting...", sut.StatusMessage);
+    }
+
+    [Fact]
+    public void AppResumed_AfterPlaybackEndedInTheBackground_DoesNotRestoreIt()
+    {
+        var sut = CreatePlayingSut();
+        _lifecycleMock.Raise(l => l.AppPaused += null);
+        sut.BeginReconnectWindow();
+        _timeProvider.Advance(TimeSpan.FromSeconds(15)); // the window expires while backgrounded
+        Assert.False(sut.IsPlaying);
+        _bridgeMock.Invocations.Clear();
+
+        _lifecycleMock.Raise(l => l.AppResumed += null);
+
+        // Reconnect is the only way back; a resume neither restarts the receiver nor puts a
+        // "Restoring viewer..." status on screen.
+        _bridgeMock.Verify(b => b.StartReceiver(It.IsAny<string>(), It.IsAny<QualityProfile>()), Times.Never);
+        Assert.False(sut.IsPlaying);
+        Assert.False(sut.IsReconnecting);
+        Assert.Null(sut.RetryStatusMessage);
+        Assert.True(sut.CanReconnect);
+        Assert.Equal("Connection lost. Reconnection failed.", sut.StatusMessage);
+    }
 }

@@ -114,7 +114,6 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
     private bool _hasConnectedSinceStart;
 
     private string? _lastSourceId;
-    private bool _wasPlayingBeforeResume;
 
     /// <summary>Generation of the receiver this ViewModel last asked the bridge to start
     /// (<see cref="INdiViewerBridge.ReceiverGeneration"/>). The bridge is a singleton and more than
@@ -198,7 +197,6 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
         _isAudioEnabled = bridge.IsAudioEnabled; // backing field: don't push the default back to the bridge
         SyncSelectedProfileOption(); // field initialisers do not fire OnQualityProfileChanged
 
-        _lifecycle.AppResumed += OnAppResumed;
         _lifecycle.AppPaused += OnAppPaused;
         _lifecycle.OrientationChanged += OnOrientationChanged;
         _bridge.ConnectionStateChanged += OnBridgeConnectionStateChanged;
@@ -256,40 +254,8 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
         _dispatcher.BeginInvokeOnMainThread(() => IsTallyProgram = echo.OnProgram);
     }
 
-    // async void is intentional: MAUI lifecycle event handler. All awaits are guarded so
-    // no exception can escape and tear down the process.
-    private async void OnAppResumed()
-    {
-        // If we were playing when the app went background, try to restore
-        if (_wasPlayingBeforeResume && !string.IsNullOrEmpty(SourceId) && !IsPlaying)
-        {
-            _wasPlayingBeforeResume = false;
-            RetryStatusMessage = "Restoring viewer...";
-            IsReconnecting = true;
-
-            // Restore quality profile for this source from cached sources
-            try
-            {
-                var sources = await _sourceRepository.GetCachedSourcesAsync();
-                var source = sources.FirstOrDefault(s => s.SourceId == SourceId);
-                if (source != null)
-                {
-                    QualityProfile = source.QualityProfile;
-                }
-            }
-            catch { /* Silent fail – will default to Balanced */ }
-
-            _bridge.StartReceiver(SourceId, QualityProfile);
-            _receiverGeneration = _bridge.ReceiverGeneration;
-
-            // The receiver is still Connecting when StartReceiver returns; OnBridgeConnectionStateChanged
-            // completes the reconnect window once the bridge actually observes Connected.
-        }
-    }
-
     partial void OnIsPlayingChanged(bool value)
     {
-        _wasPlayingBeforeResume = value;
         if (value)
         {
             IsStopped = false; // a fresh Start/Reconnect clears the previous Stop's badge (#348)
@@ -417,7 +383,6 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
         _overlayAutoHideTimer?.Dispose();
         _immersiveMode.KeepScreenOn(false);
         _userInitiatedStop = true;
-        _lifecycle.AppResumed -= OnAppResumed;
         _lifecycle.AppPaused -= OnAppPaused;
         _lifecycle.OrientationChanged -= OnOrientationChanged;
         _bridge.ConnectionStateChanged -= OnBridgeConnectionStateChanged;

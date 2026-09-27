@@ -59,7 +59,7 @@ public partial class ViewerPage : ContentPage
 
         // OnDisappearing also fires when the app is merely backgrounded — only tear down the
         // render surface and dispose the ViewModel once this page has actually left the nav
-        // stack, so both survive backgrounding and remain alive for OnAppResumed. The ModalStack
+        // stack, so both survive backgrounding and are still there on resume. The ModalStack
         // check is kept as defence in case Shell's own navigation-handoff ordering ever changes;
         // nothing in the app pushes a modal over this page any more.
         if (Shell.Current?.Navigation?.NavigationStack?.Contains(this) != true
