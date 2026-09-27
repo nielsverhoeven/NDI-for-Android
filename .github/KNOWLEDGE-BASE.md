@@ -109,7 +109,7 @@ reads them; the service has no placement state. `PrimaryNavigationMetadata.TryRe
 
 **Chrome (#395)** — `AppShell.ApplyPlacement` via `NavigationChromePolicy.Resolve(placement, isChromeSuppressed)` (Core, pure):
 - Rail = `FlyoutBehavior.Locked` + the custom `Shell.FlyoutContent`; `Disabled` on bottom placement or while full screen suppresses chrome.
-- Bottom bar = `Shell.SetTabBarIsVisible(PrimaryTabBar, !rail)` — **item scope**. Then `IShellChromeHost.RefreshShellChrome()` on `CurrentPage` (Android re-evaluates the bar only on a displayed-page change or that page's `PropertyChanged("TabBarIsVisible")`); a miss is traced `chrome.refresh.miss`.
+- Bottom bar = `Shell.SetTabBarIsVisible(PrimaryTabBar, !rail)` — **item scope**, **mirrored** onto every section, content and page under it (MAUI copies the value down once at creation and `ShowTabs` reads the page first, so an item-only write does not reach existing pages — #395 Nexus 6 finding); the section hosting an active full screen is skipped (page scope belongs to the full-screen controller). Then `IShellChromeHost.RefreshShellChrome()` on `CurrentPage` (Android re-evaluates the bar only on a displayed-page change or that page's `PropertyChanged("TabBarIsVisible")`); a miss is traced `chrome.refresh.miss`.
 - `ViewerFullScreenChromeController` owns **page scope** (`false` on enter, `ClearValue` on exit → falls back to the placement value). Page scope wins.
 - A placement change never navigates, never changes `CurrentItem`/`CurrentPage`, never resets a stack, never runs the handoff, and raises no Disappearing/Appearing. Rotating on a pushed page keeps it (e2e `AppLaunchTests.Rotating_OnAPushedPage_KeepsThePageAndSwapsChrome`).
 

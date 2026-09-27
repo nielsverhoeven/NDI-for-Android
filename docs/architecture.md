@@ -130,7 +130,7 @@ The four absolute routes are declared once, on the `ShellContent`s of the one `T
   Shell**: the effective flyout behavior for a `TabBar` defaults to `Disabled`, and
   `Shell.GetEffectiveFlyoutBehavior` only lets a Shell-level value override that default when the
   property is *set* on the Shell. Without the attribute the rail can never appear.
-- **Bottom bar** is hidden at **ShellItem scope** — `Shell.SetTabBarIsVisible(PrimaryTabBar, !rail)`.
+- **Bottom bar** is hidden at **ShellItem scope** — `Shell.SetTabBarIsVisible(PrimaryTabBar, !rail)` — and the same value is mirrored onto every section, content and page under it (`MirrorTabBarVisibilityToDescendants`), skipping the section that hosts an active full screen. MAUI copies `TabBarIsVisible` down the Shell tree as a local value once, when an element is created (`BaseShellItem.Propagate` only writes a child that has no value yet), and `ShellItem.ShowTabs` reads the page/content before the item — so an item-only write is invisible to pages that already exist (measured on the Nexus 6 CI AVD, #395).
   Android's `ShellItemRenderer` re-evaluates bar visibility only when the displayed page changes or
   raises `PropertyChanged("TabBarIsVisible")`, so `AppShell.ApplyPlacement` then calls
   `IShellChromeHost.RefreshShellChrome()` on `Shell.CurrentPage`. A page that does not implement it

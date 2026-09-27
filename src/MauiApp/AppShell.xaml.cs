@@ -290,11 +290,13 @@ public partial class AppShell : Shell
 
         var chrome = NavigationChromePolicy.Resolve(_stateViewModel.PlacementMode, suppressed);
         Shell.SetTabBarIsVisible(PrimaryTabBar, chrome.BottomBarVisibleAtItemScope);
+        MirrorTabBarVisibilityToDescendants(chrome.BottomBarVisibleAtItemScope, suppressed);
         FlyoutBehavior = chrome.RailVisible ? FlyoutBehavior.Locked : FlyoutBehavior.Disabled;
 
         // Android's ShellItemRenderer re-evaluates bar visibility only when the displayed page
-        // changes or raises PropertyChanged("TabBarIsVisible"); the item-scope write above does
-        // neither, so poke the displayed page. A page that does not implement IShellChromeHost
+        // changes or raises PropertyChanged("TabBarIsVisible"). The mirror above raises it when the
+        // page's value actually changes; poke the displayed page anyway so a no-op write still
+        // re-evaluates. A page that does not implement IShellChromeHost
         // keeps a stale bar until the next navigation — traced so the gap is visible in the log.
         if (CurrentPage is IShellChromeHost host)
             host.RefreshShellChrome();
@@ -304,6 +306,56 @@ public partial class AppShell : Shell
 
         _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "placement.end",
             $"ms={Environment.TickCount64 - placementStartedAt}");
+    }
+
+    /// <summary>
+    /// Writes the placement's bar value onto every section, content and page under
+    /// <c>PrimaryTabBar</c>, because the item-scope value alone does not reach them at runtime.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// MAUI copies <c>Shell.TabBarIsVisible</c> down the Shell tree as a <i>local</i> value
+    /// (<c>BaseShellItem.Propagate</c>: from a parent that has it set to a child that has not), and
+    /// never again once the child has one. Every section, content and page therefore holds the value
+    /// the item had when that element was created, and <c>ShellItem.ShowTabs</c> reads the page (or
+    /// the content) before the item. Measured on the Nexus 6 CI AVD (#395): after a runtime flip to
+    /// the rail the item read <c>false</c> while the displayed page still held the <c>true</c> it was
+    /// created with, so the bar stayed. The pixel_c leg passed only because the rail was the
+    /// placement before any page existed.
+    /// </para>
+    /// <para>
+    /// The section hosting an active full screen is skipped: its page is
+    /// <c>ViewerFullScreenChromeController</c>'s (page scope, <c>false</c> on enter), and a write on its
+    /// content would make Shell copy the value onto that page. When full screen ends,
+    /// <c>IsChromeSuppressed</c> flips and this runs again for every section, after the controller's
+    /// <c>ClearValue</c>.
+    /// </para>
+    /// </remarks>
+    private void MirrorTabBarVisibilityToDescendants(bool visible, bool suppressed)
+    {
+        var fullScreenSection = suppressed ? CurrentItem?.CurrentItem : null;
+
+        foreach (var section in PrimaryTabBar.Items)
+        {
+            if (ReferenceEquals(section, fullScreenSection))
+                continue;
+
+            Shell.SetTabBarIsVisible(section, visible);
+
+            foreach (var content in section.Items)
+            {
+                Shell.SetTabBarIsVisible(content, visible);
+                if (((IShellContentController)content).Page is { } root)
+                    Shell.SetTabBarIsVisible(root, visible);
+            }
+
+            // Pushed pages (the viewer, the diagnostic log). Index 0 of a Shell section stack is null.
+            foreach (var page in section.Navigation.NavigationStack)
+            {
+                if (page is not null)
+                    Shell.SetTabBarIsVisible(page, visible);
+            }
+        }
     }
 
     // ── Navigation ───────────────────────────────────────────────────────────
