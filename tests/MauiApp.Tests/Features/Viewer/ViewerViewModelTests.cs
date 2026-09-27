@@ -1292,6 +1292,60 @@ public class ViewerViewModelTests
         Assert.True(sut.IsReconnecting);
     }
 
+    // --- #419: a start that fails after the bridge bumped the token still re-claims ownership ---
+
+    [Fact]
+    public void RunAttempt_WhenStartReceiverThrowsAfterBumpingTheGeneration_KeepsTheWindowAlive()
+    {
+        var generation = 0L;
+        _bridgeMock.Setup(b => b.ReceiverGeneration).Returns(() => generation);
+        _bridgeMock.Setup(b => b.StartReceiver(It.IsAny<string>(), It.IsAny<QualityProfile>()))
+                   .Callback(() => generation++);
+        var sut = CreatePlayingSut(); // owns generation 1
+        sut.BeginReconnectWindow();
+        // The real bridge bumps the token in StartReceiver's first statement, before anything that
+        // can fail — model a failure after the bump.
+        _bridgeMock.Setup(b => b.StartReceiver(It.IsAny<string>(), It.IsAny<QualityProfile>()))
+                   .Callback(() => generation++)
+                   .Throws(new InvalidOperationException("start failed after the bump"));
+
+        _timeProvider.Advance(TimeSpan.FromSeconds(3)); // attempt at 2 s, then a stats sample at 3 s
+
+        // The stats sample must not mistake this ViewModel for a disowned one (ReleaseIfDisowned).
+        Assert.True(sut.IsReconnecting);
+        Assert.True(sut.IsPlaying);
+        Assert.False(sut.IsStopped);
+
+        _timeProvider.Advance(TimeSpan.FromSeconds(1)); // and the loop keeps attempting
+        _bridgeMock.Verify(b => b.StartReceiver("src-1", QualityProfile.Balanced), Times.Exactly(2));
+    }
+
+    [Fact]
+    public void RunAttempt_WhenStartReceiverRejectsBeforeBumpingTheGeneration_DoesNotClaimAnotherViewersReceiver()
+    {
+        var generation = 0L;
+        _bridgeMock.Setup(b => b.ReceiverGeneration).Returns(() => generation);
+        _bridgeMock.Setup(b => b.StartReceiver(It.IsAny<string>(), It.IsAny<QualityProfile>()))
+                   .Callback(() => generation++);
+        var pane = CreatePlayingSut();   // generation 1
+        var pushed = CreatePlayingSut(); // takes the bridge: generation 2
+        pane.ApplyConnectionSample(connected: true, fps: 30f, dropPercent: 0f); // pane demotes itself
+        // The real bridge validates its argument before it bumps the token: nothing was replaced,
+        // so the pane must not record the pushed viewer's generation as its own.
+        _bridgeMock.Setup(b => b.StartReceiver(It.IsAny<string>(), It.IsAny<QualityProfile>()))
+                   .Throws(new ArgumentException("rejected before the bump"));
+        pane.ReconnectCommand.Execute(null);
+        _timeProvider.Advance(TimeSpan.FromSeconds(2)); // the pane's attempt is rejected
+
+        // The pushed viewer's receiver connects.
+        _bridgeMock.Setup(b => b.GetConnectionState()).Returns(ConnectionState.Connected);
+        _bridgeMock.Raise(b => b.ConnectionStateChanged += null, _bridgeMock.Object, ConnectionState.Connected);
+
+        Assert.True(pane.IsReconnecting); // not completed on a connection it does not own
+        Assert.False(pane.IsPlaying);
+        Assert.Equal("Connected.", pushed.StatusMessage);
+    }
+
     // --- #411: returning to the foreground never restarts or re-narrates the viewer ---
 
     [Fact]

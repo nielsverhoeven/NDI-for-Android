@@ -498,6 +498,7 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
         _reconnectState = ReconnectState.Attempting;
         RetryStatusMessage = "Attempting reconnect...";
 
+        var generationBeforeAttempt = _bridge.ReceiverGeneration;
         try
         {
             // Both calls only *request* work now; the bridge's lifecycle chain guarantees the stop
@@ -506,15 +507,23 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
             _bridge.StopReceiverAsync().FireAndForget();
 
             if (!string.IsNullOrEmpty(SourceId))
-            {
                 _bridge.StartReceiver(SourceId, QualityProfile);
-                _receiverGeneration = _bridge.ReceiverGeneration;
-            }
         }
         catch
         {
             // Attempt failed – fall through to continue the window.
         }
+
+        // Re-claimed outside the try (#419): StartReceiver bumps the token in its prologue, ahead of
+        // work that can still fail, so a start that throws may already have replaced the receiver.
+        // Recording only on the success path left this ViewModel one generation behind its own
+        // receiver, and the next stats sample then retired the live window as disowned
+        // (ReleaseIfDisowned). Only a generation that actually moved is recorded: a start rejected
+        // before the bump (its argument check) replaced nothing, and recording the current
+        // generation then would claim another ViewModel's receiver.
+        var generationAfterAttempt = _bridge.ReceiverGeneration;
+        if (generationAfterAttempt != generationBeforeAttempt)
+            _receiverGeneration = generationAfterAttempt;
 
         if (_reconnectState == ReconnectState.Attempting)
             _reconnectState = ReconnectState.InWindow;
