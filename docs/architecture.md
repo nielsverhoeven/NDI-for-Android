@@ -170,7 +170,7 @@ Standard bridge pattern:
 1. Define discovery/viewer/output bridge interfaces in `src/Core/NdiBridge/INdiBridges.cs`; plain C# models in `src/Core/NdiBridge/NdiBridgeModels.cs` and `QualityProfile.cs`.
 2. Implement bridge classes in `src/MauiApp/NdiBridge/` (file split below). All `[DllImport("ndi")]` declarations live in the interop layer only.
 3. Bridge events (`ConnectionStateChanged`, `TallyEchoChanged`, `OutputStatusChanged`, `VideoFrameReady`) are raised on pump/background threads — `ConnectionStateChanged` is also raised in the caller's own turn by `StartReceiver`/`StopReceiverAsync`, so assume any thread — subscribers marshal to the UI thread (`IMainThreadDispatcher` in Core ViewModels). `VideoFrameReady` is the only **per-frame** event: it fires at the source frame rate, up to 60/s, on the thread a stop joins, and carries no payload. Its handler may do nothing but post one coalesced invalidate — no allocation beyond that post, no lock, no blocking call, and never a call back into the bridge. The raise is wrapped in its own try/catch inside the pump, because the pump's loop-wide catch reports any escaping exception as a lost stream.
-4. `INavigationHandoffService` *requests* a stop of the **viewer** receiver (`StopReceiverAsync()`) when leaving the View tab; the request's synchronous prologue runs in the navigation turn and the native teardown runs on the bridge's lifecycle worker, so navigation never waits on a pump join (#408/#417). It does **not** touch the output sender: once started, `INdiOutputBridge` output keeps streaming across tab switches and app backgrounding via `ScreenShareForegroundService`, and stops only via the in-app Stop button or the persistent notification's Stop action.
+4. `INavigationHandoffService` *requests* a stop of the **viewer** receiver (`StopReceiverAsync()`) when leaving the View tab; the request's synchronous prologue runs in the navigation turn and the native teardown runs on the bridge's lifecycle worker, so navigation never waits on a pump join (#408/#417). It then raises `ViewerReceiverStopped`: the `ViewerViewModel` that owns the receiver (bridge `ReceiverGeneration`, which a stop does not change) marshals it through `IMainThreadDispatcher` and ends its session like a Stop — Stopped state with Reconnect, history row closed, timers and keep-screen-on off, never an auto-resume — while every other `ViewerViewModel` ignores it (#410). It does **not** touch the output sender: once started, `INdiOutputBridge` output keeps streaming across tab switches and app backgrounding via `ScreenShareForegroundService`, and stops only via the in-app Stop button or the persistent notification's Stop action.
 
 ### Bridge file layout (`src/MauiApp/NdiBridge/`)
 
@@ -284,17 +284,25 @@ The 15-second automatic reconnection state machine lives entirely in `ViewerView
 
 - **Timing** is driven by an injected `TimeProvider` (constructor injection; `TimeProvider.System` registered as a singleton in `MauiProgram.cs`). No wall-clock or `Task.Delay` in testable logic — tests advance a `FakeTimeProvider`.
 - **UI-thread marshaling from Core:** the Core project targets plain `net10.0` and does **not** reference MAUI, so `MainThread.BeginInvokeOnMainThread` / `IDispatcher` are **not** available inside `ViewerViewModel`. Timer-callback-driven observable mutations must therefore be marshaled through an **injected main-thread dispatcher abstraction** defined in `src/Core/Services` with a MAUI implementation in `src/MauiApp` registered in `MauiProgram.cs` — following the established platform-abstraction pattern (`INavigationService`, `IMulticastLockService`, `IAppLifecycleService`). A direct `MainThread.*` call in a Core ViewModel is a layering violation.
+- **Link telemetry rides the stats watchdog (#415/#427).** `INetworkLinkService` is a binder round-trip, so it is read only on the 1 s watchdog's `TimeProvider` callback on the thread pool. The trace runs once per sample on the UI thread, gated on ownership (`ReceiverGeneration`) and on an attempt being in progress (`Disconnected` counts only inside a reconnect window), so at most one `ViewerViewModel` traces. `IDiagnosticOverlayService.Trace` never writes to `DiagnosticLogBuffer`; its only writers are the developer-mode toggle and the viewer's change-triggered `Link` entry.
 
 ```mermaid
 graph TB
-    POLL["ViewerViewModel TimeProvider poll"] --> GCS["INdiViewerBridge.GetConnectionState()"]
-    GCS -->|Connected| PLAY["IsPlaying playback"]
-    GCS -->|Disconnected while playing and not user Stop| WINDOW["15s retry window"]
-    WINDOW --> ATTEMPT["Every 2s: StopReceiverAsync then StartReceiver(SourceId) — both requests, ordered by the bridge's lifecycle queue"]
-    ATTEMPT -->|first Connected| PLAY
-    ATTEMPT -->|window elapsed| FAILED["Stopped/error state + Reconnect command"]
-    WINDOW --> DISP["IMainThreadDispatcher marshals observable mutations"]
-    DISP --> WINDOW
+    EVT["INdiViewerBridge.ConnectionStateChanged(Disconnected, ConnectionLost)"] --> DROP["CheckForUnexpectedDrop(): owns the receiver, playing, no user Stop, no open window"]
+    STATS["1s stats watchdog (TimeProvider)"] -->|"level backstop: 5 samples stuck in Connecting after a Connected"| WINDOW
+    STATS -->|"initial connect: 15 samples in Connecting, never Connected since Start"| NOCONNECT["FailInitialConnect(): Could not connect + Reconnect command, no window (#413)"]
+    DROP --> WINDOW["BeginReconnectWindow(): 15s retry window, posted to the UI thread and dropped if Stop, Cancel, disownment or Dispose ran first"]
+    WINDOW --> ATTEMPT["Every 2s: StopReceiverAsync then StartReceiver(SourceId) — both requests, ordered by the bridge's lifecycle queue — and re-claim ReceiverGeneration"]
+    WINDOW --> TICK["Every 1s: countdown"]
+    CONN["INdiViewerBridge.ConnectionStateChanged(Connected)"] --> DONE
+    ATTEMPT -->|"bridge already Connected for this ViewModel's receiver"| DONE["CompleteReconnect(): owner and bridge Connected, back to IsPlaying"]
+    TICK -->|"window elapsed, this ViewModel's receiver Connected"| DONE
+    TICK -->|"window elapsed"| FAILED["FailReconnect(): Stopped + Reconnect command, receiver stopped only by its owner"]
+    WINDOW -->|"user Cancel"| CANCELLED["CancelRetry(): Stopped + Reconnect command, receiver stopped only by its owner"]
+    WINDOW -->|"user leaves View: the navigation handoff stopped the receiver"| HANDOFF["EndSessionStoppedByHandoff(): Stopped + Reconnect command, no further attempt (#410)"]
+    ATTEMPT -->|"a receiver this window held was taken by another ViewModel"| RETIRED["Retired as ReleaseIfDisowned does: Stopped + Reconnect command, receiver and history untouched"]
+    TICK -->|"window elapsed, a receiver this window held taken by another ViewModel"| RETIRED
+    DISP["IMainThreadDispatcher: bridge events and timer ticks are posted to the UI thread"] -.-> WINDOW
 ```
 
 ### DiscoverySettingsOrchestrator

@@ -80,7 +80,8 @@
                      (draw-on-arrival plus the 33 ms fallback pull), so without this the last live
                      frame would stay frozen on screen with no status text and no controls
                      (Nielsen #1 — indistinguishable from a live feed). The code-behind also clears
-                     the retained bitmap when IsStopped becomes true. -->
+                     the retained bitmap when IsStopped becomes true. The wording comes from the
+                     ViewModel so each path that ends playback names itself (#412). -->
                 <Border AutomationId="{x:Static t:TestIds.ViewerStoppedBadge}"
                         IsVisible="{Binding IsStopped}"
                         InputTransparent="True"
@@ -90,7 +91,7 @@
                         StrokeThickness="0"
                         StrokeShape="RoundRectangle 12"
                         BackgroundColor="{DynamicResource ScrimBackground}">
-                    <Label Text="Stopped"
+                    <Label Text="{Binding VideoSurfaceBadgeText}"
                            FontSize="14"
                            FontAttributes="Bold"
                            VerticalOptions="Center"

@@ -101,9 +101,11 @@ public partial class ViewerViewModel
         var nowTicks = Environment.TickCount64;
 
         // Single clock, no assumption about the sender: the only latency this app may state without
-        // a caveat. It spans pump copy -> buffer swap -> coalesced UI post -> paint, i.e. exactly the
-        // part of glass-to-glass the app owns. It does NOT include the Android display pipeline
-        // (compositor + panel, typically another 2-3 frames) — only the stopwatch method sees that.
+        // a caveat. It spans buffer swap -> coalesced UI post -> paint. The receive stamp is taken
+        // right AFTER the pump's managed copy (NdiViewerBridge.CopyVideoFrame), so neither the SDK's
+        // decode/colour conversion nor that copy is included. It does NOT include the Android display
+        // pipeline either (compositor + panel, typically another 2-3 frames) — only the stopwatch
+        // method sees the whole glass-to-glass path.
         var recvToDrawMs = receivedAtTickMillis > 0 ? nowTicks - receivedAtTickMillis : -1;
 
         // Sender -> draw. Meaningful only when the sender stamped the frame AND both clocks are

@@ -19,7 +19,7 @@ public class SettingsViewModelTests
     private readonly Mock<INdiDiscoveryBridge> _discoveryBridgeMock = new();
     private readonly FakeUserPromptService _userPromptService = new();
 
-    private SettingsViewModel CreateSut(Mock<INdiVersionInfo>? versionInfo = null)
+    private SettingsViewModel CreateSut(Mock<INdiVersionInfo>? versionInfo = null, Mock<INavigationService>? navigation = null)
     {
         _platformServiceMock.Setup(service => service.GetAppInfo())
             .Returns(new SettingsAppInfo("NDI for Android", "1.0.0", "100"));
@@ -38,7 +38,34 @@ public class SettingsViewModelTests
             (versionInfo ?? new Mock<INdiVersionInfo>()).Object,
             _discoveryBridgeMock.Object,
             new FakeMainThreadDispatcher(),
-            _userPromptService);
+            _userPromptService,
+            navigation: navigation?.Object);
+    }
+
+    // --- #437: Developer tools → Diagnostic Log entry point ---
+
+    [Fact]
+    public async Task OpenDiagnosticLogCommand_NavigatesToTheDiagnosticLogPage()
+    {
+        var navigation = new Mock<INavigationService>();
+        navigation.Setup(n => n.NavigateToAsync(It.IsAny<string>())).Returns(Task.CompletedTask);
+        var sut = CreateSut(navigation: navigation);
+
+        await sut.OpenDiagnosticLogCommand.ExecuteAsync(null);
+
+        navigation.Verify(n => n.NavigateToAsync(NdiForAndroid.Features.DiagOverlay.ViewModels.DiagnosticLogViewModel.Route), Times.Once);
+    }
+
+    [Fact]
+    public async Task OpenDiagnosticLogCommand_SwallowsANavigationFailure()
+    {
+        var navigation = new Mock<INavigationService>();
+        navigation.Setup(n => n.NavigateToAsync(It.IsAny<string>())).ThrowsAsync(new InvalidOperationException("no shell"));
+        var sut = CreateSut(navigation: navigation);
+
+        var thrown = await Record.ExceptionAsync(() => sut.OpenDiagnosticLogCommand.ExecuteAsync(null));
+
+        Assert.Null(thrown);
     }
 
     [Fact]

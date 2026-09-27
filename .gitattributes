@@ -1,0 +1,27 @@
+# Normalise line endings in the repository to LF (#428). Git stores text files with LF and converts
+# on checkout according to each developer's core.autocrlf / core.eol, so mixed CRLF can no longer
+# enter the index and flag every added line in `git diff --check`.
+* text=auto
+
+# Shell scripts run on Linux CI runners and emulators: always LF, also in a Windows checkout.
+*.sh text eol=lf
+
+# Binaries: never normalised or diffed as text.
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.webp binary
+*.so   binary
+*.jar  binary
+*.jks  binary
+*.keystore binary
+*.apk  binary
+*.aab  binary
+*.dll  binary
+*.bin  binary
+*.ttf  binary
+*.otf  binary
+*.zip  binary
+*.pdf  binary

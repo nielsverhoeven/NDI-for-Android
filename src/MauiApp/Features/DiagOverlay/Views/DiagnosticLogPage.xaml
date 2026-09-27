@@ -7,28 +7,58 @@
              x:DataType="vm:DiagnosticLogViewModel"
              AutomationId="{x:Static t:TestIds.DiagnosticLogPage}"
              Title="Diagnostic Log">
-    <VerticalStackLayout Padding="16" Spacing="8">
-        <Label Text="In-Memory Diagnostic Log Buffer (last 200 entries)" FontAttributes="Bold" />
+    <!-- Grid, not VerticalStackLayout: a CollectionView in a stack layout is measured with
+         unbounded height and never scrolls (#437). -->
+    <Grid RowDefinitions="Auto,*,Auto" Padding="16" RowSpacing="8">
+        <Label Grid.Row="0" Text="In-memory diagnostic log (last 200 entries)" FontAttributes="Bold" />
 
-        <CollectionView AutomationId="{x:Static t:TestIds.DiagnosticLogList}"
+        <CollectionView Grid.Row="1"
+                        AutomationId="{x:Static t:TestIds.DiagnosticLogList}"
                         ItemsSource="{Binding LogEntries}"
                         SelectionMode="None">
+            <CollectionView.EmptyView>
+                <Label Text="No entries yet."
+                       TextColor="{DynamicResource TextSecondary}"
+                       HorizontalOptions="Center"
+                       Margin="0,24" />
+            </CollectionView.EmptyView>
             <CollectionView.ItemTemplate>
                 <DataTemplate x:DataType="vm:LogEntryViewModel">
-                    <Frame Padding="8" Margin="0,2" BackgroundColor="{DynamicResource CardBackground}" BorderColor="{DynamicResource BorderColor}">
-                        <HorizontalStackLayout Spacing="6">
-                            <Label Text="{Binding Level, StringFormat='[{{0}}]'}" AutomationId="{x:Static t:TestIds.DiagnosticLogRowLevel}" WidthRequest="70" TextColor="{Binding Level, Converter={StaticResource LogLevelColorConverter}}" FontAttributes="Bold" />
-                            <Label Text="{Binding TimestampRelative}" AutomationId="{x:Static t:TestIds.DiagnosticLogRowTime}" WidthRequest="80" Opacity="0.7" />
-                            <Label Text="{Binding Category}" WidthRequest="90" FontAttributes="Bold" />
-                            <Label Text="{Binding Message}" AutomationId="{x:Static t:TestIds.DiagnosticLogRowText}" LineBreakMode="TailTruncation" />
-                        </HorizontalStackLayout>
-                    </Frame>
+                    <Border Padding="8"
+                            Margin="0,2"
+                            StrokeThickness="1"
+                            StrokeShape="RoundRectangle 6"
+                            BackgroundColor="{DynamicResource CardBackground}"
+                            Stroke="{DynamicResource BorderColor}">
+                        <!-- The message gets its own full-width row and wraps: on a phone the old
+                             single-row layout truncated it after a few characters. -->
+                        <Grid ColumnDefinitions="Auto,Auto,*" RowDefinitions="Auto,Auto" ColumnSpacing="8" RowSpacing="2">
+                            <Label Grid.Column="0"
+                                   Text="{Binding LevelLabel}"
+                                   AutomationId="{x:Static t:TestIds.DiagnosticLogRowLevel}"
+                                   TextColor="{Binding Level, Converter={StaticResource LogLevelColorConverter}}"
+                                   FontAttributes="Bold" />
+                            <Label Grid.Column="1"
+                                   Text="{Binding TimestampRelative}"
+                                   AutomationId="{x:Static t:TestIds.DiagnosticLogRowTime}"
+                                   Opacity="0.7" />
+                            <Label Grid.Column="2" Text="{Binding Category}" FontAttributes="Bold" />
+                            <Label Grid.Row="1"
+                                   Grid.ColumnSpan="3"
+                                   Text="{Binding Message}"
+                                   AutomationId="{x:Static t:TestIds.DiagnosticLogRowText}"
+                                   LineBreakMode="WordWrap" />
+                        </Grid>
+                    </Border>
                 </DataTemplate>
             </CollectionView.ItemTemplate>
         </CollectionView>
 
-        <Button Text="Clear Log" Command="{Binding ClearCommand}"
+        <Button Grid.Row="2"
+                Text="Clear Log"
+                Command="{Binding ClearCommand}"
                 AutomationId="{x:Static t:TestIds.DiagnosticLogClear}"
+                MinimumHeightRequest="48"
                 HorizontalOptions="Center" />
-    </VerticalStackLayout>
+    </Grid>
 </ContentPage>

@@ -15,9 +15,8 @@ namespace NdiForAndroid.NdiBridge;
 /// Events are raised on the pump threads — callers marshal to the UI thread.
 /// <para>
 /// Latency model (see <see cref="ReceiveLatencyPolicy"/>): Wi-Fi power save is disabled while
-/// receiving, the SDK is asked for hardware-accelerated decoding, stale queued video frames are
-/// skipped so the newest frame is always the one shown, and the audio backlog is capped so audio
-/// never drifts behind the picture after a network hiccup.
+/// receiving, stale queued video frames are skipped so the newest frame is always the one shown,
+/// and the audio backlog is capped so audio never drifts behind the picture after a network hiccup.
 /// </para>
 /// </summary>
 public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
@@ -31,10 +30,6 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
     private const long StalledAfterMs = 3000;
     private const long StatsIntervalMs = 1000;
     private const long FpsWindowMs = 1000;
-
-    // Asks the SDK to decode with hardware acceleration where the platform supports it (NDI SDK
-    // "Hardware Acceleration" receiver metadata). Ignored where unavailable, so always safe to send.
-    private const string HardwareAccelerationXml = "<ndi_hwaccel enabled=\"true\"/>";
 
     private readonly NdiRuntime _runtime;
     private readonly IAudioPlaybackSink _audioSink;
@@ -278,7 +273,6 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
                 var source = create.source_to_connect_to;
                 NdiNativeMethods.NDIlib_recv_connect(_recv, ref source);
                 NdiConnectionMetadata.Apply(_recv, isSender: false, sessionName: "viewer");
-                RequestHardwareAcceleration(_recv);
             }
             catch
             {
@@ -1156,30 +1150,6 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
 
             _lifecycleTail = next;
             return next;
-        }
-    }
-
-    /// <summary>
-    /// Sends the <c>ndi_hwaccel</c> hint to the receiver itself so the SDK may use the platform's
-    /// hardware decoder (notably for NDI|HX H.264/HEVC streams). Best-effort.
-    /// </summary>
-    private static void RequestHardwareAcceleration(IntPtr recv)
-    {
-        var ptr = Marshal.StringToHGlobalAnsi(HardwareAccelerationXml);
-        try
-        {
-            var metadata = new NdiMetadataFrameNative
-            {
-                // length includes the terminating NUL that StringToHGlobalAnsi appends.
-                length = HardwareAccelerationXml.Length + 1,
-                timecode = 0,
-                p_data = ptr,
-            };
-            NdiNativeMethods.NDIlib_recv_send_metadata(recv, ref metadata);
-        }
-        finally
-        {
-            Marshal.FreeHGlobal(ptr);
         }
     }
 
