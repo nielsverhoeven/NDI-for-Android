@@ -175,6 +175,20 @@ public sealed class NavigationBar
     /// <c>bottomtab</c> id is Shell's own container for it.
     /// </para>
     /// </remarks>
+    /// <summary>DEBUG #395 chrome probe: not for merge.</summary>
+    public string ChromeProbe()
+    {
+        try
+        {
+            var el = _driver.FindElements(By.XPath("//*[contains(@resource-id,'debug.chromeProbe') or contains(@content-desc,'apply:')]")).FirstOrDefault();
+            var text = el?.Text ?? el?.GetAttribute("content-desc");
+            var bars = _driver.FindElements(By.XPath("//*[contains(@resource-id,'navigation_bar_item_') or contains(@resource-id,'bottomtab')]"))
+                .Select(e => { try { return $"{e.GetAttribute("resource-id")}@{e.Location.X},{e.Location.Y} disp={e.Displayed}"; } catch { return "?"; } });
+            return $"probe=[{text ?? "not found"}] bars=[{string.Join("; ", bars)}]";
+        }
+        catch (Exception ex) { return "probe read failed: " + ex.Message; }
+    }
+
     public bool HasBottomNavigationBar()
     {
         const string xpath =

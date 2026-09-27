@@ -323,7 +323,7 @@ public sealed class AppLaunchTests : UiTestBase
                 $"The left rail does not announce {selected} as selected {checkpoint} {context}.");
             Assert.True(app.Navigation.WaitForBottomNavigationBar(shown: false, Timeouts.Element),
                 $"Shell's bottom navigation bar is still on screen {checkpoint}, while the left rail is " +
-                $"the expected placement {context}.");
+                $"the expected placement {context}. {app.Navigation.ChromeProbe()}");
         }
         else
         {
@@ -359,7 +359,7 @@ public sealed class AppLaunchTests : UiTestBase
                 "be vacuous — the tree was unreadable or the app was not in front.");
 
         Assert.False(app.Navigation.HasBottomNavigationBar(),
-            $"Shell's bottom navigation bar is present {checkpoint}, while the left rail is the expected placement ({sizeClass}/{orientation}).");
+            $"Shell's bottom navigation bar is present {checkpoint}, while the left rail is the expected placement ({sizeClass}/{orientation}). {app.Navigation.ChromeProbe()}");
     }
 
     [RetryableSkippableFact]

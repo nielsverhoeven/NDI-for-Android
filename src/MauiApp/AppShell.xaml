@@ -33,6 +33,8 @@
             <VerticalStackLayout x:Name="RailItems"
                                  VerticalOptions="Start"
                                  Spacing="0" />
+            <!-- DEBUG #395 chrome probe: not for merge. -->
+            <Label x:Name="ChromeProbe" AutomationId="debug.chromeProbe" VerticalOptions="End" FontSize="6" />
         </Grid>
     </Shell.FlyoutContent>
 

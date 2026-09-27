@@ -304,6 +304,47 @@ public partial class AppShell : Shell
 
         _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "placement.end",
             $"ms={Environment.TickCount64 - placementStartedAt}");
+
+        // DEBUG #395 chrome probe: not for merge.
+        UpdateChromeProbe("apply");
+        Dispatcher.DispatchDelayed(TimeSpan.FromMilliseconds(700), () => UpdateChromeProbe("late"));
+    }
+
+    // DEBUG #395 chrome probe: not for merge.
+    private readonly System.Collections.Generic.List<string> _probeHistory = new();
+
+    private void UpdateChromeProbe(string tag)
+    {
+        try
+        {
+            var page = CurrentPage;
+            string bnv = "n/a";
+#if ANDROID
+            var decor = Microsoft.Maui.ApplicationModel.Platform.CurrentActivity?.Window?.DecorView;
+            var found = new System.Collections.Generic.List<string>();
+            void Walk(global::Android.Views.View? v)
+            {
+                if (v is null) return;
+                if (v is global::Google.Android.Material.BottomNavigation.BottomNavigationView b)
+                    found.Add($"{b.Visibility}/{b.Height}");
+                if (v is global::Android.Views.ViewGroup g)
+                    for (var i = 0; i < g.ChildCount; i++) Walk(g.GetChildAt(i));
+            }
+            Walk(decor);
+            bnv = found.Count == 0 ? "none" : string.Join(",", found);
+#endif
+            var line = $"{tag}: rail={_stateViewModel.IsLeftRailNavigationVisible} item={Shell.GetTabBarIsVisible(PrimaryTabBar)} " +
+                       $"show={((IShellItemController)PrimaryTabBar).ShowTabs} page={page?.GetType().Name} " +
+                       $"pageSet={page?.IsSet(Shell.TabBarIsVisibleProperty)} cur={CurrentItem?.GetType().Name}/{ReferenceEquals(CurrentItem, PrimaryTabBar)} " +
+                       $"bnv={bnv} fly={FlyoutBehavior}";
+            _probeHistory.Add(line);
+            if (_probeHistory.Count > 6) _probeHistory.RemoveAt(0);
+            ChromeProbe.Text = string.Join(" | ", _probeHistory);
+        }
+        catch (Exception ex)
+        {
+            ChromeProbe.Text = "probe failed: " + ex.GetType().Name + " " + ex.Message;
+        }
     }
 
     // ── Navigation ───────────────────────────────────────────────────────────
