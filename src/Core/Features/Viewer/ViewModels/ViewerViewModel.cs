@@ -5,6 +5,7 @@ using NdiForAndroid.Features.AppState.Models;
 using NdiForAndroid.Features.AppState.Repositories;
 using NdiForAndroid.Features.ConnectionHistory.Services;
 using NdiForAndroid.Features.DiagOverlay.Services;
+using NdiForAndroid.Features.Navigation.Services;
 using NdiForAndroid.Features.Viewer.Models;
 using NdiForAndroid.Features.Ptz.Services;
 using NdiForAndroid.Features.Ptz.ViewModels;
@@ -60,6 +61,7 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
     private readonly IOrientationLockService _orientationLock;
     private readonly INetworkLinkService? _networkLink;
     private readonly IDiagnosticOverlayService? _diagnostics;
+    private readonly INavigationHandoffService? _navigationHandoff;
 
     [ObservableProperty]
     private string? _sourceId;
@@ -210,10 +212,11 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
         IScreenReaderAnnouncer announcer,
         IOrientationLockService orientationLock,
         // Optional with a default so no existing test's construction changes (fixtures call this
-        // constructor positionally). Both are registered singletons, so ActivatorUtilities fills
-        // them in the app.
+        // constructor positionally). All three are registered singletons, so ActivatorUtilities
+        // fills them in the app.
         INetworkLinkService? networkLink = null,
-        IDiagnosticOverlayService? diagnostics = null)
+        IDiagnosticOverlayService? diagnostics = null,
+        INavigationHandoffService? navigationHandoff = null)
     {
         _bridge = bridge;
         _timeProvider = timeProvider;
@@ -229,6 +232,7 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
         _orientationLock = orientationLock;
         _networkLink = networkLink;
         _diagnostics = diagnostics;
+        _navigationHandoff = navigationHandoff;
         RetryRemainingSeconds = ReconnectConstants.RetryWindowSeconds;
         StatusMessage = "Select a source on Home to start viewing.";
         _isAudioEnabled = bridge.IsAudioEnabled; // backing field: don't push the default back to the bridge
@@ -240,6 +244,8 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
         _bridge.TallyEchoChanged += OnBridgeTallyEchoChanged;
         _bridge.VideoFrameReady += OnBridgeVideoFrameReady;
         PtzEndpointForm.EndpointSaved += OnPtzEndpointSaved;
+        if (_navigationHandoff is not null)
+            _navigationHandoff.ViewerReceiverStopped += OnHandoffStoppedReceiver;
     }
 
     /// <summary>PTZ lifecycle hooks implemented in ViewerViewModel.Ptz.cs; declared here so this
@@ -423,6 +429,49 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
         RetryStatusMessage = null;
     }
 
+    // A service event, so treated as a thread boundary like the bridge's (RC19): post, then act.
+    private void OnHandoffStoppedReceiver(object? sender, EventArgs e) =>
+        _dispatcher.BeginInvokeOnMainThread(EndSessionStoppedByHandoff);
+
+    /// <summary>
+    /// The navigation handoff stopped the shared receiver because the user left the View destination
+    /// (#410). It calls the bridge directly, so until now the ViewModel that owned the receiver kept
+    /// IsPlaying true, its stats watchdog and keep-screen-on running and "Connected." on screen for a
+    /// receiver that no longer existed, and a reconnect window open at that moment went on to restart
+    /// it in the background. This ends the session the way Stop() does, minus the bridge calls (the
+    /// stop has already happened): the user comes back to "Stopped." and Reconnect, never to an
+    /// auto-resume. Only the owner reacts, since the stop ended its stream and nobody else's; and only
+    /// while it still has a session, so a Stop the user made before leaving is not recorded twice.
+    /// </summary>
+    private void EndSessionStoppedByHandoff()
+    {
+        if (!OwnsActiveReceiver || (!IsPlaying && !IsReconnecting))
+            return;
+
+        _userInitiatedStop = true;
+        Interlocked.Increment(ref _stopEpoch); // cancels a window already posted (#409)
+        DisposeTimers();
+        _reconnectState = ReconnectState.Idle;
+
+        // Record disconnection for history tracking — the one session end #418 left unrecorded.
+        _connectionHistory.RecordDisconnectedAsync().FireAndForget();
+
+        IsPlaying = false; // stats watchdog and keep-screen-on follow IsPlaying
+        IsReconnecting = false;
+        CanReconnect = true;
+        IsTallyProgram = false;
+        IsPtzSupported = false;
+        VideoSurfaceBadgeText = "Stopped";
+        IsStopped = true;
+        StopPtz();
+        // Not BeginExitFullScreen: the viewer is already off screen, and on a compact device in
+        // landscape that would request a rotation from another tab.
+        ForceExitFullScreen();
+        RetryRemainingSeconds = ReconnectConstants.RetryWindowSeconds;
+        RetryStatusMessage = null;
+        StatusMessage = "Stopped.";
+    }
+
     public void Dispose()
     {
         DisposeTimers();
@@ -436,6 +485,8 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
         _bridge.ConnectionStateChanged -= OnBridgeConnectionStateChanged;
         _bridge.TallyEchoChanged -= OnBridgeTallyEchoChanged;
         _bridge.VideoFrameReady -= OnBridgeVideoFrameReady;
+        if (_navigationHandoff is not null)
+            _navigationHandoff.ViewerReceiverStopped -= OnHandoffStoppedReceiver;
 
         // The ownership token's dual: at most one ViewModel may drive the shared bridge, so the one
         // that owns the receiver must hand it back when it goes away. ViewerPage disposes this
@@ -507,7 +558,8 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
     /// ViewModel must never open or complete a reconnect window nor narrate the bridge's state as its
     /// own (the drop trigger, the sustained-Connecting backstop, CompleteReconnect, the attempt loop's
     /// already-Connected shortcut and the "Connected." status are gated on this), nor stop a receiver
-    /// that is no longer its own (Dispose, FailReconnect and CancelRetry are gated too), or two
+    /// that is no longer its own (Dispose, FailReconnect and CancelRetry are gated too, and only the
+    /// owner ends its session on a navigation-handoff stop, #410), or two
     /// reconnect loops fight over one receiver and the user sees one source's video labelled with
     /// another source's status. User-initiated Stop is deliberately not gated, and neither is an
     /// attempt by a window that has not held the receiver yet: both act on this ViewModel's own

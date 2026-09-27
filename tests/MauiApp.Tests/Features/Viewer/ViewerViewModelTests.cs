@@ -2,6 +2,7 @@ using Moq;
 using NdiForAndroid.Features.AppState.Models;
 using NdiForAndroid.Features.AppState.Repositories;
 using NdiForAndroid.Features.ConnectionHistory.Services;
+using NdiForAndroid.Features.Navigation.Services;
 using NdiForAndroid.Features.Ptz.Models;
 using NdiForAndroid.Features.Ptz.Services;
 using NdiForAndroid.Features.Ptz.ViewModels;
@@ -29,6 +30,7 @@ public class ViewerViewModelTests
     private readonly Mock<IImmersiveModeService> _immersiveModeMock = new();
     private readonly Mock<IScreenReaderAnnouncer> _announcerMock = new();
     private readonly Mock<IOrientationLockService> _orientationLockMock = new();
+    private readonly Mock<INavigationHandoffService> _handoffMock = new();
 
     public ViewerViewModelTests()
     {
@@ -53,7 +55,8 @@ public class ViewerViewModelTests
         _bridgeMock.Object, _timeProvider, _dispatcher, _appStateRepoMock.Object, _lifecycleMock.Object,
         _sourceRepoMock.Object, _connectionHistoryMock.Object,
         _ptzControllerFactoryMock.Object, new PtzEndpointFormViewModel(_ptzControllerFactoryMock.Object),
-        _immersiveModeMock.Object, _announcerMock.Object, _orientationLockMock.Object);
+        _immersiveModeMock.Object, _announcerMock.Object, _orientationLockMock.Object,
+        navigationHandoff: _handoffMock.Object);
 
     /// <summary>Started on "src-1" (all mocked awaits complete synchronously); bridge call log
     /// cleared so tests count only the traffic they generate from here.</summary>
@@ -1932,6 +1935,133 @@ public class ViewerViewModelTests
         }
 
         _connectionHistoryMock.Verify(h => h.RecordDisconnectedAsync(), Times.Never);
+    }
+
+    // --- #410: a navigation-handoff stop ends the owning viewer's session ---
+
+    private void RaiseHandoffStop() =>
+        _handoffMock.Raise(h => h.ViewerReceiverStopped += null, EventArgs.Empty);
+
+    [Fact]
+    public void HandoffStop_OnTheOwner_EndsTheSessionLikeAStop()
+    {
+        var sut = CreatePlayingSut();
+        RaiseBridgeState(ConnectionState.Connected);
+        Assert.Equal("Connected.", sut.StatusMessage);
+        _immersiveModeMock.Invocations.Clear();
+
+        RaiseHandoffStop();
+
+        Assert.False(sut.IsPlaying);
+        Assert.True(sut.IsStopped);
+        Assert.True(sut.CanReconnect);
+        Assert.False(sut.IsReconnecting);
+        Assert.Equal("Stopped.", sut.StatusMessage);
+        Assert.Equal("Stopped", sut.VideoSurfaceBadgeText);
+        _connectionHistoryMock.Verify(h => h.RecordDisconnectedAsync(), Times.Once);
+        _immersiveModeMock.Verify(i => i.KeepScreenOn(false), Times.AtLeastOnce);
+        // The handoff already stopped the receiver; the ViewModel only reconciles its own state.
+        _bridgeMock.Verify(b => b.StopReceiverAsync(), Times.Never);
+
+        // The stats watchdog is off: no more samples.
+        _bridgeMock.Invocations.Clear();
+        _timeProvider.Advance(TimeSpan.FromSeconds(5));
+        _bridgeMock.Verify(b => b.GetMeasuredFps(), Times.Never);
+    }
+
+    [Fact]
+    public void HandoffStop_OnAViewModelTheBridgeWasTakenFrom_LeavesItUntouched()
+    {
+        var generation = 0L;
+        _bridgeMock.Setup(b => b.ReceiverGeneration).Returns(() => generation);
+        _bridgeMock.Setup(b => b.StartReceiver(It.IsAny<string>(), It.IsAny<QualityProfile>()))
+                   .Callback(() => generation++);
+        var stale = CreatePlayingSut();   // generation 1
+        var current = CreatePlayingSut(); // generation 2: the handoff stopped this one's receiver
+
+        RaiseHandoffStop();
+
+        Assert.True(stale.IsPlaying); // not its stream (ReleaseIfDisowned retires it on its own)
+        Assert.False(stale.IsStopped);
+        Assert.Equal("Connecting...", stale.StatusMessage);
+        Assert.False(current.IsPlaying);
+        Assert.Equal("Stopped.", current.StatusMessage);
+        _connectionHistoryMock.Verify(h => h.RecordDisconnectedAsync(), Times.Once); // the owner's row only
+    }
+
+    [Fact]
+    public void HandoffStop_DuringAReconnectWindow_EndsItWithoutResurrectingTheReceiver()
+    {
+        var sut = CreatePlayingSut();
+        sut.BeginReconnectWindow();
+
+        RaiseHandoffStop();
+
+        Assert.False(sut.IsReconnecting);
+        Assert.True(sut.IsStopped);
+        Assert.Equal("Stopped.", sut.StatusMessage);
+
+        // The attempt loop must not restart the receiver the handoff just released.
+        _timeProvider.Advance(TimeSpan.FromSeconds(30));
+        _bridgeMock.Verify(b => b.StartReceiver(It.IsAny<string>(), It.IsAny<QualityProfile>()), Times.Never);
+    }
+
+    [Fact]
+    public void HandoffStop_ThenADisconnectedFromTheBridge_OpensNoReconnectWindow()
+    {
+        var sut = CreatePlayingSut();
+        RaiseBridgeState(ConnectionState.Connected);
+
+        RaiseHandoffStop();
+        // Even a Disconnected tagged as a loss (the handoff's own stop is tagged Intentional).
+        _bridgeMock.Setup(b => b.GetLastStopReason()).Returns(ReceiverStopReason.ConnectionLost);
+        RaiseBridgeState(ConnectionState.Disconnected);
+        _timeProvider.Advance(TimeSpan.FromSeconds(30));
+
+        Assert.False(sut.IsReconnecting);
+        Assert.True(sut.IsStopped);
+        _bridgeMock.Verify(b => b.StartReceiver(It.IsAny<string>(), It.IsAny<QualityProfile>()), Times.Never);
+    }
+
+    [Fact]
+    public void HandoffStop_WhileFullScreenOnACompactLandscapeDevice_ExitsWithoutRequestingARotation()
+    {
+        _lifecycleMock.Setup(l => l.SmallestWidthDp).Returns(400);
+        _lifecycleMock.Setup(l => l.IsLandscape).Returns(true);
+        var sut = CreatePlayingSut(); // playing in landscape on a phone: full screen
+        Assert.True(sut.IsFullScreen);
+
+        RaiseHandoffStop();
+
+        // The viewer is already off screen: leave full screen outright, never rotate the device
+        // from another tab.
+        Assert.False(sut.IsFullScreen);
+        _orientationLockMock.Verify(o => o.RequestPortrait(), Times.Never);
+    }
+
+    [Fact]
+    public void HandoffStop_WhenTheUserHadAlreadyStopped_RecordsNothingMore()
+    {
+        var sut = CreatePlayingSut();
+        sut.StopCommand.Execute(null);
+
+        RaiseHandoffStop();
+
+        _connectionHistoryMock.Verify(h => h.RecordDisconnectedAsync(), Times.Once); // Stop()'s own record
+        Assert.Equal("Stopped.", sut.StatusMessage);
+    }
+
+    [Fact]
+    public void Reconnect_AfterAHandoffStop_StartsTheReceiverAgain()
+    {
+        var sut = CreatePlayingSut();
+        RaiseHandoffStop();
+
+        sut.ReconnectCommand.Execute(null);
+        _timeProvider.Advance(TimeSpan.FromSeconds(2));
+
+        Assert.True(sut.IsReconnecting);
+        _bridgeMock.Verify(b => b.StartReceiver("src-1", QualityProfile.Balanced), Times.Once);
     }
 
     // --- #411: returning to the foreground never restarts or re-narrates the viewer ---

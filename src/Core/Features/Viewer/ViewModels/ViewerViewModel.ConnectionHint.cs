@@ -224,9 +224,10 @@ public partial class ViewerViewModel
     /// and records no connection-history event: this stream did not end, it changed hands.
     /// The View stops painting as soon as <see cref="ViewerViewModel.IsStopped"/> is set
     /// (ViewerView.OnRenderTick), so this pane does not keep showing the new owner's video.
-    /// Note this does NOT cover the navigation handoff (#410) —
-    /// <see cref="INdiViewerBridge.StopReceiverAsync"/> does not bump the token, so a pane whose
-    /// bridge was stopped behind its back still owns it.
+    /// This does not cover the navigation handoff: <see cref="INdiViewerBridge.StopReceiverAsync"/>
+    /// does not bump the token, so a pane whose bridge was stopped behind its back still owns it.
+    /// The handoff tells that owner itself instead (INavigationHandoffService.ViewerReceiverStopped,
+    /// handled by EndSessionStoppedByHandoff — #410).
     /// </summary>
     private void ReleaseIfDisowned()
     {
