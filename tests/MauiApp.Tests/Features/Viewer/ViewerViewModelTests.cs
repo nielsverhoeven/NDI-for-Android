@@ -1142,16 +1142,127 @@ public class ViewerViewModelTests
         Assert.True(sut.IsReconnecting);
     }
 
+    // --- #413: an initial connect that never succeeds ends after 15 s instead of "Connecting..." forever ---
+
     [Fact]
-    public void SustainedConnecting_OnAnInitialConnectThatNeverSucceeded_DoesNotOpenAReconnectWindow()
+    public void InitialConnect_ThatNeverSucceeds_FailsAfterFifteenSeconds_NotEarlier()
+    {
+        var sut = CreatePlayingSut(); // a receiver exists and has not delivered a frame
+        sut.IsFullScreen = true;
+        _bridgeMock.Setup(b => b.GetConnectionState()).Returns(ConnectionState.Connecting);
+
+        _timeProvider.Advance(TimeSpan.FromSeconds(14));
+
+        Assert.True(sut.IsPlaying);
+        Assert.False(sut.IsStopped);
+        Assert.Equal("Connecting...", sut.StatusMessage);
+        _bridgeMock.Verify(b => b.StopReceiverAsync(), Times.Never);
+
+        _timeProvider.Advance(TimeSpan.FromSeconds(1));
+
+        Assert.False(sut.IsPlaying);
+        Assert.True(sut.IsStopped);
+        Assert.True(sut.CanReconnect);
+        Assert.False(sut.IsReconnecting); // a failure state, not a retry window
+        Assert.False(sut.IsFullScreen);
+        Assert.Equal("Could not connect to the source.", sut.StatusMessage);
+        Assert.Equal("Could not connect", sut.VideoSurfaceBadgeText);
+        _bridgeMock.Verify(b => b.StopReceiverAsync(), Times.Once);
+        _connectionHistoryMock.Verify(h => h.RecordDisconnectedAsync(), Times.Once); // Start() opened the row
+    }
+
+    [Fact]
+    public void InitialConnect_Timeout_DoesNotApplyOnceTheSourceHasConnected()
+    {
+        var sut = CreatePlayingSut();
+        RaiseBridgeState(ConnectionState.Connected);
+        _bridgeMock.Setup(b => b.GetConnectionState()).Returns(ConnectionState.Connecting); // a superseded drop
+
+        _timeProvider.Advance(TimeSpan.FromSeconds(15));
+
+        // A drop after a real connection gets the reconnect window (the #392 backstop), never the
+        // initial-connect failure.
+        Assert.True(sut.IsReconnecting);
+        Assert.NotEqual("Could not connect to the source.", sut.StatusMessage);
+    }
+
+    [Fact]
+    public void InitialConnect_OnAViewModelTheBridgeWasTakenFrom_IsNotReportedAsAFailedConnect()
+    {
+        var generation = 0L;
+        _bridgeMock.Setup(b => b.ReceiverGeneration).Returns(() => generation);
+        _bridgeMock.Setup(b => b.StartReceiver(It.IsAny<string>(), It.IsAny<QualityProfile>()))
+                   .Callback(() => generation++);
+        var stale = CreatePlayingSut();   // generation 1, never connected
+        var current = CreatePlayingSut(); // generation 2, never connected either
+        _bridgeMock.Setup(b => b.GetConnectionState()).Returns(ConnectionState.Connecting);
+        _bridgeMock.Invocations.Clear();
+
+        _timeProvider.Advance(TimeSpan.FromSeconds(15));
+
+        Assert.Equal("Stopped.", stale.StatusMessage); // retired as disowned, not "Could not connect"
+        Assert.Equal("Stopped", stale.VideoSurfaceBadgeText);
+        Assert.Equal("Could not connect to the source.", current.StatusMessage);
+        _bridgeMock.Verify(b => b.StopReceiverAsync(), Times.Once); // only the owner stops the receiver
+    }
+
+    [Fact]
+    public void Reconnect_AfterAnInitialConnectTimeout_WorksLikeAfterAFailedReconnect()
     {
         var sut = CreatePlayingSut();
         _bridgeMock.Setup(b => b.GetConnectionState()).Returns(ConnectionState.Connecting);
+        _timeProvider.Advance(TimeSpan.FromSeconds(15));
+        Assert.Equal("Could not connect to the source.", sut.StatusMessage);
+        _bridgeMock.Invocations.Clear();
 
-        _timeProvider.Advance(TimeSpan.FromSeconds(30));
+        sut.ReconnectCommand.Execute(null);
 
+        Assert.True(sut.IsReconnecting);
+        Assert.False(sut.IsStopped);
+        Assert.False(sut.CanReconnect);
+        _timeProvider.Advance(TimeSpan.FromSeconds(2));
+        _bridgeMock.Verify(b => b.StartReceiver("src-1", QualityProfile.Balanced), Times.Once);
+
+        RaiseBridgeState(ConnectionState.Connected); // the source is reachable now
+
+        Assert.True(sut.IsPlaying);
         Assert.False(sut.IsReconnecting);
+        Assert.Equal("Connected.", sut.StatusMessage);
+    }
+
+    [Fact]
+    public void InitialConnect_SwitchingToAnotherSource_RestartsTheBudget()
+    {
+        var sut = CreatePlayingSut();
+        _bridgeMock.Setup(b => b.GetConnectionState()).Returns(ConnectionState.Connecting);
+        _timeProvider.Advance(TimeSpan.FromSeconds(10));
+
+        sut.SourceId = "src-2"; // Watch another source while the first is still connecting
+
+        _timeProvider.Advance(TimeSpan.FromSeconds(14));
+        Assert.True(sut.IsPlaying);
         Assert.Equal("Connecting...", sut.StatusMessage);
+
+        _timeProvider.Advance(TimeSpan.FromSeconds(1));
+        Assert.Equal("Could not connect to the source.", sut.StatusMessage);
+    }
+
+    [Fact]
+    public void InitialConnect_WhileTheBridgeHasNoReceiver_KeepsConnecting()
+    {
+        // No NDI runtime (the x86 CI emulator): the bridge never creates a receiver and stays
+        // Disconnected/Intentional. That is not a connect attempt that is failing, and the e2e
+        // suite anchors on this "Connecting..." state, so the timeout does not count it.
+        var sut = CreatePlayingSut();
+        _bridgeMock.Setup(b => b.GetConnectionState()).Returns(ConnectionState.Disconnected);
+        _bridgeMock.Setup(b => b.GetLastStopReason()).Returns(ReceiverStopReason.Intentional);
+
+        _timeProvider.Advance(TimeSpan.FromSeconds(60));
+
+        Assert.True(sut.IsPlaying);
+        Assert.False(sut.IsStopped);
+        Assert.Equal("Connecting...", sut.StatusMessage);
+        _bridgeMock.Verify(b => b.StopReceiverAsync(), Times.Never);
     }
 
     [Fact]
@@ -1797,7 +1908,8 @@ public class ViewerViewModelTests
             case "FailReconnect":
                 // A window that never held the receiver, so its expiry takes the fail branch rather
                 // than the overtaken-window retire (covered by the #423 FailReconnect test above).
-                CreatePlayingSut(); // a pushed viewer takes the bridge
+                CreatePlayingSut(); // a pushed viewer takes the bridge...
+                RaiseBridgeState(ConnectionState.Connected); // ...and its stream connects (#413 would end a never-connecting one at 15 s)
                 pane.ApplyConnectionSample(connected: true, fps: 30f, dropPercent: 0f); // the pane demotes itself
                 _bridgeMock.Setup(b => b.StartReceiver(It.IsAny<string>(), It.IsAny<QualityProfile>()))
                            .Throws(new ArgumentException("rejected before the bump")); // no attempt re-claims

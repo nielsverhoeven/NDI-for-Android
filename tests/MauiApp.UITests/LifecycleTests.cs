@@ -9,7 +9,11 @@ namespace NdiForAndroid.UITests;
 /// Interruptions against the deep-linked viewer's permanent "Connecting..." hold state. No real
 /// NDI stream exists on the CI emulator, so "active" here means this hold state, not actual
 /// playback — see the plan's baseline notes for why the state never times out on its own and is
-/// therefore a stable anchor for these tests.
+/// therefore a stable anchor for these tests. Since #413 an initial connect ends after ~15 s with
+/// "Could not connect to the source.", but only while the bridge holds a receiver in Connecting;
+/// the x86_64 CI emulator has no NDI runtime, so no receiver is ever created there and the hold
+/// state still never ends. On an ARM device with the runtime it ends ~15 s after the deep link,
+/// so run these against the emulator.
 /// </summary>
 [Collection("AppiumSession")]
 public sealed class LifecycleTests : DeviceInterruptionTestBase
