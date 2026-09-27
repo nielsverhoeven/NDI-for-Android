@@ -34,7 +34,7 @@
                                  VerticalOptions="Start"
                                  Spacing="0" />
             <!-- DEBUG #395 chrome probe: not for merge. -->
-            <Label x:Name="ChromeProbe" AutomationId="debug.chromeProbe" VerticalOptions="End" FontSize="6" />
+            <Label x:Name="ChromeProbe" AutomationId="debug.chromeProbe" VerticalOptions="End" HeightRequest="2" MaxLines="1" LineBreakMode="NoWrap" FontSize="1" Opacity="0.01" InputTransparent="True" />
         </Grid>
     </Shell.FlyoutContent>
 

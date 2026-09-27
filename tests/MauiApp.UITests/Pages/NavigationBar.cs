@@ -180,8 +180,9 @@ public sealed class NavigationBar
     {
         try
         {
-            var el = _driver.FindElements(By.XPath("//*[contains(@resource-id,'debug.chromeProbe') or contains(@content-desc,'apply:')]")).FirstOrDefault();
-            var text = el?.Text ?? el?.GetAttribute("content-desc");
+            var el = _driver.FindElements(By.XPath("//*[contains(@resource-id,'debug.chromeProbe')]")).FirstOrDefault()
+                     ?? _driver.FindElements(By.XPath("//*[contains(@text,'rail=')]")).FirstOrDefault();
+            var text = el?.GetAttribute("text");
             var bars = _driver.FindElements(By.XPath("//*[contains(@resource-id,'navigation_bar_item_') or contains(@resource-id,'bottomtab')]"))
                 .Select(e => { try { return $"{e.GetAttribute("resource-id")}@{e.Location.X},{e.Location.Y} disp={e.Displayed}"; } catch { return "?"; } });
             return $"probe=[{text ?? "not found"}] bars=[{string.Join("; ", bars)}]";

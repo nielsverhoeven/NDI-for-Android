@@ -296,6 +296,9 @@ public sealed class AppLaunchTests : UiTestBase
             $"Bottom placement expected ({sizeClass}/{orientation}, {widthDp:0}dp); asserting the bottom bar {checkpoint}.";
         _output.WriteLine(passingMessage);
         Console.WriteLine(passingMessage);
+        Console.WriteLine($"PROBE {checkpoint}: {app.Navigation.ChromeProbe()}");
+        System.Threading.Thread.Sleep(3000);
+        Console.WriteLine($"PROBE+3s {checkpoint}: {app.Navigation.ChromeProbe()}");
 
         Assert.True(app.Navigation.WaitForBottomNavigationBar(shown: true, Timeouts.Element),
             $"Shell's bottom navigation bar is not on screen {checkpoint}, while the bottom bar is the " +
@@ -314,6 +317,9 @@ public sealed class AppLaunchTests : UiTestBase
         var (expected, sizeClass, orientation, widthDp) = ResolveExpectedPlacement(app);
         var context = $"({sizeClass}/{orientation}, {widthDp:0}dp)";
         _output.WriteLine($"Expecting {expected} chrome {context} {checkpoint}.");
+        Console.WriteLine($"PROBE {checkpoint}: {app.Navigation.ChromeProbe()}");
+        System.Threading.Thread.Sleep(3000);
+        Console.WriteLine($"PROBE+3s {checkpoint}: {app.Navigation.ChromeProbe()}");
 
         if (expected == NavigationPlacementMode.LeftRail)
         {
