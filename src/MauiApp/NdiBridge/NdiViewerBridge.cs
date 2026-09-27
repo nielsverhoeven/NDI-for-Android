@@ -10,9 +10,15 @@ namespace NdiForAndroid.NdiBridge;
 /// P/Invoke viewer bridge against libndi.so.
 /// One receiver instance at a time, serviced by two dedicated pump threads
 /// (video+metadata, audio) following the proven legacy threading model:
-/// atomic running flag, latest-frame double buffer swapped under a lock,
+/// atomic running flag, latest-frame triple buffer rotated under a lock,
 /// and thread joins never performed while holding the state lock.
 /// Events are raised on the pump threads — callers marshal to the UI thread.
+/// <para>
+/// Latency model (see <see cref="ReceiveLatencyPolicy"/>): Wi-Fi power save is disabled while
+/// receiving, the SDK is asked for hardware-accelerated decoding, stale queued video frames are
+/// skipped so the newest frame is always the one shown, and the audio backlog is capped so audio
+/// never drifts behind the picture after a network hiccup.
+/// </para>
 /// </summary>
 public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
 {
@@ -26,8 +32,13 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
     private const long StatsIntervalMs = 1000;
     private const long FpsWindowMs = 1000;
 
+    // Asks the SDK to decode with hardware acceleration where the platform supports it (NDI SDK
+    // "Hardware Acceleration" receiver metadata). Ignored where unavailable, so always safe to send.
+    private const string HardwareAccelerationXml = "<ndi_hwaccel enabled=\"true\"/>";
+
     private readonly NdiRuntime _runtime;
     private readonly IAudioPlaybackSink _audioSink;
+    private readonly ILowLatencyNetworkLock _networkLock;
     private readonly IDiagnosticOverlayService? _diagnostics;
 
     /// <summary>Guards receiver lifecycle (_recv, threads, tally, quality, source id).</summary>
@@ -76,12 +87,14 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
     /// create/connect calls, and this must stay readable from the UI thread without blocking on them.</summary>
     private long _receiverGeneration;
 
-    // Latest-frame double buffer. The pump copies each native frame into _backPixels
-    // (only ever touched by the pump thread) and swaps front/back references under
-    // _frameLock. GetLatestFrame hands out the front reference without copying —
-    // copying 1080p BGRA on every UI poll would churn ~8 MB per poll.
+    // Latest-frame triple buffer. The pump copies each native frame into _backPixels
+    // (only ever touched by the pump thread) and rotates back -> front -> spare -> back under
+    // _frameLock. GetLatestFrame hands out the front reference without copying — copying 1080p
+    // BGRA on every UI poll would churn ~8 MB per poll. The third buffer means an array handed
+    // to the renderer is only rewritten two frames later, so a paint in progress never tears.
     private int[]? _frontPixels;
     private int[]? _backPixels;
+    private int[]? _sparePixels;
     private int _frameWidth;
     private int _frameHeight;
     private long _frameTimestampMillis;
@@ -93,6 +106,10 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
     // Largest inter-frame gap (ms) since the last stats tick. Written and reset only on
     // the video pump thread; surfaced once per second via the developer-mode logcat line.
     private long _maxFrameGapMs;
+    // Stale video frames skipped / audio frames dropped to cap latency, since the last stats
+    // tick. Written by the pumps (Interlocked), read-and-reset by the video pump's stats tick.
+    private int _skippedStaleVideoFrames;
+    private int _droppedLateAudioFrames;
     private volatile bool _isPtzSupported;
     private volatile bool _audioEnabled = true;
 
@@ -107,10 +124,12 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
     public NdiViewerBridge(
         NdiRuntime runtime,
         IAudioPlaybackSink audioSink,
+        ILowLatencyNetworkLock networkLock,
         IDiagnosticOverlayService? diagnostics = null)
     {
         _runtime = runtime;
         _audioSink = audioSink;
+        _networkLock = networkLock;
         _diagnostics = diagnostics;
     }
 
@@ -259,6 +278,7 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
                 var source = create.source_to_connect_to;
                 NdiNativeMethods.NDIlib_recv_connect(_recv, ref source);
                 NdiConnectionMetadata.Apply(_recv, isSender: false, sessionName: "viewer");
+                RequestHardwareAcceleration(_recv);
             }
             catch
             {
@@ -293,6 +313,9 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
 
             // Tally is retained across reconnects — re-apply after every recv create.
             ApplyTallyLocked();
+
+            // Keep the Wi-Fi radio out of power save for as long as this receiver lives.
+            _networkLock.Acquire();
 
             _activeSourceId = sourceId;
 
@@ -441,6 +464,7 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
                     NdiNativeMethods.NDIlib_recv_destroy(_recv);
                     _recv = IntPtr.Zero;
                     _runtime.ReleaseHandle();
+                    _networkLock.Release();
                 }
 
                 _activeSourceId = null;
@@ -456,6 +480,7 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
             {
                 _frontPixels = null;
                 _backPixels = null;
+                _sparePixels = null;
                 _frameWidth = 0;
                 _frameHeight = 0;
                 _frameTimestampMillis = 0;
@@ -530,7 +555,7 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
 
             // The record wraps the CURRENT front buffer without copying. It is
             // immutable-by-convention: callers must not mutate the pixels, and the
-            // array may be recycled by the pump after the double buffer cycles twice.
+            // array is recycled by the pump two frames later (triple buffer).
             return new NdiVideoFrame(
                 _frameWidth, _frameHeight, _frontPixels, _frameTimestampMillis,
                 _frameReceivedAtTicks, _frameTimestampIsSynthesized);
@@ -634,6 +659,9 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
         // the same reason the counters above are locals: per-receiver, pump-thread-only state.
         var frameReadyFaultLogged = false;
 
+        // Frames must be copied out as fast as they arrive — a slow pump is added latency.
+        RaiseCurrentThreadPriority(global::Android.OS.ThreadPriority.Display);
+
         try
         {
             while (_running)
@@ -649,9 +677,17 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
                 switch (frameType)
                 {
                     case NdiFrameType.Video:
+                        var staleFrameSkipped = false;
                         try
                         {
-                            CopyVideoFrame(ref video);
+                            // A newer frame is already queued behind this one: showing this one
+                            // would only add a frame of delay, so skip the copy and catch up.
+                            NdiNativeMethods.NDIlib_recv_get_queue(recv, out var queue);
+                            staleFrameSkipped = ReceiveLatencyPolicy.IsVideoFrameStale(queue.video_frames);
+                            if (staleFrameSkipped)
+                                Interlocked.Increment(ref _skippedStaleVideoFrames);
+                            else
+                                CopyVideoFrame(ref video);
                         }
                         finally
                         {
@@ -673,7 +709,10 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
                         // covers that), and the first frame must be observable as Connected before
                         // anything is asked to draw it. One delegate invoke — the interface contract
                         // forbids the handler doing anything but posting a coalesced invalidate.
-                        RaiseVideoFrameReady(ref frameReadyFaultLogged);
+                        // A skipped stale frame published nothing; the newer frame right behind
+                        // it raises the signal instead, so no redundant paint is requested.
+                        if (!staleFrameSkipped)
+                            RaiseVideoFrameReady(ref frameReadyFaultLogged);
                         break;
 
                     case NdiFrameType.Metadata:
@@ -839,7 +878,9 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
             if (!_running)
                 return;
 
-            (_frontPixels, _backPixels) = (_backPixels, _frontPixels);
+            // back -> front, front -> spare, spare -> back: the buffer the renderer may still be
+            // reading (the old front) is not written again until the next frame after this one.
+            (_frontPixels, _sparePixels, _backPixels) = (_backPixels, _frontPixels, _sparePixels);
             _frameWidth = width;
             _frameHeight = height;
             _frameTimestampMillis = timestampMillis;
@@ -895,6 +936,9 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
 
             _diagnostics.UpdateViewerDiagnostics(_measuredFps, _droppedFramePercent, width, height, sourceId);
 
+            var skippedStale = Interlocked.Exchange(ref _skippedStaleVideoFrames, 0);
+            var droppedAudio = Interlocked.Exchange(ref _droppedLateAudioFrames, 0);
+
             // Developer mode only (persisted Settings toggle): one logcat line per second so
             // soak tests can measure fps / drops / frame gaps with `adb logcat -s NdiStats`.
             // Runs on the pump thread — must never throw into VideoPumpLoop, whose catch
@@ -909,7 +953,8 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
                         $"src=\"{sourceId}\" fps={_measuredFps:0} drop={_droppedFramePercent:0.00}% " +
                         $"dTotal={totalDelta} dDropped={droppedDelta} " +
                         $"total={total.video_frames} dropped={dropped.video_frames} " +
-                        $"maxGapMs={_maxFrameGapMs} res={width}x{height} profile={_qualityProfile}");
+                        $"maxGapMs={_maxFrameGapMs} res={width}x{height} profile={_qualityProfile} " +
+                        $"staleSkipped={skippedStale} lateAudioDropped={droppedAudio}");
                 }
                 catch
                 {
@@ -928,6 +973,9 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
         var interleaved = Array.Empty<float>();
         var channelScratch = Array.Empty<float>();
         var sinkStarted = false;
+
+        // Audio underruns are audible; give the pump the platform's audio scheduling class.
+        RaiseCurrentThreadPriority(global::Android.OS.ThreadPriority.UrgentAudio);
 
         try
         {
@@ -956,6 +1004,16 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
                     var samples = audio.no_samples;
                     if (channels <= 0 || samples <= 0 || audio.p_data == IntPtr.Zero)
                         continue;
+
+                    // Playback is paced by the audio device, so a backlog (Wi-Fi burst after a
+                    // stall, sender clock running fast) never drains on its own and audio would
+                    // trail the picture permanently. Drop frames above the jitter budget instead.
+                    NdiNativeMethods.NDIlib_recv_get_queue(recv, out var queue);
+                    if (ReceiveLatencyPolicy.ShouldDropAudioFrame(queue.audio_frames, samples, audio.sample_rate))
+                    {
+                        Interlocked.Increment(ref _droppedLateAudioFrames);
+                        continue; // finally still frees the frame
+                    }
 
                     _audioSink.Start(audio.sample_rate, channels); // idempotent for unchanged format
                     sinkStarted = true;
@@ -1098,6 +1156,43 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
 
             _lifecycleTail = next;
             return next;
+        }
+    }
+
+    /// <summary>
+    /// Sends the <c>ndi_hwaccel</c> hint to the receiver itself so the SDK may use the platform's
+    /// hardware decoder (notably for NDI|HX H.264/HEVC streams). Best-effort.
+    /// </summary>
+    private static void RequestHardwareAcceleration(IntPtr recv)
+    {
+        var ptr = Marshal.StringToHGlobalAnsi(HardwareAccelerationXml);
+        try
+        {
+            var metadata = new NdiMetadataFrameNative
+            {
+                // length includes the terminating NUL that StringToHGlobalAnsi appends.
+                length = HardwareAccelerationXml.Length + 1,
+                timecode = 0,
+                p_data = ptr,
+            };
+            NdiNativeMethods.NDIlib_recv_send_metadata(recv, ref metadata);
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(ptr);
+        }
+    }
+
+    /// <summary>Best-effort Linux scheduling boost for the calling pump thread.</summary>
+    private static void RaiseCurrentThreadPriority(global::Android.OS.ThreadPriority priority)
+    {
+        try
+        {
+            global::Android.OS.Process.SetThreadPriority(priority);
+        }
+        catch
+        {
+            // Priority is an optimisation only — never let it stop the pump.
         }
     }
 

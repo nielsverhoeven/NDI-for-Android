@@ -152,6 +152,15 @@ internal struct NdiRecvPerformanceNative
     public long metadata_frames;
 }
 
+/// <summary>NDIlib_recv_queue_t — frames waiting in the receiver's queue right now.</summary>
+[StructLayout(LayoutKind.Sequential)]
+internal struct NdiRecvQueueNative
+{
+    public int video_frames;
+    public int audio_frames;
+    public int metadata_frames;
+}
+
 /// <summary>NDIlib_send_create_t.</summary>
 [StructLayout(LayoutKind.Sequential)]
 internal struct NdiSendCreateNative
