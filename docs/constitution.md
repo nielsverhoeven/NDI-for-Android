@@ -1,5 +1,5 @@
 # Project Constitution
-<!-- Version: 2.0 — 2026-09-27 (amendment, #395: §2.4 redefines the route contract — one TabBar route family; the two placement variants are chrome, not routes. Previous: 1.1 — 2026-07-07, NDI integration decision recorded as P/Invoke implemented, SDK 6.3.1; §2.4 navigation routes aligned with the shipped Shell routes) -->
+<!-- Version: 2.0.1 — 2026-10-10 (PATCH clarification, #456: §5 target API follows the TargetFramework (net10.0-android → API 36 with the Android 36.x workload), min API 26 via SupportedOSPlatformVersion, no separate targetSdk property; §2.3/§5 native-lib packaging wording (default globs, not an explicit item; Release ships arm64-v8a + x86_64); §6 workflow names corrected to the shipped ndi-for-android-cicd.yml / emulator-tests.yml and the AAB + APK release output. Previous: 2.0 — 2026-09-27, amendment #395: §2.4 redefines the route contract — one TabBar route family; the two placement variants are chrome, not routes. 1.1 — 2026-07-07, NDI integration decision recorded as P/Invoke implemented, SDK 6.3.1; §2.4 navigation routes aligned with the shipped Shell routes) -->
 <!-- Owned by: architect + orchestrator -->
 
 This document is the authoritative source for technology choices, architecture principles, and development agreements. Every agent must read this file before starting any feature work. Amendments require `architect` review and a version increment.
@@ -16,7 +16,7 @@ This document is the authoritative source for technology choices, architecture p
 | MVVM | CommunityToolkit.Mvvm | `ObservableObject`, `[RelayCommand]`, `[ObservableProperty]` |
 | Dependency Injection | `Microsoft.Extensions.DependencyInjection` via `MauiProgram.cs` | No service locator anti-pattern |
 | Persistence | SQLite-net-pcl | Async API only |
-| NDI Integration | P/Invoke against `libndi.so` — **decided and implemented** (no binding library) | Bundled NDI SDK ANDROID 6.3.1 binaries (arm64-v8a + armeabi-v7a) in `src/MauiApp/Platforms/Android/libs/`; NDI soft-disables on other ABIs |
+| NDI Integration | P/Invoke against `libndi.so` — **decided and implemented** (no binding library) | Bundled NDI SDK ANDROID 6.3.1 binaries (arm64-v8a + armeabi-v7a) in `src/MauiApp/Platforms/Android/libs/`; Release packages ship arm64-v8a + x86_64 only (armeabi-v7a is not packaged); NDI soft-disables on ABIs without a binary (x86_64) |
 | Build | `dotnet CLI` | `dotnet build`, `dotnet test` |
 | Tests | xUnit 2.x + Moq | `dotnet test` |
 | CI | GitHub Actions | `.github/workflows/` |
@@ -95,7 +95,9 @@ The NDI bridge isolates all native P/Invoke calls:
 3. **Mock implementation** in `tests/` for unit testing without native library.
 4. **Threading rule**: NDI callbacks arrive on native threads; all marshaling to UI thread uses `MainThread.BeginInvokeOnMainThread`.
 
-NDI native binaries (`.so` files) must be included in the Android project as `AndroidNativeLibrary` build items.
+NDI native binaries (`.so` files) are picked up from `Platforms/Android/libs/<abi>/` by the .NET for
+Android default `AndroidNativeLibrary` globs. Do **not** add an explicit `<AndroidNativeLibrary Include>`
+— it double-adds the library (XA4301). *(Clarified in v2.0.1.)*
 
 ### 2.4 Navigation
 
@@ -150,17 +152,39 @@ Full route table, the chrome rules and the size-class/orientation placement poli
 
 - `AndroidManifest.xml` must declare: `INTERNET`, `CHANGE_WIFI_MULTICAST_STATE`, `FOREGROUND_SERVICE`.
 - Screen-share output requires `FOREGROUND_SERVICE_MEDIA_PROJECTION` permission (API 34+).
-- `libndi.so` binaries reside in `src/MauiApp/Platforms/Android/libs/` and are included as `<AndroidNativeLibrary>`.
-- Minimum supported API: Android 8.0 (API 26).
-- Target API: Android 15 (API 35).
+- `libndi.so` binaries reside in `src/MauiApp/Platforms/Android/libs/<abi>/` and are packaged by the
+  default `AndroidNativeLibrary` globs (no explicit item — see §2.3). Release packages ship
+  `arm64-v8a` + `x86_64` (the .NET 10 default `RuntimeIdentifiers`); `armeabi-v7a` is not packaged.
+- Minimum supported API: Android 8.0 (API 26), set by `SupportedOSPlatformVersion` in the csproj.
+- Target API follows the `TargetFramework`: `net10.0-android` → API 36 with the Android 36.x workload.
+  There is **no** separate targetSdk property — `AndroidMinSdkVersion`/`AndroidTargetSdkVersion` are
+  not read by the SDK and must not be (re)added to the csproj. CI asserts `targetSdkVersion ≥ 36` on
+  both the AAB and the APK. *(Amended in v2.0.1, #456.)*
 
 ---
 
 ## 6. CI Rules
 
-- Workflows: `.github/workflows/emulator-tests.yml` (APK build + Appium emulator tests), `.github/workflows/release.yml` (release APK publish).
+- Workflows: `.github/workflows/ndi-for-android-cicd.yml` (unit tests → version → one Release
+  publish producing the signed AAB **and** the universal APK → Appium e2e on the APK → GitHub
+  release with both files, `main` only), `.github/workflows/emulator-tests.yml` (manual Appium
+  emulator run), `.github/workflows/codeql.yml`. The AAB is the Google Play upload; the APK is the
+  sideload/e2e package. *(Corrected in v2.0.1 — `release.yml` never existed.)*
+- Release signing: passwords reach `dotnet publish` via the `file:` prefix from owner-only files in
+  `$RUNNER_TEMP`; both signatures are pinned on the upload-key SHA-256 recorded in
+  `.github/KNOWLEDGE-BASE.md` (Release signing). No secrets in source (§4.5).
 - Timeout: `timeout-minutes: 30` on build jobs, `timeout-minutes: 40` on emulator jobs.
 - Emulator tests always install a **Release** APK (not Debug) to avoid Mono Fast Deployment aborts.
 - Before every `adb install` in CI scripts, run `adb uninstall com.ndi.android || true` to prevent `INSTALL_FAILED_UPDATE_INCOMPATIBLE` on cached emulators.
 - `dotnet build` and non-NDI unit tests must pass on every PR.
 - See `/android-ci-failure-patterns` skill for detailed diagnosis of Android emulator CI failures.
+
+---
+
+## Amendment history
+
+| Version | Date | Issue | Type | Summary |
+|---|---|---|---|---|
+| 2.0.1 | 2026-10-10 | #456 | PATCH (clarification) | §5 target API follows the TFM (API 36), min API 26 via `SupportedOSPlatformVersion`, no targetSdk property; §2.3/§5 native-lib packaging via default globs, Release ABIs arm64-v8a + x86_64; §6 workflow names and AAB + APK release output. |
+| 2.0 | 2026-09-27 | #395 | Amendment | §2.4 one TabBar route family; placement variants are chrome, not routes. |
+| 1.1 | 2026-07-07 | — | Amendment | NDI integration recorded as P/Invoke implemented (SDK 6.3.1); §2.4 routes aligned with the shipped Shell routes. |

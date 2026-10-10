@@ -15,14 +15,18 @@ not a stub.
 
 ## Tech Stack
 - **.NET MAUI** targeting `net10.0-android` — C# 12, nullable enabled, implicit usings.
-  Android `minSdk 26`, `targetSdk 35`. `Core` project is plain `net10.0` (MAUI-free, unit-testable).
+  Android `minSdk 26` (`SupportedOSPlatformVersion`), `targetSdk 36` (from the TFM — there is no
+  csproj knob; `AndroidMin/TargetSdkVersion` are not read by the SDK). `Core` project is plain
+  `net10.0` (MAUI-free, unit-testable).
 - **UI**: MAUI Shell + XAML; **SkiaSharp** (`SkiaSharp.Views.Maui.Controls`) for the NDI video surface
 - **MVVM**: CommunityToolkit.Mvvm (`ObservableObject`, `[RelayCommand]`, `[ObservableProperty]`)
 - **DI**: `Microsoft.Extensions.DependencyInjection` via `src/MauiApp/MauiProgram.cs` — no service locator
 - **Persistence**: SQLite-net-pcl (async API only) via `src/MauiApp/Data/NdiDatabase.cs`
-- **NDI**: real P/Invoke against bundled `libndi.so` (NDI SDK 6.3.1, `arm64-v8a` + `armeabi-v7a`
-  only). Soft-disabled on x86/x86_64 — no native lib there, so `NdiRuntime.EnsureInitialized()`
-  returns `false` and NDI features disable without crashing (important for emulators).
+- **NDI**: real P/Invoke against bundled `libndi.so` (NDI SDK 6.3.1). Release packages ship
+  `arm64-v8a` + `x86_64` (the .NET 10 default `RuntimeIdentifiers`); the repo also carries an
+  `armeabi-v7a` binary, but that ABI is **not packaged**. Soft-disabled on x86/x86_64 — no native
+  lib there, so `NdiRuntime.EnsureInitialized()` returns `false` and NDI features disable without
+  crashing (important for emulators).
 - **Tests**: xUnit 2.x + Moq (+ `Microsoft.Extensions.TimeProvider.Testing`) — `tests/MauiApp.Tests`;
   Appium UI smoke tests — `tests/MauiApp.UITests`
 - **CI**: GitHub Actions — `.github/workflows/` (`ndi-for-android-cicd.yml`, `codeql.yml`,
@@ -69,7 +73,7 @@ src/
       Interop/           <- NdiNativeMethods.cs + NdiNativeStructs.cs ([DllImport("ndi")])
     Data/                <- SQLite context (NdiDatabase.cs)
     Platforms/Android/   <- Android-only lifecycle, permissions, capture, MediaProjection, NSD
-      libs/<abi>/        <- bundled libndi.so (arm64-v8a, armeabi-v7a)
+      libs/<abi>/        <- bundled libndi.so (arm64-v8a packaged; armeabi-v7a present, not packaged)
 tests/
   MauiApp.Tests/         <- xUnit unit tests (no native NDI — mock the bridge)
   MauiApp.UITests/       <- Appium UI smoke tests
