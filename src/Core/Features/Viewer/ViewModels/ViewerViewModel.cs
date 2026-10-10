@@ -472,8 +472,16 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
         StatusMessage = "Stopped.";
     }
 
+    private bool _disposed;
+
     public void Dispose()
     {
+        // Two page lifecycle paths can reach this (OnNavigatedFrom and the OnDisappearing defence
+        // branch, #450); the second must not stop the receiver or close the history row again.
+        if (_disposed)
+            return;
+        _disposed = true;
+
         DisposeTimers();
         _statsTimer?.Dispose();
         _overlayAutoHideTimer?.Dispose();
@@ -490,8 +498,10 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
 
         // The ownership token's dual: at most one ViewModel may drive the shared bridge, so the one
         // that owns the receiver must hand it back when it goes away. ViewerPage disposes this
-        // ViewModel once its page has left the nav stack (ViewerPage.xaml.cs:52-57) but never stops
-        // the bridge, and the navigation handoff only fires on a primary-destination change — so
+        // ViewModel from OnNavigatedFrom once its page is off the nav stack (#450 — Shell raises
+        // Disappearing before the pop removes the page, so that is the one hook that sees it gone)
+        // but never stops the bridge, and the navigation handoff only fires on a
+        // primary-destination change — so
         // without this, Back out of a pushed viewer leaves a receiver pumping video *and audio*
         // with no ViewModel driving it, and any other live ViewerViewModel (the Expanded PaneViewer
         // is never disposed) is left permanently disowned: painting frames it does not own under
