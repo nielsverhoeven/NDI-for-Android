@@ -84,7 +84,7 @@ tests/
 4. **NDI threading**: bridge events (`ConnectionStateChanged`, `TallyEchoChanged`, `OutputStatusChanged`, `VideoFrameReady`) are raised on pump/background threads — subscribers marshal to the UI thread (`IMainThreadDispatcher` in Core, `MainThread.BeginInvokeOnMainThread` in MauiApp). `VideoFrameReady` is the only per-frame event (up to 60/s, #416): its handler does nothing but post one coalesced invalidate, and the pump wraps the raise so a subscriber fault is never reported as a lost stream.
 5. **Android APIs** isolated in `Platforms/Android/` behind interfaces
 6. **No root `IsVisible` binding on a reusable `ContentView`** — a `View.SetValue` from host code-behind clears an active one-way binding on that same property, so a `ContentView` reused across multiple hosts (e.g. `CameraControlsView` inside both `ViewerControlDeck` and `ViewerControlSheet`) must bind visibility on an *inner* element and leave its own root free for the host to toggle imperatively (`.IsVisible = ...`) without side effects. See #342 (`ViewerControlDeck`/`ViewerControlSheet`/`FullScreenControlsOverlay`).
-7. **Tab-root lifetime rule (#352/#359)** — ShellContent-hosted pages are re-resolved from DI on every tab entry (not on a placement change any more, #395) and never dispose their ViewModel; a ViewModel subscribing to a singleton event is registered **Singleton together with its page** (`SourceListViewModel`/`SourceListPage`, `HomeViewModel`/`HomePage`, `OutputViewModel`/`OutputPage`). Guarded by `tests/MauiApp.Tests/Composition/TabRootLifetimeRegistrationTests.cs`. Only push-navigated pages (`ViewerPage`) dispose a Transient ViewModel, and only after leaving the nav stack.
+7. **Tab-root lifetime rule (#352/#359)** — ShellContent-hosted pages are re-resolved from DI on every tab entry (not on a placement change any more, #395) and never dispose their ViewModel; a ViewModel subscribing to a singleton event is registered **Singleton together with its page** (`SourceListViewModel`/`SourceListPage`, `HomeViewModel`/`HomePage`, `OutputViewModel`/`OutputPage`). Guarded by `tests/MauiApp.Tests/Composition/TabRootLifetimeRegistrationTests.cs`. Only push-navigated pages (`ViewerPage`) dispose a Transient ViewModel, and they do it in `OnNavigatedFrom` once the page is off the nav stack — Shell raises Disappearing *before* the page leaves the stack, so a stack check in `OnDisappearing` is dead for a pop (#450).
 
 ## Shell Routes
 
@@ -329,6 +329,8 @@ handoff use `StopReceiverAsync().FireAndForget()` (the handoff *returns* the tas
 time it out for diagnostics only). The one blocking caller is `NdiViewerBridge.Dispose()`, whose
 only caller is the DI container at shutdown; calling it from a pump thread deadlocks by design, and
 that is enforced by documentation, not by code.
+
+The Back path out of a pushed viewer is `ViewerViewModel.Dispose` → `StopReceiverAsync` (ownership-gated), not the handoff (#450).
 
 ### `IMainThreadDispatcher` abstraction (NEW)
 | Item | Path | Notes |
