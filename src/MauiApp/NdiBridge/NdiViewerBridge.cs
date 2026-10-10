@@ -937,8 +937,11 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
             // soak tests can measure fps / drops / frame gaps with `adb logcat -s NdiStats`.
             // Runs on the pump thread — must never throw into VideoPumpLoop, whose catch
             // would report the failure as a lost stream. dTotal/dDropped are this interval's
-            // deltas (what drop= is computed from); total/dropped remain the receiver's
-            // lifetime counters.
+            // deltas; drop= is dDropped/(dTotal+dDropped) — the SDK's counters are disjoint
+            // (total = delivered to the app, dropped = discarded by the SDK before delivery;
+            // settled on device 2026-10-10), so recv= (dTotal+dDropped) is the frame rate the
+            // receiver saw and compares directly with the sender's. total/dropped remain the
+            // receiver's lifetime counters.
             if (_diagnostics.IsDeveloperMode)
             {
                 try
@@ -948,7 +951,8 @@ public sealed class NdiViewerBridge : INdiViewerBridge, IDisposable
                         $"dTotal={totalDelta} dDropped={droppedDelta} " +
                         $"total={total.video_frames} dropped={dropped.video_frames} " +
                         $"maxGapMs={_maxFrameGapMs} res={width}x{height} profile={_qualityProfile} " +
-                        $"staleSkipped={skippedStale} lateAudioDropped={droppedAudio}");
+                        $"staleSkipped={skippedStale} lateAudioDropped={droppedAudio} " +
+                        $"recv={totalDelta + droppedDelta}");
                 }
                 catch
                 {
