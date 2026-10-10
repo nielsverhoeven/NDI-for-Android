@@ -211,10 +211,12 @@ jobs:
 
           # AndroidPackageFormats (plural) is the supported property. Never pass the singular
           # AndroidPackageFormat next to it: the plural only takes effect while the singular is
-          # empty, so `AndroidPackageFormat=apk` would silently drop the bundle again.
+          # empty, so `AndroidPackageFormat=apk` would silently drop the bundle again. The list
+          # separator is passed as %3B: a bare `;` on the MSBuild command line splits the
+          # argument into two properties and the valueless `apk` fails with MSB1006.
           dotnet publish src/MauiApp/NdiForAndroid.csproj \
             -f net10.0-android -c Release -o publish-output --no-restore \
-            "/p:AndroidPackageFormats=aab;apk" \
+            "/p:AndroidPackageFormats=aab%3Bapk" \
             /p:AndroidUseToolchain=True \
             /p:ApplicationDisplayVersion=${{ needs.version.outputs.version_name }} \
             /p:ApplicationVersion=${{ needs.version.outputs.version_code }} \
