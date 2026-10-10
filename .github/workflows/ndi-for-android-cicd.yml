@@ -120,18 +120,28 @@ jobs:
         run: bash .github/scripts/compute-version.sh
 
   # ════════════════════════════════════════════════════════════════════════════
-  # Android build — one APK for the whole pipeline.
+  # Android build — one publish, one AAB + one APK for the whole pipeline.
   #
   # Previously the android head was compiled here and published again in a second job.
-  # It is now built once and passed downstream as an artifact. Ubuntu rather than Windows:
+  # It is now built once and passed downstream as artifacts. Ubuntu rather than Windows:
   # the MAUI workload installs in ~16s here versus ~5min on windows-latest, and there is no
   # Windows head to justify the runner.
+  #
+  # With `AndroidPackageFormats=aab;apk` the bundle is the primary output (jarsigner-signed)
+  # and the APK is bundletool's universal APK extracted from that bundle, signed with the same
+  # keystore. Same file name as before (`com.ndi.android-Signed.apk`), so e2e-reusable.yml and
+  # publish-release are unaffected; the AAB is what goes to Google Play (#456).
   # ════════════════════════════════════════════════════════════════════════════
   build-android:
     name: Build Release APK   # display name preserved for branch protection — see note above
     needs: version
     runs-on: ubuntu-latest
     timeout-minutes: 30
+
+    env:
+      # SHA-256 of the release/upload-key certificate — see KNOWLEDGE-BASE.md "Release signing".
+      # Both signature checks below pin on it; a build signed with any other key is red.
+      UPLOAD_KEY_SHA256: fcf1b453b782a0b9bbae3d48f8612b8ad3f78565af85864b18aa0b071cc84271
 
     steps:
       - uses: actions/checkout@v7
@@ -155,31 +165,36 @@ jobs:
         run: dotnet restore NdiForAndroid.sln --ignore-failed-sources
 
       # Decodes the release keystore, when the secret is available, for the publish step below.
+      # The two passwords are written to owner-only files: the bundle and the universal APK are
+      # signed through bundletool, which accepts `pass:`/`file:` but not the `env:` prefix.
       - name: Decode release keystore
         id: keystore
         shell: bash
         env:
           KEYSTORE_B64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+          RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
         run: |
           if [ -z "$KEYSTORE_B64" ]; then
             echo "available=false" >> "$GITHUB_OUTPUT"
-            echo "::warning::RELEASE_KEYSTORE_BASE64 is not available in this run; the APK will be debug-signed"
+            echo "::warning::RELEASE_KEYSTORE_BASE64 is not available in this run; the APK and AAB will be debug-signed"
             exit 0
           fi
           printf '%s' "$KEYSTORE_B64" | tr -d '\n\r ' | base64 -d > "$RUNNER_TEMP/release.keystore"
           test -s "$RUNNER_TEMP/release.keystore"
+          umask 077
+          printf '%s' "$RELEASE_KEY_PASSWORD"      > "$RUNNER_TEMP/key.pass"
+          printf '%s' "$RELEASE_KEYSTORE_PASSWORD" > "$RUNNER_TEMP/store.pass"
           echo "available=true" >> "$GITHUB_OUTPUT"
 
-      # Stamps the computed version into the APK. Without this the package ships the csproj
-      # defaults (1 / 1.0.0) regardless of the release it is published under.
-      - name: Publish Release APK
+      # Stamps the computed version into the packages. Without this they ship the csproj
+      # defaults (1 / 1.0.0) regardless of the release they are published under.
+      - name: Publish Release APK + AAB
         shell: bash
         env:
           RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
-          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
-          RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
         run: |
-          # Signs the release APK with the stable release key when the keystore secret was
+          # Signs the release packages with the stable release key when the keystore secret was
           # available above. Without these properties .NET Android signs with the runner's
           # ephemeral debug keystore, so every release carried a different certificate and
           # updates failed with INSTALL_FAILED_UPDATE_INCOMPATIBLE.
@@ -189,22 +204,27 @@ jobs:
               /p:AndroidKeyStore=true
               "/p:AndroidSigningKeyStore=$RUNNER_TEMP/release.keystore"
               "/p:AndroidSigningKeyAlias=$RELEASE_KEY_ALIAS"
-              /p:AndroidSigningKeyPass=env:RELEASE_KEY_PASSWORD
-              /p:AndroidSigningStorePass=env:RELEASE_KEYSTORE_PASSWORD
+              "/p:AndroidSigningKeyPass=file:$RUNNER_TEMP/key.pass"
+              "/p:AndroidSigningStorePass=file:$RUNNER_TEMP/store.pass"
             )
           fi
 
+          # AndroidPackageFormats (plural) is the supported property. Never pass the singular
+          # AndroidPackageFormat next to it: the plural only takes effect while the singular is
+          # empty, so `AndroidPackageFormat=apk` would silently drop the bundle again.
           dotnet publish src/MauiApp/NdiForAndroid.csproj \
             -f net10.0-android -c Release -o publish-output --no-restore \
-            /p:AndroidPackageFormat=apk \
+            "/p:AndroidPackageFormats=aab;apk" \
             /p:AndroidUseToolchain=True \
             /p:ApplicationDisplayVersion=${{ needs.version.outputs.version_name }} \
             /p:ApplicationVersion=${{ needs.version.outputs.version_code }} \
             "${SIGN_ARGS[@]}"
 
-      # The signed variant is the only installable one — the unsigned APK fails with
-      # INSTALL_PARSE_FAILED_NO_CERTIFICATES on device and in CI.
-      - name: Locate signed APK
+      # The signed variants are the only usable ones — the unsigned APK fails with
+      # INSTALL_PARSE_FAILED_NO_CERTIFICATES on device and in CI, and Play rejects an
+      # unsigned bundle.
+      - name: Locate signed APK and AAB
+        shell: bash
         run: |
           APK_PATH=$(find publish-output -name "*-Signed.apk" | head -1)
           if [ -z "$APK_PATH" ]; then
@@ -212,20 +232,126 @@ jobs:
             find publish-output -name "*.apk" || true
             exit 1
           fi
+          AAB_PATH=$(find publish-output -name "*-Signed.aab" | head -1)
+          if [ -z "$AAB_PATH" ]; then
+            echo "No signed AAB produced under publish-output:"
+            find publish-output -name "*.aab" || true
+            exit 1
+          fi
           echo "APK_PATH=$APK_PATH" >> "$GITHUB_ENV"
-          echo "Built $(basename "$APK_PATH")"
+          echo "AAB_PATH=$AAB_PATH" >> "$GITHUB_ENV"
+          echo "Built $(basename "$APK_PATH") and $(basename "$AAB_PATH")"
 
-      - name: Verify release signature
+      # Content checks that hold for every run, debug-signed or not: the bundle validates, the
+      # stamped versionCode and targetSdk are what Play expects, the universal APK agrees, the
+      # APK is 16-byte-aligned by bundletool, and every 64-bit native library in the bundle is
+      # 16 KB page-aligned (a Play requirement for apps targeting API 35+).
+      - name: Inspect bundle and APK
+        shell: bash
+        env:
+          EXPECTED_VERSION_CODE: ${{ needs.version.outputs.version_code }}
+        run: |
+          # bundletool ships inside the .NET for Android workload pack — no download.
+          DOTNET_PACKS="${DOTNET_ROOT:-$(dirname "$(readlink -f "$(command -v dotnet)")")}/packs"
+          BUNDLETOOL=$(find "$DOTNET_PACKS" -path '*Microsoft.Android.Sdk*' -name bundletool.jar | sort -V | tail -1)
+          if [ -z "$BUNDLETOOL" ]; then
+            echo "::error::bundletool.jar not found under $DOTNET_PACKS (Microsoft.Android.Sdk pack)"
+            find "$DOTNET_PACKS" -maxdepth 1 || true
+            exit 1
+          fi
+          echo "bundletool: $BUNDLETOOL ($(java -jar "$BUNDLETOOL" version))"
+
+          java -jar "$BUNDLETOOL" validate --bundle="$AAB_PATH"
+
+          TSDK=$(java -jar "$BUNDLETOOL" dump manifest --bundle="$AAB_PATH" \
+            --xpath=/manifest/uses-sdk/@android:targetSdkVersion)
+          MSDK=$(java -jar "$BUNDLETOOL" dump manifest --bundle="$AAB_PATH" \
+            --xpath=/manifest/uses-sdk/@android:minSdkVersion)
+          VC=$(java -jar "$BUNDLETOOL" dump manifest --bundle="$AAB_PATH" \
+            --xpath=/manifest/@android:versionCode)
+          echo "AAB: minSdkVersion=$MSDK targetSdkVersion=$TSDK versionCode=$VC"
+          if [ -z "$TSDK" ] || [ "$TSDK" -lt 36 ]; then
+            echo "::error::AAB targetSdkVersion is '$TSDK'; Google Play requires 36 or higher"
+            exit 1
+          fi
+          if [ "$VC" != "$EXPECTED_VERSION_CODE" ]; then
+            echo "::error::AAB versionCode is '$VC', expected '$EXPECTED_VERSION_CODE' from the version job"
+            exit 1
+          fi
+
+          AAPT2=$(ls -d "$ANDROID_HOME"/build-tools/*/aapt2 | sort -V | tail -1)
+          "$AAPT2" dump badging "$APK_PATH" > "$RUNNER_TEMP/badging.txt"
+          grep -o "targetSdkVersion:'[0-9]*'" "$RUNNER_TEMP/badging.txt"
+          grep -o "versionCode='[0-9]*'" "$RUNNER_TEMP/badging.txt"
+          grep -q "targetSdkVersion:'$TSDK'" "$RUNNER_TEMP/badging.txt" \
+            || { echo "::error::APK targetSdkVersion differs from the bundle's ($TSDK)"; exit 1; }
+          grep -q "versionCode='$EXPECTED_VERSION_CODE'" "$RUNNER_TEMP/badging.txt" \
+            || { echo "::error::APK versionCode differs from the expected $EXPECTED_VERSION_CODE"; exit 1; }
+
+          # The universal APK is aligned by bundletool, not by our build — assert it.
+          ZIPALIGN=$(ls -d "$ANDROID_HOME"/build-tools/*/zipalign | sort -V | tail -1)
+          "$ZIPALIGN" -c -P 16 4 "$APK_PATH" \
+            || { echo "::error::APK is not 16 KB page-aligned at the zip layer (zipalign -c -P 16 4)"; exit 1; }
+
+          # ELF LOAD segments of every 64-bit native library must be 16 KB (0x4000) aligned.
+          # Only arm64-v8a and x86_64 are packaged (.NET 10 default RuntimeIdentifiers).
+          rm -rf "$RUNNER_TEMP/aab-libs"
+          unzip -q -o "$AAB_PATH" 'base/lib/arm64-v8a/*' 'base/lib/x86_64/*' -d "$RUNNER_TEMP/aab-libs"
+          shopt -s nullglob
+          n=0
+          for so in "$RUNNER_TEMP"/aab-libs/base/lib/*/*.so; do
+            n=$((n+1))
+            readelf -lW "$so" | awk '$1=="LOAD" && $NF!="0x4000"{bad=1} END{exit bad}' \
+              || { echo "::error::$so: LOAD segment not 16 KB aligned"; readelf -lW "$so" | grep LOAD; exit 1; }
+          done
+          if [ "$n" -eq 0 ]; then
+            echo "::error::No native libraries found under base/lib/{arm64-v8a,x86_64} in the bundle"
+            unzip -l "$AAB_PATH" | grep 'base/lib/' || true
+            exit 1
+          fi
+          echo "16 KB alignment: $n native libraries checked"
+
+          {
+            echo "### Release packages"
+            echo ""
+            echo "- AAB: \`$(basename "$AAB_PATH")\` — minSdkVersion \`$MSDK\`, targetSdkVersion \`$TSDK\`, versionCode \`$VC\`"
+            echo "- APK: \`$(basename "$APK_PATH")\` (universal, from the bundle) — targetSdkVersion \`$TSDK\`, zipalign -P 16 OK"
+            echo "- 16 KB page alignment: \`$n\` native libraries (arm64-v8a + x86_64) checked"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Pins both signatures on the release/upload key. apksigner must report the v2 scheme —
+      # a v1-only universal APK would not install on API 30+ — and the certificate digest; the
+      # bundle is a JAR-signed zip, so jarsigner/keytool from the runner's JDK verify it.
+      - name: Verify release signatures (APK + AAB)
         if: steps.keystore.outputs.available == 'true'
         shell: bash
         run: |
           APKSIGNER=$(ls -d "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
-          "$APKSIGNER" verify --print-certs "$APK_PATH" | tee "$RUNNER_TEMP/certs.txt"
+          "$APKSIGNER" verify --verbose --print-certs "$APK_PATH" | tee "$RUNNER_TEMP/certs.txt"
+          grep -q "Verified using v2 scheme (APK Signature Scheme v2): true" "$RUNNER_TEMP/certs.txt" \
+            || { echo "::error::The release APK carries no v2 signature"; exit 1; }
+          grep -q "certificate SHA-256 digest: $UPLOAD_KEY_SHA256" "$RUNNER_TEMP/certs.txt" \
+            || { echo "::error::The release APK is not signed with the registered upload key"; exit 1; }
           if grep -q "CN=Android Debug" "$RUNNER_TEMP/certs.txt"; then
             echo "::error::The release APK is debug-signed; the signing properties were not applied"
             exit 1
           fi
 
+          jarsigner -verify -verbose:summary "$AAB_PATH" | tee "$RUNNER_TEMP/aab-verify.txt"
+          grep -q "^jar verified" "$RUNNER_TEMP/aab-verify.txt" \
+            || { echo "::error::jarsigner did not report 'jar verified.' for the AAB"; exit 1; }
+
+          # keytool prints the digest as colon-separated upper-case hex.
+          COLON=$(printf '%s' "$UPLOAD_KEY_SHA256" | sed 's/../&:/g; s/:$//' | tr a-f A-F)
+          keytool -printcert -jarfile "$AAB_PATH" | tee -a "$RUNNER_TEMP/certs.txt"
+          grep -q "SHA256: $COLON" "$RUNNER_TEMP/certs.txt" \
+            || { echo "::error::The AAB is not signed with the registered upload key"; exit 1; }
+          if grep -q "CN=Android Debug" "$RUNNER_TEMP/certs.txt"; then
+            echo "::error::The release AAB is debug-signed; the signing properties were not applied"
+            exit 1
+          fi
+
+      # `release-apk` is consumed by name in e2e-reusable.yml — keep it exactly as it is.
       - name: Upload APK artifact
         uses: actions/upload-artifact@v7
         with:
@@ -233,10 +359,20 @@ jobs:
           path: ${{ env.APK_PATH }}
           retention-days: 7
 
-      - name: Remove keystore
+      - name: Upload AAB artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-aab
+          path: ${{ env.AAB_PATH }}
+          retention-days: 7
+
+      - name: Remove keystore and password files
         if: always()
         shell: bash
-        run: rm -f "$RUNNER_TEMP/release.keystore" "$RUNNER_TEMP/certs.txt"
+        run: |
+          rm -rf "$RUNNER_TEMP/release.keystore" "$RUNNER_TEMP/key.pass" "$RUNNER_TEMP/store.pass" \
+            "$RUNNER_TEMP/certs.txt" "$RUNNER_TEMP/aab-verify.txt" "$RUNNER_TEMP/badging.txt" \
+            "$RUNNER_TEMP/aab-libs"
 
   # ════════════════════════════════════════════════════════════════════════════
   # E2E — runs on PRs into main and on main itself. Delegates to e2e-reusable.yml
@@ -302,19 +438,32 @@ jobs:
           name: release-apk
           path: apk
 
-      - name: Locate APK
+      - name: Download AAB artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: release-aab
+          path: aab
+
+      - name: Locate APK and AAB
         run: |
           APK_PATH=$(find apk -name "*.apk" | head -1)
           if [ -z "$APK_PATH" ]; then echo "No APK in artifact"; exit 1; fi
+          AAB_PATH=$(find aab -name "*.aab" | head -1)
+          if [ -z "$AAB_PATH" ]; then echo "No AAB in artifact"; exit 1; fi
           echo "APK_PATH=$APK_PATH" >> "$GITHUB_ENV"
-          echo "Publishing $(basename "$APK_PATH")"
+          echo "AAB_PATH=$AAB_PATH" >> "$GITHUB_ENV"
+          echo "Publishing $(basename "$APK_PATH") and $(basename "$AAB_PATH")"
 
+      # The AAB on the release is the exact bundle uploaded to Google Play, so the Play
+      # versionCode and the GitHub tag stay 1:1. fail_on_unmatched_files guards both paths.
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ needs.version.outputs.tag_name }}
           name: NDI for Android ${{ needs.version.outputs.version_name }}
-          files: ${{ env.APK_PATH }}
+          files: |
+            ${{ env.APK_PATH }}
+            ${{ env.AAB_PATH }}
           fail_on_unmatched_files: true
           generate_release_notes: true
           make_latest: true
@@ -328,4 +477,5 @@ jobs:
             echo "- Version name: \`${{ needs.version.outputs.version_name }}\`"
             echo "- Version code: \`${{ needs.version.outputs.version_code }}\`"
             echo "- APK: \`$(basename "$APK_PATH")\`"
+            echo "- AAB: \`$(basename "$AAB_PATH")\`"
           } >> "$GITHUB_STEP_SUMMARY"
