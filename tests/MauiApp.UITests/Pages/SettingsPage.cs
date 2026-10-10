@@ -394,4 +394,13 @@ public sealed class SettingsPage : PageObject
 
     public bool IsSaveErrorShown => IsPresent(TestIds.SettingsSaveError);
     public string SaveErrorText  => TextOf(TestIds.SettingsSaveError);
+
+    // ── About section (#457) ──────────────────────────────────────────────────
+
+    /// <summary>The NDI trademark attribution line. Open the About section first.</summary>
+    public string NdiTrademarkText => TextOf(TestIds.SettingsNdiTrademark);
+
+    /// <summary>True while the "Privacy policy" link is rendered. Presence only — tapping it would
+    /// launch a Custom Tab and leave the app under test.</summary>
+    public bool HasPrivacyPolicyLink => IsPresent(TestIds.SettingsPrivacyPolicy);
 }

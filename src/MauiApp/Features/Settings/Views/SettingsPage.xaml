@@ -426,6 +426,26 @@
                                    <Label Text="{Binding AppName}" AutomationId="{x:Static t:TestIds.SettingsAppName}" FontAttributes="Bold" />
                                    <Label Text="{Binding AppVersionBuild}" AutomationId="{x:Static t:TestIds.SettingsAppVersion}" />
                                    <Label Text="{Binding NdiSdkVersion}" AutomationId="{x:Static t:TestIds.SettingsNdiSdkVersion}" TextColor="{DynamicResource TextSecondary}" />
+                                   <!-- Trademark attribution + privacy-policy link (#457). Strings are Core constants on the
+                                        ViewModel so the Appium suite asserts the same text the page renders. The link is a
+                                        48 dp tappable Label (A11y budget) that opens the policy in a Custom Tab; e2e never taps it. -->
+                                   <Label Text="{x:Static vm:SettingsViewModel.NdiTrademarkNotice}"
+                                          AutomationId="{x:Static t:TestIds.SettingsNdiTrademark}"
+                                          FontSize="12"
+                                          TextColor="{DynamicResource TextSecondary}" />
+                                   <Label Text="Privacy policy"
+                                          AutomationId="{x:Static t:TestIds.SettingsPrivacyPolicy}"
+                                          SemanticProperties.Description="Privacy policy"
+                                          SemanticProperties.Hint="Opens the privacy policy in your browser"
+                                          TextDecorations="Underline"
+                                          TextColor="{DynamicResource Primary}"
+                                          MinimumHeightRequest="48"
+                                          VerticalTextAlignment="Center"
+                                          HorizontalOptions="Start">
+                                          <Label.GestureRecognizers>
+                                                 <TapGestureRecognizer Command="{Binding OpenPrivacyPolicyCommand}" />
+                                          </Label.GestureRecognizers>
+                                   </Label>
                             </VerticalStackLayout>
                      </VerticalStackLayout>
               </Grid>

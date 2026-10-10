@@ -1,11 +1,11 @@
 # NDI-for-Android — Agent Knowledge Base
-<!-- Last updated: 2026-09-27 | Read this INSTEAD of re-reading constitution.md + architecture.md for implementation tasks -->
+<!-- Last updated: 2026-10-10 | Read this INSTEAD of re-reading constitution.md + architecture.md for implementation tasks -->
 
 ## Tech Stack (authoritative)
-- **Platform**: .NET MAUI `net10.0-android` | **Language**: C# 12, nullable enabled
+- **Platform**: .NET MAUI `net10.0-android` (minSdk 26 via `SupportedOSPlatformVersion`; targetSdk 36 from the TFM — no csproj knob) | **Language**: C# 12, nullable enabled
 - **UI**: MAUI Shell + XAML; SkiaSharp for the NDI video surface | **MVVM**: CommunityToolkit.Mvvm (`ObservableObject`, `[RelayCommand]`, `[ObservableProperty]`)
 - **DI**: `Microsoft.Extensions.DependencyInjection` via `MauiProgram.cs` — no service locator
-- **Persistence**: SQLite-net-pcl (async API only) | **NDI**: **real P/Invoke** against bundled `libndi.so` (NDI SDK 6.3.1, arm64-v8a + armeabi-v7a; soft-disabled on x86/x86_64 — no native lib there)
+- **Persistence**: SQLite-net-pcl (async API only) | **NDI**: **real P/Invoke** against bundled `libndi.so` (NDI SDK 6.3.1; Release ships arm64-v8a + x86_64, armeabi-v7a is not packaged; soft-disabled on x86/x86_64 — no native lib there)
 - **Tests**: xUnit 2.x + Moq | **Build**: `dotnet CLI`
 - **CI**: GitHub Actions — `ndi-for-android-cicd.yml` (unit tests → version → build → e2e → release),
   `codeql.yml`, `emulator-tests.yml` (manual). See the **CI Pipeline** section below.
@@ -148,6 +148,7 @@ reads them; the service has no placement state. `PrimaryNavigationMetadata.TryRe
 - **Auto-save (#292)**: no Apply button — every change (theme/accent/dev-mode, discovery-server add/edit/delete/toggle/reorder) persists immediately via `PersistAsync()` → `ISettingsRepository.SaveSettingsAsync`
 - **Discovery servers (#292)**: three add fields (optional display name, hostname, port); rows show display name (hostname fallback), endpoint, and live connection state (`DiscoveryServerConnectionState`, 10 s TCP probe via `INdiDiscoveryBridge.IsDiscoveryServerReachableAsync`, started/stopped from page `OnAppearing`/`OnDisappearing`); editing opens an in-page modal overlay (scrim + dialog) driven by `IsEditServerDialogOpen`. Legacy single `DiscoveryHost`/`DiscoveryPort` fields removed (columns remain unmapped in SQLite).
 - **Platform info**: `ISettingsPlatformService.GetAppInfo()` → `SettingsAppInfo(AppName, Version, Build)`
+- **About panel (#457)**: carries the NDI trademark notice and a tappable "Privacy policy" link (Play requirement for camera/mic apps). Strings are Core constants `SettingsViewModel.NdiTrademarkNotice` / `SettingsViewModel.PrivacyPolicyUrl` (bound via `x:Static`, asserted by `SettingsAboutTests`); TestIds `SettingsNdiTrademark` / `SettingsPrivacyPolicy`; `OpenPrivacyPolicyCommand` opens the URL via `ISettingsPlatformService.OpenExternalUrlAsync(Uri)` (`Browser.Default.OpenAsync`, Custom Tab). Policy lives at `docs/privacy-policy.md` (GitHub Pages, `permalink: /privacy-policy/`).
 - **Cached sources**: loaded from `ISourceRepository.GetCachedSourcesAsync()`
 - **Appearance service**: `IAppearanceService` / `MauiAppearanceService` — central runtime color application
   - `Palette` (private record) is built from `AppearancePalette.Dark`/`.Light` (Core, hex strings — see MAUI Theming Rules) via `Palette.FromHex`
@@ -410,7 +411,7 @@ Declared in `src/MauiApp/Platforms/Android/AndroidManifest.xml`: `INTERNET`, `AC
 **GOTCHA — the manifest is silently ignored without a csproj property.** This project does not use MAUI SingleProject, so `src/MauiApp/NdiForAndroid.csproj` **must** keep `<AndroidManifest>Platforms\Android\AndroidManifest.xml</AndroidManifest>`. Before this fix the APK shipped with only `INTERNET`, breaking multicast discovery and all capture. Never remove that property.
 
 ## NDI Native Libraries
-Location: `src/MauiApp/Platforms/Android/libs/<abi>/libndi.so` (NDI SDK 6.3.1) — `arm64-v8a` + `armeabi-v7a` only. Packaged by the default `AndroidNativeLibrary` globs — do **NOT** add an explicit `<AndroidNativeLibrary Include>` (double-add, XA4301). No x86/x86_64 binary exists: `NdiRuntime.EnsureInitialized()` returns `false` there and NDI features soft-disable (app must not crash on emulators).
+Location: `src/MauiApp/Platforms/Android/libs/<abi>/libndi.so` (NDI SDK 6.3.1) — `arm64-v8a` + `armeabi-v7a` binaries in the repo. Packaged by the default `AndroidNativeLibrary` globs — do **NOT** add an explicit `<AndroidNativeLibrary Include>` (double-add, XA4301). **Release packages ship `arm64-v8a` + `x86_64` only** (the .NET 10 default `RuntimeIdentifiers = android-arm64;android-x64`), so the `armeabi-v7a` binary is never packaged and only the arm64 `libndi.so` reaches devices. No x86/x86_64 binary exists: `NdiRuntime.EnsureInitialized()` returns `false` there and NDI features soft-disable (app must not crash on emulators). CI asserts every packaged 64-bit `.so` is 16 KB page-aligned (`readelf -lW`, LOAD align `0x4000`) — the arm64 `libndi.so` already is.
 
 ## Developer tools (`tools/` — standalone consoles, not in `NdiForAndroid.sln`, not built by CI)
 Precedent: `tools/ViscaMockCamera` (raw VISCA-over-IP camera emulator for the PTZ endpoint, see its README).
@@ -470,8 +471,20 @@ version      (patch from highest git tag) ─┼─> build-android ─> e2e-test
   build jobs back to Windows.
 - **Every job that restores needs a NuGet cache.** The old `build-and-test` was the only job
   without one and paid 1m53s per run against 9s for the cached jobs.
-- **The APK is built once** in `build-android` and passed downstream as an artifact. Do not add
-  a second publish step.
+- **The packages are built once** in `build-android` — a single `dotnet publish` with
+  `"/p:AndroidPackageFormats=aab;apk"` (plural; the singular `AndroidPackageFormat` must **not** be
+  passed next to it, the plural only applies while the singular is empty) yields
+  `com.ndi.android-Signed.aab` (artifact `release-aab`, the file uploaded to Google Play, #456) and
+  `com.ndi.android-Signed.apk` (artifact `release-apk`, consumed by name in `e2e-reusable.yml`).
+  Do not add a second publish step. **APK provenance**: with `aab;apk` the bundle is the primary
+  output and the APK is bundletool's *universal APK extracted from the bundle*, signed with the same
+  keystore — not an apksigner-built APK. Same file name, so nothing downstream changes.
+- **"Inspect bundle and APK"** runs on every build (also debug-signed ones): `bundletool validate`
+  (the jar ships in the workload pack, `$DOTNET_ROOT/packs/Microsoft.Android.Sdk.*/<ver>/tools/`),
+  `dump manifest --xpath` targetSdkVersion ≥ 36 and versionCode == the `version` job's output,
+  `aapt2 dump badging` on the APK agrees, `zipalign -c -P 16 4` on the APK, and `readelf -lW`
+  16 KB `LOAD` alignment of every `base/lib/{arm64-v8a,x86_64}/*.so` (fails on zero libs). Values
+  land in the step summary.
 - **`concurrency` with `cancel-in-progress` on PRs only.** Never cancel `main` — each run publishes.
 
 ### E2E must be able to fail (the vacuous-gate trap)
@@ -520,12 +533,21 @@ Two mechanisms keep it honest; do not remove either:
 
 - **Release signing uses the four repository secrets** `RELEASE_KEYSTORE_BASE64`,
   `RELEASE_KEYSTORE_PASSWORD`, `RELEASE_KEY_ALIAS`, `RELEASE_KEY_PASSWORD` (issue #385). The
-  `build-android` job decodes the keystore into `$RUNNER_TEMP`, passes the `AndroidSigning*`
-  properties to `dotnet publish` (passwords via the `env:` prefix, never inline), verifies the
-  result with `apksigner verify --print-certs` (fails on `CN=Android Debug`) and deletes the
-  keystore. Runs without the secrets (Dependabot, forks) build debug-signed with a warning.
+  `build-android` job decodes the keystore into `$RUNNER_TEMP`, writes the two passwords to
+  owner-only files there (`umask 077`) and passes the `AndroidSigning*` properties to
+  `dotnet publish` with the **`file:` prefix** (never inline; `env:` is not accepted by the
+  bundletool leg that signs the AAB and the universal APK). "Verify release signatures (APK + AAB)"
+  (keystore-gated) pins both on the job-level `UPLOAD_KEY_SHA256`: `apksigner verify --verbose
+  --print-certs` must show `Verified using v2 scheme (APK Signature Scheme v2): true` and the
+  certificate digest, `jarsigner -verify -verbose:summary` must print `jar verified.` for the
+  AAB, and `keytool -printcert -jarfile` must show the same SHA-256 in colon form; any
+  `CN=Android Debug` is red. The cleanup step (`if: always()`) removes the keystore, both `.pass`
+  files and the verification scratch files. Runs without the secrets (Dependabot, forks) build
+  debug-signed with a warning; the content checks still run, the signature step is skipped.
   Expected certificate: `CN=NDI for Android, OU=Mobile, O=NDI, L=Gouda, ST=Zuid-Holland, C=NL`,
-  SHA-256 `fcf1b453b782a0b9bbae3d48f8612b8ad3f78565af85864b18aa0b071cc84271`. Before this fix
+  SHA-256 `fcf1b453b782a0b9bbae3d48f8612b8ad3f78565af85864b18aa0b071cc84271` (this is the Play
+  **upload key**; Play-installed builds carry Google's app-signing key, so a Play install cannot
+  update a sideloaded GitHub APK or vice versa — testers uninstall first). Before this fix
   every release was signed with the runner's ephemeral debug key, so updates failed with
   `INSTALL_FAILED_UPDATE_INCOMPATIBLE` ("App niet geïnstalleerd"); devices carrying such a build
   must uninstall once before the first release-signed install.
