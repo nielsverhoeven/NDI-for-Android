@@ -228,11 +228,20 @@ jobs:
       - name: Locate signed APK and AAB
         shell: bash
         run: |
-          APK_PATH=$(find publish-output -name "*-Signed.apk" | head -1)
+          # With AndroidPackageFormats=aab;apk the publish directory receives only the bundle;
+          # the universal APK that bundletool derives from it stays in the project's bin folder
+          # (verified locally with .NET for Android 36.1: publish-output/com.ndi.android-Signed.aab,
+          # src/MauiApp/bin/Release/net10.0-android/com.ndi.android-Signed.apk). Copy it next to
+          # the bundle so every later step and artifact reads from publish-output.
+          APK_PATH=$(find publish-output src/MauiApp/bin/Release/net10.0-android -maxdepth 1 -name "*-Signed.apk" 2>/dev/null | head -1)
           if [ -z "$APK_PATH" ]; then
-            echo "No signed APK produced under publish-output:"
-            find publish-output -name "*.apk" || true
+            echo "No signed APK produced under publish-output or src/MauiApp/bin/Release/net10.0-android:"
+            find publish-output src/MauiApp/bin/Release -name "*.apk" 2>/dev/null || true
             exit 1
+          fi
+          if [ "$(dirname "$APK_PATH")" != "publish-output" ]; then
+            cp "$APK_PATH" publish-output/
+            APK_PATH="publish-output/$(basename "$APK_PATH")"
           fi
           AAB_PATH=$(find publish-output -name "*-Signed.aab" | head -1)
           if [ -z "$AAB_PATH" ]; then
