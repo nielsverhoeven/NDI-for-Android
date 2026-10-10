@@ -5363,19 +5363,19 @@ change the gate. The `OnDisappearing` branch stays as defence; both route throug
 `Shell.Navigated`, `Unloaded`/`Handler == null`, `OnBackButtonPressed`. The pane's "Stopped." + Reconnect
 after a takeover stays (#423 design); auto-resume on Back is a product question, deferred. #410 unchanged.
 
-**4. #449 — portrait tablet, pushed page: the bottom bar survives full screen because the mirror writes
-`Shell.TabBarIsVisible` on every `ShellContent`.** Verified by the researcher against MAUI 10.0.110: since
-10.0.70 (dotnet/maui #33090) `ShellItem.ShowTabs` starts its walk at a `ShellContent` with an explicit
-value, so the controller's page-scoped `false` is never consulted on bottom placement. Landscape only
-"worked" because the rail mirror writes `false` on the content; no CI AVD ever exercised page-scoped hide
-on a bottom-placement window (Nexus 6 compact → landscape → rail; pixel_c Expanded → rail). Fix: delete
-the content write (`AppShell.xaml.cs:347`); keep section, root-page and pushed-page writes and the poke.
-**New standing rule: never write `Shell.TabBarIsVisible` on a `ShellContent`.** The #395 "MAUI copies the
-value down via `Propagate`" rationale is wrong for 10.0.1xx and is replaced. Rejected: folding suppression
-into the item-scope value, a controller write on the content, pinning MAUI < 10.0.70. Proof: Appium on a
-Medium-width portrait AVD (`pixel_tablet`/`Nexus 7`); the existing full-screen test skips without an NDI
-source, so a deep-link-based test and a nightly leg for that profile are added.
-
+**4. #449 — portrait tablet, pushed page: the bottom bar survives full screen because MAUI ≥ 10.0.70 reads
+the `ShellContent`.** Researcher (verified at tag 10.0.110, dotnet/maui #33090): `ShellItem.ShowTabs` starts
+its walk at a `ShellContent` with an explicit value, and the mirror writes one on every content
+(`AppShell.xaml.cs:347`), so the controller's page-scoped `false` is never consulted on bottom placement.
+Round 1 ruled "delete the content write"; **withdrawn in round 1b on CI evidence** (Nexus 6: rail placement
+regressed at cold launch and rotation, run 38040750641) — the content value is also what Android
+re-evaluates on, and page scope alone did not hide the bar. Ruled instead: the mirror keeps writing section +
+content with the placement value and, for the section hosting full screen while `IsChromeSuppressed`, writes
+**`false` on its section and contents and skips its pages** (page scope stays the controller's); exit
+re-mirrors before `ClearValue`. Pure Core `NavigationChromePolicy.MirrorValue(...)` + theory encodes it.
+**Standing rule: content scope is the effective bottom-bar scope on this MAUI; `AppShell` is its only
+writer.** The #395 `Propagate` rationale is replaced (wrong for 10.0.1xx). Proof profile `Nexus 7` (600 dp
+portrait = bottom) once its baseline is clean; pixel_tablet not validated; nightly leg deferred; e2e Skip from policy.
 **5. Tooling and process.** `tools/NdiTestSender/` is in (precedent `tools/ViscaMockCamera`), own chore PR,
 never in `NdiForAndroid.sln`; nothing in CI builds `tools/`. `e2e-tests` does not run for PRs into the
 integration branch, so #450/#449 each need a dispatched regression proof (`app_ref=1d3e5745`,
