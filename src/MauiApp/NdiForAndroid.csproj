@@ -9,8 +9,9 @@
     <ApplicationId>com.ndi.android</ApplicationId>
     <ApplicationVersion>1</ApplicationVersion>
     <ApplicationDisplayVersion>1.0.0</ApplicationDisplayVersion>
-    <AndroidMinSdkVersion>26</AndroidMinSdkVersion>
-    <AndroidTargetSdkVersion>35</AndroidTargetSdkVersion>
+    <!-- minSdk = SupportedOSPlatformVersion (26); targetSdk = the TFM's API level
+         (net10.0-android → 36 with the Android 36.x workload). The SDK has no
+         AndroidMin/TargetSdkVersion properties — do not add them back. -->
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">26.0</SupportedOSPlatformVersion>
@@ -34,7 +35,8 @@
 
   <!-- NDI native libraries (Platforms\Android\libs\<abi>\libndi.so) are packaged by the
        .NET for Android default AndroidNativeLibrary globs; an explicit Include here would
-       double-add them (XA4301). Verified present in the APK for both ABIs. -->
+       double-add them (XA4301). Release packages ship arm64-v8a + x86_64 (the .NET 10 default
+       RuntimeIdentifiers), so only the arm64-v8a libndi.so is ever packaged; armeabi-v7a is not. -->
 
   <ItemGroup>
     <AndroidResource Include="Platforms\Android\Resources\drawable\ndi_logo.png" />
