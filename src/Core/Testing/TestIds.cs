@@ -207,6 +207,8 @@ public static class TestIds
     public const string SettingsAppName       = "settings.appName";
     public const string SettingsAppVersion    = "settings.appVersion";
     public const string SettingsNdiSdkVersion = "settings.ndiSdkVersion";
+    public const string SettingsNdiTrademark   = "settings.ndiTrademark";
+    public const string SettingsPrivacyPolicy = "settings.privacyPolicy";
 
     // ── SettingsPage additions (#347, #370, #345, #355) ──────────────────────
 

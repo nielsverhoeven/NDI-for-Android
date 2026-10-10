@@ -183,6 +183,14 @@ public partial class SettingsViewModel : ObservableObject
     /// <summary>Native NDI SDK version (or an unavailability message on non-ARM devices).</summary>
     public string NdiSdkVersion { get; }
 
+    /// <summary>NDI trademark attribution shown in Settings → About (Play listing/legal requirement, #457).
+    /// Single source of truth: bound by SettingsPage.xaml via x:Static and asserted by the Appium suite.</summary>
+    public const string NdiTrademarkNotice = "NDI® is a registered trademark of Vizrt NDI AB.";
+
+    /// <summary>Canonical privacy-policy URL (GitHub Pages, trailing-slash permalink form). The same
+    /// string goes in the Play Console privacy-policy field and the store listing (#457).</summary>
+    public const string PrivacyPolicyUrl = "https://nielsverhoeven.github.io/NDI-for-Android/privacy-policy/";
+
     [RelayCommand]
     private async Task LoadAsync()
     {
@@ -248,6 +256,21 @@ public partial class SettingsViewModel : ObservableObject
             return;
 
         try { await _navigation.NavigateToAsync(DiagnosticLogViewModel.Route); } catch { /* Navigation failures are handled by Shell */ }
+    }
+
+    /// <summary>About → "Privacy policy" (#457): opens <see cref="PrivacyPolicyUrl"/> outside the app.
+    /// A platform failure (no browser on the device, launcher refused) is traced, never surfaced.</summary>
+    [RelayCommand]
+    private async Task OpenPrivacyPolicyAsync()
+    {
+        try
+        {
+            await _platformService.OpenExternalUrlAsync(new Uri(PrivacyPolicyUrl));
+        }
+        catch (Exception ex)
+        {
+            _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, $"settings.privacy.open.failed {ex.GetType().Name}");
+        }
     }
 
     // ── Discovery server commands ───────────────────────────────────────────

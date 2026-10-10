@@ -1,0 +1,10 @@
+# GitHub Pages (Jekyll) configuration for the project site served from `main` / `/docs`.
+# The site exists to host the privacy policy Google Play links to (#457); the other Markdown
+# files under docs/ render too, which is harmless — the repository is public.
+title: NDI for Android
+description: NDI® monitor, PTZ controller and wireless camera for Android
+theme: jekyll-theme-primer
+# Per-feature specs and research notes are not part of the site; excluding them keeps the build small.
+exclude:
+  - features
+  - research
