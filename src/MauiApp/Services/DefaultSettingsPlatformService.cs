@@ -9,4 +9,7 @@ public sealed class DefaultSettingsPlatformService : ISettingsPlatformService
         AppInfo.Current.Name,
     AppInfo.Current.VersionString,
     AppInfo.Current.BuildString);
+
+    public Task OpenExternalUrlAsync(Uri url) =>
+        Browser.Default.OpenAsync(url, BrowserLaunchMode.SystemPreferred);
 }
