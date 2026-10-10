@@ -123,9 +123,9 @@ public sealed class LifecycleTests : DeviceInterruptionTestBase
 
             app.PressBackButton();
 
-            // The deep link lands on //view and pushes the viewer onto its stack, so Back returns
-            // to the source list.
-            app.Sources.WaitUntilVisible(Timeouts.Navigation);
+            // "viewer" is a relative Shell route pushed onto the current tab's stack (see
+            // DeepLinkTests); EnterHoldState deep-links from Home, so Back lands on Home.
+            app.Home.WaitUntilVisible(Timeouts.Navigation);
             Assert.False(app.Viewer.IsVisible, "The viewer page is still on screen after Back");
 
             var nav = app.ShellCommand("logcat", "-d", "-s", "NDI-Nav");
