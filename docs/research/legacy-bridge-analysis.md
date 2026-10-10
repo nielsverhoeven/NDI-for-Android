@@ -23,7 +23,7 @@ recv:   NDIlib_recv_create_v3({source, color_format=BGRX_BGRA(0), bandwidth=high
 loop:   NDIlib_recv_capture_v3(recv, &video, &audio, &meta, 1000ms) → frame_type enum
         … use frame (respect line_stride_in_bytes — NEVER assume width*4) …
         NDIlib_recv_free_video_v2(recv, &video)   // mandatory per frame
-stats:  NDIlib_recv_get_performance(recv, &total, &dropped) // cumulative — diff for percent
+stats:  NDIlib_recv_get_performance(recv, &total, &dropped) // cumulative, disjoint (total = delivered, dropped = discarded) — diff per interval; percent = dropped/(total+dropped)
 stop:   set atomic running=false → join thread (NO mutex held during join — legacy deadlock lesson)
         → NDIlib_recv_destroy(recv)
 ```

@@ -10,15 +10,23 @@ namespace NdiForAndroid.Features.Viewer;
 /// </summary>
 public static class ConnectionHintPolicy
 {
+    /// <summary>Below this fps a sample is weak.</summary>
     public const float WeakFpsThreshold = 15f;
+
+    /// <summary>
+    /// Above this share a sample is weak: 30 % of received frames discarded by the receiver, i.e.
+    /// <c>dropped/(total+dropped)</c> over one stats interval. The SDK's <c>dropped</c> counter is
+    /// receiver-side de-queue starvation (the app did not call capture fast enough), not network
+    /// loss. Re-tune only on device evidence, as for <see cref="WeakRssiDbm"/>: a mid-range tablet
+    /// at 1080p60 on a perfect link sits at ~18 % (measured 2026-10-10), so matching the old
+    /// subset reading (23 %) would turn this arm into a receiver-overload detector.
+    /// </summary>
     public const float WeakDropPercentThreshold = 30f;
-    public const float GoodFpsThreshold = 15f;
-    public const float GoodDropPercentThreshold = 10f;
 
     /// <summary>Consecutive weak 1 s samples before the hint appears (sample = one bridge stats tick).</summary>
     public const int WeakSamplesToShow = 5;
 
-    /// <summary>Consecutive good 1 s samples before an active hint clears.</summary>
+    /// <summary>Consecutive non-weak 1 s samples before an active hint clears.</summary>
     public const int GoodSamplesToClear = 5;
 
     public const string WeakHint = "Connection weak";
@@ -118,31 +126,37 @@ public static class ConnectionHintPolicy
         fps < WeakFpsThreshold || dropPercent > WeakDropPercentThreshold;
 
     /// <summary>
-    /// A sample that positively demonstrates a healthy stream. The fps term is <c>&gt;=</c> where
-    /// <see cref="IsWeak"/>'s is <c>&lt;</c>, so the two partition the fps axis: a source sitting
-    /// exactly on the threshold used to be neither weak nor good forever, which under
-    /// <see cref="Next"/> means an active hint could never clear at all. The drop band between
-    /// <see cref="GoodDropPercentThreshold"/> and <see cref="WeakDropPercentThreshold"/> is the one
-    /// intentional dead zone.
+    /// The complement of <see cref="IsWeak"/>: a sample that is not weak. The two partition both
+    /// axes. On fps the term is <c>&gt;=</c> where <see cref="IsWeak"/>'s is <c>&lt;</c>, so a
+    /// source sitting exactly on the threshold is good rather than stranded in neither state (which
+    /// under <see cref="Next"/> would mean an active hint could never clear). On the drop axis there
+    /// is no dead band either (reopened 2026-10-10, #415): the former 10–30 % zone is the steady
+    /// state of a 1080p60 receiver on a mid-range tablet with a perfect link, so an active hint
+    /// could never clear there and asserted a weakness the detector itself does not find.
+    /// Hysteresis is in time only — <see cref="WeakSamplesToShow"/> / <see cref="GoodSamplesToClear"/>
+    /// consecutive samples each way.
     /// </summary>
-    public static bool IsGood(float fps, float dropPercent) =>
-        fps >= GoodFpsThreshold && dropPercent < GoodDropPercentThreshold;
+    public static bool IsGood(float fps, float dropPercent) => !IsWeak(fps, dropPercent);
 
     /// <summary>
-    /// Feeds one sample and returns the new state. The hysteresis is deliberately asymmetric, and
-    /// the asymmetry is the round-2 #415 fix: now that <c>dropPercent</c> is a true per-interval
-    /// rate rather than a lifetime average it is spiky by construction, so single seconds in the
-    /// 10-30 % dead band are normal on a link that has already recovered. A dead-band sample
-    /// therefore
-    /// <list type="bullet">
-    /// <item>resets the weak run — it proves that second was below the weak threshold, so a blip
-    /// can still only ever reset the show run and never flip the hint; and</item>
-    /// <item>leaves the good run untouched — it does not demonstrate health, so it must not destroy
-    /// evidence of health. Before this, one 14 % second every few samples zeroed the clear run and
-    /// an active hint stayed up forever on a link averaging ~7 % loss.</item>
-    /// </list>
-    /// Smoothing the value itself was rejected: the bridge must keep printing the honest interval
-    /// rate so <c>drop=</c> still equals <c>dDropped/dTotal</c> in the NdiStats line.
+    /// Feeds one sample and returns the new state. The hysteresis is in time only: five consecutive
+    /// weak samples show the hint, five consecutive non-weak samples clear it, and a single sample
+    /// of the other kind only ever resets the opposing run — a blip can never flip the hint by
+    /// itself, and the hint flips at most once per five seconds in each direction. There is no
+    /// value hysteresis (2026-10-10, #415): a drop level that never justified showing the hint must
+    /// not keep it alive. The 10–30 % band that used to hold an active hint up is the steady state
+    /// of a 1080p60 receiver on a mid-range tablet with a perfect link, so a hint raised on the fps
+    /// arm during a stall, or by a genuine burst above the threshold, could never clear there.
+    /// <para>
+    /// <c>dropPercent</c> is receiver-side de-queue starvation — frames the SDK discarded because
+    /// the app did not call capture fast enough — not network loss. Smoothing the value itself was
+    /// rejected: the bridge must keep printing the honest interval rate so <c>drop=</c> still equals
+    /// <c>dDropped/(dTotal+dDropped)</c> in the NdiStats line (the two SDK counters are disjoint;
+    /// see <see cref="ReceiverStatsMath.DropPercent"/>).
+    /// </para>
+    /// <c>SawDropEvidence</c> latches on any weak second that lost frames and survives only while
+    /// the hint is active, so a weak run abandoned before it raised a hint cannot lend its evidence
+    /// to a later fps-only hint, which would then be attributed to the radio.
     /// </summary>
     public static State Next(State state, float fps, float dropPercent)
     {
@@ -159,16 +173,11 @@ public static class ConnectionHintPolicy
                 state.SawDropEvidence || dropPercent > 0f);
         }
 
-        if (IsGood(fps, dropPercent))
-        {
-            var good = state.GoodRun + 1;
-            var active = state.IsHintActive && good < GoodSamplesToClear;
-            return new State(0, good, active, active && state.SawDropEvidence);
-        }
-
-        // A dead-band sample abandons the weak run; the evidence it gathered must not outlive it,
-        // or a later fps-only hint would be attributed to the radio.
-        return new State(0, state.GoodRun, state.IsHintActive, state.IsHintActive && state.SawDropEvidence);
+        // Non-weak: advance the clear run; the hint and its drop evidence survive only until the
+        // run completes.
+        var good = state.GoodRun + 1;
+        var active = state.IsHintActive && good < GoodSamplesToClear;
+        return new State(0, good, active, active && state.SawDropEvidence);
     }
 
     /// <summary>Hint text for the active profile, or null when no hint should show.</summary>

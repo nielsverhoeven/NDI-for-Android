@@ -143,7 +143,8 @@ internal struct NdiTallyNative
     [MarshalAs(UnmanagedType.I1)] public bool on_preview;
 }
 
-/// <summary>NDIlib_recv_performance_t — cumulative counters; diff to get drops.</summary>
+/// <summary>NDIlib_recv_performance_t — cumulative, disjoint counters (total = delivered to the app,
+/// dropped = discarded by the SDK); diff per interval, percent = dropped/(total+dropped).</summary>
 [StructLayout(LayoutKind.Sequential)]
 internal struct NdiRecvPerformanceNative
 {
