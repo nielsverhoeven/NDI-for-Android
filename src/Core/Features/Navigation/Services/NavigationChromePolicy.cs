@@ -10,8 +10,10 @@ namespace NdiForAndroid.Features.Navigation.Services;
 /// <para>
 /// There is one <c>TabBar</c> route family. The left rail is <c>FlyoutBehavior.Locked</c> plus the
 /// custom <c>Shell.FlyoutContent</c>; the bottom bar is hidden at <b>ShellItem scope</b>
-/// (<c>Shell.SetTabBarIsVisible(PrimaryTabBar, …)</c>). A placement change therefore swaps chrome only
-/// and never changes <c>Shell.CurrentItem</c>, the current page, or any navigation stack.
+/// (<c>Shell.SetTabBarIsVisible(PrimaryTabBar, …)</c>), mirrored by <c>AppShell</c> onto every section
+/// and page under it — never onto a <c>ShellContent</c>: an explicit content value pre-empts page
+/// scope in MAUI ≥ 10.0.70 (<c>ShellItem.ShowTabs</c>, #449). A placement change therefore swaps
+/// chrome only and never changes <c>Shell.CurrentItem</c>, the current page, or any navigation stack.
 /// </para>
 /// <para>
 /// Suppression (a host page showing full screen) hides the rail only. It never changes

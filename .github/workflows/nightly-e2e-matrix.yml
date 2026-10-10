@@ -23,6 +23,15 @@ jobs:
             api_level: '35'
             font_scale: '1.0'
             test_filter: ''
+          # Medium portrait (8" tablet, 800 dp portrait width — the Tab A9+ class) — the only profile
+          # where the bottom tab bar is the live placement while a pushed page goes full screen, so
+          # the page-scoped hide is actually exercised (#449). Nexus 6 and pixel_c both reach full
+          # screen on the rail, where placement alone hides the bar.
+          - leg: medium-tablet-portrait
+            avd_profile: 'pixel_tablet'
+            api_level: '35'
+            font_scale: '1.0'
+            test_filter: ''
           # Font scale — core journeys only, on the existing Compact phone profile.
           - leg: font-scale-1_3
             avd_profile: 'Nexus 6'
@@ -42,7 +51,7 @@ jobs:
       test_filter: ${{ matrix.test_filter }}
       require_device: true
       release_sign: true
-      # One artifact name per leg: all three legs build inside the SAME workflow run, and
+      # One artifact name per leg: all legs build inside the SAME workflow run, and
       # actions/upload-artifact returns 409 Conflict for a duplicate name in a run.
       apk_artifact_name: android-apk-${{ matrix.leg }}
     secrets: inherit

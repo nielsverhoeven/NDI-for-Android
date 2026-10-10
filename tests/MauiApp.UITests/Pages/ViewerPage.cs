@@ -126,13 +126,50 @@ public sealed class ViewerPage : PageObject
     /// </summary>
     public void ExitFullScreen()
     {
-        if (!IsPresent(TestIds.ViewerFullScreenToggle))
+        RevealOverlayControl(TestIds.ViewerFullScreenToggle);
+        ToggleFullScreen();
+    }
+
+    /// <summary>
+    /// Taps Stop from full screen (#449). `viewer.stop` lives on the same auto-hiding overlay as the
+    /// toggle there (#384 slice 3), so it needs the same reveal as <see cref="ExitFullScreen"/>.
+    /// </summary>
+    public void StopFromFullScreen()
+    {
+        RevealOverlayControl(TestIds.ViewerStop);
+        Stop();
+    }
+
+    /// <summary>
+    /// Blocks until a Stop has landed in the windowed layout: the "watch again" Reconnect affordance
+    /// (<c>CanReconnect</c>, #348) is shown and the full-screen overlay is gone. The counterpart of
+    /// <see cref="WaitUntilPlaying"/> for the stopped state — Stop forces full screen off, and on a
+    /// compact device that exit can involve a real OS rotation, hence <c>Timeouts.Navigation</c>.
+    /// </summary>
+    public void WaitUntilStopped()
+    {
+        WaitFor(TestIds.ViewerReconnect, Timeouts.Navigation, "The viewer never reported Stopped");
+
+        var deadline = DateTime.UtcNow + Timeouts.Navigation;
+        while (IsFullScreen && DateTime.UtcNow < deadline)
+            Thread.Sleep(100);
+
+        if (IsFullScreen)
+            throw new InvalidOperationException(
+                $"The viewer reported Stopped but was still full screen after " +
+                $"{Timeouts.Navigation.TotalSeconds:0}s — Stop did not force full screen off.");
+    }
+
+    /// <summary>Re-shows the full-screen overlay when the 2.5s/5s auto-hide has taken
+    /// <paramref name="id"/> away. Tap only when needed — the single tap <i>toggles</i> the overlay,
+    /// so tapping unconditionally would hide the very control the caller then needs.</summary>
+    private void RevealOverlayControl(string id)
+    {
+        if (!IsPresent(id))
             TapVideo();
 
-        if (!IsPresent(TestIds.ViewerFullScreenToggle))
+        if (!IsPresent(id))
             TapVideo();   // the auto-hide can fire between the check and the tap; one retry is enough
-
-        ToggleFullScreen();
     }
 
     /// <summary>Shows/hides the full-screen camera (PTZ) controls layer.</summary>

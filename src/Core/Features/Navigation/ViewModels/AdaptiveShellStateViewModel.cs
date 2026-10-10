@@ -16,7 +16,9 @@ public partial class AdaptiveShellStateViewModel : ObservableObject
     /// Read only by <c>AppShell.ApplyPlacement</c> (through <see cref="NavigationChromePolicy"/>), and
     /// only to hide the left rail (<c>FlyoutBehavior.Disabled</c>). The bottom tab bar is hidden for
     /// full screen at page scope by the controller (<c>Shell.SetTabBarIsVisible(page, false)</c>),
-    /// never from here.
+    /// never from here. The placement value <c>AppShell</c> mirrors onto every section and page must
+    /// never be written onto a <c>ShellContent</c>: an explicit content value pre-empts page scope in
+    /// MAUI ≥ 10.0.70 (<c>ShellItem.ShowTabs</c>, #449).
     /// </summary>
     [ObservableProperty]
     private bool _isChromeSuppressed;

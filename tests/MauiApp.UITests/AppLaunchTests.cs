@@ -79,7 +79,12 @@ public sealed class AppLaunchTests : UiTestBase
     /// `viewer.fullScreen.qualityCycle`), <c>WaitUntilPlaying()</c> after each exit (blocks on
     /// `viewer.stop`, i.e. the Deck/Sheet layout has actually re-rendered). This is required
     /// change 4's anti-race measure applied to all four transitions, not only to the Back-button
-    /// one.
+    /// one. The bar-specific checks (#449) look for Shell's own `BottomNavigationView` rather than
+    /// the Home item, so a bar left behind under the video cannot hide behind a rail-shaped answer;
+    /// the restore checks self-skip on rail placement, where there is no bottom bar to restore.
+    /// Skips without an NDI source, so on CI the deep-link based
+    /// <see cref="FullScreen_OnAMediumTabletInPortrait_HidesTheBottomBarAndRestoresItOnEveryExit"/>
+    /// is the proof.
     /// </summary>
     [RetryableSkippableFact]
     public void FullScreen_EnterViaButton_HidesChromeAndExitButtonWorks() => Run(app =>
@@ -100,22 +105,88 @@ public sealed class AppLaunchTests : UiTestBase
         Assert.True(app.Viewer.IsFullScreen, "Full screen did not engage after the toggle button");
         Assert.False(app.Navigation.IsPresent(NavDestination.Home),
             "The bottom tab bar / left rail is still on screen in full screen");
+        Assert.True(app.Navigation.WaitForBottomNavigationBar(shown: false, Timeouts.Element),
+            "Shell's bottom navigation bar is still on screen in full screen (#449)");
 
         app.Viewer.ExitFullScreen();
         app.Viewer.WaitUntilPlaying();
         Assert.False(app.Viewer.IsFullScreen, "Full screen did not exit after the overlay's exit button");
         Assert.True(app.Navigation.IsPresent(NavDestination.Home),
             "Navigation chrome was not restored after exiting full screen");
+        AssertBottomNavigationBarForBottomPlacement(app, "after exiting full screen");
 
         app.Viewer.ToggleFullScreen();
         app.Viewer.WaitUntilFullScreen();
         Assert.True(app.Viewer.IsFullScreen, "Full screen did not re-engage for the Back-button check");
+        Assert.True(app.Navigation.WaitForBottomNavigationBar(shown: false, Timeouts.Element),
+            "Shell's bottom navigation bar is still on screen after re-entering full screen (#449)");
 
         app.PressBackButton();
         app.Viewer.WaitUntilPlaying();
         Assert.False(app.Viewer.IsFullScreen, "Back button did not exit full screen");
         Assert.True(app.Navigation.IsPresent(NavDestination.Home),
             "Navigation chrome was not restored after Back exited full screen");
+        AssertBottomNavigationBarForBottomPlacement(app, "after Back exited full screen");
+    });
+
+    /// <summary>
+    /// #449: on a Medium-width window in portrait (an 8" tablet such as the Tab A9+; the
+    /// `pixel_tablet` AVD) the bottom tab bar is the live placement while the pushed viewer goes
+    /// full screen — the one configuration where the controller's page-scoped
+    /// <c>Shell.TabBarIsVisible = false</c> has to beat the placement value instead of coinciding
+    /// with it. Every other CI profile reaches full screen on rail placement (Nexus 6: compact, full
+    /// screen forces landscape; pixel_c: Expanded), where the bar is hidden by placement alone, so
+    /// this test is the only proof of the page-scoped hide. Deep-link based like
+    /// <c>LifecycleTests</c>, so it cannot skip for lack of an NDI source: the emulator's permanent
+    /// "Connecting..." hold state carries the same full-screen toggle as real playback. Every exit
+    /// path that drives the controller's <c>RestoreChrome</c> is covered — the overlay button, Back,
+    /// app pause, and Stop last (a stopped viewer cannot re-enter full screen).
+    /// </summary>
+    [RetryableSkippableFact]
+    public void FullScreen_OnAMediumTabletInPortrait_HidesTheBottomBarAndRestoresItOnEveryExit() => Run(app =>
+    {
+        try
+        {
+            // ResetToHome rotates to portrait first; the deep link pushes the viewer onto Home's stack.
+            app.ResetToHome();
+            app.DeepLink("ndi://view?sourceId=e2e-fullscreen-chrome");
+            app.Viewer.WaitUntilVisible(Timeouts.Navigation);
+            app.Viewer.WaitUntilPlaying();
+
+            Skip.If(!app.Navigation.HasBottomNavigationBar(),
+                "Rail placement — this test needs a Medium-width portrait window, where the bottom bar " +
+                "is the live placement under the pushed viewer.");
+
+            EnterFullScreenAndAssertBottomBarHidden(app, "on first entering full screen");
+            app.Viewer.ExitFullScreen();
+            app.Viewer.WaitUntilPlaying();
+            AssertBottomBarRestored(app, "after the overlay's exit button");
+
+            EnterFullScreenAndAssertBottomBarHidden(app, "re-entering for the Back check");
+            app.PressBackButton();
+            app.Viewer.WaitUntilPlaying();
+            AssertBottomBarRestored(app, "after Back exited full screen");
+
+            EnterFullScreenAndAssertBottomBarHidden(app, "re-entering for the background check");
+            app.SendToBackground();
+            app.EnsureInForeground();
+            app.Viewer.WaitUntilPlaying();
+            AssertBottomBarRestored(app, "after returning from the background");
+
+            EnterFullScreenAndAssertBottomBarHidden(app, "re-entering for the Stop check");
+            app.Viewer.StopFromFullScreen();
+            app.Viewer.WaitUntilStopped();
+            AssertBottomBarRestored(app, "after Stop ended the session");
+        }
+        finally
+        {
+            try { if (app.Viewer.IsFullScreen) app.Viewer.ExitFullScreen(); } catch { }
+
+            // "viewer" is a relative route pushed onto Home's stack, so tapping the already-selected
+            // Home tab does not pop it. Terminate and let the next test's EnsureInForeground relaunch
+            // fresh onto Home (the LifecycleTests pattern).
+            try { app.Terminate(); } catch { }
+        }
     });
 
     /// <summary>
@@ -275,6 +346,26 @@ public sealed class AppLaunchTests : UiTestBase
 
         var policy = new NavigationPolicyService(new WindowSizeClassService());
         return (policy.ResolvePlacement(orientation, sizeClass), sizeClass, orientation, widthDp);
+    }
+
+    /// <summary>Enters full screen on the viewer and asserts Shell's bottom navigation bar leaves the
+    /// screen (#449) — the page-scoped hide, whatever the placement says.</summary>
+    private static void EnterFullScreenAndAssertBottomBarHidden(NdiApp app, string checkpoint)
+    {
+        app.Viewer.ToggleFullScreen();
+        app.Viewer.WaitUntilFullScreen();
+        Assert.True(app.Navigation.WaitForBottomNavigationBar(shown: false, Timeouts.Element),
+            $"Shell's bottom navigation bar is still on screen under the full-screen video {checkpoint} (#449).");
+    }
+
+    /// <summary>Asserts Shell's bottom navigation bar is back on screen after a full-screen exit on a
+    /// bottom-placement window (#449). Unlike <see cref="AssertBottomNavigationBarForBottomPlacement"/>
+    /// this never self-skips: the caller has already established that the bar is the live placement.</summary>
+    private static void AssertBottomBarRestored(NdiApp app, string checkpoint)
+    {
+        Assert.False(app.Viewer.IsFullScreen, $"Full screen did not end {checkpoint}.");
+        Assert.True(app.Navigation.WaitForBottomNavigationBar(shown: true, Timeouts.Element),
+            $"Shell's bottom navigation bar did not come back {checkpoint} (#449).");
     }
 
     /// <summary>Asserts the bottom navigation bar is on screen when the current device configuration

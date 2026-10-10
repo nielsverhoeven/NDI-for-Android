@@ -309,26 +309,32 @@ public partial class AppShell : Shell
     }
 
     /// <summary>
-    /// Writes the placement's bar value onto every section, content and page under
+    /// Writes the placement's bar value onto every section and page under
     /// <c>PrimaryTabBar</c>, because the item-scope value alone does not reach them at runtime.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// MAUI copies <c>Shell.TabBarIsVisible</c> down the Shell tree as a <i>local</i> value
-    /// (<c>BaseShellItem.Propagate</c>: from a parent that has it set to a child that has not), and
-    /// never again once the child has one. Every section, content and page therefore holds the value
-    /// the item had when that element was created, and <c>ShellItem.ShowTabs</c> reads the page (or
-    /// the content) before the item. Measured on the Nexus 6 CI AVD (#395): after a runtime flip to
-    /// the rail the item read <c>false</c> while the displayed page still held the <c>true</c> it was
-    /// created with, so the bar stayed. The pixel_c leg passed only because the rail was the
-    /// placement before any page existed.
+    /// Android's <c>ShellItemRenderer</c> re-evaluates the bar only when the displayed page changes
+    /// or raises <c>PropertyChanged("TabBarIsVisible")</c>, and <c>ShellItem.ShowTabs</c> resolves the
+    /// value from the displayed page upwards. Writing the pages directly is what makes an existing
+    /// page see a runtime flip at all: measured on the Nexus 6 CI AVD (#395), an item-only write left
+    /// the displayed page reading its old value and the bar stayed. The section write is the fallback
+    /// a page created after the flip, or cleared by the controller, resolves to.
+    /// </para>
+    /// <para>
+    /// <b>Never write <c>Shell.TabBarIsVisible</c> on a <c>ShellContent</c>.</b> Since MAUI 10.0.70
+    /// (dotnet/maui #33090) <c>ShellItem.ShowTabs</c> starts its effective-value walk at the current
+    /// content whenever that content has an explicit value, so a page-scoped value is never consulted.
+    /// Doing so here (#449) kept the bottom bar on screen under a full-screen pushed viewer on every
+    /// bottom-placement window: the content held the placement's <c>true</c> and the controller's
+    /// page-scoped <c>false</c> was ignored. Rail placement hid it anyway, which is why no CI profile
+    /// (Nexus 6 compact → landscape → rail; pixel_c Expanded → rail) ever caught it.
     /// </para>
     /// <para>
     /// The section hosting an active full screen is skipped: its page is
-    /// <c>ViewerFullScreenChromeController</c>'s (page scope, <c>false</c> on enter), and a write on its
-    /// content would make Shell copy the value onto that page. When full screen ends,
-    /// <c>IsChromeSuppressed</c> flips and this runs again for every section, after the controller's
-    /// <c>ClearValue</c>.
+    /// <c>ViewerFullScreenChromeController</c>'s (page scope, <c>false</c> on enter). When full screen
+    /// ends, <c>IsChromeSuppressed</c> flips and this runs again for every section, after the
+    /// controller's <c>ClearValue</c>.
     /// </para>
     /// </remarks>
     private void MirrorTabBarVisibilityToDescendants(bool visible, bool suppressed)
@@ -342,9 +348,9 @@ public partial class AppShell : Shell
 
             Shell.SetTabBarIsVisible(section, visible);
 
+            // Root pages only — not the ShellContent itself (see remarks, #449).
             foreach (var content in section.Items)
             {
-                Shell.SetTabBarIsVisible(content, visible);
                 if (((IShellContentController)content).Page is { } root)
                     Shell.SetTabBarIsVisible(root, visible);
             }
