@@ -5320,3 +5320,64 @@ Rejected alternatives:
 - The full UI suite on `Nexus 6` **and** `pixel_c` via `emulator-tests.yml`.
 - A new pushed-page rotation e2e, proven with `expect_failure` against the pre-change commit.
 - Re-run the #321 diagnostic and comment the result on the issue.
+
+### 2026-10-10 — tablet gate round 1: #415 S1/S2, #450, #449, NdiTestSender tooling, release process (gate)
+
+**APPROVE-WITH-CHANGES ×4, process confirmed with amendments.** Verdict file: `verdict-tablet-gate-round1.md`
+(28 rulings, 36 `requiredChanges`, developer + tester briefs). Device: Galaxy Tab A9+ (SM-X210R, Android
+16), v0.20.37, 5 GHz −47 dBm, PC sender 1080p60 SpeedHQ. Four PRs into `integration/tablet-gate-2026-10-10`
+in order `bugfix/415-drop-counter-semantics-hint-clear` → `bugfix/450-dispose-pushed-viewer-on-pop` →
+`bugfix/449-tablet-portrait-fullscreen-tabbar` → `chore/ndi-test-sender-tool`, then one release PR to `main`.
+
+**1. The drop-counter gate (round 2 ruling 5, above) is discharged: the SDK counters are DISJOINT.** Five
+runs: `dTotal + dDropped` tracks the sender rate and `dTotal` the delivered fps in every configuration,
+never `dDropped > dTotal`. `total` = frames delivered to the app, `dropped` = frames the SDK discarded.
+`ReceiverStatsMath.DropPercent` denominator becomes `total + dropped`, the `≥ → 100` clamp goes (50 + 50
+is 50 %), a negative delta in either counter reads 0, and **round 2 ruling 5's "0 % for a totally starved
+interval" is superseded**: `(0, 60)` is 100 % and in range; only `(0, 0)` reads 0 %. Every `drop=` quoted
+before today is inflated by 1/(1−p) (21.5 % shown vs 17.7 % true here). `recv=` (= dTotal+dDropped) joins
+the developer-mode `NdiStats` line; `drop=` must equal `dDropped/(dTotal+dDropped)` (ruling 2 restated).
+
+**2. Round 2 ruling 1 is reopened and narrowed: time hysteresis stays, the value dead band goes.** A
+1080p60 stream on a perfect link sits at a steady 17.7 % receiver-side drop share on this tablet — inside
+the 10–30 % band — so a hint raised on the fps arm (Stalled) never cleared (70 s observed). Ruling 1's
+reasoning (both directions; a blip resets a run, never flips the hint) is kept; its "one intentional dead
+zone" was written without a device number. Ruling 3 decides: a hint that cannot clear on a link whose
+steady state is below the level the detector raises a hint for asserts a weakness the detector itself does
+not find. `IsGood => !IsWeak`, `Good*` constants deleted, `Next` has two branches, 5 non-weak samples
+clear. `WeakDropPercentThreshold` stays 30, now "30 % of received frames discarded by the receiver" — the
+counter measures de-queue starvation, not the link; re-tune on device evidence only. Drop-arm copy
+("Receiver overloaded — try Smooth") goes to #412. RC-A21's file ban lapsed with #416 (PR #432).
+
+**3. #450 — Back from a pushed `ViewerPage` orphans the receiver; the cause is structural.** MS Learn: in
+Shell, Appearing/Disappearing are raised from cross-platform code *before* platform code removes the page,
+so `NavigationStack.Contains(this)` in `OnDisappearing` is true for every pop and the teardown/dispose
+branch (`ViewerPage.xaml.cs:66-76`) is dead; the device log shows no `viewer.teardown`/`viewer.vm.dispose.*`
+in 13/13 cycles, the bridge stays Connected at 60 fps under a pane that says "Stopped.", and one undisposed
+ViewModel per cycle stays subscribed to the singleton bridge. Ruled: the seam is `Page.OnNavigatedFrom`
+(after the navigation completes; not raised by backgrounding or an in-activity rotation, so the #395
+invariants hold), gated on the **fact** `Navigation.NavigationStack.Contains(this) != true`, with
+`args.NavigationType` traced and a `viewer.navigatedfrom.mismatch` trace as the one finding that would
+change the gate. The `OnDisappearing` branch stays as defence; both route through one `TeardownOnce()`;
+`ViewerViewModel.Dispose` gets a `_disposed` guard. Rejected: a page registry in `AppShell` off
+`Shell.Navigated`, `Unloaded`/`Handler == null`, `OnBackButtonPressed`. The pane's "Stopped." + Reconnect
+after a takeover stays (#423 design); auto-resume on Back is a product question, deferred. #410 unchanged.
+
+**4. #449 — portrait tablet, pushed page: the bottom bar survives full screen because the mirror writes
+`Shell.TabBarIsVisible` on every `ShellContent`.** Verified by the researcher against MAUI 10.0.110: since
+10.0.70 (dotnet/maui #33090) `ShellItem.ShowTabs` starts its walk at a `ShellContent` with an explicit
+value, so the controller's page-scoped `false` is never consulted on bottom placement. Landscape only
+"worked" because the rail mirror writes `false` on the content; no CI AVD ever exercised page-scoped hide
+on a bottom-placement window (Nexus 6 compact → landscape → rail; pixel_c Expanded → rail). Fix: delete
+the content write (`AppShell.xaml.cs:347`); keep section, root-page and pushed-page writes and the poke.
+**New standing rule: never write `Shell.TabBarIsVisible` on a `ShellContent`.** The #395 "MAUI copies the
+value down via `Propagate`" rationale is wrong for 10.0.1xx and is replaced. Rejected: folding suppression
+into the item-scope value, a controller write on the content, pinning MAUI < 10.0.70. Proof: Appium on a
+Medium-width portrait AVD (`pixel_tablet`/`Nexus 7`); the existing full-screen test skips without an NDI
+source, so a deep-link-based test and a nightly leg for that profile are added.
+
+**5. Tooling and process.** `tools/NdiTestSender/` is in (precedent `tools/ViscaMockCamera`), own chore PR,
+never in `NdiForAndroid.sln`; nothing in CI builds `tools/`. `e2e-tests` does not run for PRs into the
+integration branch, so #450/#449 each need a dispatched regression proof (`app_ref=1d3e5745`,
+`expect_failure`) and a green run; the integration head gets one full run on Nexus 6 + pixel_c + the Medium
+portrait profile before the release PR, which carries the mandatory `main` e2e check.
