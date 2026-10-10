@@ -130,13 +130,16 @@ public sealed class AppLaunchTests : UiTestBase
     });
 
     /// <summary>
-    /// #449: on a Medium-width window in portrait (an 8" tablet such as the Tab A9+; the
-    /// `pixel_tablet` AVD) the bottom tab bar is the live placement while the pushed viewer goes
-    /// full screen — the one configuration where the controller's page-scoped
-    /// <c>Shell.TabBarIsVisible = false</c> has to beat the placement value instead of coinciding
-    /// with it. Every other CI profile reaches full screen on rail placement (Nexus 6: compact, full
-    /// screen forces landscape; pixel_c: Expanded), where the bar is hidden by placement alone, so
-    /// this test is the only proof of the page-scoped hide. Deep-link based like
+    /// #449: on a bottom-placement window in portrait the pushed viewer goes full screen with the
+    /// bottom tab bar as the live placement, and the bar must leave — on a Medium-width tablet (the
+    /// Tab A9+ class; `Nexus 7` in portrait) because the full-screen section's ShellContent is
+    /// written <c>false</c> while chrome is suppressed, on a compact phone (Nexus 6) because full
+    /// screen forces landscape and the rail placement hides it. Both paths go through the same
+    /// mirror, so the test runs on every bottom-placement window and is only skipped where the
+    /// policy says the bar is not the placement in portrait (Expanded, pixel_c). The skip is derived
+    /// from the policy's expected placement, never from observing the bar — observing it would skip
+    /// exactly when the bug (or a mis-sized profile) hides it, and the bar is asserted present before
+    /// entering full screen so a profile without it fails loudly instead. Deep-link based like
     /// <c>LifecycleTests</c>, so it cannot skip for lack of an NDI source: the emulator's permanent
     /// "Connecting..." hold state carries the same full-screen toggle as real playback. Every exit
     /// path that drives the controller's <c>RestoreChrome</c> is covered — the overlay button, Back,
@@ -149,13 +152,19 @@ public sealed class AppLaunchTests : UiTestBase
         {
             // ResetToHome rotates to portrait first; the deep link pushes the viewer onto Home's stack.
             app.ResetToHome();
+
+            var (expected, sizeClass, orientation, widthDp) = ResolveExpectedPlacement(app);
+            Skip.If(expected != NavigationPlacementMode.Bottom,
+                $"Bottom placement is not the portrait placement on this device ({sizeClass}/{orientation}, " +
+                $"{widthDp:0}dp); this test needs a window whose portrait chrome is the bottom tab bar.");
+
             app.DeepLink("ndi://view?sourceId=e2e-fullscreen-chrome");
             app.Viewer.WaitUntilVisible(Timeouts.Navigation);
             app.Viewer.WaitUntilPlaying();
 
-            Skip.If(!app.Navigation.HasBottomNavigationBar(),
-                "Rail placement — this test needs a Medium-width portrait window, where the bottom bar " +
-                "is the live placement under the pushed viewer.");
+            Assert.True(app.Navigation.WaitForBottomNavigationBar(shown: true, Timeouts.Element),
+                $"Shell's bottom navigation bar is not on screen under the pushed viewer in portrait, while " +
+                $"the bottom bar is the expected placement ({sizeClass}/{orientation}, {widthDp:0}dp).");
 
             EnterFullScreenAndAssertBottomBarHidden(app, "on first entering full screen");
             app.Viewer.ExitFullScreen();
