@@ -20,10 +20,15 @@ public class ConnectionHintPolicyTests
     [InlineData(15.1f, 9.9f, true)]
     [InlineData(15f, 9.9f, true)]
     [InlineData(14.9f, 9.9f, false)]
-    [InlineData(30f, 10f, false)]
+    [InlineData(14.9f, 0f, false)]
+    [InlineData(30f, 10f, true)]
+    [InlineData(30f, 30f, true)]
+    [InlineData(30f, 30.1f, false)]
     public void IsGood_Theory(float fps, float dropPercent, bool expected)
     {
+        // IsGood is the complement of IsWeak: no value dead band (#415, 2026-10-10).
         Assert.Equal(expected, ConnectionHintPolicy.IsGood(fps, dropPercent));
+        Assert.NotEqual(ConnectionHintPolicy.IsWeak(fps, dropPercent), ConnectionHintPolicy.IsGood(fps, dropPercent));
     }
 
     [Fact]
@@ -48,7 +53,7 @@ public class ConnectionHintPolicyTests
     }
 
     [Fact]
-    public void Next_InBetweenSample_ResetsWeakRun()
+    public void Next_NonWeakSample_ResetsWeakRun_AndStartsTheGoodRun()
     {
         var state = ConnectionHintPolicy.State.Idle;
         for (var i = 0; i < 4; i++)
@@ -57,7 +62,7 @@ public class ConnectionHintPolicyTests
         state = ConnectionHintPolicy.Next(state, 15f, 20f);
 
         Assert.Equal(0, state.WeakRun);
-        Assert.Equal(0, state.GoodRun);
+        Assert.Equal(1, state.GoodRun);
         Assert.False(state.IsHintActive);
     }
 
@@ -87,17 +92,17 @@ public class ConnectionHintPolicyTests
     }
 
     [Fact]
-    public void Next_WhileActive_InBetweenSample_KeepsTheHintAndPreservesTheGoodRun()
+    public void Next_WhileActive_NonWeakSample_AdvancesTheGoodRun()
     {
         var state = new ConnectionHintPolicy.State(0, 3, true);
 
         state = ConnectionHintPolicy.Next(state, 15f, 20f);
 
+        // #415 2026-10-10: a 20 % second is not weak, so it counts towards clearing. The former
+        // dead band held an active hint up forever at the tablet's 1080p60 steady state.
         Assert.True(state.IsHintActive);
         Assert.Equal(0, state.WeakRun);
-        // #415 round 2: a dead-band sample must not destroy the clear run. With a per-second rate,
-        // one 20 % second every few samples otherwise pinned an active hint on forever.
-        Assert.Equal(3, state.GoodRun);
+        Assert.Equal(4, state.GoodRun);
     }
 
     [Fact]
@@ -149,15 +154,18 @@ public class ConnectionHintPolicyTests
     }
 
     [Fact]
-    public void Next_MediocreLink_KeepsAnActiveHintUp()
+    public void Next_LinkBelowTheWeakThreshold_ClearsAnActiveHintAfterFiveSamples()
     {
-        // The dead band exists so that a link losing 20 % of frames is not declared healthy.
+        // A link losing 20 % is below the level the detector would raise a hint for; a drop level
+        // that never justified showing the hint must not keep it alive (#415, 2026-10-10).
         var state = new ConnectionHintPolicy.State(0, 0, true);
 
-        for (var i = 0; i < 30; i++)
+        for (var i = 0; i < 4; i++)
             state = ConnectionHintPolicy.Next(state, 30f, 20f);
-
         Assert.True(state.IsHintActive);
+
+        state = ConnectionHintPolicy.Next(state, 30f, 20f);
+        Assert.False(state.IsHintActive);
     }
 
     [Fact]
@@ -166,9 +174,69 @@ public class ConnectionHintPolicyTests
         var state = new ConnectionHintPolicy.State(0, 0, true);
 
         for (var i = 0; i < ConnectionHintPolicy.GoodSamplesToClear; i++)
-            state = ConnectionHintPolicy.Next(state, ConnectionHintPolicy.GoodFpsThreshold, 0f);
+            state = ConnectionHintPolicy.Next(state, ConnectionHintPolicy.WeakFpsThreshold, 0f);
 
         Assert.False(state.IsHintActive);
+    }
+
+    [Fact]
+    public void Next_HintRaisedOnTheFpsArm_ClearsAtTheTabletsSteadyState()
+    {
+        // Device 2026-10-10: sender stopped video (Stalled, fps 0, nothing dropped) — the hint
+        // appeared after ~7 s on the fps arm. Video then resumed at 1080p60: fps 49, 18 % of received
+        // frames discarded by the receiver. The hint stayed up for 70 s because 18 % sat in the
+        // dead band; it must clear after five non-weak samples.
+        var state = ConnectionHintPolicy.State.Idle;
+        for (var i = 0; i < 7; i++)
+            state = ConnectionHintPolicy.Next(state, 0f, 0f);
+
+        Assert.True(state.IsHintActive);
+        Assert.False(state.SawDropEvidence);
+
+        for (var i = 0; i < 5; i++)
+            state = ConnectionHintPolicy.Next(state, 49f, 18f);
+
+        Assert.False(state.IsHintActive);
+    }
+
+    [Fact]
+    public void Next_HintRaisedOnTheDropArm_ClearsOnceTheRateIsBelowTheThreshold()
+    {
+        // A genuine > 30 % burst raises the hint with drop evidence; once the rate is back below the
+        // threshold (even at the tablet's 18 % steady state) the hint clears and the evidence goes.
+        var state = ConnectionHintPolicy.State.Idle;
+        for (var i = 0; i < 5; i++)
+            state = ConnectionHintPolicy.Next(state, 49f, 40f);
+
+        Assert.True(state.IsHintActive);
+        Assert.True(state.SawDropEvidence);
+
+        for (var i = 0; i < 5; i++)
+            state = ConnectionHintPolicy.Next(state, 49f, 18f);
+
+        Assert.False(state.IsHintActive);
+        Assert.False(state.SawDropEvidence);
+    }
+
+    [Fact]
+    public void Next_LinkHoveringOnTheThreshold_FlipsAtMostOncePerFiveSamples()
+    {
+        // 5 s just above the threshold, 5 s just below, repeated. Without value hysteresis the hint
+        // flaps, but only ever on the fifth sample of each phase — never in between.
+        var state = ConnectionHintPolicy.State.Idle;
+
+        for (var i = 0; i < 40; i++)
+        {
+            var previous = state.IsHintActive;
+            var drop = (i / 5) % 2 == 0 ? 31f : 29f;
+
+            state = ConnectionHintPolicy.Next(state, 30f, drop);
+
+            if ((i + 1) % 5 == 0)
+                Assert.NotEqual(previous, state.IsHintActive);
+            else
+                Assert.Equal(previous, state.IsHintActive);
+        }
     }
 
     [Fact]
