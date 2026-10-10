@@ -1316,6 +1316,20 @@ public class ViewerViewModelTests
     }
 
     [Fact]
+    public void Dispose_CalledTwice_StopsTheReceiverAndClosesTheHistoryRowOnce()
+    {
+        // #450: ViewerPage can reach Dispose from both OnNavigatedFrom and the OnDisappearing
+        // defence branch; the second call must be a no-op for the bridge and the history row.
+        var sut = CreatePlayingSut();
+
+        sut.Dispose();
+        sut.Dispose();
+
+        _bridgeMock.Verify(b => b.StopReceiverAsync(), Times.Once);
+        _connectionHistoryMock.Verify(h => h.RecordDisconnectedAsync(), Times.Once);
+    }
+
+    [Fact]
     public void Dispose_WhenAnotherViewerOwnsTheReceiver_LeavesItRunning()
     {
         var generation = 0L;

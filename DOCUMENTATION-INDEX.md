@@ -268,6 +268,12 @@ Dual-emulator e2e validates six-step Chrome/nos.nl cross-app propagation with vi
 
 ---
 
+## Developer Tools (`tools/`, not in `NdiForAndroid.sln`)
+
+- **[tools/NdiTestSender/README.md](tools/NdiTestSender/README.md)** - Windows x64 PC-side 1080p60 full-bandwidth NDI test source used for the receiver device gate (#415, #416): PC clock + UTC epoch in the picture, frame counter, flash/click A/V sync marker, `--noise` bitrate knob, `pause.flag` to stop video while the connection stays up. Needs the user-installed NDI 6 Runtime (no DLL committed).
+
+---
+
 **Version**: 1.1  
 **Last Updated**: 2026-03-31  
 **Status**: Ready for use ✓

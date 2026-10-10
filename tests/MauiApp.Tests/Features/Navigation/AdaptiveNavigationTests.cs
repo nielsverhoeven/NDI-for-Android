@@ -405,4 +405,30 @@ public sealed class NavigationChromePolicyTests
             Assert.False(chrome.RailVisible && chrome.BottomBarVisibleAtItemScope);
         }
     }
+
+    /// <summary>
+    /// #449: the ShellContent is the effective bottom-bar scope on MAUI ≥ 10.0.70, so every section
+    /// and content gets the placement value, and the section hosting full screen gets content
+    /// <c>false</c> with no page writes while chrome is suppressed (its pages are the controller's).
+    /// A suppressed shell still writes the placement value on every other section.
+    /// </summary>
+    [Theory]
+    [InlineData(true,  false, false, true,  true)]
+    [InlineData(false, false, false, false, true)]
+    [InlineData(true,  true,  true,  false, false)]
+    [InlineData(true,  true,  false, true,  true)]
+    [InlineData(false, true,  true,  false, false)]
+    public void MirrorValue_Theory(
+        bool bottomBarVisibleAtItemScope,
+        bool isChromeSuppressed,
+        bool isFullScreenSection,
+        bool expectedSectionAndContentValue,
+        bool expectedWritePages)
+    {
+        var (sectionAndContentValue, writePages) =
+            NavigationChromePolicy.MirrorValue(bottomBarVisibleAtItemScope, isChromeSuppressed, isFullScreenSection);
+
+        Assert.Equal(expectedSectionAndContentValue, sectionAndContentValue);
+        Assert.Equal(expectedWritePages, writePages);
+    }
 }

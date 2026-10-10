@@ -309,26 +309,34 @@ public partial class AppShell : Shell
     }
 
     /// <summary>
-    /// Writes the placement's bar value onto every section, content and page under
-    /// <c>PrimaryTabBar</c>, because the item-scope value alone does not reach them at runtime.
+    /// Writes <see cref="NavigationChromePolicy.MirrorValue"/> onto every section, content and page
+    /// under <c>PrimaryTabBar</c>, because the item-scope value alone does not reach them at runtime.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// MAUI copies <c>Shell.TabBarIsVisible</c> down the Shell tree as a <i>local</i> value
-    /// (<c>BaseShellItem.Propagate</c>: from a parent that has it set to a child that has not), and
-    /// never again once the child has one. Every section, content and page therefore holds the value
-    /// the item had when that element was created, and <c>ShellItem.ShowTabs</c> reads the page (or
-    /// the content) before the item. Measured on the Nexus 6 CI AVD (#395): after a runtime flip to
-    /// the rail the item read <c>false</c> while the displayed page still held the <c>true</c> it was
-    /// created with, so the bar stayed. The pixel_c leg passed only because the rail was the
-    /// placement before any page existed.
+    /// <c>Shell.TabBarIsVisible</c> on a <c>ShellContent</c> is the effective bottom-bar scope on
+    /// MAUI ≥ 10.0.70 (dotnet/maui #33090): <c>ShellItem.ShowTabs</c> starts its effective-value walk
+    /// at the current content whenever that content has an explicit value, and Android's
+    /// <c>ShellItemRenderer</c> re-evaluates on its change. The content value is load-bearing in both
+    /// directions. Without it the bar stays up on the rail after a cold launch (the root page does
+    /// not exist yet when the constructor's <c>ApplyPlacement</c> runs) and after a rotation, although
+    /// the section holds <c>false</c> and every existing page is written — Nexus 6, run 38040750641.
+    /// With the placement's <c>true</c> on it, the controller's page-scoped <c>false</c> on a pushed
+    /// full-screen viewer is never consulted and the bar stays under the video on every
+    /// bottom-placement window (#449). Rail placement hid that case by placement alone, which is why
+    /// no CI profile (Nexus 6 compact → landscape → rail; pixel_c Expanded → rail) ever caught it.
     /// </para>
     /// <para>
-    /// The section hosting an active full screen is skipped: its page is
-    /// <c>ViewerFullScreenChromeController</c>'s (page scope, <c>false</c> on enter), and a write on its
-    /// content would make Shell copy the value onto that page. When full screen ends,
-    /// <c>IsChromeSuppressed</c> flips and this runs again for every section, after the controller's
-    /// <c>ClearValue</c>.
+    /// <b>Standing rule (#449):</b> this method is the only writer of section and content scope. Every
+    /// section and content gets the placement value; the section hosting full screen gets
+    /// <c>false</c> while <c>IsChromeSuppressed</c>, and its pages are never written from here —
+    /// page scope is <c>ViewerFullScreenChromeController</c>'s (the nav bar, and the page-first
+    /// contract this design assumed and a future MAUI may restore). The page writes elsewhere are
+    /// what make an existing page see a runtime flip (#395 Nexus 6 finding); the #395 "MAUI copies the
+    /// value down via <c>BaseShellItem.Propagate</c>" rationale was wrong — nothing propagates it.
+    /// When full screen ends, <c>IsChromeSuppressed</c> flips first, so this writes the placement value
+    /// back onto that section and its contents before the controller's <c>ClearValue</c> runs; both
+    /// happen in one UI-thread turn, so no frame observes the intermediate state.
     /// </para>
     /// </remarks>
     private void MirrorTabBarVisibilityToDescendants(bool visible, bool suppressed)
@@ -337,23 +345,26 @@ public partial class AppShell : Shell
 
         foreach (var section in PrimaryTabBar.Items)
         {
-            if (ReferenceEquals(section, fullScreenSection))
-                continue;
+            var (value, writePages) = NavigationChromePolicy.MirrorValue(
+                visible, suppressed, ReferenceEquals(section, fullScreenSection));
 
-            Shell.SetTabBarIsVisible(section, visible);
+            Shell.SetTabBarIsVisible(section, value);
 
             foreach (var content in section.Items)
             {
-                Shell.SetTabBarIsVisible(content, visible);
-                if (((IShellContentController)content).Page is { } root)
-                    Shell.SetTabBarIsVisible(root, visible);
+                Shell.SetTabBarIsVisible(content, value);
+                if (writePages && ((IShellContentController)content).Page is { } root)
+                    Shell.SetTabBarIsVisible(root, value);
             }
+
+            if (!writePages)
+                continue;
 
             // Pushed pages (the viewer, the diagnostic log). Index 0 of a Shell section stack is null.
             foreach (var page in section.Navigation.NavigationStack)
             {
                 if (page is not null)
-                    Shell.SetTabBarIsVisible(page, visible);
+                    Shell.SetTabBarIsVisible(page, value);
             }
         }
     }
