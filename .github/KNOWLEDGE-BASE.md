@@ -412,6 +412,10 @@ Declared in `src/MauiApp/Platforms/Android/AndroidManifest.xml`: `INTERNET`, `AC
 ## NDI Native Libraries
 Location: `src/MauiApp/Platforms/Android/libs/<abi>/libndi.so` (NDI SDK 6.3.1) — `arm64-v8a` + `armeabi-v7a` only. Packaged by the default `AndroidNativeLibrary` globs — do **NOT** add an explicit `<AndroidNativeLibrary Include>` (double-add, XA4301). No x86/x86_64 binary exists: `NdiRuntime.EnsureInitialized()` returns `false` there and NDI features soft-disable (app must not crash on emulators).
 
+## Developer tools (`tools/` — standalone consoles, not in `NdiForAndroid.sln`, not built by CI)
+Precedent: `tools/ViscaMockCamera` (raw VISCA-over-IP camera emulator for the PTZ endpoint, see its README).
+- **`tools/NdiTestSender`** (#415/#416) — Windows x64 only; the PC-side 1080p60 full-bandwidth SpeedHQ NDI test source used in the 2026-10-10 tablet gate instead of NDI Tools Screen Capture / Test Patterns. The picture carries the PC clock (`HH:mm:ss.fff` + UTC epoch ms), a frame counter, a white flash bar + audio click on every `.000` second and an incompressible `--noise N` band (~194 Mbit/s at N=200, ~156 Mbit/s at N=0); a `pause.flag` file next to the exe stops video while the connection and audio stay up (#412 "connected, no video"). Needs the user-installed NDI 6 Runtime — `--lib-dir` / `NDI_RUNTIME_DIR`, default `C:\Program Files\NDI\NDI 6 Runtime\v6\`; no DLL is committed. Run: `dotnet run -c Release --project tools/NdiTestSender -- --name PC-Test-1080p60`; details and the latency-reading method in `tools/NdiTestSender/README.md`.
+
 ## Local AI Integration (Ollama — credit reduction)
 
 Ollama is installed at `%LOCALAPPDATA%\Programs\Ollama\ollama.exe` and runs at `http://localhost:11434`.
