@@ -14,9 +14,11 @@ public partial class AdaptiveShellStateViewModel : ObservableObject
     /// <summary>
     /// Set by <c>ViewerFullScreenChromeController</c> while a host page is showing full screen.
     /// Read only by <c>AppShell.ApplyPlacement</c> (through <see cref="NavigationChromePolicy"/>), and
-    /// only to hide the left rail (<c>FlyoutBehavior.Disabled</c>). The bottom tab bar is hidden for
-    /// full screen at page scope by the controller (<c>Shell.SetTabBarIsVisible(page, false)</c>),
-    /// never from here.
+    /// to hide the left rail (<c>FlyoutBehavior.Disabled</c>) and, through
+    /// <see cref="NavigationChromePolicy.MirrorValue"/>, to write <c>Shell.TabBarIsVisible = false</c> on
+    /// the section and <c>ShellContent</c>s hosting full screen — the effective bottom-bar scope on
+    /// MAUI ≥ 10.0.70 (#449). It never changes the item-scope value, and the controller keeps page
+    /// scope (<c>Shell.SetTabBarIsVisible(page, false)</c>); nothing here writes any Shell property.
     /// </summary>
     [ObservableProperty]
     private bool _isChromeSuppressed;

@@ -139,6 +139,11 @@ public sealed class ViewerFullScreenChromeController
         Shell.SetNavBarIsVisible(_page, false);
         Shell.SetTabBarIsVisible(_page, false);
         _chromeOverridden = true;
+
+        // Developer-mode evidence that the page-scoped write landed (#449): a bar that stays on
+        // screen with tabBarSet=True is a resolution problem above the page, not a missing write.
+        _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "chrome.override",
+            $"page={_page.GetType().Name} tabBarSet={_page.IsSet(Shell.TabBarIsVisibleProperty)}");
     }
 
     /// <summary>
@@ -161,6 +166,9 @@ public sealed class ViewerFullScreenChromeController
         {
             _page.ClearValue(Shell.NavBarIsVisibleProperty);
             _page.ClearValue(Shell.TabBarIsVisibleProperty);
+
+            _diagnostics?.Trace(DiagnosticOverlayService.NavigationLogTag, "chrome.restore",
+                $"page={_page.GetType().Name} tabBarSet={_page.IsSet(Shell.TabBarIsVisibleProperty)}");
         }
 
         _chromeOverridden = false;
