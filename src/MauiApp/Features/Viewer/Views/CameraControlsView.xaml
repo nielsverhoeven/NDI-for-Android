@@ -6,29 +6,21 @@
              x:Class="NdiForAndroid.Features.Viewer.Views.CameraControlsView"
              x:DataType="vm:ViewerViewModel">
     <VerticalStackLayout Spacing="4" IsVisible="{Binding IsPtzControlActive}">
-        <Border Padding="8,3" StrokeShape="RoundRectangle 10"
-                BackgroundColor="{DynamicResource CardBackground}"
-                Stroke="{DynamicResource BorderColor}"
-                SemanticProperties.Description="PTZ endpoint settings">
-            <Border.GestureRecognizers>
-                <TapGestureRecognizer Command="{Binding OpenPtzEndpointFormCommand}" />
-            </Border.GestureRecognizers>
-            <Label Text="{Binding PtzStatusText}" FontSize="11">
-                <Label.Style>
-                    <Style TargetType="Label">
-                        <Setter Property="TextColor" Value="{DynamicResource TextSecondary}" />
-                        <Style.Triggers>
-                            <DataTrigger TargetType="Label" Binding="{Binding PtzLinkState}" Value="Connected">
-                                <Setter Property="TextColor" Value="{DynamicResource SuccessText}" />
-                            </DataTrigger>
-                            <DataTrigger TargetType="Label" Binding="{Binding PtzLinkState}" Value="Error">
-                                <Setter Property="TextColor" Value="{DynamicResource ErrorText}" />
-                            </DataTrigger>
-                        </Style.Triggers>
-                    </Style>
-                </Label.Style>
-            </Label>
-        </Border>
+        <Label Text="{Binding PtzStatusText}" FontSize="11" Padding="8,3" LineBreakMode="TailTruncation">
+            <Label.Style>
+                <Style TargetType="Label">
+                    <Setter Property="TextColor" Value="{DynamicResource TextSecondary}" />
+                    <Style.Triggers>
+                        <DataTrigger TargetType="Label" Binding="{Binding PtzLinkState}" Value="Connected">
+                            <Setter Property="TextColor" Value="{DynamicResource SuccessText}" />
+                        </DataTrigger>
+                        <DataTrigger TargetType="Label" Binding="{Binding PtzLinkState}" Value="Error">
+                            <Setter Property="TextColor" Value="{DynamicResource ErrorText}" />
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </Label.Style>
+        </Label>
 
         <Grid x:Name="ControlsGrid" RowDefinitions="Auto,Auto" ColumnDefinitions="Auto,Auto,Auto" RowSpacing="0" ColumnSpacing="8">
             <Grid x:Name="PadGrid" Grid.Row="0" Grid.Column="0" RowDefinitions="48,48,48" ColumnDefinitions="48,48,48"

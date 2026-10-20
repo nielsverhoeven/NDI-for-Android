@@ -60,7 +60,7 @@ public class ViewerControlLayoutTests
     [Theory]
     [InlineData(608, 320)]
     [InlineData(400, 220)]
-    [InlineData(248, 136.4)]
+    [InlineData(248, 144)]
     [InlineData(0, 320)]
     public void ChooseSheetPeekHeightDp_ReturnsExpected(double sheetHostHeightDp, double expected)
     {
@@ -71,7 +71,7 @@ public class ViewerControlLayoutTests
 
     [Theory]
     [InlineData(608, ViewerControlLayoutKind.Sheet, false, 240)]
-    [InlineData(248, ViewerControlLayoutKind.Sheet, false, 105.6)]
+    [InlineData(248, ViewerControlLayoutKind.Sheet, false, 98)]
     [InlineData(1168, ViewerControlLayoutKind.Deck, false, 240)]
     [InlineData(248, ViewerControlLayoutKind.Sheet, true, -1)]
     [InlineData(0, ViewerControlLayoutKind.Sheet, false, 240)]

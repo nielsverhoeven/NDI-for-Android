@@ -690,6 +690,10 @@ views without carrying their `TestIds` AutomationIds along, and the gap was only
   see the env-var table above). Lower it as violations are fixed; never raise it to turn a red run
   green. Two checks sit *outside* the ratchet and may not regress at all: navigation items must
   announce a destination, and no element may announce an automation id as its label.
+- **48 dp exceptions** (owner, #346, 2026-10-20): native Entry/Picker — Output stream name, Video
+  Input, Settings Discovery/edit-server Entries (`SettingsPage.xaml:277,281,288,467,471,476`) —
+  pending one global Entry-height follow-up. Status indicators are not touch targets; each surface
+  has one 48 dp entry to the PTZ endpoint form.
 - **`AutomationId` ≠ `SemanticProperties.Description`.** One is a machine hook, the other is what
   TalkBack reads aloud. `Accessibility_AutomationIds_AreNotUsedAsScreenReaderLabels` asserts the
   two never collide — a guard against the 99 ids added in #311 leaking into announcements.

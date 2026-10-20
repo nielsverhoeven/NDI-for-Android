@@ -67,6 +67,7 @@
     <Style TargetType="RadioButton">
         <Setter Property="BackgroundColor" Value="{DynamicResource ControlBackground}" />
         <Setter Property="TextColor" Value="{DynamicResource TextPrimary}" />
+        <Setter Property="MinimumHeightRequest" Value="48" />
         <Setter Property="ControlTemplate">
             <Setter.Value>
                 <ControlTemplate x:DataType="RadioButton">

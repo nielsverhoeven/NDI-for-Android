@@ -8,7 +8,7 @@
              x:DataType="vm:ViewerViewModel">
     <Grid x:Name="SheetContainer" HeightRequest="440" VerticalOptions="End"
           BackgroundColor="{DynamicResource CardBackground}"
-          RowDefinitions="48,40,*">
+          RowDefinitions="48,48,*">
         <Grid Grid.Row="0">
             <BoxView WidthRequest="36" HeightRequest="4" CornerRadius="2"
                      Color="{DynamicResource DividerColor}" HorizontalOptions="Center" VerticalOptions="Center" />
@@ -18,26 +18,30 @@
             </Grid.GestureRecognizers>
         </Grid>
 
-        <Grid Grid.Row="1" ColumnDefinitions="*,*" RowDefinitions="Auto,3">
+        <Grid Grid.Row="1" ColumnDefinitions="*,*">
             <!-- Selected tab gets a bold TextPrimary caption vs. regular TextSecondary for the
                  other, in addition to the 3dp underline — a non-colour cue for the selected tab
                  (#370 sources-viewer-009). Playback starts selected. -->
             <Button x:Name="PlaybackTabButton" Grid.Row="0" Grid.Column="0" Text="Playback"
+                    HeightRequest="48" MinimumHeightRequest="48" Padding="8,0"
                     BackgroundColor="Transparent" TextColor="{DynamicResource TextPrimary}" FontAttributes="Bold"
                     AutomationId="{x:Static t:TestIds.ViewerSheetPlaybackTab}"
                     SemanticProperties.Description="Playback tab, selected" />
             <Button x:Name="PtzTabButton" Grid.Row="0" Grid.Column="1" Text="PTZ"
+                    HeightRequest="48" MinimumHeightRequest="48" Padding="8,0"
                     BackgroundColor="Transparent" TextColor="{DynamicResource TextSecondary}" FontAttributes="None"
                     IsVisible="{Binding IsPtzControlActive}"
                     AutomationId="{x:Static t:TestIds.ViewerSheetPtzTab}"
                     SemanticProperties.Description="PTZ tab" />
-            <BoxView x:Name="PlaybackTabIndicator" Grid.Row="1" Grid.Column="0" HeightRequest="3"
+            <BoxView x:Name="PlaybackTabIndicator" Grid.Row="0" Grid.Column="0" HeightRequest="3"
+                     VerticalOptions="End" InputTransparent="True"
                      Color="{DynamicResource AccentGraphic}" />
-            <BoxView x:Name="PtzTabIndicator" Grid.Row="1" Grid.Column="1" HeightRequest="3"
+            <BoxView x:Name="PtzTabIndicator" Grid.Row="0" Grid.Column="1" HeightRequest="3"
+                     VerticalOptions="End" InputTransparent="True"
                      Color="{DynamicResource AccentGraphic}" IsVisible="False" />
         </Grid>
 
-        <ScrollView Grid.Row="2" Padding="16,0,16,16" VerticalScrollBarVisibility="Default">
+        <ScrollView Grid.Row="2" Padding="16,0,16,8" VerticalScrollBarVisibility="Default">
             <Grid RowDefinitions="Auto">
                 <views:PlaybackControlsView x:Name="PlaybackTabContent" Grid.Row="0" VerticalOptions="Start" />
                 <views:CameraControlsView x:Name="PtzTabContent" Grid.Row="0" VerticalOptions="Start" IsVisible="False" />

@@ -30,7 +30,7 @@
                     BackgroundColor="{DynamicResource CardBackground}"
                     TextColor="{DynamicResource TextPrimary}"
                     Command="{Binding OpenPtzEndpointFormCommand}"
-                    IsVisible="{Binding IsPtzControlActive, Converter={StaticResource InverseBoolConverter}}" />
+                    SemanticProperties.Description="PTZ endpoint settings" />
         </Grid>
 
         <Grid Grid.Row="1">
