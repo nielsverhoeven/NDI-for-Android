@@ -3,6 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              xmlns:vm="clr-namespace:NdiForAndroid.Features.Viewer.ViewModels;assembly=NdiForAndroid.Core"
              xmlns:views="clr-namespace:NdiForAndroid.Features.Viewer.Views"
+             xmlns:t="clr-namespace:NdiForAndroid.Testing;assembly=NdiForAndroid.Core"
              x:Class="NdiForAndroid.Features.Viewer.Views.ViewerControlSheet"
              x:DataType="vm:ViewerViewModel">
     <Grid x:Name="SheetContainer" HeightRequest="440" VerticalOptions="End"
@@ -23,10 +24,12 @@
                  (#370 sources-viewer-009). Playback starts selected. -->
             <Button x:Name="PlaybackTabButton" Grid.Row="0" Grid.Column="0" Text="Playback"
                     BackgroundColor="Transparent" TextColor="{DynamicResource TextPrimary}" FontAttributes="Bold"
+                    AutomationId="{x:Static t:TestIds.ViewerSheetPlaybackTab}"
                     SemanticProperties.Description="Playback tab, selected" />
             <Button x:Name="PtzTabButton" Grid.Row="0" Grid.Column="1" Text="PTZ"
                     BackgroundColor="Transparent" TextColor="{DynamicResource TextSecondary}" FontAttributes="None"
                     IsVisible="{Binding IsPtzControlActive}"
+                    AutomationId="{x:Static t:TestIds.ViewerSheetPtzTab}"
                     SemanticProperties.Description="PTZ tab" />
             <BoxView x:Name="PlaybackTabIndicator" Grid.Row="1" Grid.Column="0" HeightRequest="3"
                      Color="{DynamicResource AccentGraphic}" />

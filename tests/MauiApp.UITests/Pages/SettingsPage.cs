@@ -308,6 +308,26 @@ public sealed class SettingsPage : PageObject
         return IsThemeSelected(theme);
     }
 
+    /// <summary>Rendered height in pixels of every Appearance radio (themes, then accents). Open the Appearance section first.</summary>
+    public IReadOnlyList<(string Id, int HeightPx)> AppearanceRadioHeightsPx()
+    {
+        var heights = new List<(string Id, int HeightPx)>();
+
+        foreach (var id in new[] { TestIds.SettingsThemeLight, TestIds.SettingsThemeDark, TestIds.SettingsThemeSystem })
+            heights.Add((id, WaitFor(id).Size.Height));
+
+        ScrollToEnd();
+
+        foreach (var id in new[]
+        {
+            TestIds.SettingsAccentBlue, TestIds.SettingsAccentTeal, TestIds.SettingsAccentGreen,
+            TestIds.SettingsAccentOrange, TestIds.SettingsAccentRed, TestIds.SettingsAccentPink,
+        })
+            heights.Add((id, WaitFor(id).Size.Height));
+
+        return heights;
+    }
+
     /// <summary>The inner check-mark dot for a theme's RadioButton template.</summary>
     private IWebElement ThemeMarker(ThemeOption theme)
     {
