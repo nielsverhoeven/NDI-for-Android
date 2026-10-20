@@ -322,7 +322,14 @@ public partial class ViewerViewModel
     /// <c>IsPlaying</c> changes when a device that is still landscape returns to the foreground, so the
     /// compact-device invariant is re-asserted here. Never requests a rotation and never touches the
     /// receiver or the status text (#383, #411).</summary>
-    private void OnAppResumed() => EnterFullScreenIfPlayingInLandscapeOnCompactDevice();
+    private void OnAppResumed()
+    {
+        // The resume re-assert belongs to the view model that drives the stream: a disowned, off-screen one must not claim full screen and then be retired into a portrait request (same ownership rule as ReleaseIfDisowned).
+        if (HasEverClaimedReceiver && !OwnsActiveReceiver)
+            return;
+
+        EnterFullScreenIfPlayingInLandscapeOnCompactDevice();
+    }
 
     /// <summary>Unconditionally exits full screen and releases any orientation lock/pending
     /// request. Used when this ViewModel's host page is torn down

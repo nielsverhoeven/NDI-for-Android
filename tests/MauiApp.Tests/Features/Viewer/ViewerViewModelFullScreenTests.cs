@@ -561,6 +561,30 @@ public class ViewerViewModelFullScreenTests
     }
 
     [Fact]
+    public void AppResumed_DisownedViewModel_DoesNotReEnterFullScreenOrRequestPortrait()
+    {
+        var generation = 0L;
+        _bridgeMock.Setup(b => b.ReceiverGeneration).Returns(() => generation);
+        _bridgeMock.Setup(b => b.StartReceiver(It.IsAny<string>(), It.IsAny<QualityProfile>()))
+                   .Callback(() => generation++);
+        SetCompactDevice(isLandscape: true);
+        var sut = CreateSessionSut();
+        Assert.True(sut.IsFullScreen, "a session started in landscape on a compact device auto-enters full screen");
+        _lifecycleMock.Raise(l => l.AppPaused += null);
+        Assert.False(sut.IsFullScreen, "pausing force-exits full screen");
+        generation++; // another viewer takes the bridge while this one is backgrounded
+        _orientationLockMock.Invocations.Clear();
+
+        _lifecycleMock.Raise(l => l.AppResumed += null);
+        _timeProvider.Advance(TimeSpan.FromSeconds(1)); // the stats sample retires the disowned view model
+
+        Assert.False(sut.IsPlaying, "the stats sample retired the disowned view model");
+        Assert.False(sut.IsFullScreen);
+        _orientationLockMock.Verify(o => o.RequestPortrait(), Times.Never);
+        _orientationLockMock.Verify(o => o.RequestLandscape(), Times.Never);
+    }
+
+    [Fact]
     public void AppResumed_OnTablet_StaysWindowed()
     {
         var sut = CreateSut();

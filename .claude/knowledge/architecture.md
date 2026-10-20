@@ -5457,3 +5457,14 @@ against `main` @ `a9cbbdc6` (v0.20.41). Four file-disjoint PRs, developed in par
    `PtzEndpointFormViewModelTests` awaits an un-setup `ShutdownAsync`, and `ViewerViewModelTests`'
    fixture never sets up `StopReceiverAsync`; both are green in CI. The real trap is that an un-setup
    `Task<bool>` silently returns `false`. Keep explicit setups.
+
+**Addendum, PR #466 review (head `caa55341`).** (P3-1) Option (a): `OnAppResumed` returns early when
+`HasEverClaimedReceiver && !OwnsActiveReceiver`. The resume re-assert belongs to the ViewModel that
+drives the stream. A disowned, off-screen ViewModel must not take the screen and then be retired
+through `BeginExitFullScreen` into a portrait request. The two-term form is required. A bare
+`!OwnsActiveReceiver` would also suppress ViewModels that never claimed a receiver: the unit suite's
+`IsPlaying` ViewModels, and the e2e hold state if the x86 soft-disable never moves the generation.
+(b), switching `RetireDisowned` to `ForceExitFullScreen`, is not taken here. It changes the exit
+shared by `ReleaseIfDisowned`, `RunAttempt` and `FailReconnect` in the #410/#450 area, so it goes into
+a follow-up issue together with the pre-existing rotation variant (`HandleOrientationChanged`). (c) is
+rejected: the fix is one line on established ownership semantics. Unit test required.
