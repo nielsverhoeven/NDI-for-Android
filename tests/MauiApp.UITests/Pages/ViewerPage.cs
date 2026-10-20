@@ -1,3 +1,4 @@
+using OpenQA.Selenium;
 using OpenQA.Selenium.Appium.Android;
 using NdiForAndroid.Features.Viewer.Models;
 using NdiForAndroid.NdiBridge;
@@ -182,4 +183,29 @@ public sealed class ViewerPage : PageObject
     public void AutoFocus()=> Tap(TestIds.ViewerPtzAutoFocus);
     public void ZoomIn()   => Tap(TestIds.ViewerPtzZoomIn);
     public void ZoomOut()  => Tap(TestIds.ViewerPtzZoomOut);
+
+    public int SheetPlaybackTabHeightPx => WaitFor(TestIds.ViewerSheetPlaybackTab).Size.Height;
+
+    public int SheetPtzTabHeightPx =>
+        WaitFor(TestIds.ViewerSheetPtzTab, Timeouts.Navigation,
+            "The sheet's PTZ tab did not appear after saving a PTZ endpoint").Size.Height;
+
+    public bool IsPtzEndpointButtonPresent => IsPresent(TestIds.ViewerPtzEndpointButton);
+
+    public void SavePtzEndpoint(string host)
+    {
+        Tap(TestIds.ViewerPtzEndpointButton, Timeouts.Navigation);
+        SetText(TestIds.PtzEndpointHost, host);
+        try { Driver.HideKeyboard(); } catch (WebDriverException) { }
+        Tap(TestIds.PtzEndpointSave);
+
+        var deadline = DateTime.UtcNow + Timeouts.Element;
+        while (IsPresent(TestIds.PtzEndpointSave))
+        {
+            if (DateTime.UtcNow >= deadline)
+                throw new InvalidOperationException("The PTZ endpoint form did not close after Save.");
+
+            Thread.Sleep(100);
+        }
+    }
 }

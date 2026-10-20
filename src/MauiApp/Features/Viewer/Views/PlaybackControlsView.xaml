@@ -26,10 +26,11 @@
             </VerticalStackLayout>
             <Button Grid.Column="1" Text="PTZ endpoint…" FontSize="12" Padding="10,0"
                     HeightRequest="48" VerticalOptions="Center"
+                    AutomationId="{x:Static t:TestIds.ViewerPtzEndpointButton}"
                     BackgroundColor="{DynamicResource CardBackground}"
                     TextColor="{DynamicResource TextPrimary}"
                     Command="{Binding OpenPtzEndpointFormCommand}"
-                    IsVisible="{Binding IsPtzControlActive, Converter={StaticResource InverseBoolConverter}}" />
+                    SemanticProperties.Description="PTZ endpoint settings" />
         </Grid>
 
         <Grid Grid.Row="1">
