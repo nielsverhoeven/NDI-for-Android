@@ -239,6 +239,7 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
         SyncSelectedProfileOption(); // field initialisers do not fire OnQualityProfileChanged
 
         _lifecycle.AppPaused += OnAppPaused;
+        _lifecycle.AppResumed += OnAppResumed;
         _lifecycle.OrientationChanged += OnOrientationChanged;
         _bridge.ConnectionStateChanged += OnBridgeConnectionStateChanged;
         _bridge.TallyEchoChanged += OnBridgeTallyEchoChanged;
@@ -489,6 +490,7 @@ public partial class ViewerViewModel : ObservableObject, IDisposable
         _userInitiatedStop = true;
         Interlocked.Increment(ref _stopEpoch); // no window posted before this may open (#409)
         _lifecycle.AppPaused -= OnAppPaused;
+        _lifecycle.AppResumed -= OnAppResumed;
         _lifecycle.OrientationChanged -= OnOrientationChanged;
         _bridge.ConnectionStateChanged -= OnBridgeConnectionStateChanged;
         _bridge.TallyEchoChanged -= OnBridgeTallyEchoChanged;
