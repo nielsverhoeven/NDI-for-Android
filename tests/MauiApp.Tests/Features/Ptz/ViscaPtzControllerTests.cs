@@ -414,6 +414,42 @@ public class ViscaPtzControllerTests
     }
 
     [Fact]
+    public async Task PanTiltAsync_CallerTokenFiresDuringCommandOnAnOpenConnection_IsNotRetried()
+    {
+        var transport = new FakeViscaTransport();
+        transport.EnqueueReply(Ack1);
+        var sut = new ViscaPtzController(transport, Endpoint, commandTimeout: TimeSpan.FromSeconds(5));
+        await sut.PanTiltAsync(1f, 0f);
+        transport.EnqueueReceiveHang();
+        using var callerCts = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
+
+        var result = await sut.PanTiltAsync(0f, 0f, callerCts.Token);
+
+        Assert.False(result);
+        Assert.Equal("Camera did not answer (timed out).", sut.LastError);
+        Assert.Equal(1, transport.ConnectCount);
+    }
+
+    [Fact]
+    public async Task PanTiltAsync_FrameCapOnAnOpenConnection_ResynchronisesWithOneRetry()
+    {
+        var transport = new FakeViscaTransport();
+        transport.EnqueueReply(Ack1);
+        var sut = new ViscaPtzController(transport, Endpoint);
+        await sut.PanTiltAsync(1f, 0f);
+        for (var i = 0; i < 8; i++)
+            transport.EnqueueReply(UnknownFrame);
+        transport.EnqueueReply(Ack1);
+
+        var second = await sut.PanTiltAsync(0f, 1f);
+
+        Assert.True(second);
+        Assert.Equal(2, transport.ConnectCount);
+        Assert.Equal(1, transport.DisconnectCount);
+        Assert.Equal(3, transport.SentCommands.Count);
+    }
+
+    [Fact]
     public async Task PanTiltAsync_PeerClosesTheConnection_ReportsConnectionLost()
     {
         var transport = new FakeViscaTransport();

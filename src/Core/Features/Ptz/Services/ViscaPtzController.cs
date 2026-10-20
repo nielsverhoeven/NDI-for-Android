@@ -106,7 +106,8 @@ public sealed class ViscaPtzController : IPtzController
             if (outcome == AttemptOutcome.Succeeded)
                 return true;
 
-            if (outcome == AttemptOutcome.RejectedByCamera || !wasAlreadyConnected)
+            // The retry is for a connection that went stale; retrying for a caller that already gave up can only fail at once and report the wrong phase.
+            if (outcome == AttemptOutcome.RejectedByCamera || !wasAlreadyConnected || cancellationToken.IsCancellationRequested)
                 return false;
 
             return await TrySendAndReceiveAsync(command, cancellationToken).ConfigureAwait(false) == AttemptOutcome.Succeeded;
