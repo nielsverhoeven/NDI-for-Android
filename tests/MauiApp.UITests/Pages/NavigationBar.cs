@@ -85,8 +85,9 @@ public sealed class NavigationBar
         if (!AppOwnsAnythingOnScreen())
             throw new InvalidOperationException(
                 $"Tapping the {destination} item in the {placement} removed the app from the " +
-                "screen. Nothing under 'com.ndi.android:id/' remains in the view tree, and the " +
-                "crash buffer is empty, so the activity finished rather than crashed. " +
+                "screen: nothing under 'com.ndi.android:id/' remains in the view tree. This check " +
+                "does not read the crash buffer, so it cannot tell a crash from the activity " +
+                "finishing or being covered — see the run's logcat and crash-buffer artifacts. " +
                 "Navigation must never exit the app.");
     }
 

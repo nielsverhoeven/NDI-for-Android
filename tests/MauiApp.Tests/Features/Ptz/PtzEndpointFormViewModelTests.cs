@@ -257,4 +257,35 @@ public class PtzEndpointFormViewModelTests
         Assert.Equal(PtzEndpointFormViewModel.PortRangeMessage, sut.ValidationMessage);
         _controllerFactoryMock.Verify(f => f.Create(It.IsAny<PtzEndpoint>()), Times.Never);
     }
+
+    [Fact]
+    public void TestTimeout_ExceedsTheControllersConnectPlusCommandBudget()
+    {
+        Assert.True(
+            PtzEndpointFormViewModel.TestTimeout > ViscaPtzController.DefaultConnectTimeout + ViscaPtzController.DefaultCommandTimeout);
+    }
+
+    [Fact]
+    public async Task Test_CameraRejectsTheTestCommand_ReportsConnectedButRejected()
+    {
+        var controllerMock = new Mock<IPtzController>();
+        controllerMock.Setup(c => c.LinkState).Returns(PtzLinkState.Connected);
+        controllerMock.Setup(c => c.LastError).Returns("VISCA error 0x41");
+        controllerMock.Setup(c => c.PanTiltAsync(0f, 0f, It.IsAny<CancellationToken>())).ReturnsAsync(false);
+        _controllerFactoryMock.Setup(f => f.Create(It.IsAny<PtzEndpoint>())).Returns(controllerMock.Object);
+        var sut = CreateSut();
+        sut.Open(null, null);
+        sut.Host = "192.168.1.50";
+
+        await sut.TestCommand.ExecuteAsync(null);
+
+        Assert.Equal("Connected, but the camera rejected the test command (VISCA error 0x41).", sut.StatusText);
+    }
+
+    [Fact]
+    public void HostRequiredMessage_PointsAtABlankHostSave_NotAtClear()
+    {
+        Assert.Contains("leave the host blank and tap Save", PtzEndpointFormViewModel.HostRequiredMessage);
+        Assert.DoesNotContain("Clear", PtzEndpointFormViewModel.HostRequiredMessage);
+    }
 }
