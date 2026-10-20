@@ -192,6 +192,7 @@ public class ViscaPtzControllerTests
 
         Assert.True(second);
         Assert.Null(sut.LastError);
+        Assert.Equal(2, transport.SentCommands.Count);
     }
 
     [Fact]
@@ -255,6 +256,7 @@ public class ViscaPtzControllerTests
         var transport = new FakeViscaTransport();
         for (var i = 0; i < 8; i++)
             transport.EnqueueReply(UnknownFrame);
+        transport.EnqueueReply(Ack1);
         var sut = new ViscaPtzController(transport, Endpoint);
 
         var result = await sut.PanTiltAsync(1f, 0f);
@@ -262,6 +264,7 @@ public class ViscaPtzControllerTests
         Assert.False(result);
         Assert.Equal(PtzLinkState.Error, sut.LinkState);
         Assert.Equal("Camera sent unexpected replies.", sut.LastError);
+        Assert.Equal(1, transport.PendingReplyCount);
     }
 
     [Fact]
@@ -379,6 +382,34 @@ public class ViscaPtzControllerTests
 
         await sut.PanTiltAsync(1f, 0f);
 
+        Assert.Equal("Camera did not answer (timed out).", sut.LastError);
+    }
+
+    [Fact]
+    public async Task PanTiltAsync_TimeoutSurfacesAsObjectDisposedException_StillReportsCameraDidNotAnswer()
+    {
+        var transport = new FakeViscaTransport();
+        transport.EnqueueReceiveThrowAfterCancel(() => new ObjectDisposedException(nameof(TcpClient)));
+        var sut = new ViscaPtzController(transport, Endpoint, commandTimeout: TimeSpan.FromMilliseconds(100));
+
+        var result = await sut.PanTiltAsync(1f, 0f);
+
+        Assert.False(result);
+        Assert.Equal(PtzLinkState.Error, sut.LinkState);
+        Assert.Equal("Camera did not answer (timed out).", sut.LastError);
+    }
+
+    [Fact]
+    public async Task PanTiltAsync_TimeoutSurfacesAsIOException_StillReportsCameraDidNotAnswer()
+    {
+        var transport = new FakeViscaTransport();
+        transport.EnqueueReceiveThrowAfterCancel(() => new IOException("socket closed on cancel"));
+        var sut = new ViscaPtzController(transport, Endpoint, commandTimeout: TimeSpan.FromMilliseconds(100));
+
+        var result = await sut.PanTiltAsync(1f, 0f);
+
+        Assert.False(result);
+        Assert.Equal(PtzLinkState.Error, sut.LinkState);
         Assert.Equal("Camera did not answer (timed out).", sut.LastError);
     }
 

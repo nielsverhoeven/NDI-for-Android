@@ -41,6 +41,25 @@ public sealed class FakeViscaTransport : IViscaTransport
             return Array.Empty<byte>();
         });
 
+    /// <summary>
+    /// The next receive waits for its token and then throws the supplied exception instead of the
+    /// cancellation, like a transport that closes its socket when the token fires.
+    /// </summary>
+    public void EnqueueReceiveThrowAfterCancel(Func<Exception> exceptionFactory) =>
+        _receiveOutcomes.Enqueue(async ct =>
+        {
+            try
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, ct).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                throw exceptionFactory();
+            }
+
+            return Array.Empty<byte>();
+        });
+
     public Task ConnectAsync(string host, int port, CancellationToken cancellationToken = default)
     {
         ConnectCount++;
