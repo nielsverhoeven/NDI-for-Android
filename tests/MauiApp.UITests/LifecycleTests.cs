@@ -70,7 +70,8 @@ public sealed class LifecycleTests : DeviceInterruptionTestBase
             app.Rotate(ScreenOrientation.Landscape);
             app.Viewer.WaitUntilFullScreen();
 
-            app.SendToBackground();
+            // Not SendToBackground: the launcher forces the display to portrait, and the resulting rotation pair re-enters full screen by itself.
+            app.ShellCommand("am", "start", "-a", "android.settings.SETTINGS");
             Thread.Sleep(TimeSpan.FromSeconds(3));
 
             app.EnsureInForeground();
