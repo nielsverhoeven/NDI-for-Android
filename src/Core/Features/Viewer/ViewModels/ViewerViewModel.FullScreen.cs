@@ -64,13 +64,14 @@ public partial class ViewerViewModel
     }
 
     /// <summary>Keeps the compact-device invariant "IsFullScreen ⟺ landscape while playing"
-    /// (#383/#384 design decision (b)) true on the one path no orientation event covers: playback
-    /// that *starts* while the device is already in landscape — Watch tapped from the landscape
-    /// rail, or a reconnect completing; the resume path is covered by <see cref="OnAppResumed"/> (#383).
-    /// <see cref="IAppLifecycleService.OrientationChanged"/>
-    /// only fires on an actual change, so without this the viewer renders the windowed Sheet
-    /// layout in landscape, which is the #383 report itself. Never requests a rotation (the device
-    /// is already landscape) and never fires while a rotation request is in flight.</summary>
+    /// (#383/#384 design decision (b)) true on the paths no orientation change covers. Shared by
+    /// the playback-start path (the <see cref="IsPlaying"/> change: Watch tapped from the landscape
+    /// rail, or a reconnect completing) and the resume path (<see cref="OnAppResumed"/>, #383);
+    /// a rotation takes its own enter in <see cref="HandleOrientationChanged"/>.
+    /// <see cref="IAppLifecycleService.OrientationChanged"/> only fires on an actual change, so
+    /// without this the viewer renders the windowed Sheet layout in landscape, which is the #383
+    /// report itself. Never requests a rotation (the device is already landscape) and never fires
+    /// while a rotation request is in flight.</summary>
     private void EnterFullScreenIfPlayingInLandscapeOnCompactDevice()
     {
         if (IsPlaying

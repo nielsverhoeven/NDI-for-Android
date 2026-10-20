@@ -61,17 +61,18 @@ public sealed class LifecycleTests : DeviceInterruptionTestBase
     [SkippableFact]
     public void LandscapeFullScreen_SurvivesBackgroundAndForeground() => RunWithCrashGate(app =>
     {
+        Skip.If(app.Metrics.SmallestWidthDp >= 600, "compact-device only (#383)");
+
         try
         {
-            Skip.If(app.Metrics.SmallestWidthDp >= 600, "compact-device only (#383)");
-
             EnterHoldState(app);
 
             app.Rotate(ScreenOrientation.Landscape);
             app.Viewer.WaitUntilFullScreen();
 
             // Not SendToBackground: the launcher forces the display to portrait, and the resulting rotation pair re-enters full screen by itself.
-            app.ShellCommand("am", "start", "-a", "android.settings.SETTINGS");
+            app.ShellCommand("am", "start", "-W", "-a", "android.settings.SETTINGS");
+            WaitUntilAnotherPackageIsInFront(app);
             Thread.Sleep(TimeSpan.FromSeconds(3));
 
             app.EnsureInForeground();
@@ -92,6 +93,24 @@ public sealed class LifecycleTests : DeviceInterruptionTestBase
             try { app.Terminate(); } catch { }
         }
     });
+
+    private static void WaitUntilAnotherPackageIsInFront(NdiApp app)
+    {
+        var deadline = DateTime.UtcNow + Timeouts.Element;
+        while (DateTime.UtcNow < deadline)
+        {
+            var foreground = app.ForegroundPackage;
+            if (foreground.Length > 0 && !string.Equals(foreground, NdiApp.PackageName, StringComparison.Ordinal))
+                return;
+
+            Thread.Sleep(250);
+        }
+
+        throw new InvalidOperationException(
+            $"No other package took the foreground from {NdiApp.PackageName} within " +
+            $"{Timeouts.Element.TotalSeconds:0}s, so the app was never paused and the resume under test did not happen " +
+            $"(foreground package is '{app.ForegroundPackage}').");
+    }
 
     [SkippableFact]
     public void BackgroundAndForeground_KeepsTheViewerAliveAndPlaying() => RunWithCrashGate(app =>
