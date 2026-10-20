@@ -66,7 +66,8 @@ public partial class ViewerViewModel
     /// <summary>Keeps the compact-device invariant "IsFullScreen ⟺ landscape while playing"
     /// (#383/#384 design decision (b)) true on the one path no orientation event covers: playback
     /// that *starts* while the device is already in landscape — Watch tapped from the landscape
-    /// rail, a reconnect completing, or a restore on resume. <see cref="IAppLifecycleService.OrientationChanged"/>
+    /// rail, or a reconnect completing; the resume path is covered by <see cref="OnAppResumed"/> (#383).
+    /// <see cref="IAppLifecycleService.OrientationChanged"/>
     /// only fires on an actual change, so without this the viewer renders the windowed Sheet
     /// layout in landscape, which is the #383 report itself. Never requests a rotation (the device
     /// is already landscape) and never fires while a rotation request is in flight.</summary>
@@ -314,6 +315,13 @@ public partial class ViewerViewModel
     /// <summary>Wired to <see cref="IAppLifecycleService.AppPaused"/> in the constructor: never
     /// leave the device pinned to an orientation, and never request one, while backgrounding.</summary>
     private void OnAppPaused() => ForceExitFullScreen();
+
+    /// <summary>Wired to <see cref="IAppLifecycleService.AppResumed"/> in the constructor. Pausing
+    /// force-exits full screen (<see cref="OnAppPaused"/>), and neither <c>OrientationChanged</c> nor
+    /// <c>IsPlaying</c> changes when a device that is still landscape returns to the foreground, so the
+    /// compact-device invariant is re-asserted here. Never requests a rotation and never touches the
+    /// receiver or the status text (#383, #411).</summary>
+    private void OnAppResumed() => EnterFullScreenIfPlayingInLandscapeOnCompactDevice();
 
     /// <summary>Unconditionally exits full screen and releases any orientation lock/pending
     /// request. Used when this ViewModel's host page is torn down

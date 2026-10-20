@@ -263,6 +263,20 @@ public class ViewerViewModelFullScreenTests
     }
 
     [Fact]
+    public void Dispose_UnsubscribesFromAppResumed()
+    {
+        var sut = CreateSut();
+        SetCompactDevice(isLandscape: false);
+        sut.IsPlaying = true;
+        sut.Dispose();
+
+        _lifecycleMock.Setup(l => l.IsLandscape).Returns(true);
+        _lifecycleMock.Raise(l => l.AppResumed += null);
+
+        Assert.False(sut.IsFullScreen, "AppResumed still reached a disposed ViewerViewModel");
+    }
+
+    [Fact]
     public void OnIsPlayingChanged_True_CallsKeepScreenOnTrue()
     {
         var sut = CreateSut();
@@ -463,6 +477,66 @@ public class ViewerViewModelFullScreenTests
 
         Assert.False(sut.IsFullScreen);
         _orientationLockMock.Verify(o => o.Release(), Times.AtLeastOnce);
+    }
+
+    [Fact]
+    public void AppResumed_AfterPause_OnCompactLandscapeWhilePlaying_ReEntersFullScreenWithoutRequestingRotation()
+    {
+        var sut = CreateSut();
+        SetCompactDevice(isLandscape: true);
+        sut.IsPlaying = true;
+        _lifecycleMock.Raise(l => l.AppPaused += null);
+        Assert.False(sut.IsFullScreen, "pausing force-exits full screen");
+        var statusBeforeResume = sut.StatusMessage;
+        _orientationLockMock.Invocations.Clear();
+        _bridgeMock.Invocations.Clear();
+
+        _lifecycleMock.Raise(l => l.AppResumed += null);
+
+        Assert.True(sut.IsFullScreen);
+        _orientationLockMock.Verify(o => o.RequestLandscape(), Times.Never);
+        _orientationLockMock.Verify(o => o.RequestPortrait(), Times.Never);
+        _bridgeMock.Verify(b => b.StartReceiver(It.IsAny<string>(), It.IsAny<QualityProfile>()), Times.Never);
+        _bridgeMock.Verify(b => b.StopReceiverAsync(), Times.Never);
+        Assert.Equal(statusBeforeResume, sut.StatusMessage);
+    }
+
+    [Fact]
+    public void AppResumed_OnTablet_StaysWindowed()
+    {
+        var sut = CreateSut();
+        _lifecycleMock.Setup(l => l.SmallestWidthDp).Returns(800);
+        _lifecycleMock.Setup(l => l.IsLandscape).Returns(true);
+        sut.IsPlaying = true;
+        _lifecycleMock.Raise(l => l.AppPaused += null);
+
+        _lifecycleMock.Raise(l => l.AppResumed += null);
+
+        Assert.False(sut.IsFullScreen);
+    }
+
+    [Fact]
+    public void AppResumed_OnCompactPortrait_StaysWindowed()
+    {
+        var sut = CreateSut();
+        SetCompactDevice(isLandscape: false);
+        sut.IsPlaying = true;
+        _lifecycleMock.Raise(l => l.AppPaused += null);
+
+        _lifecycleMock.Raise(l => l.AppResumed += null);
+
+        Assert.False(sut.IsFullScreen);
+    }
+
+    [Fact]
+    public void AppResumed_WhenNotPlaying_DoesNotEnterFullScreen()
+    {
+        var sut = CreateSut();
+        SetCompactDevice(isLandscape: true);
+
+        _lifecycleMock.Raise(l => l.AppResumed += null);
+
+        Assert.False(sut.IsFullScreen);
     }
 
     [Fact]
