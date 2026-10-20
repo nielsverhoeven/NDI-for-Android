@@ -20,11 +20,11 @@ public static class ViewerControlLayout
     public const double DeckVideoHeightDp = 240;
     public const double MinVideoHeightDp = 96;
     public const double VideoBorderStrokeDp = 6;             // StrokeThickness 3, top + bottom
-    public const double SheetChromeDp = 104;                 // 48 handle + 40 tab strip + 16 content padding
-    public const double MinSheetContentDp = 208;             // chip 24 + 4 + 160 d-pad row + 4 + 16 status line
+    public const double SheetChromeDp = 104;                 // 48 handle + 48 tab strip + 8 content padding
+    public const double MinSheetContentDp = 208;             // status label ≤24 + 4 + 160 d-pad row + 4 + 16 status line
     public const double DefaultSheetExpandedDp = 440;
     public const double DefaultSheetPeekDp = 320;
-    public const double MinSheetPeekDp = 136;                // chrome 88 + one 48 dp row
+    public const double MinSheetPeekDp = 144;                // chrome 96 + one 48 dp row
     public const double SheetExpandedRatio = 0.8;
     public const double SheetPeekRatio = 0.55;
 

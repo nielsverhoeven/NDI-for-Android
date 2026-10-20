@@ -63,6 +63,18 @@ public class ViewerViewModelFullScreenTests
         _lifecycleMock.Setup(l => l.IsLandscape).Returns(isLandscape);
     }
 
+    /// <summary>Starts a real session on "src-1" through the bridge mock (as the app does), so the
+    /// ViewModel has claimed a receiver generation and <see cref="ViewerViewModel.IsPlaying"/> is
+    /// the result of Start, not a property write.</summary>
+    private ViewerViewModel CreateSessionSut()
+    {
+        var sut = CreateSut();
+        sut.SourceId = "src-1";
+        Assert.True(sut.IsPlaying, "setting SourceId starts the session through the bridge mock");
+        _bridgeMock.Verify(b => b.StartReceiver("src-1", It.IsAny<QualityProfile>()), Times.AtLeastOnce);
+        return sut;
+    }
+
     [Fact]
     public void ToggleFullScreenCommand_WhilePlaying_SetsIsFullScreenTrue()
     {
@@ -260,6 +272,20 @@ public class ViewerViewModelFullScreenTests
         _lifecycleMock.Raise(l => l.OrientationChanged += null, true);
 
         Assert.False(sut.IsFullScreen, "OrientationChanged still reached a disposed ViewerViewModel");
+    }
+
+    [Fact]
+    public void Dispose_UnsubscribesFromAppResumed()
+    {
+        var sut = CreateSut();
+        SetCompactDevice(isLandscape: false);
+        sut.IsPlaying = true;
+        sut.Dispose();
+
+        _lifecycleMock.Setup(l => l.IsLandscape).Returns(true);
+        _lifecycleMock.Raise(l => l.AppResumed += null);
+
+        Assert.False(sut.IsFullScreen, "AppResumed still reached a disposed ViewerViewModel");
     }
 
     [Fact]
@@ -463,6 +489,137 @@ public class ViewerViewModelFullScreenTests
 
         Assert.False(sut.IsFullScreen);
         _orientationLockMock.Verify(o => o.Release(), Times.AtLeastOnce);
+    }
+
+    [Fact]
+    public void AppResumed_AfterPause_OnCompactLandscapeWhilePlaying_ReEntersFullScreenWithoutRequestingRotation()
+    {
+        SetCompactDevice(isLandscape: true);
+        var sut = CreateSessionSut();
+        Assert.True(sut.IsFullScreen, "a session started in landscape on a compact device auto-enters full screen");
+        _lifecycleMock.Raise(l => l.AppPaused += null);
+        Assert.False(sut.IsFullScreen, "pausing force-exits full screen");
+        var statusBeforeResume = sut.StatusMessage;
+        Assert.Equal("Connecting...", statusBeforeResume);
+        _orientationLockMock.Invocations.Clear();
+        _bridgeMock.Invocations.Clear();
+
+        _lifecycleMock.Raise(l => l.AppResumed += null);
+
+        Assert.True(sut.IsFullScreen);
+        _orientationLockMock.Verify(o => o.RequestLandscape(), Times.Never);
+        _orientationLockMock.Verify(o => o.RequestPortrait(), Times.Never);
+        _bridgeMock.Verify(b => b.StartReceiver(It.IsAny<string>(), It.IsAny<QualityProfile>()), Times.Never);
+        _bridgeMock.Verify(b => b.StopReceiverAsync(), Times.Never);
+        Assert.Equal(statusBeforeResume, sut.StatusMessage);
+    }
+
+    [Fact]
+    public void AppResumed_DuringReconnectWindow_OnCompactLandscape_EntersFullScreenWithRetryBadge()
+    {
+        SetCompactDevice(isLandscape: true);
+        var sut = CreateSessionSut();
+        _lifecycleMock.Raise(l => l.AppPaused += null);
+        sut.BeginReconnectWindow();
+        Assert.True(sut.IsReconnecting, "the drop opened a reconnect window while backgrounded");
+        Assert.True(sut.IsPlaying, "a reconnect window keeps the session playing");
+        Assert.False(sut.IsFullScreen);
+        _orientationLockMock.Invocations.Clear();
+
+        _lifecycleMock.Raise(l => l.AppResumed += null);
+
+        Assert.True(sut.IsFullScreen);
+        Assert.True(sut.IsFullScreenRetryVisible);
+        Assert.True(sut.IsReconnecting);
+        _orientationLockMock.Verify(o => o.RequestLandscape(), Times.Never);
+        _orientationLockMock.Verify(o => o.RequestPortrait(), Times.Never);
+    }
+
+    [Fact]
+    public void ReconnectWindowExpires_WhileBackgrounded_DoesNotRequestRotation_AndResumeStaysWindowed()
+    {
+        SetCompactDevice(isLandscape: true);
+        var sut = CreateSessionSut();
+        Assert.True(sut.IsFullScreen);
+        sut.BeginReconnectWindow();
+        _lifecycleMock.Raise(l => l.AppPaused += null);
+        Assert.False(sut.IsFullScreen, "pausing force-exits full screen");
+        _orientationLockMock.Invocations.Clear();
+
+        _timeProvider.Advance(TimeSpan.FromSeconds(15));
+
+        Assert.False(sut.IsPlaying, "the window expired while backgrounded");
+        Assert.True(sut.CanReconnect);
+        _orientationLockMock.Verify(o => o.RequestPortrait(), Times.Never);
+        _orientationLockMock.Verify(o => o.RequestLandscape(), Times.Never);
+
+        _lifecycleMock.Raise(l => l.AppResumed += null);
+
+        Assert.False(sut.IsFullScreen);
+        _orientationLockMock.Verify(o => o.RequestPortrait(), Times.Never);
+        _orientationLockMock.Verify(o => o.RequestLandscape(), Times.Never);
+    }
+
+    [Fact]
+    public void AppResumed_DisownedViewModel_DoesNotReEnterFullScreenOrRequestPortrait()
+    {
+        var generation = 0L;
+        _bridgeMock.Setup(b => b.ReceiverGeneration).Returns(() => generation);
+        _bridgeMock.Setup(b => b.StartReceiver(It.IsAny<string>(), It.IsAny<QualityProfile>()))
+                   .Callback(() => generation++);
+        SetCompactDevice(isLandscape: true);
+        var sut = CreateSessionSut();
+        Assert.True(sut.IsFullScreen, "a session started in landscape on a compact device auto-enters full screen");
+        _lifecycleMock.Raise(l => l.AppPaused += null);
+        Assert.False(sut.IsFullScreen, "pausing force-exits full screen");
+        generation++; // another viewer takes the bridge while this one is backgrounded
+        _orientationLockMock.Invocations.Clear();
+
+        _lifecycleMock.Raise(l => l.AppResumed += null);
+        _timeProvider.Advance(TimeSpan.FromSeconds(1)); // the stats sample retires the disowned view model
+
+        Assert.False(sut.IsPlaying, "the stats sample retired the disowned view model");
+        Assert.False(sut.IsFullScreen);
+        _orientationLockMock.Verify(o => o.RequestPortrait(), Times.Never);
+        _orientationLockMock.Verify(o => o.RequestLandscape(), Times.Never);
+    }
+
+    [Fact]
+    public void AppResumed_OnTablet_StaysWindowed()
+    {
+        var sut = CreateSut();
+        _lifecycleMock.Setup(l => l.SmallestWidthDp).Returns(800);
+        _lifecycleMock.Setup(l => l.IsLandscape).Returns(true);
+        sut.IsPlaying = true;
+        _lifecycleMock.Raise(l => l.AppPaused += null);
+
+        _lifecycleMock.Raise(l => l.AppResumed += null);
+
+        Assert.False(sut.IsFullScreen);
+    }
+
+    [Fact]
+    public void AppResumed_OnCompactPortrait_StaysWindowed()
+    {
+        var sut = CreateSut();
+        SetCompactDevice(isLandscape: false);
+        sut.IsPlaying = true;
+        _lifecycleMock.Raise(l => l.AppPaused += null);
+
+        _lifecycleMock.Raise(l => l.AppResumed += null);
+
+        Assert.False(sut.IsFullScreen);
+    }
+
+    [Fact]
+    public void AppResumed_WhenNotPlaying_DoesNotEnterFullScreen()
+    {
+        var sut = CreateSut();
+        SetCompactDevice(isLandscape: true);
+
+        _lifecycleMock.Raise(l => l.AppResumed += null);
+
+        Assert.False(sut.IsFullScreen);
     }
 
     [Fact]
