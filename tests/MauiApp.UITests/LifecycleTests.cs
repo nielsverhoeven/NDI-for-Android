@@ -52,6 +52,46 @@ public sealed class LifecycleTests : DeviceInterruptionTestBase
         app.Terminate();
     });
 
+    /// <summary>
+    /// #383: pausing force-exits full screen, and a device that stays landscape produces no
+    /// orientation change on the way back, so nothing re-enters it. On a compact (phone-class)
+    /// device the invariant is "playing in landscape means full screen", so returning to the
+    /// foreground must restore it. Compact-device only; tablets never auto-enter full screen.
+    /// </summary>
+    [SkippableFact]
+    public void LandscapeFullScreen_SurvivesBackgroundAndForeground() => RunWithCrashGate(app =>
+    {
+        try
+        {
+            Skip.If(app.Metrics.SmallestWidthDp >= 600, "compact-device only (#383)");
+
+            EnterHoldState(app);
+
+            app.Rotate(ScreenOrientation.Landscape);
+            app.Viewer.WaitUntilFullScreen();
+
+            app.SendToBackground();
+            Thread.Sleep(TimeSpan.FromSeconds(3));
+
+            app.EnsureInForeground();
+            app.Viewer.WaitUntilVisible(Timeouts.Navigation);
+
+            var deadline = DateTime.UtcNow + Timeouts.Navigation;
+            while (!app.Viewer.IsFullScreen && DateTime.UtcNow < deadline)
+                Thread.Sleep(250);
+
+            Assert.True(app.Viewer.IsFullScreen,
+                "#383: returning to the foreground in landscape while playing did not re-enter full screen");
+
+            app.Rotate(ScreenOrientation.Portrait);
+            app.Viewer.WaitUntilPlaying();
+        }
+        finally
+        {
+            try { app.Terminate(); } catch { }
+        }
+    });
+
     [SkippableFact]
     public void BackgroundAndForeground_KeepsTheViewerAliveAndPlaying() => RunWithCrashGate(app =>
     {
