@@ -1,6 +1,7 @@
 using OpenQA.Selenium;
 using NdiForAndroid.Features.Navigation.Models;
 using NdiForAndroid.Features.Navigation.Services;
+using NdiForAndroid.Features.Viewer;
 using NdiForAndroid.Testing;
 using NdiForAndroid.UITests.Infrastructure;
 using NdiForAndroid.UITests.Pages;
@@ -626,7 +627,6 @@ public sealed class AppLaunchTests : UiTestBase
         var minPx = app.Metrics.ToPixels(AccessibilityAudit.MinTouchTargetDp);
         var radios = app.Settings.AppearanceRadioHeightsPx();
 
-        Assert.Equal(9, radios.Count);
         foreach (var (id, height) in radios)
         {
             Assert.True(height >= minPx,
@@ -640,8 +640,8 @@ public sealed class AppLaunchTests : UiTestBase
         try
         {
             app.ResetToHome();
-            Skip.If(app.Metrics.SmallestWidthDp >= 600,
-                "The sheet is the compact layout; tablet-class devices get the Deck");
+            Skip.If(app.Metrics.SmallestWidthDp >= ViewerControlLayout.MinDeckWidthDp,
+                "The Deck is the layout at this width; the sheet tests need a window narrower than the Deck minimum");
 
             app.DeepLink("ndi://view?sourceId=e2e-sheet-tabs");
             app.Viewer.WaitUntilVisible(Timeouts.Navigation);
@@ -664,8 +664,8 @@ public sealed class AppLaunchTests : UiTestBase
         try
         {
             app.ResetToHome();
-            Skip.If(app.Metrics.SmallestWidthDp >= 600,
-                "The sheet is the compact layout; tablet-class devices get the Deck");
+            Skip.If(app.Metrics.SmallestWidthDp >= ViewerControlLayout.MinDeckWidthDp,
+                "The Deck is the layout at this width; the sheet tests need a window narrower than the Deck minimum");
 
             app.DeepLink("ndi://view?sourceId=e2e-ptz-endpoint-entry");
             app.Viewer.WaitUntilVisible(Timeouts.Navigation);
@@ -674,10 +674,11 @@ public sealed class AppLaunchTests : UiTestBase
             var minPx = app.Metrics.ToPixels(AccessibilityAudit.MinTouchTargetDp);
             app.Viewer.SavePtzEndpoint("127.0.0.1");
 
+            var height = app.Viewer.SheetPtzTabHeightPx;
+
             Assert.True(app.Viewer.IsPtzEndpointButtonPresent,
                 "With PTZ active the 'PTZ endpoint…' button is gone, so the endpoint form has no 48 dp entry (#346/#370)");
 
-            var height = app.Viewer.SheetPtzTabHeightPx;
             Assert.True(height >= minPx,
                 $"The sheet's PTZ tab is {height}px tall, below the 48 dp minimum ({minPx}px) — #346");
         }

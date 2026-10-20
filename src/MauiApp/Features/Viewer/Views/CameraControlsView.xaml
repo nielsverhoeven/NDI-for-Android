@@ -6,7 +6,7 @@
              x:Class="NdiForAndroid.Features.Viewer.Views.CameraControlsView"
              x:DataType="vm:ViewerViewModel">
     <VerticalStackLayout Spacing="4" IsVisible="{Binding IsPtzControlActive}">
-        <Label Text="{Binding PtzStatusText}" FontSize="11" Padding="8,3" LineBreakMode="TailTruncation">
+        <Label Text="{Binding PtzStatusText}" FontSize="11" Padding="8,3" LineBreakMode="MiddleTruncation">
             <Label.Style>
                 <Style TargetType="Label">
                     <Setter Property="TextColor" Value="{DynamicResource TextSecondary}" />
