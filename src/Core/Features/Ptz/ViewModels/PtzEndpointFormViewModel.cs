@@ -38,15 +38,20 @@ namespace NdiForAndroid.Features.Ptz.ViewModels;
 /// </remarks>
 public sealed partial class PtzEndpointFormViewModel : ObservableObject
 {
-    private static readonly TimeSpan TestTimeout = TimeSpan.FromSeconds(3);
+    /// <summary>
+    /// Safety net for a Test run. It must stay above <see cref="ViscaPtzController.DefaultConnectTimeout"/>
+    /// plus <see cref="ViscaPtzController.DefaultCommandTimeout"/>, so the controller's own mapped
+    /// time-out messages end a Test rather than this token.
+    /// </summary>
+    public static readonly TimeSpan TestTimeout = TimeSpan.FromSeconds(6);
 
     /// <summary>
-    /// Shown when Test (or, before the #374 fix, Save) is attempted with a blank host. Wording
-    /// per #370 sources-viewer-007: explains both the "enter a host to test" path and the
-    /// "tap Clear then Save" path back to the source's built-in NDI PTZ.
+    /// Shown when Test is attempted with a blank host. Explains both the "enter a host to test"
+    /// path and the "leave the host blank and tap Save" path back to the source's built-in NDI PTZ
+    /// (Clear only resets the fields; a blank-host Save removes the override).
     /// </summary>
     public const string HostRequiredMessage =
-        "Enter a host to test a custom PTZ endpoint, or tap Clear to use the source's built-in NDI PTZ instead of testing/saving.";
+        "Enter a host to test a custom PTZ endpoint. To use the source's built-in NDI PTZ instead, leave the host blank and tap Save.";
 
     public const string PortRangeMessage = "Port must be between 1 and 65535.";
 
@@ -165,15 +170,25 @@ public sealed partial class PtzEndpointFormViewModel : ObservableObject
         try
         {
             using var cts = new CancellationTokenSource(TestTimeout);
-            await controller.PanTiltAsync(0f, 0f, cts.Token);
+            var succeeded = await controller.PanTiltAsync(0f, 0f, cts.Token);
             Status = controller.LinkState;
-            StatusText = Status == PtzLinkState.Connected ? "Connected." : controller.LastError ?? "Failed to connect.";
+            StatusText = Status switch
+            {
+                PtzLinkState.Connected when succeeded => "Connected.",
+                PtzLinkState.Connected => RejectedTestMessage(controller.LastError),
+                _ => controller.LastError ?? "Failed to connect.",
+            };
         }
         finally
         {
             await controller.ShutdownAsync();
         }
     }
+
+    private static string RejectedTestMessage(string? lastError) =>
+        lastError is null
+            ? "Connected, but the camera rejected the test command."
+            : $"Connected, but the camera rejected the test command ({lastError}).";
 
     partial void OnPortTextChanged(string value) =>
         PortValidationMessage = IsPortValid(value) ? string.Empty : PortRangeMessage;
