@@ -39,7 +39,9 @@ public sealed class AccessibilityTests : UiTestBase
     /// Ratcheted to the measured count, exactly as <c>COVERAGE_MIN</c> was. Dispatched run
     /// 42474276314 (#467) measured 8 violations — the structural missing-label findings on the
     /// <c>RecyclerView</c>/<c>ScrollView</c> containers of the four primary screens — so the
-    /// default is set to 10, a small margin above the measured count. Before #467 (run
+    /// default is set to 10, a small margin above the measured count (the nightly <c>pixel_c</c>
+    /// leg measures 9, run 42474881270: the two-pane Sources page also exposes the unlabelled
+    /// <c>viewer.videoBorder</c>, a tablet-only pre-existing finding). Before #467 (run
     /// 34155799008) it was 12 against a measured 10: the same 8 plus 2 touch-target findings on
     /// the Output tab's Entry/Picker, which the implicit Entry/Picker styles' 48 dp minimum
     /// removed. The provisional 200 this started at let the app grow ~10x its violations before
