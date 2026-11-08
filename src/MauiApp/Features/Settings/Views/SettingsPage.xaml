@@ -462,6 +462,11 @@
                           WidthRequest="420"
                           HorizontalOptions="Center"
                           VerticalOptions="Center">
+                      <!-- #467: with three 48 dp Entries the card is taller than a phone's landscape
+                           window (411 dp on the Nexus 6 class), which pushed Cancel/Save off the
+                           bottom edge with no way to reach them. The ScrollView keeps the card's
+                           natural height where it fits and scrolls it where it does not. -->
+                      <ScrollView>
                       <VerticalStackLayout Spacing="10">
                              <Label Text="Edit discovery server" FontAttributes="Bold" FontSize="18" />
                              <Label Text="Display name (optional)" FontSize="12" TextColor="{DynamicResource TextSecondary}" />
@@ -500,6 +505,7 @@
                                                Command="{Binding SaveEditedDiscoveryServerCommand}" />
                              </HorizontalStackLayout>
                       </VerticalStackLayout>
+                      </ScrollView>
                </Border>
         </Grid>
     </Grid>

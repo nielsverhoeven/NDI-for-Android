@@ -96,12 +96,19 @@ public sealed class SettingsPage : PageObject
             .Select(id => (id, WaitFor(id).Size.Height))
             .ToList();
 
-    /// <summary>Fills the add-server form and taps Add Server.</summary>
+    /// <summary>Fills the add-server form, taps Add Server and scrolls the list into view.</summary>
+    /// <remarks>
+    /// The server list sits below the add form. With the form's three 48 dp Entries (#467) the
+    /// first row lands below the fold of a 731 dp-tall window (the Nexus 6 CI AVD), and Appium
+    /// reports an off-screen node as not displayed — so without the scroll every row helper on
+    /// this page would miss the row that was just added, cleanup included.
+    /// </remarks>
     public void AddServer(string host, string port = "")
     {
         DiscoveryHost = host;
         DiscoveryPort = port;
         Tap(TestIds.SettingsDiscoveryServerAction, Timeouts.Navigation);
+        ScrollToEnd();
     }
 
     /// <summary>Endpoint text ("host:port") of every rendered server row, in list order.</summary>
@@ -112,6 +119,7 @@ public sealed class SettingsPage : PageObject
     /// rendered. Accepts the confirmation dialog (#347) the delete action now shows.</summary>
     public void RemoveServer(string endpoint)
     {
+        ScrollToEnd();
         var index = FindDisplayed(TestIds.SettingsServerRowEndpoint)
             .Select(row => row.Text)
             .ToList()
@@ -139,6 +147,7 @@ public sealed class SettingsPage : PageObject
     /// dialog — pair with <see cref="ConfirmDeleteServer"/> or <see cref="CancelDeleteServer"/>.</summary>
     public void TapDeleteForRow(string endpoint)
     {
+        ScrollToEnd();
         var index = FindDisplayed(TestIds.SettingsServerRowEndpoint).Select(row => row.Text).ToList().IndexOf(endpoint);
         if (index >= 0)
             FindDisplayed(TestIds.SettingsServerRowDelete)[index].Click();
@@ -165,10 +174,23 @@ public sealed class SettingsPage : PageObject
     /// round-trip, when the list needs a moment to be reported as displayed again.
     /// </summary>
     public void WaitForServerRow(string endpoint) =>
-        new WebDriverWait(Driver, Timeouts.Element).Until(_ => ServerRowEndpoints.Contains(endpoint));
+        new WebDriverWait(Driver, Timeouts.Element).Until(_ =>
+        {
+            // See AddServer: a row below the fold is "not displayed", so keep the list in view.
+            ScrollToEnd();
+            return ServerRowEndpoints.Contains(endpoint);
+        });
 
-    /// <summary>Number of discovery server rows currently rendered.</summary>
-    public int ServerRowCount => FindDisplayed(TestIds.SettingsServerRowDelete).Count;
+    /// <summary>Number of discovery server rows currently rendered. Scrolls the list into view
+    /// first, so a row below the fold is counted (see <see cref="AddServer"/>).</summary>
+    public int ServerRowCount
+    {
+        get
+        {
+            ScrollToEnd();
+            return FindDisplayed(TestIds.SettingsServerRowDelete).Count;
+        }
+    }
 
     /// <summary>
     /// Deletes rows from the bottom of the list until only <paramref name="baselineCount"/> remain.
@@ -380,6 +402,7 @@ public sealed class SettingsPage : PageObject
     /// no-op when not rendered.</summary>
     public void EditServer(string endpoint)
     {
+        ScrollToEnd();
         var index = FindDisplayed(TestIds.SettingsServerRowEndpoint).Select(row => row.Text).ToList().IndexOf(endpoint);
         if (index >= 0)
             FindDisplayed(TestIds.SettingsServerRowEdit)[index].Click();
