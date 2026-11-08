@@ -20,6 +20,15 @@ public enum LoopbackViscaCameraMode
 
     /// <summary>Replies Ack to the first command received on a connection, then closes it.</summary>
     DropAfterFirstCommand,
+
+    /// <summary>Replies Ack then Completion (two writes) to every command, as many real cameras do.</summary>
+    AckAndCompletion,
+
+    /// <summary>Replies only Completion to every command, never an Ack.</summary>
+    CompletionOnly,
+
+    /// <summary>Replies Ack, then an Error for VISCA socket 1, to every command.</summary>
+    AckThenSocketError,
 }
 
 /// <summary>Minimal raw-VISCA-over-TCP camera stand-in for loopback integration tests. Listens on an OS-assigned ephemeral port.</summary>
@@ -27,9 +36,21 @@ public sealed class LoopbackViscaCamera : IAsyncLifetime
 {
     private readonly TcpListener _listener = new(IPAddress.Loopback, 0);
     private readonly CancellationTokenSource _cts = new();
+    private volatile LoopbackViscaCameraMode _mode = LoopbackViscaCameraMode.Respond;
+    private int _receivedCommandCount;
     private Task? _acceptLoop;
 
-    public LoopbackViscaCameraMode Mode { get; set; } = LoopbackViscaCameraMode.Respond;
+    public LoopbackViscaCameraMode Mode
+    {
+        get => _mode;
+        set => _mode = value;
+    }
+
+    /// <summary>Number of complete commands read from any client so far.</summary>
+    public int ReceivedCommandCount => Volatile.Read(ref _receivedCommandCount);
+
+    /// <summary>When set, the command with this 1-based number gets a VISCA Error (socket 0, code 0x41) instead of the mode's reply.</summary>
+    public int? RejectCommandNumber { get; set; }
 
     public int Port { get; private set; }
 
@@ -85,11 +106,15 @@ public sealed class LoopbackViscaCamera : IAsyncLifetime
             var stream = client.GetStream();
             try
             {
-                if (Mode == LoopbackViscaCameraMode.DropAfterFirstCommand)
+                if (_mode == LoopbackViscaCameraMode.DropAfterFirstCommand)
                 {
                     var command = await ReadCommandAsync(stream, cancellationToken).ConfigureAwait(false);
                     if (command is not null)
+                    {
+                        Interlocked.Increment(ref _receivedCommandCount);
                         await stream.WriteAsync(new byte[] { 0x90, 0x41, 0xFF }, cancellationToken).ConfigureAwait(false);
+                    }
+
                     return;
                 }
 
@@ -99,7 +124,8 @@ public sealed class LoopbackViscaCamera : IAsyncLifetime
                     if (command is null)
                         return;
 
-                    await RespondAsync(stream, cancellationToken).ConfigureAwait(false);
+                    var commandNumber = Interlocked.Increment(ref _receivedCommandCount);
+                    await RespondAsync(stream, commandNumber, cancellationToken).ConfigureAwait(false);
                 }
             }
             catch (IOException)
@@ -136,9 +162,15 @@ public sealed class LoopbackViscaCamera : IAsyncLifetime
         }
     }
 
-    private async Task RespondAsync(NetworkStream stream, CancellationToken cancellationToken)
+    private async Task RespondAsync(NetworkStream stream, int commandNumber, CancellationToken cancellationToken)
     {
-        switch (Mode)
+        if (RejectCommandNumber == commandNumber)
+        {
+            await stream.WriteAsync(new byte[] { 0x90, 0x60, 0x41, 0xFF }, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        switch (_mode)
         {
             case LoopbackViscaCameraMode.Silent:
                 return;
@@ -151,6 +183,20 @@ public sealed class LoopbackViscaCamera : IAsyncLifetime
                 await stream.WriteAsync(new byte[] { 0x90, 0x41 }, cancellationToken).ConfigureAwait(false);
                 await Task.Delay(20, cancellationToken).ConfigureAwait(false);
                 await stream.WriteAsync(new byte[] { 0xFF }, cancellationToken).ConfigureAwait(false);
+                return;
+
+            case LoopbackViscaCameraMode.AckAndCompletion:
+                await stream.WriteAsync(new byte[] { 0x90, 0x41, 0xFF }, cancellationToken).ConfigureAwait(false);
+                await stream.WriteAsync(new byte[] { 0x90, 0x51, 0xFF }, cancellationToken).ConfigureAwait(false);
+                return;
+
+            case LoopbackViscaCameraMode.CompletionOnly:
+                await stream.WriteAsync(new byte[] { 0x90, 0x51, 0xFF }, cancellationToken).ConfigureAwait(false);
+                return;
+
+            case LoopbackViscaCameraMode.AckThenSocketError:
+                await stream.WriteAsync(new byte[] { 0x90, 0x41, 0xFF }, cancellationToken).ConfigureAwait(false);
+                await stream.WriteAsync(new byte[] { 0x90, 0x61, 0x41, 0xFF }, cancellationToken).ConfigureAwait(false);
                 return;
 
             default:
