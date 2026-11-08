@@ -95,7 +95,7 @@ public sealed class SystemBarInsetTests : UiTestBase
                 // The rail's ancestors decide which lever an inset fix needs (#321 hypothesis 3):
                 // if the flyout container itself is pinned at x=0, padding on RailItems compresses
                 // the items instead of moving them. Best effort — the hierarchy is diagnostic only.
-                LogAncestors(element);
+                LogEnclosingNodes(app, new System.Drawing.Rectangle(location.X, location.Y, size.Width, size.Height));
                 loggedContainer = true;
             }
 
@@ -110,24 +110,44 @@ public sealed class SystemBarInsetTests : UiTestBase
             "bar, so tapping it goes Home.");
     });
 
-    private void LogAncestors(IWebElement element)
+    /// <summary>
+    /// Logs every node in the view hierarchy whose bounds enclose <paramref name="item"/>: the
+    /// rail item's container chain, outermost first. UiAutomator2 has no parent axis, so this
+    /// reads the page source once and filters by bounds instead.
+    /// </summary>
+    private void LogEnclosingNodes(NdiApp app, System.Drawing.Rectangle item)
     {
         try
         {
-            var current = element;
-            for (var depth = 1; depth <= 4; depth++)
+            var document = System.Xml.Linq.XDocument.Parse(app.PageSource);
+            var bounds = new System.Text.RegularExpressions.Regex(@"\[(\d+),(\d+)\]\[(\d+),(\d+)\]");
+
+            foreach (var node in document.Descendants())
             {
-                current = current.FindElement(By.XPath(".."));
-                var id = current.GetAttribute("resource-id");
+                var match = bounds.Match((string?)node.Attribute("bounds") ?? string.Empty);
+                if (!match.Success)
+                    continue;
+
+                var left = int.Parse(match.Groups[1].Value);
+                var top = int.Parse(match.Groups[2].Value);
+                var right = int.Parse(match.Groups[3].Value);
+                var bottom = int.Parse(match.Groups[4].Value);
+
+                var encloses = left <= item.Left && top <= item.Top && right >= item.Right && bottom >= item.Bottom;
+                var isTheItem = left == item.Left && top == item.Top && right == item.Right && bottom == item.Bottom;
+                if (!encloses || isTheItem)
+                    continue;
+
+                var id = (string?)node.Attribute("resource-id");
+                var cls = (string?)node.Attribute("class") ?? node.Name.LocalName;
                 _output.WriteLine(
-                    $"  ancestor {depth}: {current.TagName} {current.Size.Width}x{current.Size.Height} " +
-                    $"at ({current.Location.X},{current.Location.Y})" +
+                    $"  encloses item: {cls} {right - left}x{bottom - top} at ({left},{top})" +
                     (string.IsNullOrEmpty(id) ? "" : $" id={id}"));
             }
         }
         catch (Exception ex)
         {
-            _output.WriteLine($"  (ancestor geometry unavailable: {ex.GetType().Name}: {ex.Message})");
+            _output.WriteLine($"  (container geometry unavailable: {ex.GetType().Name}: {ex.Message})");
         }
     }
 

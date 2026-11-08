@@ -65,6 +65,12 @@ public sealed class NdiApp
     public System.Drawing.Size WindowSize => _driver.Manage().Window.Size;
 
     /// <summary>
+    /// The current view hierarchy as UiAutomator2 reports it. Diagnostic only — tests locate
+    /// elements through page objects, never by walking this.
+    /// </summary>
+    public string PageSource => _driver.PageSource;
+
+    /// <summary>
     /// Rotates the device and waits for the tree to settle.
     /// </summary>
     /// <remarks>
