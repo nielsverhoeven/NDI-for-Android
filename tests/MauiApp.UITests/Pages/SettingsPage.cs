@@ -45,6 +45,13 @@ public sealed class SettingsPage : PageObject
     /// <summary>Opens a section and waits for its panel to render.</summary>
     public void OpenSection(SettingsSection section)
     {
+        // The section buttons sit at the top of the page's ScrollView, and the page keeps its
+        // scroll offset across Shell navigation. A previous helper that scrolled the server list
+        // into view (see AddServer) therefore leaves them off screen on a phone-height window —
+        // run 42474875695 timed out here after a Home → Settings round trip.
+        if (!IsPresent(SectionButtonId(section)))
+            ScrollToStart();
+
         Tap(SectionButtonId(section), Timeouts.Navigation);
         WaitFor(PanelId(section), Timeouts.Navigation, $"The {section} panel did not open");
     }
@@ -116,9 +123,16 @@ public sealed class SettingsPage : PageObject
         ScrollToEnd();
     }
 
-    /// <summary>Endpoint text ("host:port") of every rendered server row, in list order.</summary>
-    public IReadOnlyList<string> ServerRowEndpoints =>
-        FindDisplayed(TestIds.SettingsServerRowEndpoint).Select(row => row.Text).ToList();
+    /// <summary>Endpoint text ("host:port") of every rendered server row, in list order. Scrolls
+    /// the list into view first (see <see cref="AddServer"/>).</summary>
+    public IReadOnlyList<string> ServerRowEndpoints
+    {
+        get
+        {
+            ScrollToEnd();
+            return FindDisplayed(TestIds.SettingsServerRowEndpoint).Select(row => row.Text).ToList();
+        }
+    }
 
     /// <summary>Deletes the row whose endpoint matches <paramref name="endpoint"/>, if one is
     /// rendered. Accepts the confirmation dialog (#347) the delete action now shows.</summary>
@@ -179,12 +193,7 @@ public sealed class SettingsPage : PageObject
     /// round-trip, when the list needs a moment to be reported as displayed again.
     /// </summary>
     public void WaitForServerRow(string endpoint) =>
-        new WebDriverWait(Driver, Timeouts.Element).Until(_ =>
-        {
-            // See AddServer: a row below the fold is "not displayed", so keep the list in view.
-            ScrollToEnd();
-            return ServerRowEndpoints.Contains(endpoint);
-        });
+        new WebDriverWait(Driver, Timeouts.Element).Until(_ => ServerRowEndpoints.Contains(endpoint));
 
     /// <summary>Number of discovery server rows currently rendered. Scrolls the list into view
     /// first, so a row below the fold is counted (see <see cref="AddServer"/>).</summary>
