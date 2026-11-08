@@ -119,8 +119,24 @@ public sealed class SettingsPage : PageObject
     {
         DiscoveryHost = host;
         DiscoveryPort = port;
+        HideKeyboard();
         Tap(TestIds.SettingsDiscoveryServerAction, Timeouts.Navigation);
         ScrollToEnd();
+    }
+
+    /// <summary>Dismisses the soft keyboard typing left open, if any — it shrinks the viewport
+    /// that the row helpers scroll and measure in.</summary>
+    private void HideKeyboard()
+    {
+        try
+        {
+            if (Driver.IsKeyboardShown())
+                Driver.HideKeyboard();
+        }
+        catch (WebDriverException)
+        {
+            // No keyboard, or the driver could not tell — nothing to dismiss.
+        }
     }
 
     /// <summary>Endpoint text ("host:port") of every rendered server row, in list order. Scrolls
@@ -240,13 +256,35 @@ public sealed class SettingsPage : PageObject
     /// them findable — Android drops a zero-area node from the accessibility tree entirely, so
     /// "not displayed" and "displayed with no area" are the same observable failure here.
     /// </remarks>
-    public System.Drawing.Size LastServerRowControlSize(string controlId)
+    public System.Drawing.Size LastServerRowControlSize(string controlId, int? atLeastPx = null)
     {
         // The list is the last content of the Discovery panel; with the persistent field labels
         // above the Add form (#376) the newest row can sit at the bottom edge of the ScrollView,
         // where its bounds come back clipped. Measure it fully scrolled into view.
-        ScrollToEnd();
-        return FindDisplayed(controlId).LastOrDefault()?.Size ?? System.Drawing.Size.Empty;
+        //
+        // One scroll is not always enough: the row is re-laid-out shortly after it appears (its
+        // reachability status resolves asynchronously), and in a full-suite run on the 731 dp
+        // Nexus 6 the Delete button once read 168x65 px — its bottom 103 px still below the
+        // viewport after a scroll that had already returned "cannot scroll further" (run
+        // 42476284237). When the caller states the size it expects, keep re-scrolling and
+        // re-measuring for a bounded time before reporting a control as too small; a control
+        // that is genuinely too small still fails, just a few seconds later.
+        var deadline = DateTime.UtcNow + Timeouts.Element;
+
+        while (true)
+        {
+            ScrollToEnd();
+            var size = FindDisplayed(controlId).LastOrDefault()?.Size ?? System.Drawing.Size.Empty;
+
+            if (atLeastPx is null
+                || (size.Width >= atLeastPx && size.Height >= atLeastPx)
+                || DateTime.UtcNow >= deadline)
+            {
+                return size;
+            }
+
+            Thread.Sleep(300);
+        }
     }
 
     // ── Appearance section ───────────────────────────────────────────────────

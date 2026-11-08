@@ -894,7 +894,7 @@ public sealed class AppLaunchTests : UiTestBase
 
             foreach (var id in clickableControls)
             {
-                var size = app.Settings.LastServerRowControlSize(id);
+                var size = app.Settings.LastServerRowControlSize(id, minTouchTargetPx);
                 Assert.True(size.Width >= minTouchTargetPx && size.Height >= minTouchTargetPx,
                     $"'{id}' is {size.Width}x{size.Height}px, below the " +
                     $"{AccessibilityAudit.MinTouchTargetDp}dp ({minTouchTargetPx}x{minTouchTargetPx}px) " +
