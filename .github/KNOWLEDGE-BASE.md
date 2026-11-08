@@ -604,6 +604,32 @@ the step-by-step recipe.
   caught its bug (`expect_failure: true` inverts the result — the run is green only when the test
   *fails* against a pre-fix `app_ref`). Installs `appium` + `uiautomator2` via
   `npm install -g appium` / `appium driver install uiautomator2` on an `api-level: 35` x86_64 AVD.
+- **Default filter excludes `Category=SideNavigationBar`.** With a blank `test_filter`,
+  `run-emulator-tests.sh` runs `--filter "Category!=SideNavigationBar"`. Tests in that category
+  (`SystemBarInsetTests.Navigation_RailItems_AreNotCoveredByTheNavigationBar`,
+  `NavigationRegressionTests.Navigation_TappingRailBesideSideNavigationBar_KeepsTheAppOnScreen`)
+  put the device into 3-button navigation under `ROTATION_270` themselves via
+  `SideNavigationBarScope` (test-scoped, restored on dispose, Skips when the AVD has no
+  `navbar.threebutton` overlay) and are dispatch-only until the #321 rail inset is fixed —
+  architect ruling 2026-10-20 item 7: a guard without a fix would turn the release gate red. An
+  explicit `test_filter` replaces the default, so
+  `-f test_filter="FullyQualifiedName~Navigation_RailItems_AreNotCoveredByTheNavigationBar"` runs
+  the guard. The 3-button setup is never a device-wide setting in the runner script.
+- **#321 side-bar diagnostic result (2026-11-08, runs 42472878356 Nexus 6 / 42472883800 pixel_c /
+  42473624160 hierarchy).** The overlap PR #324 measured does **not** reproduce on API 35 with
+  3-button navigation under `ROTATION_270`. Nexus 6 (2560x1440, density 3.5): navigation bar
+  168x1440 at (0,0), left-docked; every rail item 28x224 at x=196, tap point x=210 — outside the
+  bar; 20 consecutive rail taps kept the app in the foreground. pixel_c: bar bottom-docked
+  (1800x234 at (0,2326), tablets cannot move it), rail items 112x128 at x=16, untouched. Mechanism:
+  MAUI's `ShellFlyoutRenderer` is a fits-system-windows `DrawerLayout`, and `DrawerLayout.onMeasure`
+  applies the window insets to the drawer child as **margins** — the flyout content `ViewGroup`
+  sits at (168,84), i.e. left = navigation bar, top = status bar — so the platform already keeps
+  the rail out from under a side bar. That is also why #324's `RailItems.Padding` attempts could
+  not move anything (hypothesis 3 of its handover): the inset is applied outside our content.
+  **Side effect worth its own issue, not a #321 fix**: the flyout wrapper (`ScrollView`) stays
+  252 px wide, so the 64 dp rail Grid is squeezed to 84 px (24 dp) and each item's Border, with
+  its 8 dp margins, to 28 px (8 dp) — the icons are clipped under a left-docked bar. A fix would
+  grow the flyout content's width by the left navigation-bar inset, never pad `RailItems`.
 - **Evidence artifacts**: `emulator-test-results` (the TRX) and `emulator-diagnostics` (Appium/logcat
   logs, plus `FailureEvidence`'s per-failure screenshot + page source under
   `test-results/failure-evidence/`) — both uploaded by every run of either workflow.
@@ -681,6 +707,9 @@ views without carrying their `TestIds` AutomationIds along, and the gap was only
 - **`DeviceMetrics` throws rather than defaulting.** A status-bar height that fell back to `0`
   would turn "the rail sits below the status bar" into "y >= 0", which passes against #296. Any
   measurement that cannot be read is an infrastructure failure and must look like one.
+  `DeviceMetrics.NavigationBar` (a `SystemBarBounds` from `mobile: getSystemBars`, #321) follows
+  the same rule, and the overlap guard asserts each rail item's **centre** — the tap point — is
+  outside the bar, never its edge: an edge assertion passes while the tap point stays buried.
 - **Watch for vacuous colour assertions.** A contrast ratio stays healthy if the theme never
   changes at all, so `Theme_SwitchingLightToDark_ActuallyChangesWhatIsOnScreen` compares the two
   themes' real background pixels. Without it every other assertion in that file could pass on an
