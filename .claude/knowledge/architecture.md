@@ -5381,3 +5381,79 @@ never in `NdiForAndroid.sln`; nothing in CI builds `tools/`. `e2e-tests` does no
 integration branch, so #450/#449 each need a dispatched regression proof (`app_ref=1d3e5745`,
 `expect_failure`) and a green run; the integration head gets one full run on Nexus 6 + pixel_c + the Medium
 portrait profile before the release PR, which carries the mandatory `main` e2e check.
+
+### 2026-10-20 — beta-fix round: #339 VISCA reply matching (+#370 copy), #346/#370 48 dp, #383 resume, #384 exit in landscape, #321 message (gate)
+
+**#339 APPROVE-WITH-CHANGES · #346/#370 APPROVE-WITH-CHANGES · #383 APPROVE-WITH-CHANGES, gated on a CI
+red proof · #384 DEFER, conditional shape pre-approved · #321 message APPROVE, guard DEFER.** Verified
+against `main` @ `a9cbbdc6` (v0.20.41). Four file-disjoint PRs, developed in parallel, into
+`integration/beta-fixes-2026-10-20`: `chore/321-navbar-exit-message` → `bugfix/339-visca-reply-socket-matching`
+→ `bugfix/383-reenter-fullscreen-on-resume` → `bugfix/346-48dp-sheet-tabs-radios`; then one release PR to
+`main` with the mandatory e2e check. Any #384 fix stacks on #383 (same files).
+
+1. **#339: replies are matched by VISCA socket; the plain pending counter is rejected.** The verifier's
+   repro (ACK, then `90 61 41 FF` instead of a Completion) charges the error to the next, successful
+   command and leaves the stream one frame off. Rule: ACK(y) marks socket y busy. A Completion or Error
+   on a busy socket is an earlier command's late reply: it is consumed, unmarks y, and is never charged
+   to the current command. The current result is the first ACK, an Error on socket 0 or an unmarked
+   socket, or a Completion on an unmarked socket (a camera that skips the ACK). Unknown frames are
+   skipped. After 8 frames without a result the attempt counts as a transport failure. The state is a
+   per-socket **bitmask, not a count**: a socket holds one command, so a second ACK(y) means the
+   earlier one finished. This also bounds the state for ACK-only cameras. The mask is cleared on every
+   connect, on disconnect and in `ShutdownAsync`, and is only touched under `_gate`.
+2. **Retry rule:** retry once only when the attempt failed at the transport level on a connection
+   that was already open. A camera reply (Error, Unknown) is never re-sent. A private tri-state
+   `AttemptOutcome` replaces the researcher's side-channel bool.
+3. **D2:** the controller maps failures by phase. "Timed out" means the phase's own linked CTS fired
+   or an OCE was thrown, whichever token fired. The exception type alone is unreliable, because
+   `ViscaTcpTransport` closes the socket on cancel. `TestTimeout` goes from 3 s to 6 s, a safety net
+   pinned above connect + command (3 + 2 s). Test now reports a camera Error reply instead of
+   "Connected.". The chip keeps "(error)"; showing the reason elsewhere is a product question. The
+   #370 `HostRequiredMessage` reword rides in this PR (same file).
+4. **#346/#370: sheet tab row from 40 to 48 dp.** The 3 dp indicator becomes an input-transparent
+   overlay in the button cell, and the ScrollView bottom padding goes from 16 to 8 dp. So
+   `SheetChromeDp` stays 104 and `MinSheetContentDp` stays 208, and `ChooseSheetExpandedHeightDp` is
+   unchanged (floor 312). Only `MinSheetPeekDp` changes, from 136 to 144: peek(248) 136.4 → 144 and
+   video(248) 105.6 → 98. **Growing the chip to 48 dp is REJECTED**: the deck has a 188 dp budget,
+   and it would push `MinSheetContentDp` to 232 and the floor to 336. The chip becomes a read-only
+   status label (no Border, no tap), and the 48 dp "PTZ endpoint…" button is always visible (#368
+   precedent). Radios get one implicit-style `MinimumHeightRequest=48` setter (default: fix now).
+   The Settings Discovery/edit-server Entries (`SettingsPage.xaml:277,281,288,467,471,476`) default to a
+   documented exception, with a global Entry follow-up. **New standing rule:** a status indicator
+   carries no tap target, and each surface has exactly one 48 dp entry to a configuration dialog.
+   Sheet tabs, radios and the always-visible button get CI e2e tests (deep-link hold state, Nexus 6).
+   Red proofs: `app_ref=a9cbbdc6` for the radios, and an ids-only commit on the branch for the sheet.
+5. **#383: `AppResumed` → the existing `EnterFullScreenIfPlayingInLandscapeOnCompactDevice`.** No new
+   contract, no rotation request, and no receiver or status change (#411 holds). Correction to my
+   2026-09-12 RC2: its "restore on resume" path was removed by #411, so the resume case has been
+   uncovered since then. Gate: a new `LifecycleTests` e2e must be red on `a9cbbdc6` (CI Nexus 6, hold
+   state). If the emulator masks it (portrait configuration while stopped), retry with a
+   non-rotating background path. If it is still masked, reproduce on a device before any production
+   change.
+6. **#384: the bounce is invariant (b) re-entering full screen after `Release()` → Unspecified.**
+   Variant R1 (auto-rotate off, user rotation landscape) can be reproduced on CI, because Appium
+   `Rotate` freezes the rotation; the test must assert that premise. Repro test first. Pre-approved
+   fix shape if R1 is red:
+   - add `IOrientationLockService.ReleaseWhenDeviceAligned()`
+   - set the Core flag only in the pending-portrait arrival branch
+   - Android, auto-rotate off: keep the portrait request until `Release()` or `Request*()`
+   - Android, auto-rotate on: release immediately
+   R2 (auto-rotate on, device physically held landscape) adds an `OrientationEventListener`: built on
+   the application context, enabled only while a release is pending, releasing within ±30° of 0°/180°.
+   My 2026-09-12 rejection of that listener is withdrawn only on R2 device evidence, plus a quick
+   re-gate of the concrete plan. **Not allowed:**
+   - an unconditional portrait hold with auto-rotate on
+   - `FullSensor`
+   - timer heuristics
+   - suppressing the next `OrientationChanged`
+   - `Settings` reads from Core
+7. **#321:** `NavigationBar.cs:89` claims a crash-buffer check the code never makes; reword it.
+   Porting the side-bar guard into the PR gate is DEFERRED. If the overlap still exists, a guard
+   without a fix turns the release gate red. Sequence: a dispatched diagnostic first, then a
+   test-scoped 3-button/ROTATION_270 setup (never in `run-emulator-tests.sh`), then a red proof
+   against a pre-#393 build.
+8. **Moq correction (supersedes the 2026-09-13 trap note):** Moq 4.x loose mocks return a completed
+   `Task` / `Task.FromResult(default)` for members without a setup, not `null`. Evidence:
+   `PtzEndpointFormViewModelTests` awaits an un-setup `ShutdownAsync`, and `ViewerViewModelTests`'
+   fixture never sets up `StopReceiverAsync`; both are green in CI. The real trap is that an un-setup
+   `Task<bool>` silently returns `false`. Keep explicit setups.
