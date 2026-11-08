@@ -18,8 +18,8 @@ namespace NdiForAndroid.UITests;
 /// </para>
 /// <para>
 /// <b>The gate is a ratchet, not a cliff.</b> It fails when the violation count exceeds
-/// <see cref="Budget"/>, which tracks the number of violations the app has today (currently 12,
-/// against a measured 10). Failing outright on every pre-existing violation would have meant
+/// <see cref="Budget"/>, which tracks the number of violations the app has today (currently 10,
+/// against a measured 8). Failing outright on every pre-existing violation would have meant
 /// either shipping a red pipeline or fixing the entire back catalogue inside a test PR; neither
 /// is honest. What this does buy immediately is that a *new* violation goes red. Lower the
 /// budget as violations are fixed — never raise it to make a red run green.
@@ -37,17 +37,21 @@ public sealed class AccessibilityTests : UiTestBase
     /// </summary>
     /// <remarks>
     /// Ratcheted to the measured count, exactly as <c>COVERAGE_MIN</c> was. Dispatched run
-    /// 34155799008 on this branch measured 10 violations — 8 structural missing-label findings on
-    /// <c>RecyclerView</c>/<c>ScrollView</c> containers and 2 touch-target findings on the Output
-    /// tab's Entry/Picker — so the default is set to 12 (a small margin above the measured count,
-    /// not the provisional 200 this started at, which let the app grow ~10x its violations before
-    /// the gate noticed). Lower it further as violations are fixed; never raise it to make a red
+    /// 42474276314 (#467) measured 8 violations — the structural missing-label findings on the
+    /// <c>RecyclerView</c>/<c>ScrollView</c> containers of the four primary screens — so the
+    /// default is set to 10, a small margin above the measured count (the nightly <c>pixel_c</c>
+    /// leg measures 9, run 42474881270: the two-pane Sources page also exposes the unlabelled
+    /// <c>viewer.videoBorder</c>, a tablet-only pre-existing finding). Before #467 (run
+    /// 34155799008) it was 12 against a measured 10: the same 8 plus 2 touch-target findings on
+    /// the Output tab's Entry/Picker, which the implicit Entry/Picker styles' 48 dp minimum
+    /// removed. The provisional 200 this started at let the app grow ~10x its violations before
+    /// the gate noticed. Lower it further as violations are fixed; never raise it to make a red
     /// run green.
     /// </remarks>
     private static int Budget =>
         int.TryParse(Environment.GetEnvironmentVariable("A11Y_MAX_VIOLATIONS"), out var configured)
             ? configured
-            : 12;
+            : 10;
 
     private readonly ITestOutputHelper _output;
 
@@ -68,6 +72,23 @@ public sealed class AccessibilityTests : UiTestBase
 
             violations.AddRange(app.Accessibility.Run(screen, TestIds.All));
         }
+
+        // Settings lands on General, so the four-screen walk above never saw the Discovery
+        // panel — which is how its add-server Entries went unmeasured until #467 and had to be
+        // carried as a documented exception. The walk ends on Settings, so each extra section is
+        // one tap. Appearance rides along because it is just as cheap and carries the #465
+        // RadioButtons, whose 48 dp also comes from an implicit style. Each audit is scoped to
+        // the section's panel: switching sections toggles a panel's IsVisible, not the page, so
+        // the page-level containers (the RecyclerView/ScrollView structural findings) were
+        // already counted once on the landing section and would otherwise be counted again per
+        // section — run 42473651031 measured 18 that way, 6 of them the same two containers.
+        foreach (var (section, screen) in AuditedSettingsSections)
+        {
+            app.Settings.OpenSection(section);
+            violations.AddRange(app.Accessibility.Run(screen, TestIds.All, app.Settings.PanelBounds(section)));
+        }
+
+        violations.AddRange(AuditEditServerDialog(app));
 
         var summary = AccessibilityAudit.Summarise(violations, Budget);
 
@@ -185,6 +206,46 @@ public sealed class AccessibilityTests : UiTestBase
             $"{Environment.NewLine}Give them a SemanticProperties.Description in human language.");
     });
 
+    /// <summary>
+    /// Audits the Settings edit-server dialog (#467), which only exists once a server row does.
+    /// </summary>
+    /// <remarks>
+    /// The dialog is a modal over a scrim, not a native alert, so the Discovery panel beneath it
+    /// is still in the accessibility tree; the audit is scoped to the dialog card's bounds so
+    /// those findings are not counted a second time. The row is created and removed here with the
+    /// same helpers the Discovery lifecycle tests use (a non-routable host and an unusual port keep
+    /// cleanup unambiguous), and the dialog is always closed again so later audits start clean.
+    /// Opens the Discovery section itself; the caller may leave Settings on any section.
+    /// </remarks>
+    private static IReadOnlyList<A11yViolation> AuditEditServerDialog(NdiApp app)
+    {
+        const string host = "10.255.255.4";
+        const string port = "45962";
+
+        app.Settings.OpenSection(SettingsSection.Discovery);
+        var baseline = app.Settings.ServerRowCount;
+        app.Settings.AddServer(host, port);
+
+        try
+        {
+            app.Settings.WaitForServerRow($"{host}:{port}");
+            app.Settings.EditServer($"{host}:{port}");
+
+            var dialog = app.Settings.EditServerDialogBounds;
+            var violations = app.Accessibility.Run("Settings/EditServer", TestIds.All, dialog);
+
+            app.Settings.CancelEditServer();
+            return violations;
+        }
+        finally
+        {
+            if (app.Settings.IsEditServerDialogOpen)
+                app.Settings.CancelEditServer();
+
+            app.Settings.RemoveServersDownTo(baseline);
+        }
+    }
+
     /// <summary>Best-effort: a summary that cannot be written must not fail the audit.</summary>
     private static void WriteSummaryArtifact(string summary)
     {
@@ -207,6 +268,17 @@ public sealed class AccessibilityTests : UiTestBase
         (NavDestination.Stream,   "Output"),
         (NavDestination.View,     "Sources"),
         (NavDestination.Settings, "Settings"),
+    ];
+
+    /// <summary>
+    /// Settings sections audited in addition to the General landing section, in the order they
+    /// are opened; each is audited within its panel's bounds. Only the budget test walks these;
+    /// the other audits keep the four-screen <see cref="PrimaryScreens"/> walk.
+    /// </summary>
+    private static readonly (SettingsSection Section, string Screen)[] AuditedSettingsSections =
+    [
+        (SettingsSection.Discovery,  "Settings/Discovery"),
+        (SettingsSection.Appearance, "Settings/Appearance"),
     ];
 
     private static void WaitForScreen(NdiApp app, NavDestination destination)

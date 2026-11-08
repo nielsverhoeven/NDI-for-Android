@@ -107,12 +107,20 @@ public sealed class AccessibilityAudit
     /// a screen-reader user, and it is what happens if a framework reuses the test hook as the
     /// accessibility label.
     /// </param>
-    public IReadOnlyList<A11yViolation> Run(string screen, IReadOnlySet<string> knownIds)
+    /// <param name="within">
+    /// Optional screen-pixel bounds the audit is limited to. A modal drawn over a scrim (the
+    /// Settings edit-server dialog) leaves the page beneath it in the accessibility tree, so an
+    /// unscoped audit of the dialog would count that page's findings a second time.
+    /// </param>
+    public IReadOnlyList<A11yViolation> Run(
+        string screen,
+        IReadOnlySet<string> knownIds,
+        System.Drawing.Rectangle? within = null)
     {
         var violations = new List<A11yViolation>();
         var minPx = _metrics.ToPixels(MinTouchTargetDp);
 
-        foreach (var node in ReadTree().Where(n => n.IsInteractive))
+        foreach (var node in ReadTree().Where(n => n.IsInteractive && (within is null || Contains(within.Value, n))))
         {
             var name = $"{screen}:{node.Describe()}";
             var label = FirstNonEmpty(node.ContentDescription, node.Text);
@@ -181,6 +189,10 @@ public sealed class AccessibilityAudit
 
     private static string FirstNonEmpty(params string[] values) =>
         values.FirstOrDefault(v => !string.IsNullOrWhiteSpace(v)) ?? string.Empty;
+
+    /// <summary>True when the node's bounds lie entirely inside <paramref name="area"/>.</summary>
+    private static bool Contains(System.Drawing.Rectangle area, A11yNode node) =>
+        area.Contains(new System.Drawing.Rectangle(node.X, node.Y, node.Width, node.Height));
 
     private static A11yNode? Parse(XElement element)
     {

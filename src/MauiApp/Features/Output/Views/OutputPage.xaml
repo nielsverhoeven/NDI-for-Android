@@ -104,7 +104,6 @@
             <Grid ColumnDefinitions="*,Auto" ColumnSpacing="4">
                 <Picker Grid.Column="0"
                         Title="Select a source"
-                        MinimumHeightRequest="48"
                         AutomationId="{x:Static t:TestIds.OutputReStreamSourcePicker}"
                         ItemsSource="{Binding AvailableReStreamSources}"
                         SelectedItem="{Binding SelectedReStreamSource}"
@@ -121,7 +120,6 @@
         <Entry Text="{Binding ReStreamSourceId}"
                AutomationId="{x:Static t:TestIds.OutputReStreamSourceId}"
                Placeholder="No discovered sources yet — enter a source id manually"
-               MinimumHeightRequest="48"
                IsVisible="{Binding ShowReStreamManualEntry}"
                IsEnabled="{Binding IsOutputActive, Converter={StaticResource InverseBoolConverter}}"
                SemanticProperties.Description="Re-stream source id" />

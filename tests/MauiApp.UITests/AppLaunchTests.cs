@@ -894,7 +894,7 @@ public sealed class AppLaunchTests : UiTestBase
 
             foreach (var id in clickableControls)
             {
-                var size = app.Settings.LastServerRowControlSize(id);
+                var size = app.Settings.LastServerRowControlSize(id, minTouchTargetPx);
                 Assert.True(size.Width >= minTouchTargetPx && size.Height >= minTouchTargetPx,
                     $"'{id}' is {size.Width}x{size.Height}px, below the " +
                     $"{AccessibilityAudit.MinTouchTargetDp}dp ({minTouchTargetPx}x{minTouchTargetPx}px) " +
@@ -903,6 +903,114 @@ public sealed class AppLaunchTests : UiTestBase
         }
         finally
         {
+            app.Settings.RemoveServersDownTo(baseline);
+        }
+    });
+
+    // ── #467: native Entry/Picker fields meet the 48 dp minimum via the implicit styles ────────
+
+    [RetryableSkippableFact]
+    public void Settings_DiscoveryEntries_Meet48dp() => Run(app =>
+    {
+        // Before #467 these Entries had no MinimumHeightRequest and were never measured: the
+        // ratcheted audit lands on Settings > General and never opened Discovery, so the fields
+        // sat in KNOWLEDGE-BASE.md as a documented 48 dp exception instead. The minimum now comes
+        // from the implicit Entry style in Styles.xaml, which is why this measures the fields
+        // rather than a per-instance attribute.
+        app.ResetToHome();
+        app.Rotate(ScreenOrientation.Portrait);
+        app.Navigation.GoTo(NavDestination.Settings);
+        app.Settings.WaitUntilVisible();
+        app.Settings.OpenSection(SettingsSection.Discovery);
+
+        var minPx = app.Metrics.ToPixels(AccessibilityAudit.MinTouchTargetDp);
+
+        foreach (var (id, height) in app.Settings.DiscoveryEntryHeightsPx())
+        {
+            Assert.True(height >= minPx,
+                $"{id} is {height}px tall, below the 48 dp minimum ({minPx}px) — #467");
+        }
+    });
+
+    [RetryableSkippableFact]
+    public void Output_StreamNameAndVideoInput_Meet48dp() => Run(app =>
+    {
+        // The two touch-target violations the accessibility budget carried since #314 (#392
+        // verdict item 6 asked for this ticket before ratcheting the budget past them). The
+        // Picker sits inside the #375 input-panel Border; measuring the Picker itself proves the
+        // Border grew with it rather than clipping it.
+        app.ResetToHome();
+        app.Rotate(ScreenOrientation.Portrait);
+        app.Navigation.GoTo(NavDestination.Stream);
+        app.Output.WaitUntilVisible();
+        app.Output.EnsureCaptureMode();
+
+        var minPx = app.Metrics.ToPixels(AccessibilityAudit.MinTouchTargetDp);
+
+        foreach (var (id, height) in app.Output.InputFieldHeightsPx())
+        {
+            Assert.True(height >= minPx,
+                $"{id} is {height}px tall, below the 48 dp minimum ({minPx}px) — #467");
+        }
+
+        // The re-stream source Picker/Entry carried their 48 dp per instance until #467 moved it
+        // to the implicit styles; the #392 verdict (item 6) says that 48 dp must not be lost, so
+        // measure whichever of the two this build shows. Re-stream mode survives across tests
+        // (it is bridge state), hence the finally.
+        app.Output.ToggleReStreamMode();
+        try
+        {
+            var (reStreamId, reStreamHeight) = app.Output.ReStreamSourceFieldHeightPx();
+            Assert.True(reStreamHeight >= minPx,
+                $"{reStreamId} is {reStreamHeight}px tall, below the 48 dp minimum ({minPx}px) — #467/#392");
+        }
+        finally
+        {
+            app.Output.EnsureCaptureMode();
+        }
+    });
+
+    [RetryableSkippableFact]
+    public void Settings_EditServerEntries_Meet48dp() => Run(app =>
+    {
+        // The edit-server dialog's three Entries (#467). They only exist once a row does, so this
+        // creates one the same way the Discovery lifecycle tests do and removes it afterwards.
+        // These Entries gained their AutomationIds in the same change as the 48 dp minimum, so
+        // unlike the two tests above this one has no pre-fix build to prove itself red against.
+        const string host = "10.255.255.5";
+        const string port = "45963";
+        var endpoint = $"{host}:{port}";
+
+        app.ResetToHome();
+        app.Rotate(ScreenOrientation.Portrait);
+        app.Navigation.GoTo(NavDestination.Settings);
+        app.Settings.WaitUntilVisible();
+        app.Settings.OpenSection(SettingsSection.Discovery);
+
+        var baseline = app.Settings.ServerRowCount;
+        app.Settings.AddServer(host, port);
+
+        try
+        {
+            app.Settings.WaitForServerRow(endpoint);
+            app.Settings.EditServer(endpoint);
+            Assert.True(app.Settings.IsEditServerDialogOpen, "The edit-server dialog did not open");
+
+            var minPx = app.Metrics.ToPixels(AccessibilityAudit.MinTouchTargetDp);
+
+            foreach (var (id, height) in app.Settings.EditServerEntryHeightsPx())
+            {
+                Assert.True(height >= minPx,
+                    $"{id} is {height}px tall, below the 48 dp minimum ({minPx}px) — #467");
+            }
+
+            app.Settings.CancelEditServer();
+        }
+        finally
+        {
+            if (app.Settings.IsEditServerDialogOpen)
+                app.Settings.CancelEditServer();
+
             app.Settings.RemoveServersDownTo(baseline);
         }
     });

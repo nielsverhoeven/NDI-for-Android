@@ -221,6 +221,13 @@ public static class TestIds
     public const string SettingsEditServerCancel = "settings.editServer.cancel";
     public const string SettingsEditServerSave   = "settings.editServer.save";
 
+    /// <summary>The edit-server dialog card (#467): lets a test scope an accessibility audit to the
+    /// modal, since the scrimmed Discovery panel beneath it stays in the accessibility tree.</summary>
+    public const string SettingsEditServerDialog      = "settings.editServer.dialog";
+    public const string SettingsEditServerDisplayName = "settings.editServer.displayName";
+    public const string SettingsEditServerHost        = "settings.editServer.host";
+    public const string SettingsEditServerPort        = "settings.editServer.port";
+
     /// <summary>Tap target for the whole Developer Mode row's caption (#343 SET-8).</summary>
     public const string SettingsDeveloperModeLabel = "settings.developerModeLabel";
 

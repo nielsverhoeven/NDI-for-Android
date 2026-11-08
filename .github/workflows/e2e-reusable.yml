@@ -29,7 +29,7 @@ on:
         type: string
         default: ''
       a11y_max_violations:
-        description: 'Overrides A11Y_MAX_VIOLATIONS. Blank uses the in-code default (12).'
+        description: 'Overrides A11Y_MAX_VIOLATIONS. Blank uses the in-code default (10, #467).'
         required: false
         type: string
         default: ''

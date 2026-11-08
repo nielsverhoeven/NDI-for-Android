@@ -283,7 +283,17 @@ public abstract class PageObject
     /// as 168x6 px), which a touch-target assertion cannot tell apart from a genuinely tiny
     /// control. Uses a screen-area gesture so it needs no handle on the ScrollView itself.
     /// </summary>
-    protected void ScrollToEnd(int maxSwipes = 4)
+    protected void ScrollToEnd(int maxSwipes = 4) => Scroll("down", maxSwipes);
+
+    /// <summary>
+    /// Scrolls the current page back to the start of its scrollable content. The counterpart of
+    /// <see cref="ScrollToEnd"/>: a page keeps its scroll offset across Shell navigation, so a
+    /// helper that scrolled to the bottom (the Settings server-list helpers, #467) would otherwise
+    /// leave the controls at the top — the section buttons — off screen for the next caller.
+    /// </summary>
+    protected void ScrollToStart(int maxSwipes = 4) => Scroll("up", maxSwipes);
+
+    private void Scroll(string direction, int maxSwipes)
     {
         var window = Driver.Manage().Window.Size;
         var area = new Dictionary<string, object>
@@ -292,7 +302,7 @@ public abstract class PageObject
             ["top"] = window.Height / 4,
             ["width"] = window.Width / 2,
             ["height"] = window.Height / 2,
-            ["direction"] = "down",
+            ["direction"] = direction,
             ["percent"] = 1.0,
         };
 

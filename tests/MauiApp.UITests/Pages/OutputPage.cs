@@ -110,4 +110,40 @@ public sealed class OutputPage : PageObject
 
     /// <summary>Taps the re-stream source Picker to open its native selection dialog.</summary>
     public void OpenReStreamSourcePicker() => Tap(TestIds.OutputReStreamSourcePicker);
+
+    /// <summary>
+    /// Puts the page in capture mode, where the Video Input Picker is on screen. The mode Switch
+    /// is bound to the live bridge state, so a previous test that left re-stream mode on would
+    /// otherwise hide the Picker and turn a height assertion into a locator timeout.
+    /// </summary>
+    public void EnsureCaptureMode()
+    {
+        if (IsReStreamMode)
+            ToggleReStreamMode();
+
+        WaitFor(TestIds.OutputVideoInput, Timeouts.Navigation, "The Video Input Picker did not appear in capture mode");
+    }
+
+    /// <summary>
+    /// Rendered height in pixels of the Stream Name Entry and the Video Input Picker — the two
+    /// native input fields the accessibility audit flagged as touch-target violations before the
+    /// implicit Entry/Picker styles gained a 48 dp minimum (#467). Call
+    /// <see cref="EnsureCaptureMode"/> first.
+    /// </summary>
+    public IReadOnlyList<(string Id, int HeightPx)> InputFieldHeightsPx() =>
+        new[] { TestIds.OutputStreamName, TestIds.OutputVideoInput }
+            .Select(id => (id, WaitFor(id).Size.Height))
+            .ToList();
+
+    /// <summary>
+    /// Rendered height in pixels of whichever re-stream source field is on screen — the Picker
+    /// when sources are known, else the free-text fallback Entry. Toggle re-stream mode on first.
+    /// Both lost their per-instance <c>MinimumHeightRequest</c> in #467 in favour of the implicit
+    /// styles, and the #392 verdict (item 6) requires that their 48 dp is not lost with it.
+    /// </summary>
+    public (string Id, int HeightPx) ReStreamSourceFieldHeightPx()
+    {
+        var id = IsReStreamSourcePickerShown ? TestIds.OutputReStreamSourcePicker : TestIds.OutputReStreamSourceId;
+        return (id, WaitFor(id, Timeouts.Navigation).Size.Height);
+    }
 }

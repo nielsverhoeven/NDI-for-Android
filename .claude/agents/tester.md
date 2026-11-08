@@ -93,7 +93,7 @@ dotnet test tests/MauiApp.UITests
 ```
 Set `E2E_REQUIRE_DEVICE=true` locally only if you want a missing device to fail instead of skip
 (CI always sets it). `E2E_ARTIFACT_DIR` (default `./e2e-artifacts`) is where failure screenshots +
-page source land; `A11Y_MAX_VIOLATIONS` (default 200) is the accessibility ratchet — lower it as
+page source land; `A11Y_MAX_VIOLATIONS` (default 10, measured 8 — #467) is the accessibility ratchet — lower it as
 violations are fixed, never raise it to turn a red run green.
 
 **Reading a failure**: start with the TRX/console failure message, then the `FailureEvidence`

@@ -74,7 +74,7 @@ Leave `E2E_REQUIRE_DEVICE` unset locally — an unavailable device then produces
 failure. Set it to `true` only if you specifically want a missing device to fail the run (this is
 always `true` in CI). Other env vars the fixture reads, both optional:
 - `E2E_ARTIFACT_DIR` — where per-failure screenshots/page-source land (default `./e2e-artifacts`).
-- `A11Y_MAX_VIOLATIONS` — accessibility budget (default `200`; a ratchet — lower it as violations
+- `A11Y_MAX_VIOLATIONS` — accessibility budget (default `10`, measured 8 on #467; a ratchet — lower it as violations
   are fixed, never raise it to turn a red run green).
 
 ---

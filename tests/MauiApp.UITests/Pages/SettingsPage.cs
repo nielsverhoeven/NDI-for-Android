@@ -45,12 +45,24 @@ public sealed class SettingsPage : PageObject
     /// <summary>Opens a section and waits for its panel to render.</summary>
     public void OpenSection(SettingsSection section)
     {
+        // The section buttons sit at the top of the page's ScrollView, and the page keeps its
+        // scroll offset across Shell navigation. A previous helper that scrolled the server list
+        // into view (see AddServer) therefore leaves them off screen on a phone-height window —
+        // run 42474875695 timed out here after a Home → Settings round trip.
+        if (!IsPresent(SectionButtonId(section)))
+            ScrollToStart();
+
         Tap(SectionButtonId(section), Timeouts.Navigation);
         WaitFor(PanelId(section), Timeouts.Navigation, $"The {section} panel did not open");
     }
 
     public bool HasSectionButton(SettingsSection section) => IsPresent(SectionButtonId(section));
     public bool IsSectionOpen(SettingsSection section)    => IsPresent(PanelId(section));
+
+    /// <summary>Screen bounds of a section's panel — the scope for an accessibility audit of that
+    /// section alone, since the page chrome around it was already audited on the landing section
+    /// (#467). Open the section first.</summary>
+    public System.Drawing.Rectangle PanelBounds(SettingsSection section) => BoundsOf(PanelId(section));
 
     /// <summary>
     /// True when the section's rail button announces itself as selected. Read from content-desc
@@ -86,22 +98,63 @@ public sealed class SettingsPage : PageObject
 
     public string ValidationError => TextOf(TestIds.SettingsDiscoveryServersError);
 
-    /// <summary>Fills the add-server form and taps Add Server.</summary>
+    /// <summary>
+    /// Rendered height in pixels of the add-server Hostname and Port Entries (#467). Open the
+    /// Discovery section first. These are the only two Entries on the panel with an AutomationId;
+    /// the display-name Entry above them is covered by the panel-wide accessibility audit instead.
+    /// </summary>
+    public IReadOnlyList<(string Id, int HeightPx)> DiscoveryEntryHeightsPx() =>
+        new[] { TestIds.SettingsDiscoveryHost, TestIds.SettingsDiscoveryPort }
+            .Select(id => (id, WaitFor(id).Size.Height))
+            .ToList();
+
+    /// <summary>Fills the add-server form, taps Add Server and scrolls the list into view.</summary>
+    /// <remarks>
+    /// The server list sits below the add form. With the form's three 48 dp Entries (#467) the
+    /// first row lands below the fold of a 731 dp-tall window (the Nexus 6 CI AVD), and Appium
+    /// reports an off-screen node as not displayed — so without the scroll every row helper on
+    /// this page would miss the row that was just added, cleanup included.
+    /// </remarks>
     public void AddServer(string host, string port = "")
     {
         DiscoveryHost = host;
         DiscoveryPort = port;
+        HideKeyboard();
         Tap(TestIds.SettingsDiscoveryServerAction, Timeouts.Navigation);
+        ScrollToEnd();
     }
 
-    /// <summary>Endpoint text ("host:port") of every rendered server row, in list order.</summary>
-    public IReadOnlyList<string> ServerRowEndpoints =>
-        FindDisplayed(TestIds.SettingsServerRowEndpoint).Select(row => row.Text).ToList();
+    /// <summary>Dismisses the soft keyboard typing left open, if any — it shrinks the viewport
+    /// that the row helpers scroll and measure in.</summary>
+    private void HideKeyboard()
+    {
+        try
+        {
+            if (Driver.IsKeyboardShown())
+                Driver.HideKeyboard();
+        }
+        catch (WebDriverException)
+        {
+            // No keyboard, or the driver could not tell — nothing to dismiss.
+        }
+    }
+
+    /// <summary>Endpoint text ("host:port") of every rendered server row, in list order. Scrolls
+    /// the list into view first (see <see cref="AddServer"/>).</summary>
+    public IReadOnlyList<string> ServerRowEndpoints
+    {
+        get
+        {
+            ScrollToEnd();
+            return FindDisplayed(TestIds.SettingsServerRowEndpoint).Select(row => row.Text).ToList();
+        }
+    }
 
     /// <summary>Deletes the row whose endpoint matches <paramref name="endpoint"/>, if one is
     /// rendered. Accepts the confirmation dialog (#347) the delete action now shows.</summary>
     public void RemoveServer(string endpoint)
     {
+        ScrollToEnd();
         var index = FindDisplayed(TestIds.SettingsServerRowEndpoint)
             .Select(row => row.Text)
             .ToList()
@@ -129,6 +182,7 @@ public sealed class SettingsPage : PageObject
     /// dialog — pair with <see cref="ConfirmDeleteServer"/> or <see cref="CancelDeleteServer"/>.</summary>
     public void TapDeleteForRow(string endpoint)
     {
+        ScrollToEnd();
         var index = FindDisplayed(TestIds.SettingsServerRowEndpoint).Select(row => row.Text).ToList().IndexOf(endpoint);
         if (index >= 0)
             FindDisplayed(TestIds.SettingsServerRowDelete)[index].Click();
@@ -157,8 +211,16 @@ public sealed class SettingsPage : PageObject
     public void WaitForServerRow(string endpoint) =>
         new WebDriverWait(Driver, Timeouts.Element).Until(_ => ServerRowEndpoints.Contains(endpoint));
 
-    /// <summary>Number of discovery server rows currently rendered.</summary>
-    public int ServerRowCount => FindDisplayed(TestIds.SettingsServerRowDelete).Count;
+    /// <summary>Number of discovery server rows currently rendered. Scrolls the list into view
+    /// first, so a row below the fold is counted (see <see cref="AddServer"/>).</summary>
+    public int ServerRowCount
+    {
+        get
+        {
+            ScrollToEnd();
+            return FindDisplayed(TestIds.SettingsServerRowDelete).Count;
+        }
+    }
 
     /// <summary>
     /// Deletes rows from the bottom of the list until only <paramref name="baselineCount"/> remain.
@@ -194,13 +256,35 @@ public sealed class SettingsPage : PageObject
     /// them findable — Android drops a zero-area node from the accessibility tree entirely, so
     /// "not displayed" and "displayed with no area" are the same observable failure here.
     /// </remarks>
-    public System.Drawing.Size LastServerRowControlSize(string controlId)
+    public System.Drawing.Size LastServerRowControlSize(string controlId, int? atLeastPx = null)
     {
         // The list is the last content of the Discovery panel; with the persistent field labels
         // above the Add form (#376) the newest row can sit at the bottom edge of the ScrollView,
         // where its bounds come back clipped. Measure it fully scrolled into view.
-        ScrollToEnd();
-        return FindDisplayed(controlId).LastOrDefault()?.Size ?? System.Drawing.Size.Empty;
+        //
+        // One scroll is not always enough: the row is re-laid-out shortly after it appears (its
+        // reachability status resolves asynchronously), and in a full-suite run on the 731 dp
+        // Nexus 6 the Delete button once read 168x65 px — its bottom 103 px still below the
+        // viewport after a scroll that had already returned "cannot scroll further" (run
+        // 42476284237). When the caller states the size it expects, keep re-scrolling and
+        // re-measuring for a bounded time before reporting a control as too small; a control
+        // that is genuinely too small still fails, just a few seconds later.
+        var deadline = DateTime.UtcNow + Timeouts.Element;
+
+        while (true)
+        {
+            ScrollToEnd();
+            var size = FindDisplayed(controlId).LastOrDefault()?.Size ?? System.Drawing.Size.Empty;
+
+            if (atLeastPx is null
+                || (size.Width >= atLeastPx && size.Height >= atLeastPx)
+                || DateTime.UtcNow >= deadline)
+            {
+                return size;
+            }
+
+            Thread.Sleep(300);
+        }
     }
 
     // ── Appearance section ───────────────────────────────────────────────────
@@ -390,6 +474,7 @@ public sealed class SettingsPage : PageObject
     /// no-op when not rendered.</summary>
     public void EditServer(string endpoint)
     {
+        ScrollToEnd();
         var index = FindDisplayed(TestIds.SettingsServerRowEndpoint).Select(row => row.Text).ToList().IndexOf(endpoint);
         if (index >= 0)
             FindDisplayed(TestIds.SettingsServerRowEdit)[index].Click();
@@ -398,6 +483,17 @@ public sealed class SettingsPage : PageObject
     public bool IsEditServerDialogOpen => IsPresent(TestIds.SettingsEditServerSave);
     public void CancelEditServer() => Tap(TestIds.SettingsEditServerCancel);
     public void SaveEditedServer() => Tap(TestIds.SettingsEditServerSave);
+
+    /// <summary>Screen bounds of the open edit-server dialog card — the scope for an accessibility
+    /// audit of the modal alone (#467).</summary>
+    public System.Drawing.Rectangle EditServerDialogBounds => BoundsOf(TestIds.SettingsEditServerDialog);
+
+    /// <summary>Rendered height in pixels of the three edit-server Entries (#467). Open the dialog
+    /// first with <see cref="EditServer"/>.</summary>
+    public IReadOnlyList<(string Id, int HeightPx)> EditServerEntryHeightsPx() =>
+        new[] { TestIds.SettingsEditServerDisplayName, TestIds.SettingsEditServerHost, TestIds.SettingsEditServerPort }
+            .Select(id => (id, WaitFor(id).Size.Height))
+            .ToList();
 
     // ── Developer tools (#343 SET-8) ──────────────────────────────────────────
 

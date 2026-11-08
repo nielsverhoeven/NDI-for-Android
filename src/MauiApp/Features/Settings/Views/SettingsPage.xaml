@@ -336,7 +336,11 @@
                                                                       </HorizontalStackLayout>
                                                                </VerticalStackLayout>
                                                                <HorizontalStackLayout Grid.Row="1" Grid.ColumnSpan="2" Spacing="8">
-                                                                      <Switch IsToggled="{Binding Enabled}" AutomationId="{x:Static t:TestIds.SettingsServerRowEnabled}" VerticalOptions="Center" />
+                                                                      <!-- Found by the #467 Discovery audit: the only unlabelled control on the row. -->
+                                                                      <Switch IsToggled="{Binding Enabled}"
+                                                                                  AutomationId="{x:Static t:TestIds.SettingsServerRowEnabled}"
+                                                                                  SemanticProperties.Description="Server enabled"
+                                                                                  VerticalOptions="Center" />
                                                                       <Button Text="▲"
                                                                                     WidthRequest="48" HeightRequest="48" Padding="0"
                                                                                     AutomationId="{x:Static t:TestIds.SettingsServerRowUp}"
@@ -454,7 +458,15 @@
         <!-- Edit-server modal overlay (#292): dialog over a dimmed scrim; state lives in the ViewModel. -->
         <Grid IsVisible="{Binding IsEditServerDialogOpen}"
                  BackgroundColor="{DynamicResource ScrimBackground}">
-               <Border BackgroundColor="{DynamicResource CardBackground}"
+               <!-- #467: with three 48 dp Entries the card is taller than a phone's landscape
+                    window (411 dp on the Nexus 6 class), which pushed Cancel/Save off the bottom
+                    edge with no way to reach them. The scrim scrolls, not the card: a ScrollView
+                    inside the card stretches it to the full window height, while out here the card
+                    keeps its natural height (centred) where it fits and scrolls where it does not.
+                    Transparent, or the ScrollView's own background would hide the scrim. -->
+               <ScrollView BackgroundColor="Transparent">
+               <Border AutomationId="{x:Static t:TestIds.SettingsEditServerDialog}"
+                          BackgroundColor="{DynamicResource CardBackground}"
                           Stroke="{DynamicResource BorderColor}"
                           StrokeShape="RoundRectangle 12"
                           Padding="20"
@@ -465,15 +477,18 @@
                              <Label Text="Edit discovery server" FontAttributes="Bold" FontSize="18" />
                              <Label Text="Display name (optional)" FontSize="12" TextColor="{DynamicResource TextSecondary}" />
                              <Entry Placeholder="e.g. Studio server"
+                                       AutomationId="{x:Static t:TestIds.SettingsEditServerDisplayName}"
                                        SemanticProperties.Description="Display name (optional)"
                                        Text="{Binding EditServerDisplayName}" />
                              <Label Text="Hostname or IP" FontSize="12" TextColor="{DynamicResource TextSecondary}" />
                              <Entry Placeholder="e.g. 192.168.1.10"
+                                       AutomationId="{x:Static t:TestIds.SettingsEditServerHost}"
                                        SemanticProperties.Description="Hostname or IP"
                                        Text="{Binding EditServerHost}"
                                        Keyboard="Url" />
                              <Label Text="Port (default 5959)" FontSize="12" TextColor="{DynamicResource TextSecondary}" />
                              <Entry Placeholder="5959"
+                                       AutomationId="{x:Static t:TestIds.SettingsEditServerPort}"
                                        SemanticProperties.Description="Port (default 5959)"
                                        Text="{Binding EditServerPort}"
                                        Keyboard="Numeric" />
@@ -497,6 +512,7 @@
                              </HorizontalStackLayout>
                       </VerticalStackLayout>
                </Border>
+               </ScrollView>
         </Grid>
     </Grid>
 </ContentPage>
