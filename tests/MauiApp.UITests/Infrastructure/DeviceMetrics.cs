@@ -46,6 +46,51 @@ public sealed class DeviceMetrics
         }
     }
 
+    /// <summary>
+    /// The navigation bar's rectangle in screen pixels, as the system reports it right now.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// On a phone with 3-button navigation the bar leaves the bottom edge in landscape and takes a
+    /// side — the left side under <c>ROTATION_270</c>. The left rail is on that same side, and the
+    /// window draws edge-to-edge, so this rectangle is what decides whether a rail item's tap
+    /// point is inside system UI (#321). Read per call: it moves on every rotation.
+    /// </para>
+    /// <para>
+    /// Like every other accessor here, a missing or malformed entry throws rather than defaulting:
+    /// a bar that silently read as 0x0 would make "no rail item is covered" pass for free.
+    /// </para>
+    /// </remarks>
+    public SystemBarBounds NavigationBar
+    {
+        get
+        {
+            var bars = Invoke("mobile: getSystemBars");
+
+            if (bars is not Dictionary<string, object> map || !map.TryGetValue("navigationBar", out var bar))
+                throw new InvalidOperationException(
+                    $"'mobile: getSystemBars' returned no navigationBar entry (got: {Describe(bars)}). " +
+                    "The navigation-bar overlap assertions cannot run without it.");
+
+            if (bar is not Dictionary<string, object> nav)
+                throw new InvalidOperationException(
+                    $"navigationBar entry was not a map (got: {Describe(bar)}).");
+
+            return new SystemBarBounds(
+                Read(nav, "x"),
+                Read(nav, "y"),
+                Read(nav, "width"),
+                Read(nav, "height"),
+                nav.TryGetValue("visible", out var visible) && Convert.ToBoolean(visible));
+
+            static int Read(Dictionary<string, object> map, string key) =>
+                map.TryGetValue(key, out var value)
+                    ? Convert.ToInt32(value)
+                    : throw new InvalidOperationException(
+                        $"navigationBar entry carried no '{key}' (got: {Describe(map)}).");
+        }
+    }
+
     /// <summary>Display density, i.e. physical pixels per density-independent unit.</summary>
     public double Density
     {
@@ -119,4 +164,23 @@ public sealed class DeviceMetrics
         Dictionary<string, object> map => "{" + string.Join(", ", map.Keys) + "}",
         _ => value.ToString() ?? value.GetType().Name,
     };
+}
+
+/// <summary>A system bar's rectangle in screen pixels, plus whether the system is showing it.</summary>
+public readonly record struct SystemBarBounds(int X, int Y, int Width, int Height, bool Visible)
+{
+    public int Left => X;
+    public int Top => Y;
+    public int Right => X + Width;
+    public int Bottom => Y + Height;
+
+    /// <summary>True when the bar is docked to a side of the display rather than its bottom.</summary>
+    public bool IsSideDocked => Visible && Height > Width;
+
+    /// <summary>True when a tap at (<paramref name="x"/>, <paramref name="y"/>) lands on the bar.</summary>
+    public bool Contains(int x, int y) =>
+        Visible && x >= Left && x < Right && y >= Top && y < Bottom;
+
+    public override string ToString() =>
+        $"{Width}x{Height} at ({X},{Y}) — x {Left}..{Right}, y {Top}..{Bottom}, visible={Visible}";
 }

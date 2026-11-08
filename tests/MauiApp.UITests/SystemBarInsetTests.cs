@@ -30,6 +30,127 @@ public sealed class SystemBarInsetTests : UiTestBase
     public SystemBarInsetTests(AppiumDriverFixture fixture, ITestOutputHelper output)
         : base(fixture) => _output = output;
 
+    /// <summary>
+    /// #321, the same defect as #296 on a different edge. With 3-button navigation the bar leaves
+    /// the bottom in landscape and takes a side — the left side under <c>ROTATION_270</c>; the
+    /// rail is on that side; the window draws edge-to-edge. PR #324 measured the bar owning
+    /// x 0..168 while a rail item spanned x 28..224 on the CI Nexus 6, so the centre a tap lands
+    /// on (x=126) was underneath system UI and the press went to the system: the app went Home
+    /// with no crash and nothing in the activity log, because it was never involved.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Asserts each item's <em>centre</em>, because that is where a tap is delivered. An edge
+    /// assertion passes while the majority of the item — and the tap point — stays under the bar.
+    /// </para>
+    /// <para>
+    /// Carries the <c>SideNavigationBar</c> trait and is therefore <b>not in the default gate</b>:
+    /// <c>run-emulator-tests.sh</c> excludes the category when no filter is given. The architect's
+    /// 2026-10-20 ruling (#321, item 7) defers porting this guard into the PR gate until a fix
+    /// exists — a guard without a fix would turn the release gate red. Dispatch it on demand:
+    /// <c>emulator-tests.yml</c> with
+    /// <c>test_filter=FullyQualifiedName~Navigation_RailItems_AreNotCoveredByTheNavigationBar</c>.
+    /// </para>
+    /// <para>
+    /// Measures without tapping. A tap that lands on the bar leaves the app, and the geometry is
+    /// the diagnostic — the tap itself is exercised by
+    /// <c>NavigationRegressionTests.Navigation_TappingRailBesideSideNavigationBar_KeepsTheAppOnScreen</c>.
+    /// </para>
+    /// </remarks>
+    [RetryableSkippableFact]
+    [Trait("Category", SideNavigationBarScope.TraitCategory)]
+    public void Navigation_RailItems_AreNotCoveredByTheNavigationBar() => Run(app =>
+    {
+        using var sideBar = SideNavigationBarScope.Enter(app, _output);
+
+        var bar = app.Metrics.NavigationBar;
+        Skip.If(!bar.Visible, "No navigation bar is shown, so nothing can be covered by one.");
+
+        var statusBarHeight = app.Metrics.StatusBarHeight;
+        var density = app.Metrics.Density;
+        _output.WriteLine(
+            $"navigation bar {bar}; side-docked={bar.IsSideDocked}; status bar {statusBarHeight}px; " +
+            $"density {density:0.##} ({app.Metrics.ToPixels(1)}px/dp); window {app.WindowSize.Width}x{app.WindowSize.Height}");
+
+        var covered = new List<string>();
+        var loggedContainer = false;
+
+        foreach (var destination in Enum.GetValues<NavDestination>())
+        {
+            var element = app.Navigation.Item(destination, Timeouts.Navigation);
+            var location = element.Location;
+            var size = element.Size;
+
+            // The centre, because that is where a tap is delivered.
+            var centreX = location.X + size.Width / 2;
+            var centreY = location.Y + size.Height / 2;
+
+            _output.WriteLine(
+                $"{destination}: {size.Width}x{size.Height} at ({location.X},{location.Y}), " +
+                $"tap point ({centreX},{centreY}), resolved via {app.Navigation.LastResolution}" +
+                (bar.Contains(centreX, centreY) ? " — INSIDE the navigation bar" : ""));
+
+            if (!loggedContainer)
+            {
+                // The rail's ancestors decide which lever an inset fix needs (#321 hypothesis 3):
+                // if the flyout container itself is pinned at x=0, padding on RailItems compresses
+                // the items instead of moving them. Best effort — the hierarchy is diagnostic only.
+                LogEnclosingNodes(app, new System.Drawing.Rectangle(location.X, location.Y, size.Width, size.Height));
+                loggedContainer = true;
+            }
+
+            if (bar.Contains(centreX, centreY))
+                covered.Add($"{destination} tap point ({centreX},{centreY})");
+        }
+
+        Assert.True(covered.Count == 0,
+            $"These rail items' tap points are inside the navigation bar ({bar}): " +
+            $"{string.Join("; ", covered)}. A tap on them is delivered to the system instead of the " +
+            "app. This is the #321 failure mode — the rail is not inset from the side navigation " +
+            "bar, so tapping it goes Home.");
+    });
+
+    /// <summary>
+    /// Logs every node in the view hierarchy whose bounds enclose <paramref name="item"/>: the
+    /// rail item's container chain, outermost first. UiAutomator2 has no parent axis, so this
+    /// reads the page source once and filters by bounds instead.
+    /// </summary>
+    private void LogEnclosingNodes(NdiApp app, System.Drawing.Rectangle item)
+    {
+        try
+        {
+            var document = System.Xml.Linq.XDocument.Parse(app.PageSource);
+            var bounds = new System.Text.RegularExpressions.Regex(@"\[(\d+),(\d+)\]\[(\d+),(\d+)\]");
+
+            foreach (var node in document.Descendants())
+            {
+                var match = bounds.Match((string?)node.Attribute("bounds") ?? string.Empty);
+                if (!match.Success)
+                    continue;
+
+                var left = int.Parse(match.Groups[1].Value);
+                var top = int.Parse(match.Groups[2].Value);
+                var right = int.Parse(match.Groups[3].Value);
+                var bottom = int.Parse(match.Groups[4].Value);
+
+                var encloses = left <= item.Left && top <= item.Top && right >= item.Right && bottom >= item.Bottom;
+                var isTheItem = left == item.Left && top == item.Top && right == item.Right && bottom == item.Bottom;
+                if (!encloses || isTheItem)
+                    continue;
+
+                var id = (string?)node.Attribute("resource-id");
+                var cls = (string?)node.Attribute("class") ?? node.Name.LocalName;
+                _output.WriteLine(
+                    $"  encloses item: {cls} {right - left}x{bottom - top} at ({left},{top})" +
+                    (string.IsNullOrEmpty(id) ? "" : $" id={id}"));
+            }
+        }
+        catch (Exception ex)
+        {
+            _output.WriteLine($"  (container geometry unavailable: {ex.GetType().Name}: {ex.Message})");
+        }
+    }
+
     [RetryableSkippableTheory]
     [InlineData(ScreenOrientation.Portrait)]
     [InlineData(ScreenOrientation.Landscape)]
