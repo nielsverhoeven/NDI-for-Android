@@ -73,11 +73,15 @@ public sealed class AccessibilityTests : UiTestBase
         // panel — which is how its add-server Entries went unmeasured until #467 and had to be
         // carried as a documented exception. The walk ends on Settings, so each extra section is
         // one tap. Appearance rides along because it is just as cheap and carries the #465
-        // RadioButtons, whose 48 dp also comes from an implicit style.
+        // RadioButtons, whose 48 dp also comes from an implicit style. Each audit is scoped to
+        // the section's panel: switching sections toggles a panel's IsVisible, not the page, so
+        // the page-level containers (the RecyclerView/ScrollView structural findings) were
+        // already counted once on the landing section and would otherwise be counted again per
+        // section — run 42473651031 measured 18 that way, 6 of them the same two containers.
         foreach (var (section, screen) in AuditedSettingsSections)
         {
             app.Settings.OpenSection(section);
-            violations.AddRange(app.Accessibility.Run(screen, TestIds.All));
+            violations.AddRange(app.Accessibility.Run(screen, TestIds.All, app.Settings.PanelBounds(section)));
         }
 
         violations.AddRange(AuditEditServerDialog(app));
@@ -264,8 +268,8 @@ public sealed class AccessibilityTests : UiTestBase
 
     /// <summary>
     /// Settings sections audited in addition to the General landing section, in the order they
-    /// are opened. Only the budget test walks these; the other audits keep the four-screen
-    /// <see cref="PrimaryScreens"/> walk.
+    /// are opened; each is audited within its panel's bounds. Only the budget test walks these;
+    /// the other audits keep the four-screen <see cref="PrimaryScreens"/> walk.
     /// </summary>
     private static readonly (SettingsSection Section, string Screen)[] AuditedSettingsSections =
     [

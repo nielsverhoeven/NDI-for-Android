@@ -52,6 +52,11 @@ public sealed class SettingsPage : PageObject
     public bool HasSectionButton(SettingsSection section) => IsPresent(SectionButtonId(section));
     public bool IsSectionOpen(SettingsSection section)    => IsPresent(PanelId(section));
 
+    /// <summary>Screen bounds of a section's panel — the scope for an accessibility audit of that
+    /// section alone, since the page chrome around it was already audited on the landing section
+    /// (#467). Open the section first.</summary>
+    public System.Drawing.Rectangle PanelBounds(SettingsSection section) => BoundsOf(PanelId(section));
+
     /// <summary>
     /// True when the section's rail button announces itself as selected. Read from content-desc
     /// (what TalkBack reads), not from pixels: the selected state is carried in the name because a

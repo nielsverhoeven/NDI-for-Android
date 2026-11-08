@@ -336,7 +336,11 @@
                                                                       </HorizontalStackLayout>
                                                                </VerticalStackLayout>
                                                                <HorizontalStackLayout Grid.Row="1" Grid.ColumnSpan="2" Spacing="8">
-                                                                      <Switch IsToggled="{Binding Enabled}" AutomationId="{x:Static t:TestIds.SettingsServerRowEnabled}" VerticalOptions="Center" />
+                                                                      <!-- Found by the #467 Discovery audit: the only unlabelled control on the row. -->
+                                                                      <Switch IsToggled="{Binding Enabled}"
+                                                                                  AutomationId="{x:Static t:TestIds.SettingsServerRowEnabled}"
+                                                                                  SemanticProperties.Description="Server enabled"
+                                                                                  VerticalOptions="Center" />
                                                                       <Button Text="▲"
                                                                                     WidthRequest="48" HeightRequest="48" Padding="0"
                                                                                     AutomationId="{x:Static t:TestIds.SettingsServerRowUp}"
@@ -454,6 +458,12 @@
         <!-- Edit-server modal overlay (#292): dialog over a dimmed scrim; state lives in the ViewModel. -->
         <Grid IsVisible="{Binding IsEditServerDialogOpen}"
                  BackgroundColor="{DynamicResource ScrimBackground}">
+               <!-- #467: with three 48 dp Entries the card is taller than a phone's landscape
+                    window (411 dp on the Nexus 6 class), which pushed Cancel/Save off the bottom
+                    edge with no way to reach them. The scrim scrolls, not the card: a ScrollView
+                    inside the card stretches it to the full window height, while out here the card
+                    keeps its natural height (centred) where it fits and scrolls where it does not. -->
+               <ScrollView>
                <Border AutomationId="{x:Static t:TestIds.SettingsEditServerDialog}"
                           BackgroundColor="{DynamicResource CardBackground}"
                           Stroke="{DynamicResource BorderColor}"
@@ -462,11 +472,6 @@
                           WidthRequest="420"
                           HorizontalOptions="Center"
                           VerticalOptions="Center">
-                      <!-- #467: with three 48 dp Entries the card is taller than a phone's landscape
-                           window (411 dp on the Nexus 6 class), which pushed Cancel/Save off the
-                           bottom edge with no way to reach them. The ScrollView keeps the card's
-                           natural height where it fits and scrolls it where it does not. -->
-                      <ScrollView>
                       <VerticalStackLayout Spacing="10">
                              <Label Text="Edit discovery server" FontAttributes="Bold" FontSize="18" />
                              <Label Text="Display name (optional)" FontSize="12" TextColor="{DynamicResource TextSecondary}" />
@@ -505,8 +510,8 @@
                                                Command="{Binding SaveEditedDiscoveryServerCommand}" />
                              </HorizontalStackLayout>
                       </VerticalStackLayout>
-                      </ScrollView>
                </Border>
+               </ScrollView>
         </Grid>
     </Grid>
 </ContentPage>
