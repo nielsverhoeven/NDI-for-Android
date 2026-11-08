@@ -36,8 +36,9 @@ there, not in the normal layout.
   primary **Stop**; Retry/Cancel/Reconnect replace the quality row while reconnecting) and
   **Camera column** (d-pad ▲◄AF►▼ 3×3 grid of 48 dp buttons; vertical zoom rocker T/W of two 48 dp
   buttons beside it; preset grid of 8 buttons (2 rows × 4 columns) at 48 dp each — tap recalls,
-  long-press (≥600 ms) stores with a short confirmation; endpoint status chip opening the existing
-  `PtzEndpointPanel` dialog).
+  long-press (≥600 ms) stores with a short confirmation; read-only PTZ status label; the endpoint
+  dialog (`PtzEndpointPanel`) opens from the always-visible 48 dp "PTZ endpoint…" button in the
+  Playback column (#346/#370)).
 - **Camera column only shown when `IsPtzControlActive`**; otherwise Playback spans the full deck
   width — no empty column.
 - On hosts where the layout resolves to **Sheet** (below the 640×470 dp threshold: phones in
@@ -58,7 +59,7 @@ there, not in the normal layout.
 - Replace the current bottom control stack with an **overlay**: d-pad card bottom-left (16 dp
   from the edges, semi-transparent), zoom rocker card bottom-right, preset chips top-left
   (1–8, tap = recall only — store stays a deck/sheet action), and a slim **48 dp bottom toolbar**
-  (endpoint status chip, quality segmented buttons, audio toggle, full-screen toggle, Stop, **⋮**
+  (read-only PTZ status label, quality segmented buttons, audio toggle, full-screen toggle, Stop, **⋮**
   overflow that opens the endpoint dialog).
 - Reuses the existing auto-hide/tap-to-show/double-tap-to-toggle behavior (`AreControlsVisible`,
   `IsControlsOverlayVisible`, `ShowControlsOverlayCommand`, `NotifyControlInteraction()` — all
@@ -69,14 +70,15 @@ there, not in the normal layout.
 ## Acceptance Criteria (from issue #342, binding)
 
 - [x] Tablet landscape two-pane: with a VISCA endpoint saved, every control (status, quality,
-      audio, full-screen, Stop, d-pad, zoom, 8 presets, endpoint chip) is visible without
-      scrolling at 1280×800 dp; no control overlaps the video.
+      audio, full-screen, Stop, d-pad, zoom, 8 presets, read-only PTZ status label, "PTZ endpoint…"
+      button) is visible without scrolling at 1280×800 dp; no control overlaps the video.
 - [x] Without PTZ (NDI source without PTZ, no endpoint): the deck shows only the playback column,
       no empty camera column.
 - [x] Below the `ViewerControlLayout.Choose(widthDp, heightDp)` 640×470 dp threshold (phone
       portrait, or tablet portrait pushed `ViewerPage` measuring narrower/shorter than that — see
-      the rule above): bottom sheet with tabs; PTZ tab shows d-pad, zoom, presets, endpoint chip
-      without scrolling.
+      the rule above): bottom sheet with tabs; PTZ tab shows d-pad, zoom, presets, read-only PTZ status label
+      without scrolling; the endpoint dialog opens from the always-visible 48 dp "PTZ endpoint…"
+      button on the Playback tab (#346/#370).
 - [x] Full screen: overlay per wireframe A; controls hide after 3 s and return on tap; d-pad and
       zoom remain operable while visible; tally border visible.
 - [x] Presets: tap recalls, long-press stores (with a short confirmation); the preset entry +

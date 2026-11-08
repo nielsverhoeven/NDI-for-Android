@@ -4,7 +4,7 @@ using Timer = System.Threading.Timer;
 
 namespace NdiForAndroid.Features.Viewer.Views;
 
-/// <summary>PTZ endpoint chip + pad + zoom + presets, bound to the hosting page's <c>ViewerViewModel</c>.</summary>
+/// <summary>PTZ link status label + pad + zoom + presets, bound to the hosting page's <c>ViewerViewModel</c>.</summary>
 public partial class CameraControlsView : ContentView
 {
     private const int LongPressThresholdMs = 600;
