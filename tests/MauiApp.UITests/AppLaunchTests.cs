@@ -832,6 +832,53 @@ public sealed class AppLaunchTests : UiTestBase
             app.Settings.RemoveServersDownTo(baseline);
         }
     });
+
+    // ── #467: native Entry/Picker fields meet the 48 dp minimum via the implicit styles ────────
+
+    [RetryableSkippableFact]
+    public void Settings_DiscoveryEntries_Meet48dp() => Run(app =>
+    {
+        // Before #467 these Entries had no MinimumHeightRequest and were never measured: the
+        // ratcheted audit lands on Settings > General and never opened Discovery, so the fields
+        // sat in KNOWLEDGE-BASE.md as a documented 48 dp exception instead. The minimum now comes
+        // from the implicit Entry style in Styles.xaml, which is why this measures the fields
+        // rather than a per-instance attribute.
+        app.ResetToHome();
+        app.Rotate(ScreenOrientation.Portrait);
+        app.Navigation.GoTo(NavDestination.Settings);
+        app.Settings.WaitUntilVisible();
+        app.Settings.OpenSection(SettingsSection.Discovery);
+
+        var minPx = app.Metrics.ToPixels(AccessibilityAudit.MinTouchTargetDp);
+
+        foreach (var (id, height) in app.Settings.DiscoveryEntryHeightsPx())
+        {
+            Assert.True(height >= minPx,
+                $"{id} is {height}px tall, below the 48 dp minimum ({minPx}px) — #467");
+        }
+    });
+
+    [RetryableSkippableFact]
+    public void Output_StreamNameAndVideoInput_Meet48dp() => Run(app =>
+    {
+        // The two touch-target violations the accessibility budget carried since #314 (#392
+        // verdict item 6 asked for this ticket before ratcheting the budget past them). The
+        // Picker sits inside the #375 input-panel Border; measuring the Picker itself proves the
+        // Border grew with it rather than clipping it.
+        app.ResetToHome();
+        app.Rotate(ScreenOrientation.Portrait);
+        app.Navigation.GoTo(NavDestination.Stream);
+        app.Output.WaitUntilVisible();
+        app.Output.EnsureCaptureMode();
+
+        var minPx = app.Metrics.ToPixels(AccessibilityAudit.MinTouchTargetDp);
+
+        foreach (var (id, height) in app.Output.InputFieldHeightsPx())
+        {
+            Assert.True(height >= minPx,
+                $"{id} is {height}px tall, below the 48 dp minimum ({minPx}px) — #467");
+        }
+    });
 }
 
 [CollectionDefinition("AppiumSession")]

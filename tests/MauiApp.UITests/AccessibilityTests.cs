@@ -69,6 +69,17 @@ public sealed class AccessibilityTests : UiTestBase
             violations.AddRange(app.Accessibility.Run(screen, TestIds.All));
         }
 
+        // Settings lands on General, so the four-screen walk above never saw the Discovery
+        // panel — which is how its add-server Entries went unmeasured until #467 and had to be
+        // carried as a documented exception. The walk ends on Settings, so each extra section is
+        // one tap. Appearance rides along because it is just as cheap and carries the #465
+        // RadioButtons, whose 48 dp also comes from an implicit style.
+        foreach (var (section, screen) in AuditedSettingsSections)
+        {
+            app.Settings.OpenSection(section);
+            violations.AddRange(app.Accessibility.Run(screen, TestIds.All));
+        }
+
         var summary = AccessibilityAudit.Summarise(violations, Budget);
 
         // Three destinations, because each answers a different need. xUnit output attaches it to
@@ -207,6 +218,17 @@ public sealed class AccessibilityTests : UiTestBase
         (NavDestination.Stream,   "Output"),
         (NavDestination.View,     "Sources"),
         (NavDestination.Settings, "Settings"),
+    ];
+
+    /// <summary>
+    /// Settings sections audited in addition to the General landing section, in the order they
+    /// are opened. Only the budget test walks these; the other audits keep the four-screen
+    /// <see cref="PrimaryScreens"/> walk.
+    /// </summary>
+    private static readonly (SettingsSection Section, string Screen)[] AuditedSettingsSections =
+    [
+        (SettingsSection.Discovery,  "Settings/Discovery"),
+        (SettingsSection.Appearance, "Settings/Appearance"),
     ];
 
     private static void WaitForScreen(NdiApp app, NavDestination destination)

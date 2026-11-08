@@ -86,6 +86,16 @@ public sealed class SettingsPage : PageObject
 
     public string ValidationError => TextOf(TestIds.SettingsDiscoveryServersError);
 
+    /// <summary>
+    /// Rendered height in pixels of the add-server Hostname and Port Entries (#467). Open the
+    /// Discovery section first. These are the only two Entries on the panel with an AutomationId;
+    /// the display-name Entry above them is covered by the panel-wide accessibility audit instead.
+    /// </summary>
+    public IReadOnlyList<(string Id, int HeightPx)> DiscoveryEntryHeightsPx() =>
+        new[] { TestIds.SettingsDiscoveryHost, TestIds.SettingsDiscoveryPort }
+            .Select(id => (id, WaitFor(id).Size.Height))
+            .ToList();
+
     /// <summary>Fills the add-server form and taps Add Server.</summary>
     public void AddServer(string host, string port = "")
     {
