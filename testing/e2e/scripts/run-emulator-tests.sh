@@ -120,11 +120,17 @@ E2E_ARTIFACT_DIR="${E2E_ARTIFACT_DIR:-$PWD/test-results/failure-evidence}"
 mkdir -p "$E2E_ARTIFACT_DIR"
 
 # Optional xUnit filter, used by the regression-proof harness to run a single test against an
-# old build of the app. Empty by default, so a normal run executes everything.
-FILTER_ARGS=()
+# old build of the app. Without one, a normal run executes everything except the
+# `SideNavigationBar` category: those tests put the device into 3-button navigation under
+# ROTATION_270 themselves (test-scoped, see SideNavigationBarScope) and are deferred from the PR
+# gate until the #321 rail inset is fixed (architect ruling 2026-10-20, item 7). Dispatch them on
+# demand with an explicit test_filter, which replaces this default.
+FILTER_ARGS=(--filter "Category!=SideNavigationBar")
 if [[ -n "${E2E_TEST_FILTER:-}" ]]; then
   FILTER_ARGS=(--filter "$E2E_TEST_FILTER")
   echo "Test filter: $E2E_TEST_FILTER"
+else
+  echo "Test filter: Category!=SideNavigationBar (default; side-navigation-bar diagnostics are dispatch-only)"
 fi
 
 set +e
