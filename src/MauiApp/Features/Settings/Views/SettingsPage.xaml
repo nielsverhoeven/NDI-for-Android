@@ -462,8 +462,9 @@
                     window (411 dp on the Nexus 6 class), which pushed Cancel/Save off the bottom
                     edge with no way to reach them. The scrim scrolls, not the card: a ScrollView
                     inside the card stretches it to the full window height, while out here the card
-                    keeps its natural height (centred) where it fits and scrolls where it does not. -->
-               <ScrollView>
+                    keeps its natural height (centred) where it fits and scrolls where it does not.
+                    Transparent, or the ScrollView's own background would hide the scrim. -->
+               <ScrollView BackgroundColor="Transparent">
                <Border AutomationId="{x:Static t:TestIds.SettingsEditServerDialog}"
                           BackgroundColor="{DynamicResource CardBackground}"
                           Stroke="{DynamicResource BorderColor}"
