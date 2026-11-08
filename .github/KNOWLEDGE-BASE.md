@@ -53,7 +53,7 @@ dotnet test tests/MauiApp.Tests             # Non-NDI unit tests — must pass b
 | Camera orientation compensation (#284) | `src/Core/Services/CameraFrameOrientation.cs` (`ComputeRotationDegrees` — pure Camera2 sensor/display rotation policy) + `src/Core/Services/Nv12FrameRotator.cs` (pure NV12 90°-multiple rotator); wired into `src/MauiApp/Platforms/Android/Services/AndroidVideoCaptureSource.cs` (also migrated to `SessionConfiguration` on API 28+, Handler-based fallback on API 26-27) |
 | Viewer quality profile options (#330) | `src/Core/Features/Viewer/Models/QualityProfileOption.cs` — data-driven from `QualityProfile`, built by `ViewerViewModel.AvailableProfiles` |
 | Viewer connection hint (#331) | `src/Core/Features/Viewer/ConnectionHintPolicy.cs` (pure hysteresis policy over fps/dropped%) + `src/Core/Features/Viewer/ViewModels/ViewerViewModel.ConnectionHint.cs` (1 s stats watchdog, advisory `ConnectionHint` string — never auto-switches profile) |
-| PTZ endpoint form ViewModel | `src/Core/Features/Ptz/ViewModels/PtzEndpointFormViewModel.cs` — Save/Clear/Test semantics (#374): Clear only resets the two fields (never closes the dialog or raises `EndpointSaved`); Save commits a blank host as "no override" (`endpoint = null`); Save is disabled (not just validated) while the port is out of range |
+| PTZ endpoint form ViewModel | `src/Core/Features/Ptz/ViewModels/PtzEndpointFormViewModel.cs` — Save/Clear/Test semantics (#374): Clear only resets the two fields (never closes the dialog or raises `EndpointSaved`); Save commits a blank host as "no override" (`endpoint = null`); Save is disabled (not just validated) while the port is out of range. Test's safety-net `TestTimeout` (6 s) stays above `ViscaPtzController.DefaultConnectTimeout + DefaultCommandTimeout` (unit-pinned) so the controller's mapped time-out messages end a Test (#339 D2). |
 
 ## Module Structure
 ```
@@ -690,6 +690,10 @@ views without carrying their `TestIds` AutomationIds along, and the gap was only
   see the env-var table above). Lower it as violations are fixed; never raise it to turn a red run
   green. Two checks sit *outside* the ratchet and may not regress at all: navigation items must
   announce a destination, and no element may announce an automation id as its label.
+- **48 dp exceptions** (owner, #346, 2026-10-20): native Entry/Picker — Output stream name, Video
+  Input, Settings Discovery/edit-server Entries (`SettingsPage.xaml:277,281,288,467,471,476`) —
+  pending the global Entry/Picker height follow-up #467. Status indicators are not touch targets;
+  each surface has one 48 dp entry to the PTZ endpoint form.
 - **`AutomationId` ≠ `SemanticProperties.Description`.** One is a machine hook, the other is what
   TalkBack reads aloud. `Accessibility_AutomationIds_AreNotUsedAsScreenReaderLabels` asserts the
   two never collide — a guard against the 99 ids added in #311 leaking into announcements.
