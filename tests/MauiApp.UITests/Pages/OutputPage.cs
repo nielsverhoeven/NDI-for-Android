@@ -134,4 +134,16 @@ public sealed class OutputPage : PageObject
         new[] { TestIds.OutputStreamName, TestIds.OutputVideoInput }
             .Select(id => (id, WaitFor(id).Size.Height))
             .ToList();
+
+    /// <summary>
+    /// Rendered height in pixels of whichever re-stream source field is on screen — the Picker
+    /// when sources are known, else the free-text fallback Entry. Toggle re-stream mode on first.
+    /// Both lost their per-instance <c>MinimumHeightRequest</c> in #467 in favour of the implicit
+    /// styles, and the #392 verdict (item 6) requires that their 48 dp is not lost with it.
+    /// </summary>
+    public (string Id, int HeightPx) ReStreamSourceFieldHeightPx()
+    {
+        var id = IsReStreamSourcePickerShown ? TestIds.OutputReStreamSourcePicker : TestIds.OutputReStreamSourceId;
+        return (id, WaitFor(id, Timeouts.Navigation).Size.Height);
+    }
 }

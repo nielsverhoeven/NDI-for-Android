@@ -80,6 +80,8 @@ public sealed class AccessibilityTests : UiTestBase
             violations.AddRange(app.Accessibility.Run(screen, TestIds.All));
         }
 
+        violations.AddRange(AuditEditServerDialog(app));
+
         var summary = AccessibilityAudit.Summarise(violations, Budget);
 
         // Three destinations, because each answers a different need. xUnit output attaches it to
@@ -195,6 +197,46 @@ public sealed class AccessibilityTests : UiTestBase
             string.Join($"{Environment.NewLine}  ", offenders.Take(20)) +
             $"{Environment.NewLine}Give them a SemanticProperties.Description in human language.");
     });
+
+    /// <summary>
+    /// Audits the Settings edit-server dialog (#467), which only exists once a server row does.
+    /// </summary>
+    /// <remarks>
+    /// The dialog is a modal over a scrim, not a native alert, so the Discovery panel beneath it
+    /// is still in the accessibility tree; the audit is scoped to the dialog card's bounds so
+    /// those findings are not counted a second time. The row is created and removed here with the
+    /// same helpers the Discovery lifecycle tests use (a non-routable host and an unusual port keep
+    /// cleanup unambiguous), and the dialog is always closed again so later audits start clean.
+    /// Opens the Discovery section itself; the caller may leave Settings on any section.
+    /// </remarks>
+    private static IReadOnlyList<A11yViolation> AuditEditServerDialog(NdiApp app)
+    {
+        const string host = "10.255.255.4";
+        const string port = "45962";
+
+        app.Settings.OpenSection(SettingsSection.Discovery);
+        var baseline = app.Settings.ServerRowCount;
+        app.Settings.AddServer(host, port);
+
+        try
+        {
+            app.Settings.WaitForServerRow($"{host}:{port}");
+            app.Settings.EditServer($"{host}:{port}");
+
+            var dialog = app.Settings.EditServerDialogBounds;
+            var violations = app.Accessibility.Run("Settings/EditServer", TestIds.All, dialog);
+
+            app.Settings.CancelEditServer();
+            return violations;
+        }
+        finally
+        {
+            if (app.Settings.IsEditServerDialogOpen)
+                app.Settings.CancelEditServer();
+
+            app.Settings.RemoveServersDownTo(baseline);
+        }
+    }
 
     /// <summary>Best-effort: a summary that cannot be written must not fail the audit.</summary>
     private static void WriteSummaryArtifact(string summary)

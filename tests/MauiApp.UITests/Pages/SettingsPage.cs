@@ -389,6 +389,17 @@ public sealed class SettingsPage : PageObject
     public void CancelEditServer() => Tap(TestIds.SettingsEditServerCancel);
     public void SaveEditedServer() => Tap(TestIds.SettingsEditServerSave);
 
+    /// <summary>Screen bounds of the open edit-server dialog card — the scope for an accessibility
+    /// audit of the modal alone (#467).</summary>
+    public System.Drawing.Rectangle EditServerDialogBounds => BoundsOf(TestIds.SettingsEditServerDialog);
+
+    /// <summary>Rendered height in pixels of the three edit-server Entries (#467). Open the dialog
+    /// first with <see cref="EditServer"/>.</summary>
+    public IReadOnlyList<(string Id, int HeightPx)> EditServerEntryHeightsPx() =>
+        new[] { TestIds.SettingsEditServerDisplayName, TestIds.SettingsEditServerHost, TestIds.SettingsEditServerPort }
+            .Select(id => (id, WaitFor(id).Size.Height))
+            .ToList();
+
     // ── Developer tools (#343 SET-8) ──────────────────────────────────────────
 
     public bool IsDeveloperModeOn =>

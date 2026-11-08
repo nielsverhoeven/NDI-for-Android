@@ -43,12 +43,17 @@
         </Setter>
     </Style>
 
+    <!-- #467: every native input field is a tap target, so the 48 dp minimum lives here on the
+         implicit Entry/Picker styles rather than per instance — the per-field attributes that
+         preceded this (Output re-stream Picker/Entry, PTZ endpoint form) left the Settings
+         Discovery and edit-server Entries behind as a documented exception. -->
     <Style TargetType="Entry">
         <Setter Property="TextColor" Value="{DynamicResource TextPrimary}" />
         <Setter Property="PlaceholderColor" Value="{DynamicResource TextPlaceholder}" />
         <Setter Property="BackgroundColor" Value="{DynamicResource InputBackground}" />
         <Setter Property="FontFamily" Value="OpenSansRegular" />
         <Setter Property="FontSize" Value="14" />
+        <Setter Property="MinimumHeightRequest" Value="48" />
     </Style>
 
     <!-- #375: a Picker rendered bare (no background, no chevron) is visually and
@@ -62,6 +67,7 @@
         <Setter Property="BackgroundColor" Value="Transparent" />
         <Setter Property="FontFamily" Value="OpenSansRegular" />
         <Setter Property="FontSize" Value="14" />
+        <Setter Property="MinimumHeightRequest" Value="48" />
     </Style>
 
     <Style TargetType="RadioButton">

@@ -454,7 +454,8 @@
         <!-- Edit-server modal overlay (#292): dialog over a dimmed scrim; state lives in the ViewModel. -->
         <Grid IsVisible="{Binding IsEditServerDialogOpen}"
                  BackgroundColor="{DynamicResource ScrimBackground}">
-               <Border BackgroundColor="{DynamicResource CardBackground}"
+               <Border AutomationId="{x:Static t:TestIds.SettingsEditServerDialog}"
+                          BackgroundColor="{DynamicResource CardBackground}"
                           Stroke="{DynamicResource BorderColor}"
                           StrokeShape="RoundRectangle 12"
                           Padding="20"
@@ -465,15 +466,18 @@
                              <Label Text="Edit discovery server" FontAttributes="Bold" FontSize="18" />
                              <Label Text="Display name (optional)" FontSize="12" TextColor="{DynamicResource TextSecondary}" />
                              <Entry Placeholder="e.g. Studio server"
+                                       AutomationId="{x:Static t:TestIds.SettingsEditServerDisplayName}"
                                        SemanticProperties.Description="Display name (optional)"
                                        Text="{Binding EditServerDisplayName}" />
                              <Label Text="Hostname or IP" FontSize="12" TextColor="{DynamicResource TextSecondary}" />
                              <Entry Placeholder="e.g. 192.168.1.10"
+                                       AutomationId="{x:Static t:TestIds.SettingsEditServerHost}"
                                        SemanticProperties.Description="Hostname or IP"
                                        Text="{Binding EditServerHost}"
                                        Keyboard="Url" />
                              <Label Text="Port (default 5959)" FontSize="12" TextColor="{DynamicResource TextSecondary}" />
                              <Entry Placeholder="5959"
+                                       AutomationId="{x:Static t:TestIds.SettingsEditServerPort}"
                                        SemanticProperties.Description="Port (default 5959)"
                                        Text="{Binding EditServerPort}"
                                        Keyboard="Numeric" />
