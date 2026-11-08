@@ -2,6 +2,8 @@
 
 # Developer Documentation Index
 
+[![Donate via PayPal](https://img.shields.io/badge/Donate-PayPal-00457C?logo=paypal&logoColor=white)](https://paypal.me/nielsverhoeven93)
+
 This index is the entry point for day-to-day development on NDI-for-Android, including the completed Settings Menu feature (spec 006) and the Fluent + Electron redesign baseline (spec 032).
 
 ## Table of Contents
