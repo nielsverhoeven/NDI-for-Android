@@ -578,7 +578,7 @@ the step-by-step recipe.
   | `APPIUM_SERVER_URL` | `http://127.0.0.1:4723/` | Appium server URL. |
   | `E2E_REQUIRE_DEVICE` | unset (skip mode) | `true` makes an unavailable Appium session **throw** instead of setting `SkipReason` — set in CI so a broken device fails the run instead of vacuously skipping; leave unset locally. |
   | `E2E_ARTIFACT_DIR` | `./e2e-artifacts` | Where `FailureEvidence` writes `<test>.png` / `.xml` / `.txt` per failure. |
-  | `A11Y_MAX_VIOLATIONS` | `12` | Accessibility violation budget (ratchet — lower as violations are fixed, never raise to turn a red run green). Measured on this branch's dispatched run 34155799008: 10 violations (8 structural missing-label on `RecyclerView`/`ScrollView` containers, 2 touch-target on the Output tab's Entry/Picker); the default carries a small margin above the measured count so an unrelated transient does not immediately go red. |
+  | `A11Y_MAX_VIOLATIONS` | `10` | Accessibility violation budget (ratchet — lower as violations are fixed, never raise to turn a red run green). Measured on dispatched run 42474276314 (#467): 8 violations, all structural missing-label findings on the primary screens' `RecyclerView`/`ScrollView` containers — the 2 touch-target findings on the Output tab's Entry/Picker (run 34155799008, budget 12) are gone with the implicit-style 48 dp minimum. The default carries a small margin above the measured count so an unrelated transient does not immediately go red. The walk now also covers Settings > Discovery, Settings > Appearance (each scoped to its panel's bounds, since switching sections toggles a panel's `IsVisible`, not the page) and the edit-server dialog (scoped to its card). |
 
 - **Local run recipe** (against a connected device/emulator):
   ```powershell
@@ -686,14 +686,21 @@ views without carrying their `TestIds` AutomationIds along, and the gap was only
   themes' real background pixels. Without it every other assertion in that file could pass on an
   app whose theme switch was completely broken.
 - **The accessibility gate is a ratchet**, `A11Y_MAX_VIOLATIONS` (same pattern as `COVERAGE_MIN`) —
-  currently **12** (measured 10 on run 34155799008: 8 structural missing-label + 2 touch-target,
-  see the env-var table above). Lower it as violations are fixed; never raise it to turn a red run
-  green. Two checks sit *outside* the ratchet and may not regress at all: navigation items must
-  announce a destination, and no element may announce an automation id as its label.
-- **48 dp exceptions** (owner, #346, 2026-10-20): native Entry/Picker — Output stream name, Video
-  Input, Settings Discovery/edit-server Entries (`SettingsPage.xaml:277,281,288,467,471,476`) —
-  pending the global Entry/Picker height follow-up #467. Status indicators are not touch targets;
-  each surface has one 48 dp entry to the PTZ endpoint form.
+  currently **10** (measured 8 on run 42474276314, #467: the structural missing-label findings on
+  the primary screens' containers, no touch-target findings left; was 12 against a measured 10 on
+  run 34155799008 — see the env-var table above). Lower it as violations are fixed; never raise it
+  to turn a red run green. Two checks sit *outside* the ratchet and may not regress at all:
+  navigation items must announce a destination, and no element may announce an automation id as
+  its label.
+- **48 dp on native input fields comes from the implicit styles** (#467): the `Entry` and `Picker`
+  styles in `src/MauiApp/Resources/Styles/Styles.xaml` carry `MinimumHeightRequest="48"`, so a new
+  Entry/Picker is a 48 dp target without a per-field attribute (the `RadioButton` style does the
+  same since #465). The former owner exception list from #346 — Output stream name, Video Input,
+  Settings Discovery/edit-server Entries — is closed; `Settings_DiscoveryEntries_Meet48dp`,
+  `Settings_EditServerEntries_Meet48dp` and `Output_StreamNameAndVideoInput_Meet48dp` pin it. A
+  field that genuinely cannot grow gets an explicit `MinimumHeightRequest` or a reason recorded
+  here (none today). Standing rule: status indicators are not touch targets; each surface has one
+  48 dp entry to the PTZ endpoint form.
 - **`AutomationId` ≠ `SemanticProperties.Description`.** One is a machine hook, the other is what
   TalkBack reads aloud. `Accessibility_AutomationIds_AreNotUsedAsScreenReaderLabels` asserts the
   two never collide — a guard against the 99 ids added in #311 leaking into announcements.
